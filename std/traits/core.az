@@ -57,8 +57,6 @@ realm std {
     inline for Ty in Numbers {
         /** Ascending range over [Ty], stepping by one. */
         bridge oper.. [self: Ty&](rhs: Ty&) by 1
-        /** Descending range over [Ty], stepping by one. */
-        bridge oper reverse.. [self: Ty&](rhs: Ty&) by 1
 
         /**
          * Every numeric type clones and copies: they are small immutable

@@ -247,7 +247,7 @@ realm std {
     func strReverse(s: String): String {
         fin chars = toChars(s)
         fin len = chars.length
-        var reversed: Array<Char> = Array::fill<Char>(len)
+        var reversed: Array<Char> = .() * len
         for i in 0..<len {
             reversed[i] = chars[len - 1 - i]
         }
@@ -390,7 +390,7 @@ realm std {
      */
     @Since("0.1")
     pack StringBuilder {
-        var parts: Array<String> = Array::fill<String>(16)
+        var parts: Array<String> = .() * 16
         var count: Int = 0
     }
 
@@ -438,7 +438,7 @@ realm std {
          */
         @Since("0.1")
         func clear(): Unit {
-            self.parts = Array::fill<String>(16)
+            self.parts = .() * 16
             self.count = 0
         }
     }

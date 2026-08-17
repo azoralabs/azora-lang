@@ -154,10 +154,37 @@ realm std {
      * @generic T The element type.
      */
     @Experimental(since: "0.1")
-    pack ArrayList<T> {
-        var data: T* = alloc T[8]
-        var size: Int = 0
-        var capacity: Int = 8
+    pack ArrayList<T> derives Clone {
+        var _data: T* = null
+        var _size: Int = 0
+        var _capacity: Int = 0
+    } // default constructor is .()
+
+    // count inserts an in contract, it must be >= 1
+
+    impl ArrayList<T> {
+        // this is .() * 7
+        ctor[self: Self!]() * count {
+            self._data = alloc .() * count
+            self._size = count
+            self._capacity = count
+        }
+
+        // this is .(1, 2, 3)
+        ctor[self: Self!](...args: T) {
+            self._data = alloc .(
+                inline for e in args { e }
+            )
+            self._size = args.length
+            self._capacity = args.length
+        }
+
+        // this is .(5) * 10
+        ctor[self: Self!](fill: T) * count {
+            self._data = alloc .(fill) * count
+            self._size = count
+            self._capacity = count
+        }
     }
 
     /**
@@ -441,7 +468,7 @@ realm std {
             var s = "["
             for i in 0..<self.size {
                 if i > 0 { s = s + ", " }
-                s = s + std::convert::toString(self.data[i])
+                s = s + self.data[i] as String
             }
             return s + "]"
         }
@@ -474,18 +501,18 @@ realm std {
 }
 
 test "list starts empty" {
-    fin value = std::emptyList<Int>()
+    fin value = emptyList<Int>()
     assert value.size == 0 && value.isEmpty { "emptyList must contain no elements" }
 }
 
 test "listOf preserves order" {
-    fin value = std::listOf(3, 1, 2)
+    fin value = listOf(3, 1, 2)
     assert value.size == 3 { "listOf size changed" }
     assert value.get(0) == 3 && value.get(1) == 1 && value.get(2) == 2 { "listOf must preserve argument order" }
 }
 
 test "mutableListOf accepts initial elements" {
-    fin value = std::mutableListOf(1, 2, 3)
+    fin value = mutableListOf(1, 2, 3)
     assert value.size == 3 && value.get(0) == 1 && value.get(2) == 3 { "mutableListOf order changed" }
 }
 
@@ -498,20 +525,20 @@ test "array list grows beyond initial capacity" {
 }
 
 test "mutable list insert shifts the suffix" {
-    var value = std::mutableListOf(1, 3)
+    var value = mutableListOf(1, 3)
     value.insert(1, 2)
     assert value.size == 3 && value.get(1) == 2 && value.get(2) == 3 { "insert must shift the suffix" }
 }
 
 test "mutable list set replaces in place" {
-    var value = std::mutableListOf(1, 2, 3)
+    var value = mutableListOf(1, 2, 3)
     value.set(0, 4)
     value.set(2, 6)
     assert value.size == 3 && value.get(0) == 4 && value.get(2) == 6 { "replacement must not change size" }
 }
 
 test "mutable list removals retain order" {
-    var value = std::mutableListOf(1, 2, 3, 4)
+    var value = mutableListOf(1, 2, 3, 4)
     assert value.removeAt(1) == 2 { "removeAt must return the removed value" }
     assert value.removeFirst() == 1 { "removeFirst must return the first value" }
     assert value.removeLast() == 4 { "removeLast must return the last value" }
@@ -519,14 +546,14 @@ test "mutable list removals retain order" {
 }
 
 test "list search reports first and last positions" {
-    fin value = std::listOf(4, 7, 4)
+    fin value = listOf(4, 7, 4)
     assert value.contains(7) { "contains must find present values" }
     assert value.indexOf(4) == 0 && value.lastIndexOf(4) == 2 { "search positions changed" }
     assert value.indexOf(9) == -1 { "missing values must report -1" }
 }
 
 test "list slices and reversal return independent orderings" {
-    fin value = std::listOf(1, 2, 3, 4)
+    fin value = listOf(1, 2, 3, 4)
     fin middle = value.subList(1, 3)
     fin rev = value.reversed
     assert middle.size == 2 && middle.get(0) == 2 && middle.get(1) == 3 { "subList bounds are half-open" }
@@ -535,7 +562,7 @@ test "list slices and reversal return independent orderings" {
 }
 
 test "mutable list clear permits reuse" {
-    var value = std::mutableListOf(1, 2)
+    var value = mutableListOf(1, 2)
     value.clear()
     value.add(9)
     assert value.size == 1 && value.get(0) == 9 { "cleared lists must remain reusable" }

@@ -145,8 +145,8 @@ realm std {
         func toString(): String {
             var s = "["
             for i in 0..<size {
-                if i > 0 { s = s + ", " }
-                s = s + std::convert::toString(data[i])
+                if i > 0 { s += ", " }
+                s = s + data[i] as String
             }
             return s + "]"
         }
@@ -192,7 +192,7 @@ test "stack clear permits reuse" {
 }
 
 test "stack serialization metadata is declared" {
-    inline assert std::reflect<Stack>.hasAnnot<Serializable> { "Stack must carry Serializable metadata" }
+    inline assert reflect<Stack>.hasAnnot<Serializable> { "Stack must carry Serializable metadata" }
 }
 
 test .All "stack"

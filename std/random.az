@@ -84,7 +84,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func shuffle<T>(arr: Array<T>, rng: Random): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.size)
+        var result: Array<T> = .() * arr.size
         var i = 0
         while i < arr.size {
             result[i] = arr[i]
@@ -109,7 +109,7 @@ realm std {
         var shuffled: Array<T> = shuffle<T>(arr, rng)
         var limit: Int = count
         if limit > shuffled.size { limit = shuffled.size }
-        var result: Array<T> = Array::fill<T>(limit)
+        var result: Array<T> = .() * limit
         for i in 0..<limit {
             result[i] = shuffled[i]
         }

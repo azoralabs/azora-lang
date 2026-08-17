@@ -14,13 +14,8 @@
  * limitations under the License.
  */
 
-module std.traits
-
-exposed import std.traits.core
-import std.convert
-
 /**
- * @file std/traits/traits
+ * @file std/traits/traits.az
  *
  * Core type traits and promotion system.
  *
@@ -29,240 +24,242 @@ import std.convert
  *
  * @since 0.1
  */
+module std.traits
 
-realm std {
-    /**
-     * Chooses the type with the highest primitive promotion rank.
-     *
-     * Promotion is evaluated entirely at compile time. Exact user-defined
-     * `deepinline prop promote<...>` overloads may specialize pairs, while this
-     * variadic overload provides the standard result for two or more primitive
-     * types.
-     *
-     * @generic T Two or more primitive types to compare.
-     * @return The widest type in T according to Type.rank.
-     */
-    @Since("0.1")
-    deepinline prop promote<...T>: Type where T.size >= 2 && T is Number {
-        var result: Type = T.0
-        for candidate: Type in T[1...] {
-            if candidate::rank > result::rank {
-                result = candidate
-            }
+exposed import std.traits.core
+import std.convert
+
+/**
+ * Chooses the type with the highest primitive promotion rank.
+ *
+ * Promotion is evaluated entirely at compile time. Exact user-defined
+ * `deepinline prop promote<...>` overloads may specialize pairs, while this
+ * variadic overload provides the standard result for two or more primitive
+ * types.
+ *
+ * @generic T Two or more primitive types to compare.
+ * @return The widest type in T according to Type.rank.
+ */
+@Since("0.1")
+deepinline prop promote<...T>: Type where T.size >= 2 && T is Number {
+    var Result: Type = T.0
+    for Candidate: Type in T[1...] {
+        if Candidate.rank > Result.rank {
+            Result = Candidate
         }
-        return result
     }
+    return Result
+}
 
-    /**
-     * A value that may be duplicated explicitly with `.clone()`.
-     *
-     * `bridge` because the compiler supplies a field-wise `clone` for any
-     * conforming type, so a plain data type states the capability and nothing
-     * else. A type whose duplication needs saying writes its own `clone`, and
-     * that one wins.
-     *
-     * The result is `Self`: a clone of a `T` is a `T`, and an `impl` need not
-     * repeat that.
-     */
-    @Since("0.1")
-    bridge spec Clone {
-        func clone[self: Self&](): Self
-    }
+/**
+ * A value that may be duplicated explicitly with `.clone()`.
+ *
+ * `bridge` because the compiler supplies a field-wise `clone` for any
+ * conforming type, so a plain data type states the capability and nothing
+ * else. A type whose duplication needs saying writes its own `clone`, and
+ * that one wins.
+ *
+ * The result is `Self`: a clone of a `T` is a `T`, and an `impl` need not
+ * repeat that.
+ */
+@Since("0.1")
+bridge spec Clone {
+    func clone[self: Self&](): Self
+}
 
-    /**
-     * A value duplicated *implicitly* when it is used by value.
-     *
-     * Implicit duplication has to be cheap and has to be safe, so `Copy`
-     * requires `Clone`. It does not grant it: a type states every capability it
-     * has, and none is inferred from a sibling.
-     *
-     * There is no `Movable` capability: every value can be given away with
-     * `take`, so one would say nothing.
-     */
-    @Since("0.1")
-    bridge spec Copy requires Clone
+/**
+ * A value duplicated *implicitly* when it is used by value.
+ *
+ * Implicit duplication has to be cheap and has to be safe, so `Copy`
+ * requires `Clone`. It does not grant it: a type states every capability it
+ * has, and none is inferred from a sibling.
+ *
+ * There is no `Movable` capability: every value can be given away with
+ * `take`, so one would say nothing.
+ */
+@Since("0.1")
+bridge spec Copy requires Clone
 
-    @Since("0.1")
-    spec PrettyPrint {
-        prop pretty[self: Self&]: String
-    }
+@Since("0.1")
+spec PrettyPrint {
+    prop pretty[self: Self&]: String
+}
 
-    /**
-     * A type whose values can be compared to `Rhs` for equality.
-     *
-     * `==` must be symmetric and transitive. It need not be reflexive:
-     * `Double.NAN == Double.NAN` is false, and that is what keeps this
-     * capability separate from [Equal].
-     *
-     * `Rhs` defaults to `Self`, so the homogeneous case is written
-     * `PartialEqual` with no argument.
-     */
-    @Since("0.1")
-    bridge spec PartialEqual<Rhs = Self> {
-        oper== [self: Self&](rhs: Rhs&): Bool
-    }
+/**
+ * A type whose values can be compared to `Rhs` for equality.
+ *
+ * `==` must be symmetric and transitive. It need not be reflexive:
+ * `Double.NAN == Double.NAN` is false, and that is what keeps this
+ * capability separate from [Equal].
+ *
+ * `Rhs` defaults to `Self`, so the homogeneous case is written
+ * `PartialEqual` with no argument.
+ */
+@Since("0.1")
+bridge spec PartialEqual<Rhs = Self> {
+    oper== [self: Self&](rhs: Rhs&): Bool
+}
 
-    /**
-     * A type whose equality is a full equivalence relation on its own values.
-     *
-     * Adds one promise to `PartialEqual<Self>`, and it is the promise the
-     * compiler cannot check: `a == a` for every value. Everything that keys off
-     * equality - hashing, a set's uniqueness, a map's lookup - is broken by a
-     * value that is not equal to itself, so those require [Equal] and not
-     * [PartialEqual].
-     */
-    @Since("0.1")
-    bridge spec Equal requires PartialEqual
+/**
+ * A type whose equality is a full equivalence relation on its own values.
+ *
+ * Adds one promise to `PartialEqual<Self>`, and it is the promise the
+ * compiler cannot check: `a == a` for every value. Everything that keys off
+ * equality - hashing, a set's uniqueness, a map's lookup - is broken by a
+ * value that is not equal to itself, so those require [Equal] and not
+ * [PartialEqual].
+ */
+@Since("0.1")
+bridge spec Equal requires PartialEqual
 
-    /**
-     * A type whose values order against `Rhs`, with some pairs possibly not
-     * relating at all.
-     *
-     * Satisfied by an `oper<=>` answering either result type: a [Compare]
-     * widens to a [PartialCompare], so a totally ordered type meets this bound
-     * without declaring a second operator.
-     */
-    @Since("0.1")
-    bridge spec PartialOrder<Rhs = Self> requires PartialEqual {
-        oper<=> [self: Self&](rhs: Rhs&): PartialCompare
-    }
+/**
+ * A type whose values order against `Rhs`, with some pairs possibly not
+ * relating at all.
+ *
+ * Satisfied by an `oper<=>` answering either result type: a [Compare]
+ * widens to a [PartialCompare], so a totally ordered type meets this bound
+ * without declaring a second operator.
+ */
+@Since("0.1")
+bridge spec PartialOrder<Rhs = Self> requires PartialEqual {
+    oper<=> [self: Self&](rhs: Rhs&): PartialCompare
+}
 
-    /**
-     * A type with a total order on its own values: every pair relates, and the
-     * relation is transitive and antisymmetric.
-     *
-     * `requires Equal` because a total order and its equality have to agree -
-     * `a <=> b` answering `Equal` while `a == b` answers false is the
-     * disagreement that makes a sorted container lose elements.
-     */
-    @Since("0.1")
-    bridge spec Order requires Equal {
-        oper<=> [self: Self&](rhs: Self&): Compare
-    }
+/**
+ * A type with a total order on its own values: every pair relates, and the
+ * relation is transitive and antisymmetric.
+ *
+ * `requires Equal` because a total order and its equality have to agree -
+ * `a <=> b` answering `Equal` while `a == b` answers false is the
+ * disagreement that makes a sorted container lose elements.
+ */
+@Since("0.1")
+bridge spec Order requires Equal {
+    oper<=> [self: Self&](rhs: Self&): Compare
+}
 
-    /**
-     * A type that reduces to a hash value.
-     *
-     * `requires Equal` because the two are one contract: equal values must hash
-     * equally, and a type whose equality is not even reflexive cannot promise
-     * it. Deriving [Equal] derives this too, over the same fields in the same
-     * order, so the pair cannot come apart.
-     */
-    @Since("0.1")
-    bridge spec Hash requires Equal {
-        prop hash[self: Self&]: ULong
-    }
+/**
+ * A type that reduces to a hash value.
+ *
+ * `requires Equal` because the two are one contract: equal values must hash
+ * equally, and a type whose equality is not even reflexive cannot promise
+ * it. Deriving [Equal] derives this too, over the same fields in the same
+ * order, so the pair cannot come apart.
+ */
+@Since("0.1")
+bridge spec Hash requires Equal {
+    prop hash[self: Self&]: ULong
+}
 
-    /**
-     * Arithmetic over `Rhs`, producing an `Out`.
-     *
-     * One spec, not ten. `+` and `%` make the same promise about a type -
-     * closed, total, producing an `Out` - so they are one family; a type opens
-     * one `impl` instead of five. Comparison is split into four specs for the
-     * opposite reason: those differ in what they *claim*, not in which symbol
-     * they spell.
-     *
-     * **A type implements the part it wants.** An operator member of a spec is
-     * optional, so a `Matrix` that only adds in place writes only `oper+=`, and
-     * `m % n` is an error naming the member rather than a `%` nobody meant.
-     *
-     * `+=` and its siblings are derived from the binary operator when absent,
-     * and the binary operator is *not* derived from them - a type that
-     * accumulates need not also build.
-     */
-    @Since("0.1")
-    spec Arithmetic<Rhs = Self, Out = Self> {
-        oper+ [self: Self&](rhs: Rhs&): Out
-        oper- [self: Self&](rhs: Rhs&): Out
-        oper* [self: Self&](rhs: Rhs&): Out
-        oper/ [self: Self&](rhs: Rhs&): Out
-        oper% [self: Self&](rhs: Rhs&): Out
-        oper+= [self: Self!](rhs: Rhs&)
-        oper-= [self: Self!](rhs: Rhs&)
-        oper*= [self: Self!](rhs: Rhs&)
-        oper/= [self: Self!](rhs: Rhs&)
-        oper%= [self: Self!](rhs: Rhs&)
-    }
+/**
+ * Arithmetic over `Rhs`, producing an `Out`.
+ *
+ * One spec, not ten. `+` and `%` make the same promise about a type -
+ * closed, total, producing an `Out` - so they are one family; a type opens
+ * one `impl` instead of five. Comparison is split into four specs for the
+ * opposite reason: those differ in what they *claim*, not in which symbol
+ * they spell.
+ *
+ * **A type implements the part it wants.** An operator member of a spec is
+ * optional, so a `Matrix` that only adds in place writes only `oper+=`, and
+ * `m % n` is an error naming the member rather than a `%` nobody meant.
+ *
+ * `+=` and its siblings are derived from the binary operator when absent,
+ * and the binary operator is *not* derived from them - a type that
+ * accumulates need not also build.
+ */
+@Since("0.1")
+spec Arithmetic<Rhs = Self, Out = Self> {
+    oper+ [self: Self&](rhs: Rhs&): Out
+    oper- [self: Self&](rhs: Rhs&): Out
+    oper* [self: Self&](rhs: Rhs&): Out
+    oper/ [self: Self&](rhs: Rhs&): Out
+    oper% [self: Self&](rhs: Rhs&): Out
+    oper+= [self: Self!](rhs: Rhs&)
+    oper-= [self: Self!](rhs: Rhs&)
+    oper*= [self: Self!](rhs: Rhs&)
+    oper/= [self: Self!](rhs: Rhs&)
+    oper%= [self: Self!](rhs: Rhs&)
+}
 
-    /**
-     * Negation - the unary `-`.
-     *
-     * Separate from [Arithmetic] because it is a different operation that
-     * happens to share a symbol: `0 - x` is not negation for every type, and a
-     * type may negate without subtracting. The two are told apart by operand
-     * count.
-     */
-    @Since("0.1")
-    spec Neg<Out = Self> {
-        oper- [self: Self&]: Out
-    }
+/**
+ * Negation - the unary `-`.
+ *
+ * Separate from [Arithmetic] because it is a different operation that
+ * happens to share a symbol: `0 - x` is not negation for every type, and a
+ * type may negate without subtracting. The two are told apart by operand
+ * count.
+ */
+@Since("0.1")
+spec UnaryNeg<Out = Self> {
+    oper- [self: Self&]: Out
+}
 
-    /**
-     * Bitwise operations.
-     *
-     * `Shift` is its own parameter because a shift count is not a value of the
-     * shifted type - `primitive.az` declares the shifts over `UInt` while `&`
-     * takes a `Self`, and one `Rhs` could not express both.
-     */
-    @Since("0.1")
-    spec Bitwise<Rhs = Self, Shift = UInt, Out = Self> {
-        oper& [self: Self&](rhs: Rhs&): Out
-        oper| [self: Self&](rhs: Rhs&): Out
-        oper^ [self: Self&](rhs: Rhs&): Out
-        oper<< [self: Self&](rhs: Shift&): Out
-        oper>> [self: Self&](rhs: Shift&): Out
-        oper&= [self: Self!](rhs: Rhs&)
-        oper|= [self: Self!](rhs: Rhs&)
-        oper^= [self: Self!](rhs: Rhs&)
-        oper<<= [self: Self!](rhs: Shift&)
-        oper>>= [self: Self!](rhs: Shift&)
-        oper~ [self: Self&]: Out
-    }
+/**
+ * Bitwise operations.
+ *
+ * `Shift` is its own parameter because a shift count is not a value of the
+ * shifted type - `primitive.az` declares the shifts over `UInt` while `&`
+ * takes a `Self`, and one `Rhs` could not express both.
+ */
+@Since("0.1")
+spec Bitwise<Rhs = Self, Shift = UInt, Out = Self> {
+    oper& [self: Self&](rhs: Rhs&): Out
+    oper| [self: Self&](rhs: Rhs&): Out
+    oper^ [self: Self&](rhs: Rhs&): Out
+    oper<< [self: Self&](rhs: Shift&): Out
+    oper>> [self: Self&](rhs: Shift&): Out
+    oper&= [self: Self!](rhs: Rhs&)
+    oper|= [self: Self!](rhs: Rhs&)
+    oper^= [self: Self!](rhs: Rhs&)
+    oper<<= [self: Self!](rhs: Shift&)
+    oper>>= [self: Self!](rhs: Shift&)
+    oper~ [self: Self&]: Out
+}
 
-    /** Logical negation - the unary `!`. */
-    @Since("0.1")
-    spec Logical<Out = Self> {
-        oper! [self: Self&]: Out
-    }
+/** Logical negation - the unary `!`. */
+@Since("0.1")
+spec LogicNeg<Out = Self> {
+    oper! [self: Self&]: Out
+}
 
-    /**
-     * Reading, writing and slicing by index.
-     *
-     * `[]` and `[]=` are separate members and neither derives the other: a type
-     * may be readable without being writable, which is most of them.
-     */
-    @Since("0.1")
-    spec Indexable<Idx = Int, Out = Self> {
-        oper[] [self: Self&](index: Idx&): Out
-        oper[]= [self: Self!](index: Idx&, value: Out)
-        oper[:] [self: Self&](from: Idx&, to: Idx&): Self
-    }
+/**
+ * Reading, writing and slicing by index.
+ *
+ * `[]` and `[]=` are separate members and neither derives the other: a type
+ * may be readable without being writable, which is most of them.
+ */
+@Since("0.1")
+spec Index<Idx = Int, Out = Self> {
+    oper[] [self: Self&](index: Idx&): Out
+    oper[]= [self: Self!](index: Idx&, value: Out)
+    oper[:] [self: Self&](from: Idx&, to: Idx&): Self
+}
 
-    /**
-     * Reaching through a value to the one it holds, to read it.
-     *
-     * `p.*` borrows the pointee shared, so a type that can only be read through
-     * implements this and stops here.
-     */
-    @Since("0.1")
-    spec Deref<To> {
-        oper.* [self: Self&]: To
-    }
+/**
+ * Reaching through a value to the one it holds, to read it.
+ *
+ * `p.*` borrows the pointee shared, so a type that can only be read through
+ * implements this and stops here.
+ */
+@Since("0.1")
+spec Deref<To> {
+    oper.* [self: Self&]: To
+}
 
-    /**
-     * Reaching through a value to the one it holds, to write it.
-     *
-     * `p.^` borrows the pointee exclusively. A type that can be written through
-     * can be read through, which is why this `requires Deref` rather than
-     * redeclaring `.*`: a caller that only reads is not made to ask for write
-     * access, and an implementer states each direction once.
-     *
-     * The split follows the operator names the compiler already uses - `.*` is
-     * `oper Deref` and `.^` is `oper DerefMut` - and the same shape as
-     * `Equal requires PartialEqual`.
-     */
-    @Since("0.1")
-    spec DerefMut<To> requires Deref {
-        oper.^ [self: Self!]: To
-    }
+/**
+ * Reaching through a value to the one it holds, to write it.
+ *
+ * `p.^` borrows the pointee exclusively. A type that can be written through
+ * can be read through, which is why this `requires Deref` rather than
+ * redeclaring `.*`: a caller that only reads is not made to ask for write
+ * access, and an implementer states each direction once.
+ *
+ * The split follows the operator names the compiler already uses - `.*` is
+ * `oper Deref` and `.^` is `oper DerefMut` - and the same shape as
+ * `Equal requires PartialEqual`.
+ */
+@Since("0.1")
+spec DerefMut<To> requires Deref {
+    oper.^ [self: Self!]: To
 }

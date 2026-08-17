@@ -328,12 +328,12 @@ realm std {
 
         /** Converts this instant to civil time at a fixed UTC offset. */
         func atOffset[self: Self&](offset: UtcOffset): DateTime {
-            return std::atOffset(self, offset)
+            return atOffset(self, offset)
         }
 
         /** Formats this instant as canonical UTC ISO-8601 text. */
         func formatIso[self: Self&](): String {
-            return std::formatIsoInstant(self)
+            return formatIsoInstant(self)
         }
     }
 
@@ -408,18 +408,18 @@ realm std {
 
     impl LocalDate {
         /** ISO weekday corresponding to this date. */
-        prop weekday[self: Self&]: Weekday = std::weekday(self)
+        prop weekday[self: Self&]: Weekday = weekday(self)
     }
 
     impl DateTime {
         /** Converts this fixed-offset civil value to its unique Unix instant. */
         func toInstant[self: Self&](): Instant {
-            return std::toInstant(self)
+            return toInstant(self)
         }
 
         /** Formats this value as canonical ISO-8601 offset date-time text. */
         func formatIso[self: Self&](): String {
-            return std::formatIsoDateTime(self)
+            return formatIsoDateTime(self)
         }
     }
 
@@ -623,8 +623,8 @@ realm std {
     impl Serializer<Duration> for DurationSerializer {
         func toSerialValue[self: Self&](value: Duration&): SerialValue ?! SerializationError {
             var fields = List<SerialField>()
-            fields.add(SerialField("seconds", SerialValue.Number(std::convert::toString(value.seconds))))
-            fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(std::convert::toString(value.nanosecondAdjustment))))
+            fields.add(SerialField("seconds", SerialValue.Number(value.seconds as String)))
+            fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(value.nanosecondAdjustment as String)))
             return SerialValue.Object(fields)
         }
 
@@ -685,12 +685,12 @@ realm std {
     }
 
     func _pad2(value: Int): String {
-        if value < 10 { return "0" + std::convert::toString(value) }
-        return std::convert::toString(value)
+        if value < 10 { return "0$value" }
+        return value as String
     }
 
     func _pad4(value: Int): String {
-        fin text = std::convert::toString(value)
+        fin text = value as String
         if value < 0 || value > 9999 { return text }
         if value < 10 { return "000" + text }
         if value < 100 { return "00" + text }
@@ -699,7 +699,7 @@ realm std {
     }
 
     func _formatFraction(value: Int): String {
-        var text = std::convert::toString(value)
+        var text = value as String
         while stringLength(text) < 9 { text = "0" + text }
         var end = stringLength(text)
         while end > 1 && charAt(text, end - 1) == '0' { end -= 1 }
@@ -755,23 +755,23 @@ bridge [.C, .WebAssembly] {
 // ---------------------------------------------------------------------------
 
 test "duration normalizes positive nanosecond overflow" {
-    fin value = std::duration(2L, 1500000000L)
+    fin value = duration(2L, 1500000000L)
     assert value.seconds == 3L { "overflow nanoseconds must carry into seconds" }
     assert value.nanosecondAdjustment == 500000000 { "the remainder must stay normalized" }
 }
 
 test "duration normalizes negative nanoseconds" {
-    fin value = std::duration(0L, -1L)
+    fin value = duration(0L, -1L)
     assert value.seconds == -1L { "a negative fraction must borrow one second" }
     assert value.nanosecondAdjustment == 999999999 { "nanoseconds must remain non-negative" }
 }
 
 test "duration factories use fixed SI units" {
-    assert std::microseconds(2L).nanosecondAdjustment == 2000 { "microseconds must scale by 1,000" }
-    assert std::milliseconds(2L).nanosecondAdjustment == 2000000 { "milliseconds must scale by 1,000,000" }
-    assert std::minutes(2L).seconds == 120L { "minutes must contain 60 seconds" }
-    assert std::hours(2L).seconds == 7200L { "hours must contain 3,600 seconds" }
-    assert std::days(2L).seconds == 172800L { "fixed days must contain 86,400 seconds" }
+    assert microseconds(2L).nanosecondAdjustment == 2000 { "microseconds must scale by 1,000" }
+    assert milliseconds(2L).nanosecondAdjustment == 2000000 { "milliseconds must scale by 1,000,000" }
+    assert minutes(2L).seconds == 120L { "minutes must contain 60 seconds" }
+    assert hours(2L).seconds == 7200L { "hours must contain 3,600 seconds" }
+    assert days(2L).seconds == 172800L { "fixed days must contain 86,400 seconds" }
 }
 
 test "unit suffixes match the factory of the same name" {
@@ -794,8 +794,8 @@ test "unit suffixes compose with duration arithmetic" {
 }
 
 test "duration arithmetic preserves normalization" {
-    fin left = std::duration(1L, 800000000L)
-    fin right = std::duration(2L, 400000000L)
+    fin left = duration(1L, 800000000L)
+    fin right = duration(2L, 400000000L)
     fin sum = left.plus(right)
     fin difference = sum.minus(right)
     assert sum.seconds == 4L && sum.nanosecondAdjustment == 200000000 { "addition must carry fractions" }
@@ -804,20 +804,20 @@ test "duration arithmetic preserves normalization" {
 }
 
 test "duration negation handles negative fractions" {
-    fin value = std::duration(0L, -1L).negated()
+    fin value = duration(0L, -1L).negated()
     assert value.seconds == 0L { "negating -1ns must not retain a negative second" }
     assert value.nanosecondAdjustment == 1 { "negating -1ns must produce +1ns" }
 }
 
 test "instant normalizes before epoch" {
-    fin value = std::instant(0L, -1L)
+    fin value = instant(0L, -1L)
     assert value.epochSecond == -1L { "negative fractions must cross the epoch correctly" }
     assert value.nanosecond == 999999999 { "instant nanoseconds must remain normalized" }
 }
 
 test "instant arithmetic and elapsed duration round trip" {
-    fin start = std::instant(1700000000L, 900000000L)
-    fin delta = std::milliseconds(250L)
+    fin start = instant(1700000000L, 900000000L)
+    fin delta = milliseconds(250L)
     fin finish = start.plus(delta)
     fin elapsed = finish.durationSince(start)
     assert finish.epochSecond == 1700000001L { "instant addition must carry into seconds" }
@@ -826,78 +826,78 @@ test "instant arithmetic and elapsed duration round trip" {
 }
 
 test "leap year follows Gregorian rules" {
-    assert std::isLeapYear(2000) { "years divisible by 400 are leap years" }
-    assert !std::isLeapYear(1900) { "century years not divisible by 400 are common" }
-    assert std::isLeapYear(2024) { "years divisible by four are leap years" }
-    assert !std::isLeapYear(2023) { "ordinary years are not leap years" }
+    assert isLeapYear(2000) { "years divisible by 400 are leap years" }
+    assert !isLeapYear(1900) { "century years not divisible by 400 are common" }
+    assert isLeapYear(2024) { "years divisible by four are leap years" }
+    assert !isLeapYear(2023) { "ordinary years are not leap years" }
 }
 
 test "month lengths include leap February" {
-    assert (std::daysInMonth(2024, 2) catch 0) == 29 { "leap February must have 29 days" }
-    assert (std::daysInMonth(2023, 2) catch 0) == 28 { "common February must have 28 days" }
-    assert (std::daysInMonth(2024, 4) catch 0) == 30 { "April must have 30 days" }
-    assert (std::daysInMonth(2024, 12) catch 0) == 31 { "December must have 31 days" }
+    assert (daysInMonth(2024, 2) catch 0) == 29 { "leap February must have 29 days" }
+    assert (daysInMonth(2023, 2) catch 0) == 28 { "common February must have 28 days" }
+    assert (daysInMonth(2024, 4) catch 0) == 30 { "April must have 30 days" }
+    assert (daysInMonth(2024, 12) catch 0) == 31 { "December must have 31 days" }
 }
 
 test "invalid month is rejected" {
-    fin days = std::daysInMonth(2024, 13) catch -1
+    fin days = daysInMonth(2024, 13) catch -1
     assert days == -1 { "month 13 must fail validation" }
 }
 
 test "local date validates leap day" {
-    fin valid = std::localDate(2024, 2, 29) catch LocalDate(0, 1, 1)
-    fin invalid = std::localDate(2023, 2, 29) catch LocalDate(-1, 1, 1)
+    fin valid = localDate(2024, 2, 29) catch LocalDate(0, 1, 1)
+    fin invalid = localDate(2023, 2, 29) catch LocalDate(-1, 1, 1)
     assert valid.year == 2024 && valid.day == 29 { "2024-02-29 must be valid" }
     assert invalid.year == -1 { "2023-02-29 must fail validation" }
 }
 
 test "local time validates every boundary" {
-    fin valid = std::localTime(23, 59, 59, 999999999) catch LocalTime(0, 0, 0)
-    fin invalidHour = std::localTime(24, 0, 0) catch LocalTime(-1, 0, 0)
-    fin invalidNanos = std::localTime(0, 0, 0, 1000000000) catch LocalTime(-1, 0, 0)
+    fin valid = localTime(23, 59, 59, 999999999) catch LocalTime(0, 0, 0)
+    fin invalidHour = localTime(24, 0, 0) catch LocalTime(-1, 0, 0)
+    fin invalidNanos = localTime(0, 0, 0, 1000000000) catch LocalTime(-1, 0, 0)
     assert valid.hour == 23 && valid.nanosecond == 999999999 { "the inclusive upper boundary must be valid" }
     assert invalidHour.hour == -1 { "hour 24 must fail" }
     assert invalidNanos.hour == -1 { "one billion nanoseconds must fail" }
 }
 
 test "UTC offset validates ISO limits" {
-    assert (std::utcOffset(64800) catch UtcOffset(0)).totalSeconds == 64800 { "+18:00 must be valid" }
-    assert (std::utcOffset(-64800) catch UtcOffset(0)).totalSeconds == -64800 { "-18:00 must be valid" }
-    assert (std::utcOffset(64801) catch UtcOffset(-1)).totalSeconds == -1 { "offsets beyond +18:00 must fail" }
+    assert (utcOffset(64800) catch UtcOffset(0)).totalSeconds == 64800 { "+18:00 must be valid" }
+    assert (utcOffset(-64800) catch UtcOffset(0)).totalSeconds == -64800 { "-18:00 must be valid" }
+    assert (utcOffset(64801) catch UtcOffset(-1)).totalSeconds == -1 { "offsets beyond +18:00 must fail" }
 }
 
 test "UTC offset hours and minutes preserve sign" {
-    fin value = std::utcOffsetOf(-5, 30) catch UtcOffset(0)
+    fin value = utcOffsetOf(-5, 30) catch UtcOffset(0)
     assert value.totalSeconds == -19800 { "-05:30 must remain negative" }
 }
 
 test "Unix epoch converts to civil UTC" {
-    fin value = std::atOffset(std::instant(0L), UtcOffset(0))
+    fin value = atOffset(instant(0L), UtcOffset(0))
     assert value.date.year == 1970 && value.date.month == 1 && value.date.day == 1 { "epoch date changed" }
     assert value.time.hour == 0 && value.time.minute == 0 && value.time.second == 0 { "epoch time changed" }
 }
 
 test "pre-epoch instant uses floor division" {
-    fin value = std::atOffset(std::instant(-1L), UtcOffset(0))
+    fin value = atOffset(instant(-1L), UtcOffset(0))
     assert value.date.year == 1969 && value.date.month == 12 && value.date.day == 31 { "-1 second must be on the previous day" }
     assert value.time.hour == 23 && value.time.minute == 59 && value.time.second == 59 { "-1 second must map to 23:59:59" }
 }
 
 test "date time and instant round trip at an offset" {
     fin original = DateTime(LocalDate(2026, 7, 16), LocalTime(14, 25, 30, 123000000), UtcOffset(10800))
-    fin restored = std::atOffset(std::toInstant(original), original.offset)
+    fin restored = atOffset(toInstant(original), original.offset)
     assert restored.date.year == original.date.year && restored.date.month == original.date.month && restored.date.day == original.date.day { "date must round trip" }
     assert restored.time.hour == original.time.hour && restored.time.nanosecond == original.time.nanosecond { "time must round trip" }
 }
 
 test "weekday matches known calendar dates" {
-    assert std::weekday(LocalDate(1970, 1, 1)) == Weekday.Thursday { "Unix epoch was Thursday" }
+    assert weekday(LocalDate(1970, 1, 1)) == Weekday.Thursday { "Unix epoch was Thursday" }
     assert LocalDate(2024, 2, 29).weekday == Weekday.Thursday { "2024 leap day was Thursday" }
 }
 
 test "ISO UTC formatting is canonical" {
     fin value = DateTime(LocalDate(2026, 7, 16), LocalTime(9, 5, 7), UtcOffset(0))
-    assert std::formatIsoDateTime(value) == "2026-07-16T09:05:07Z" { "UTC formatting changed" }
+    assert formatIsoDateTime(value) == "2026-07-16T09:05:07Z" { "UTC formatting changed" }
 }
 
 test "ISO formatting trims fractional trailing zeroes" {
@@ -907,32 +907,32 @@ test "ISO formatting trims fractional trailing zeroes" {
 
 test "ISO formatting includes offset seconds when needed" {
     fin value = DateTime(LocalDate(2026, 1, 2), LocalTime(3, 4, 5), UtcOffset(19815))
-    assert std::formatIsoDateTime(value) == "2026-01-02T03:04:05+05:30:15" { "second-precision offsets must not be lost" }
+    assert formatIsoDateTime(value) == "2026-01-02T03:04:05+05:30:15" { "second-precision offsets must not be lost" }
 }
 
 test "ISO parser accepts UTC fractions" {
-    fin value = std::parseIsoDateTime("2026-07-16T09:05:07.1234Z") catch DateTime(LocalDate(0, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
+    fin value = parseIsoDateTime("2026-07-16T09:05:07.1234Z") catch DateTime(LocalDate(0, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
     assert value.date.year == 2026 && value.time.nanosecond == 123400000 { "fraction must be scaled to nanoseconds" }
 }
 
 test "ISO parser accepts signed offsets" {
-    fin value = std::parseIsoDateTime("2026-07-16T09:05:07-05:30") catch DateTime(LocalDate(0, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
+    fin value = parseIsoDateTime("2026-07-16T09:05:07-05:30") catch DateTime(LocalDate(0, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
     assert value.offset.totalSeconds == -19800 { "negative offset parsing changed" }
 }
 
 test "ISO parser rejects malformed calendar text" {
-    fin value = std::parseIsoDateTime("2026-02-30T09:05:07Z") catch DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
+    fin value = parseIsoDateTime("2026-02-30T09:05:07Z") catch DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
     assert value.date.year == -1 { "invalid calendar dates must fail" }
 }
 
 test "ISO parser rejects invalid offset minutes" {
-    fin value = std::parseIsoDateTime("2026-07-16T09:05:07+01:99") catch DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
+    fin value = parseIsoDateTime("2026-07-16T09:05:07+01:99") catch DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
     assert value.date.year == -1 { "offset minutes above 59 must fail" }
 }
 
 test "ISO instant round trip preserves nanoseconds" {
-    fin original = std::instant(1770000000L, 987654321L)
-    fin restored = std::parseIsoInstant(original.formatIso()) catch Instant(0L)
+    fin original = instant(1770000000L, 987654321L)
+    fin restored = parseIsoInstant(original.formatIso()) catch Instant(0L)
     assert restored.epochSecond == original.epochSecond { "epoch seconds must round trip" }
     assert restored.nanosecond == original.nanosecond { "nanoseconds must round trip" }
 }
@@ -950,7 +950,7 @@ test "monotonic elapsed returns exact duration" {
 test "instant serializer uses canonical ISO text" {
     fin serializer = InstantSerializer()
     fin tree = serializer.toSerialValue(Instant(0L)) catch SerialValue.Null
-    fin text = std::encodeSerialValue(tree, std::serializerOptions()) catch "error"
+    fin text = encodeSerialValue(tree, serializerOptions()) catch "error"
     assert text == "\"1970-01-01T00:00:00Z\"" { "Instant serializer wire form changed" }
 }
 
@@ -965,7 +965,7 @@ test "date time serializer round trips offsets" {
 
 test "duration serializer preserves normalized fields" {
     fin serializer = DurationSerializer()
-    fin original = std::duration(-2L, 250000000L)
+    fin original = duration(-2L, 250000000L)
     fin tree = serializer.toSerialValue(original) catch SerialValue.Null
     fin restored = serializer.fromSerialValue(tree) catch Duration(0L)
     assert restored.seconds == original.seconds { "Duration serializer must preserve seconds" }
@@ -973,16 +973,16 @@ test "duration serializer preserves normalized fields" {
 }
 
 test "serializable metadata is present on portable time values" {
-    inline assert std::reflect<Duration>.hasAnnot<Serializable> { "Duration must be serializable" }
-    inline assert std::reflect<Instant>.hasAnnot<Serializable> { "Instant must be serializable" }
-    inline assert std::reflect<LocalDate>.hasAnnot<Serializable> { "LocalDate must be serializable" }
-    inline assert std::reflect<LocalTime>.hasAnnot<Serializable> { "LocalTime must be serializable" }
-    inline assert std::reflect<UtcOffset>.hasAnnot<Serializable> { "UtcOffset must be serializable" }
-    inline assert std::reflect<DateTime>.hasAnnot<Serializable> { "DateTime must be serializable" }
+    inline assert reflect<Duration>.hasAnnot<Serializable> { "Duration must be serializable" }
+    inline assert reflect<Instant>.hasAnnot<Serializable> { "Instant must be serializable" }
+    inline assert reflect<LocalDate>.hasAnnot<Serializable> { "LocalDate must be serializable" }
+    inline assert reflect<LocalTime>.hasAnnot<Serializable> { "LocalTime must be serializable" }
+    inline assert reflect<UtcOffset>.hasAnnot<Serializable> { "UtcOffset must be serializable" }
+    inline assert reflect<DateTime>.hasAnnot<Serializable> { "DateTime must be serializable" }
 }
 
 test "monotonic readings are intentionally not serializable" {
-    inline assert !std::reflect<MonotonicInstant>.hasAnnot<Serializable> {
+    inline assert !reflect<MonotonicInstant>.hasAnnot<Serializable> {
         "process-local monotonic readings must never become persisted timestamps"
     }
 }

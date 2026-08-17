@@ -26,7 +26,7 @@ module std.memory.shared
  *
  * The count is a plain integer, so handing a `Shared` to another thread races on
  * it - two owners releasing at once can both read the same count and free twice,
- * or neither can and the allocation leaks. Use [std::SyncShared] when the owners
+ * or neither can and the allocation leaks. Use [SyncShared] when the owners
  * are not all on one thread; this type exists because most of them are, and the
  * synchronisation is not free.
  *

@@ -566,9 +566,9 @@ realm std {
 /**
  * Very-high-accuracy counterparts of the `std` math functions.
  *
- * `std::sin` and friends are the everyday choice: on WebAssembly they are software
+ * `sin` and friends are the everyday choice: on WebAssembly they are software
  * approximations carrying float precision, which is what shader-adjacent and
- * simulation code wants and costs the least. `std::vha::sin` names the same
+ * simulation code wants and costs the least. `vha::sin` names the same
  * mathematical function computed to the full accuracy the platform can offer, for
  * the places where error accumulates - long-running integrators, geodesy, anything
  * iterating a transform thousands of times.
@@ -579,7 +579,7 @@ realm std {
  *
  * @since 0.1
  */
-realm std::vha {
+realm vha {
     /** Sine of [x] (radians), to full platform accuracy. */
     bridge func sin(x: Double): Double
     /** Cosine of [x] (radians), to full platform accuracy. */

@@ -14,147 +14,145 @@
  * limitations under the License.
  */
 
-module std.container.deque
-
-import std.serializer
-import std.convert
-
 /**
- * @file std/container/deque
+ * @file std/container/deque.az
  *
  * Double-ended queue supporting O(1) push/pop at both ends.
  * Implemented as a circular buffer with automatic resizing.
  *
  * @since 0.1
  */
+module std.container.deque
 
-realm std {
-    /**
-     * A double-ended queue: elements can be added and removed from both ends in O(1) amortized.
-     *
-     * Backed by a circular buffer that grows automatically.
-     *
-     * @generic T The type of elements stored in this deque.
-     */
+import std.serializer.Serializable
+
+/**
+ * A double-ended queue: elements can be added and removed from both ends in O(1) amortized.
+ *
+ * Backed by a circular buffer that grows automatically.
+ *
+ * @generic T The type of elements stored in this deque.
+ */
+@Since("0.1")
+@Serializable
+pack Deque<T> {
+    var data: T* = alloc .() * 8
+    var head: Int = 0
+    var tail: Int = 0
+    var size: Int = 0
+    var capacity: Int = 8
+}
+
+/** Deque operations: push/pop at both ends, peek, clear, and string conversion. */
+@Since("0.1")
+impl Deque<T> {
+    /** `true` when the deque holds no elements. */
     @Since("0.1")
-    @Serializable
-    pack Deque<T> {
-        var data: T* = alloc T[8]
-        var head: Int = 0
-        var tail: Int = 0
-        var size: Int = 0
-        var capacity: Int = 8
+    prop isEmpty[self: Self&]: Bool = self.size == 0
+
+    /** `true` when the deque holds at least one element. */
+    @Since("0.1")
+    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+
+    /** Inserts [value] at the front; O(1) amortized. */
+    @Experimental(since: "0.1")
+    func pushFront[self: Self!](value: T): Unit {
+        if self.size >= self.capacity {
+            self._growDeque()
+        }
+        self.head = (self.head - 1 + self.capacity) % self.capacity
+        self.data[self.head] = value
+        self.size++
     }
 
-    /** Deque operations: push/pop at both ends, peek, clear, and string conversion. */
+    /** Inserts [value] at the back; O(1) amortized. */
+    @Experimental(since: "0.1")
+    func pushBack(value: T): Unit {
+        if self.size >= self.capacity {
+            self._growDeque()
+        }
+        self.data[self.tail] = value
+        self.tail = (self.tail + 1) % self.capacity
+        self.size += 1
+    }
+
+    /** Removes and returns the front element; O(1). */
+    @Experimental(since: "0.1")
+    func popFront(): T {
+        var value: T = self.data[self.head]
+        self.head = (self.head + 1) % self.capacity
+        self.size -= 1
+        return value
+    }
+
+    /** Removes and returns the back element; O(1). */
+    @Experimental(since: "0.1")
+    func popBack(): T {
+        self.tail = (self.tail - 1 + self.capacity) % self.capacity
+        var value: T = self.data[self.tail]
+        self.size -= 1
+        return value
+    }
+
+    /** Returns the front element without removing it. */
+    @Experimental(since: "0.1")
+    func peekFront(): T {
+        return self.data[self.head]
+    }
+
+    /** Returns the back element without removing it. */
+    @Experimental(since: "0.1")
+    func peekBack(): T {
+        var idx: Int = (self.tail - 1 + self.capacity) % self.capacity
+        return self.data[idx]
+    }
+
+    /** Removes all elements (capacity is retained). */
     @Since("0.1")
-    impl Deque<T> {
-        /** `true` when the deque holds no elements. */
-        @Since("0.1")
-        prop isEmpty[self: Self&]: Bool = self.size == 0
+    func clear(): Unit {
+        self.head = 0
+        self.tail = 0
+        self.size = 0
+    }
 
-        /** `true` when the deque holds at least one element. */
-        @Since("0.1")
-        prop isNotEmpty[self: Self&]: Bool = self.size > 0
+    /** Doubles the circular buffer's capacity and re-linearizes it. */
+    @Experimental(since: "0.1")
+    func _growDeque(): Unit {
+        var newCap: Int = self.capacity * 2
+        var newData: T* = alloc .() * newCap
+        for i in 0..<self.size {
+            var idx: Int = (self.head + i) % self.capacity
+            newData[i] = self.data[idx]
+        }
+        purge self.data
+        self.data = newData
+        self.head = 0
+        self.tail = self.size
+        self.capacity = newCap
+    }
 
-        /** Inserts [value] at the front; O(1) amortized. */
-        @Experimental(since: "0.1")
-        func pushFront(value: T): Unit {
-            if self.size >= self.capacity {
-                self._growDeque()
+    /** Renders the deque as `Deque[e0, e1, …]` in front-to-back order. */
+    @Experimental(since: "0.1")
+    func toString(): String {
+        var result = "Deque["
+        for i in 0..<self.size {
+            if i > 0 {
+                result += ", "
             }
-            self.head = (self.head - 1 + self.capacity) % self.capacity
-            self.data[self.head] = value
-            self.size += 1
+            var idx = (self.head + i) % self.capacity
+            result += self.data[idx] as String
         }
-
-        /** Inserts [value] at the back; O(1) amortized. */
-        @Experimental(since: "0.1")
-        func pushBack(value: T): Unit {
-            if self.size >= self.capacity {
-                self._growDeque()
-            }
-            self.data[self.tail] = value
-            self.tail = (self.tail + 1) % self.capacity
-            self.size += 1
-        }
-
-        /** Removes and returns the front element; O(1). */
-        @Experimental(since: "0.1")
-        func popFront(): T {
-            var value: T = self.data[self.head]
-            self.head = (self.head + 1) % self.capacity
-            self.size -= 1
-            return value
-        }
-
-        /** Removes and returns the back element; O(1). */
-        @Experimental(since: "0.1")
-        func popBack(): T {
-            self.tail = (self.tail - 1 + self.capacity) % self.capacity
-            var value: T = self.data[self.tail]
-            self.size -= 1
-            return value
-        }
-
-        /** Returns the front element without removing it. */
-        @Experimental(since: "0.1")
-        func peekFront(): T {
-            return self.data[self.head]
-        }
-
-        /** Returns the back element without removing it. */
-        @Experimental(since: "0.1")
-        func peekBack(): T {
-            var idx: Int = (self.tail - 1 + self.capacity) % self.capacity
-            return self.data[idx]
-        }
-
-        /** Removes all elements (capacity is retained). */
-        @Since("0.1")
-        func clear(): Unit {
-            self.head = 0
-            self.tail = 0
-            self.size = 0
-        }
-
-        /** Doubles the circular buffer's capacity and re-linearizes it. */
-        @Experimental(since: "0.1")
-        func _growDeque(): Unit {
-            var newCap: Int = self.capacity * 2
-            var newData: T* = alloc T[newCap]
-            for i in 0..<self.size {
-                var idx: Int = (self.head + i) % self.capacity
-                newData[i] = self.data[idx]
-            }
-            purge self.data
-            self.data = newData
-            self.head = 0
-            self.tail = self.size
-            self.capacity = newCap
-        }
-
-        /** Renders the deque as `Deque[e0, e1, …]` in front-to-back order. */
-        @Experimental(since: "0.1")
-        func toString(): String {
-            var result: String = "Deque["
-            for i in 0..<self.size {
-                if i > 0 { result = result + ", " }
-                var idx: Int = (self.head + i) % self.capacity
-                result = result + std::convert::toString(self.data[idx])
-            }
-            return result + "]"
-        }
+        return result + "]"
     }
 }
 
 test "deque starts empty" {
-    fin value = Deque<Int>()
+    fin value: Deque<Int> = .()
     assert value.size == 0 && value.isEmpty { "new deque must be empty" }
 }
 
 test "deque supports both ends" {
-    var value = Deque<Int>()
+    var value: Deque<Int> = .()
     value.pushBack(2)
     value.pushFront(1)
     value.pushBack(3)
@@ -164,7 +162,7 @@ test "deque supports both ends" {
 }
 
 test "deque wraps and grows without reordering" {
-    var value = Deque<Int>()
+    var value: Deque<Int> = .()
     for i in 0..<8 {
         value.pushBack(i)
     }
@@ -177,16 +175,20 @@ test "deque wraps and grows without reordering" {
 }
 
 test "deque clear resets both ends" {
-    var value = Deque<Int>()
+    var value: Deque<Int> = .()
     value.pushFront(1)
     value.pushBack(2)
     value.clear()
     value.pushBack(7)
-    assert value.size == 1 && value.peekFront() == 7 && value.peekBack() == 7 { "cleared deque must be reusable" }
+    assert value.size == 1 && value.peekFront() == 7 && value.peekBack() == 7 {
+        "cleared deque must be reusable"
+    }
 }
 
 test "deque serialization metadata is declared" {
-    inline assert std::reflect<Deque>.hasAnnot<Serializable> { "Deque must carry Serializable metadata" }
+    inline assert reflect<Deque>.hasAnnot<Serializable> {
+        "Deque must carry Serializable metadata"
+    }
 }
 
 test .All "deque"

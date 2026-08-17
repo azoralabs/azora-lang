@@ -48,7 +48,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.size)
+        var result: Array<T> = .() * arr.size
         for i in 0..<arr.size {
             result[i] = f(arr[i])
         }
@@ -64,7 +64,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
-        var tmp: Array<T> = Array::fill<T>(arr.size)
+        var tmp: Array<T> = .() * arr.size
         var count = 0
         for i in 0..<arr.size {
             if pred(arr[i]) {
@@ -72,7 +72,7 @@ realm std {
                 count += 1
             }
         }
-        var result: Array<T> = Array::fill<T>(count)
+        var result: Array<T> = .() * count
         for j in 0..<count {
             result[j] = tmp[j]
         }
@@ -167,7 +167,7 @@ realm std {
         assert n >= 0 { "take count must be non-negative" }
     } scope {
         fin len = if n < arr.size { n } else { arr.size }
-        var result: Array<T> = Array::fill<T>(len)
+        var result: Array<T> = .() * len
         for i in 0..<len {
             result[i] = arr[i]
         }
@@ -187,7 +187,7 @@ realm std {
         assert n >= 0 { "purge count must be non-negative" }
     } scope {
         fin start = if n < arr.size { n } else { arr.size }
-        var result: Array<T> = Array::fill<T>(arr.size - start)
+        var result: Array<T> = .() * arr.size - start
         var i = start
         var j = 0
         while i < arr.size {
@@ -208,7 +208,7 @@ realm std {
     @Experimental(since: "0.1")
     func zip<T>(a: Array<T>, b: Array<T>): Array<T> {
         fin len = if a.size < b.size { a.size } else { b.size }
-        var result: Array<T> = Array::fill<Array<T>>(len)
+        var result: Array<T> = .() * len
         for i in 0..<len {
             result[i] = arrayOf(a[i], b[i])
         }
@@ -227,7 +227,7 @@ realm std {
     in {
         assert count >= 0 { "fill count must be non-negative" }
     } scope {
-        var result: Array<T> = Array::fill<T>(count)
+        var result: Array<T> = .() * count
         for i in 0..<count {
             result[i] = value
         }
@@ -243,7 +243,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func generate<T>(count: T, f: (T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(count)
+        var result: Array<T> = .() * count
         for i in 0..<count {
             result[i] = f(i)
         }
@@ -295,7 +295,7 @@ realm std {
             total += mapped.size
             i += 1
         }
-        var result: Array<T> = Array::fill<T>(total)
+        var result: Array<T> = .() * total
         var ri = 0
         i = 0
         while i < arr.size {
@@ -327,7 +327,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func scan<T>(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.size + 1)
+        var result: Array<T> = .() * arr.size + 1
         var acc: T = initial
         result[0] = acc
         for i in 0..<arr.size {
@@ -343,7 +343,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func mapIndexed<T>(arr: Array<T>, f: (T, T) -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(arr.size)
+        var result: Array<T> = .() * arr.size
         for i in 0..<arr.size {
             result[i] = f(arr[i], arr[i])
         }
@@ -355,7 +355,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func repeatCall<T>(count: T, f: () -> T): Array<T> {
-        var result: Array<T> = Array::fill<T>(count)
+        var result: Array<T> = .() * count
         for idx in 0..<count {
             result[idx] = f()
         }
@@ -395,8 +395,8 @@ realm std {
      */
     @Experimental(since: "0.1")
     func partition<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
-        var yes: Array<T> = Array::fill<T>(arr.size)
-        var no: Array<T> = Array::fill<T>(arr.size)
+        var yes: Array<T> = .() * arr.size
+        var no: Array<T> = .() * arr.size
         var yi = 0
         var ni = 0
         for i in 0..<arr.size {
@@ -409,19 +409,19 @@ realm std {
             }
         }
         // Trim to actual sizes
-        var yTrim: Array<T> = Array::fill<T>(yi)
+        var yTrim: Array<T> = .() * yi
         var j = 0
         while j < yi {
             yTrim[j] = yes[j]
             j += 1
         }
-        var nTrim: Array<T> = Array::fill<T>(ni)
+        var nTrim: Array<T> = .() * ni
         j = 0
         while j < ni {
             nTrim[j] = no[j]
             j += 1
         }
-        return @std::arr[yTrim, nTrim]
+        return @arr[yTrim, nTrim]
     }
 
     /**
@@ -430,13 +430,13 @@ realm std {
     @Experimental(since: "0.1")
     func chunk<T>(arr: Array<T>, size: Int): Array<T> {
         fin numChunks = (arr.size + size - 1) / size
-        var result: Array<T> = Array::fill<Array<T>>(numChunks)
+        var result: Array<T> = .() * numChunks
         var ri = 0
         var i = 0
         while i < arr.size {
             fin remaining = arr.size - i
             fin chunkSize = if remaining < size { remaining } else { size }
-            var ch: Array<T> = Array::fill<T>(chunkSize)
+            var ch: Array<T> = .() * chunkSize
             for j in 0..<chunkSize {
                 ch[j] = arr[i + j]
             }
@@ -459,7 +459,7 @@ realm std {
             total += arr[i].size
             i += 1
         }
-        var result: Array<T> = Array::fill<T>(total)
+        var result: Array<T> = .() * total
         var ri = 0
         i = 0
         while i < arr.size {
@@ -478,7 +478,7 @@ realm std {
      */
     @Experimental(since: "0.1")
     func distinct<T>(arr: Array<T>): Array<T> {
-        var tmp: Array<T> = Array::fill<T>(arr.size)
+        var tmp: Array<T> = .() * arr.size
         var ri = 0
         for i in 0..<arr.size {
             var found = false
@@ -492,7 +492,7 @@ realm std {
                 ri += 1
             }
         }
-        var result: Array<T> = Array::fill<T>(ri)
+        var result: Array<T> = .() * ri
         for k in 0..<ri {
             result[k] = tmp[k]
         }
@@ -504,9 +504,17 @@ realm std {
      */
     @Experimental(since: "0.1")
     func slice<T>(arr: Array<T>, start: Int, end: Int): Array<T> {
-        fin actualEnd = if end < arr.size { end } else { arr.size }
-        fin len = if actualEnd > start { actualEnd - start } else { 0 }
-        var result: Array<T> = Array::fill<T>(len)
+        fin actualEnd = if end < arr.size {
+            end
+        } else {
+            arr.size
+        }
+        fin len = if actualEnd > start {
+            actualEnd - start
+        } else {
+            0
+        }
+        var result: Array<T> = .() * len
         var ri = 0
         for i in start..<actualEnd {
             result[ri] = arr[i]

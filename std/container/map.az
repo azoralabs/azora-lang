@@ -387,7 +387,7 @@ realm std {
         }
 
         func _entrySnapshot[self: Self&](): Array<MapEntry<K, V>> {
-            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
+            var result: Array<MapEntry<K, V>> = .() * self._size
             var source = 0
             var target = 0
             while source < self.capacity {
@@ -431,7 +431,7 @@ realm std {
 
         func keys[self: Self&](): List<K> {
             fin all = self.entries()
-            var result: Array<K> = Array::fill<K>(all.size)
+            var result: Array<K> = .() * all.size
             for i in 0..<all.size {
                 result[i] = all[i].key
             }
@@ -440,7 +440,7 @@ realm std {
 
         func values[self: Self&](): List<V> {
             fin all = self._entrySnapshot()
-            var result: Array<V> = Array::fill<V>(all.size)
+            var result: Array<V> = .() * all.size
             for i in 0..<all.size {
                 result[i] = all[i].value
             }
@@ -602,7 +602,7 @@ realm std {
         }
 
         func _entrySnapshot[self: Self&](): Array<MapEntry<K, V>> {
-            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
+            var result: Array<MapEntry<K, V>> = .() * self._size
             for i in 0..<self._size {
                 result[i] = MapEntry(self.keys[i], self.values[i])
             }
@@ -643,7 +643,7 @@ realm std {
         }
 
         func keys[self: Self&](): List<K> {
-            var result: Array<K> = Array::fill<K>(self._size)
+            var result: Array<K> = .() * self._size
             for i in 0..<self._size {
                 result[i] = self.keys[i]
             }
@@ -651,7 +651,7 @@ realm std {
         }
 
         func values[self: Self&](): List<V> {
-            var result: Array<V> = Array::fill<V>(self._size)
+            var result: Array<V> = .() * self._size
             for i in 0..<self._size {
                 result[i] = self.values[i]
             }
@@ -942,7 +942,7 @@ realm std {
         }
 
         func _entrySnapshot[self: Self&](): Array<MapEntry<K, V>> {
-            var result: Array<MapEntry<K, V>> = Array::fill<MapEntry<K, V>>(self._size)
+            var result: Array<MapEntry<K, V>> = .() * self._size
             let stack = alloc Int[self._size]
             var stackSize = 0
             var elem = self.root
@@ -997,7 +997,7 @@ realm std {
 
         func keys[self: Self&](): List<K> {
             fin all = self.entries()
-            var result: Array<K> = Array::fill<K>(all.size)
+            var result: Array<K> = .() * all.size
             for i in 0..<all.size {
                 result[i] = all[i].key
             }
@@ -1006,7 +1006,7 @@ realm std {
 
         func values[self: Self&](): List<V> {
             fin all = self._entrySnapshot()
-            var result: Array<V> = Array::fill<V>(all.size)
+            var result: Array<V> = .() * all.size
             for i in 0..<all.size {
                 result[i] = all[i].value
             }
@@ -1182,11 +1182,11 @@ realm std {
     /**
      * Infix constructor for a [MapEntry].
      *
-     * `1 @to "a"` is sugar for `std::mapEntry(1, "a")`, so map factories read
-     * naturally: `std::hashMapOf(1 to "a", 2 to "b")`.
+     * `1 @to "a"` is sugar for `mapEntry(1, "a")`, so map factories read
+     * naturally: `hashMapOf(1 to "a", 2 to "b")`.
      */
     @Experimental(since: "0.1")
-    macro $a @to $b => std::mapEntry($a, $b)
+    macro $a @to $b => mapEntry($a, $b)
 
     @Experimental(since: "0.1")
     func hashMapOf<K, V>(...entries: MapEntry<K, V>): HashMap<K, V> {
@@ -1565,21 +1565,21 @@ test "tree map polling removes the extremes" {
 }
 
 test "factories build maps from entries" {
-    fin hm = std::hashMapOf(1 to "a", 2 to "b")
-    fin lhm = std::linkedHashMapOf(1 to "a", 2 to "b")
-    fin tm = std::treeMapOf(1 to "a", 2 to "b")
+    fin hm = hashMapOf(1 to "a", 2 to "b")
+    fin lhm = linkedHashMapOf(1 to "a", 2 to "b")
+    fin tm = treeMapOf(1 to "a", 2 to "b")
     assert hm.size == 2 && lhm.size == 2 && tm.size == 2 { "factory sizes changed" }
     assert hm.get(1) == "a" && lhm.get(2) == "b" && tm.get(1) == "a" { "factory retrieval changed" }
 }
 
 test "mapOf exposes a read-only Map" {
-    fin m = std::mapOf(1 to "a", 2 to "b")
+    fin m = mapOf(1 to "a", 2 to "b")
     assert m.size == 2 { "mapOf size changed" }
     assert m.containsKey(1) && m.get(1) == "a" { "mapOf must store entries read-only" }
 }
 
 test "mutableMapOf allows in-place mutation" {
-    var m = std::mutableMapOf(1 to "a")
+    var m = mutableMapOf(1 to "a")
     m.put(2, "b")
     m.remove(1)
     assert m.size == 1 && m.get(2) == "b" { "mutableMapOf mutation changed" }

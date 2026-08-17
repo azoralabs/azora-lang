@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-module std.algorithm.search
-
-import std.container.array
-
 /**
  * @file std/algorithm/search
  *
@@ -28,152 +24,167 @@ import std.container.array
  *
  * @since 0.1
  */
+module std.algorithm.search
 
-realm std {
-    /**
-     *
-     */
-    @Since("0.1")
-    error SearchError {
-        NotFound
-        EmptyArray
-    }
+import std.container.array
 
-    /**
-     * Performs a linear search for a target in an array.
-     *
-     * @param arr The array to search.
-     * @param target The element to find.
-     * @return The index of the first occurrence, or -1 if not found.
-     */
-    @Experimental(since: "0.1")
-    func linearSearch<T>(arr: Array<T>, target: T): Int {
-        for i in 0..<arr.size {
-            if arr[i] == target { return i }
+/**
+ *
+ */
+@Since("0.1")
+error SearchError {
+    NotFound
+    EmptyArray
+}
+
+/**
+ * Performs a linear search for a target in an array.
+ *
+ * @param arr The array to search.
+ * @param target The element to find.
+ * @return The index of the first occurrence, or -1 if not found.
+ */
+@Experimental(since: "0.1")
+func linearSearch<T: Order>(arr: Array<T>, target: T): Int {
+    for i in 0..<arr.size {
+        if arr[i] == target {
+            return i
         }
-        return -1
     }
+    return -1
+}
 
-    /**
-     * Performs a binary search on a sorted array.
-     *
-     * The array must be sorted in ascending order for correct results.
-     *
-     * @param arr The sorted array to search.
-     * @param target The element to find.
-     * @return The index of the target, or -1 if not found.
-     */
-    @Experimental(since: "0.1")
-    func binarySearch<T>(arr: Array<T>, target: T): Int where T: Order {
-        var lo = 0
-        var hi = arr.size - 1
-        while lo <= hi {
-            fin mid = (lo + hi) / 2
-            if arr[mid] == target { return mid }
-            if arr[mid] < target {
-                lo = mid + 1
-            } else {
-                hi = mid - 1
-            }
+/**
+ * Performs a binary search on a sorted array.
+ *
+ * The array must be sorted in ascending order for correct results.
+ *
+ * @param arr The sorted array to search.
+ * @param target The element to find.
+ * @return The index of the target, or -1 if not found.
+ */
+@Experimental(since: "0.1")
+func binarySearch<T: Order>(arr: Array<T>, target: T): Int {
+    var lo = 0
+    var hi = arr.size - 1
+    while lo <= hi {
+        fin mid = (lo + hi) / 2
+        if arr[mid] == target {
+            return mid
         }
-        return -1
-    }
-
-    /**
-     * Returns the minimum element in an array.
-     *
-     * @param arr The array to search (must be non-empty).
-     * @return The smallest element.
-     */
-    @Experimental(since: "0.1")
-    func minOf<T>(arr: Array<T>): T where T: Order
-    in {
-        assert arr.size > 0 { "Input must not be empty" }
-    } scope {
-        var result = arr[0]
-        for i in 1..<arr.size {
-            if arr[i] < result { result = arr[i] }
+        if arr[mid] < target {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
         }
-        return result
     }
+    return -1
+}
 
-    /**
-     * Returns the maximum element in an array.
-     *
-     * @param arr The array to search (must be non-empty).
-     * @return The largest element.
-     */
-    @Experimental(since: "0.1")
-    func maxOf<T>(arr: Array<T>): T where T: Order
-    in {
-        assert arr.size > 0 { "Input must not be empty" }
-    } scope {
-        var result = arr[0]
-        for i in 1..<arr.size {
-            if arr[i] > result { result = arr[i] }
+/**
+ * Returns the minimum element in an array.
+ *
+ * @param arr The array to search (must be non-empty).
+ * @return The smallest element.
+ */
+@Experimental(since: "0.1")
+func minOf<T: Order>(arr: Array<T>): T
+in {
+    assert arr.size > 0 { "Input must not be empty" }
+} scope {
+    var result = arr[0]
+    for i in 1..<arr.size {
+        if arr[i] < result {
+            result = arr[i]
         }
-        return result
     }
+    return result
+}
 
-    /**
-     * Counts the occurrences of a target in an array.
-     *
-     * @param arr The array to search.
-     * @param target The element to count.
-     * @return The number of times target appears in the array.
-     */
-    @Experimental(since: "0.1")
-    func count<T>(arr: Array<T>, target: T): Int
-    out {
-        assert it >= 0 { "count must return non-negative" }
-    } scope {
-        var c = 0
-        for i in 0..<arr.size {
-            if arr[i] == target { c += 1 }
+/**
+ * Returns the maximum element in an array.
+ *
+ * @param arr The array to search (must be non-empty).
+ * @return The largest element.
+ */
+@Experimental(since: "0.1")
+func maxOf<T: Order>(arr: Array<T>): T
+in {
+    assert arr.size > 0 { "Input must not be empty" }
+} scope {
+    var result = arr[0]
+    for i in 1..<arr.size {
+        if arr[i] > result {
+            result = arr[i]
         }
-        return c
     }
+    return result
+}
 
-    /**
-     * Returns the index of the first element satisfying a predicate.
-     *
-     * @param arr The array to search.
-     * @param pred The predicate function.
-     * @return The index of the first match, or -1 if none found.
-     */
-    @Experimental(since: "0.1")
-    func findIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
-        for i in 0..<arr.size {
-            if pred(arr[i]) { return i }
+/**
+ * Counts the occurrences of a target in an array.
+ *
+ * @param arr The array to search.
+ * @param target The element to count.
+ * @return The number of times target appears in the array.
+ */
+@Experimental(since: "0.1")
+func count<T: Order>(arr: Array<T>, target: T): Int
+out {
+    assert it >= 0 { "count must return non-negative" }
+} scope {
+    var c = 0
+    for i in 0..<arr.size {
+        if arr[i] == target {
+            c += 1
         }
-        return -1
     }
+    return c
+}
 
-    /**
-     * Returns the index of the last element satisfying a predicate.
-     *
-     * @param arr The array to search.
-     * @param pred The predicate function.
-     * @return The index of the last match, or -1 if none found.
-     */
-    @Experimental(since: "0.1")
-    func findLastIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
-        var result = -1
-        for i in 0..<arr.size {
-            if pred(arr[i]) { result = i }
+/**
+ * Returns the index of the first element satisfying a predicate.
+ *
+ * @param arr The array to search.
+ * @param pred The predicate function.
+ * @return The index of the first match, or -1 if none found.
+ */
+@Experimental(since: "0.1")
+func findIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+    for i in 0..<arr.size {
+        if pred(arr[i]) {
+            return i
         }
-        return result
     }
+    return -1
+}
 
-    /**
-     * Checks if an array contains the given element.
-     *
-     * @param arr The array to search.
-     * @param target The element to look for.
-     * @return true if the element is found.
-     */
-    @Experimental(since: "0.1")
-    func arrayContains<T>(arr: Array<T>, target: T): Bool {
-        return linearSearch<T>(arr, target) >= 0
+/**
+ * Returns the index of the last element satisfying a predicate.
+ *
+ * @param arr The array to search.
+ * @param pred The predicate function.
+ * @return The index of the last match, or -1 if none found.
+ */
+@Experimental(since: "0.1")
+func findLastIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+    var result = -1
+    for i in 0..<arr.size {
+        if pred(arr[i]) {
+            result = i
+        }
     }
+    return result
+}
+
+/**
+ * Checks if an array contains the given element.
+ *
+ * @param arr The array to search.
+ * @param target The element to look for.
+ * @return true if the element is found.
+ */
+@Experimental(since: "0.1")
+func arrayContains<T: Order>(arr: Array<T>, target: T): Bool {
+    return linearSearch<T>(arr, target) >= 0
 }

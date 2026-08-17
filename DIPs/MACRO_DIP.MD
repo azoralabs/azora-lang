@@ -216,9 +216,6 @@ inline "code string"              // splice a string as source
 | `^ map@[…]`                         | `std::treeMapOf(…)`       |
 | `a to b`                            | `a @to b`                 |
 
-Earlier removals, kept here for the record: `name![…]` became `@name[…]`;
-`mut @vec[…]` became `@vec![…]`; and `mixin "code"` became `inline "code"`.
-
 The `infx` keyword is **removed**. It declared an extension method callable
 infix, which is what an infix macro already does - two ways to spell one idea,
 and the macro is the one that composes with the rest of the macro system. A

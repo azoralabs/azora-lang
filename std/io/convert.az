@@ -14,11 +14,6 @@
  * limitations under the License.
  */
 
-module std.io.convert
-
-import std.convert
-import std.container.array
-
 /**
  * @file std/io/convert
  *
@@ -29,105 +24,76 @@ import std.container.array
  *
  * @since 0.1
  */
+module std.io.convert
 
-realm std {
-    /**
-     * Converts an integer to its string representation.
-     *
-     * @param n The integer to convert.
-     * @return The string representation.
-     */
-    @Experimental(since: "0.1")
-    func intToString<T>(n: T): String {
-        return std::convert::toString(n)
-    }
+import std.convert
+import std.container.array
 
-    /**
-     * Converts a real number to its string representation.
-     *
-     * @param n The real number to convert.
-     * @return The string representation.
-     */
-    @Experimental(since: "0.1")
-    func realToString<T>(n: T): String {
-        return std::convert::toString(n)
-    }
+// todo. I THINK THIS IS NOT NECESSARY AS WE HAVE OPERATORS
 
-    /**
-     * Converts a boolean to its string representation.
-     *
-     * @param b The boolean to convert.
-     * @return "true" or "false".
-     */
-    @Experimental(since: "0.1")
-    func boolToString<T>(b: T): String {
-        return std::convert::toString(b)
+/**
+ * Pads a string on the left by prepending characters.
+ *
+ * @param s The string to pad.
+ * @param count The number of padding characters to add.
+ * @param char The padding character.
+ * @return The padded string.
+ */
+@Experimental(since: "0.1")
+func padLeft<T>(s: T, count: Int, char: T): T {
+    var result = s
+    for i in 0..<count {
+        result = char + result
     }
+    return result
+}
 
-    /**
-     * Pads a string on the left by prepending characters.
-     *
-     * @param s The string to pad.
-     * @param count The number of padding characters to add.
-     * @param char The padding character.
-     * @return The padded string.
-     */
-    @Experimental(since: "0.1")
-    func padLeft<T>(s: T, count: Int, char: T): T {
-        var result = s
-        for i in 0..<count {
-            result = char + result
-        }
-        return result
+/**
+ * Pads a string on the right by appending characters.
+ *
+ * @param s The string to pad.
+ * @param count The number of padding characters to add.
+ * @param char The padding character.
+ * @return The padded string.
+ */
+@Experimental(since: "0.1")
+func padRight<T>(s: T, count: Int, char: T): T {
+    var result = s
+    for i in 0..<count {
+        result = result + char
     }
+    return result
+}
 
-    /**
-     * Pads a string on the right by appending characters.
-     *
-     * @param s The string to pad.
-     * @param count The number of padding characters to add.
-     * @param char The padding character.
-     * @return The padded string.
-     */
-    @Experimental(since: "0.1")
-    func padRight<T>(s: T, count: Int, char: T): T {
-        var result = s
-        for i in 0..<count {
-            result = result + char
-        }
-        return result
+/**
+ * Repeats a string the given number of times.
+ *
+ * @param s The string to repeat.
+ * @param count The number of repetitions.
+ * @return The repeated string.
+ */
+@Experimental(since: "0.1")
+func repeatString<T>(s: T, count: Int): T {
+    var result = ""
+    for i in 0..<count {
+        result = result + s
     }
+    return result
+}
 
-    /**
-     * Repeats a string the given number of times.
-     *
-     * @param s The string to repeat.
-     * @param count The number of repetitions.
-     * @return The repeated string.
-     */
-    @Experimental(since: "0.1")
-    func repeatString<T>(s: T, count: Int): T {
-        var result = ""
-        for i in 0..<count {
-            result = result + s
-        }
-        return result
+/**
+ * Joins an array of strings with a separator.
+ *
+ * @param arr The strings to join.
+ * @param sep The separator to insert between elements.
+ * @return The joined string.
+ */
+@Experimental(since: "0.1")
+func join<T>(arr: Array<T>, sep: T): T {
+    if arr.size == 0 { return "" }
+    var result = arr[0]
+    for i in 1..<arr.size {
+        result = result + sep + arr[i]
     }
-
-    /**
-     * Joins an array of strings with a separator.
-     *
-     * @param arr The strings to join.
-     * @param sep The separator to insert between elements.
-     * @return The joined string.
-     */
-    @Experimental(since: "0.1")
-    func join<T>(arr: Array<T>, sep: T): T {
-        if arr.size == 0 { return "" }
-        var result = arr[0]
-        for i in 1..<arr.size {
-            result = result + sep + arr[i]
-        }
-        return result
-    }
+    return result
 }

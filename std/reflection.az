@@ -19,18 +19,18 @@ module std.reflection
 /**
  * @file std/reflection
  *
- * The compile-time reflection intrinsic. `std::reflect<X>` yields a compile-time
+ * The compile-time reflection intrinsic. `reflect<X>` yields a compile-time
  * handle to the declaration named `X` (a type, a value binding, or a `Type::member`
  * path). It is used as a prop - no call parentheses - and is only valid in
  * compile-time positions:
  *
  * ```
- * std::reflect<P>.hasAnnot<Serializable>       // Bool
- * std::reflect<P>.annotMeta<SerialName>.value  // decorator field
- * std::reflect<P>.enclosingRealm?.label        // enclosing realm metadata
+ * reflect<P>.hasAnnot<Serializable>       // Bool
+ * reflect<P>.annotMeta<SerialName>.value  // decorator field
+ * reflect<P>.enclosingRealm?.label        // enclosing realm metadata
  * ```
  *
- * The compiler lowers every `std::reflect<X>` at parse time, so the declaration
+ * The compiler lowers every `reflect<X>` at parse time, so the declaration
  * below is a placeholder that is never executed.
  *
  * @since 0.1
@@ -39,7 +39,7 @@ module std.reflection
 realm std {
     /**
      * Compile-time reflection handle for the declaration `T`, produced by
-     * `std::reflect<T>`. Its members (`.hasAnnot<D>`, `.annotMeta<D>`, `.enclosingRealm`) are
+     * `reflect<T>`. Its members (`.hasAnnot<D>`, `.annotMeta<D>`, `.enclosingRealm`) are
      * resolved by the compiler; `bridge pack` means no struct is emitted.
      */
     @Experimental(since: "0.1")
@@ -60,8 +60,8 @@ realm std {
 
         /**
          * Every program type carrying decorator `D`. Read from the whole-program
-         * handle `std::reflect<*>` and iterated with
-         * `inline for X in std::reflect<*>.withAnnot<D> { … }`, which the compiler
+         * handle `reflect<*>` and iterated with
+         * `inline for X in reflect<*>.withAnnot<D> { … }`, which the compiler
          * unrolls at compile time into static references to each matching type -
          * no runtime cost and no function values, so it lowers to every backend.
          */
@@ -71,7 +71,7 @@ realm std {
         /**
          * The declared fields of `T`, in declaration order.
          *
-         * Iterated at compile time with `inline for f in std::reflect<T>.fields { … }`,
+         * Iterated at compile time with `inline for f in reflect<T>.fields { … }`,
          * which unrolls into one copy of the body per field. Each `f` exposes
          * [ReflectedField.name] and [ReflectedField.value]; a spliced member name
          * (`self.${f.name}`) folds to the field itself during expansion, so nothing
@@ -216,7 +216,7 @@ realm std {
          * Whether the parameter carries decorator `D` - `x: @Query T`.
          *
          * Asked through the handle like every other reflection query:
-         * `std::reflect<P>.hasAnnot<Query>`. A bare `P.hasAnnot<D>` is rejected,
+         * `reflect<P>.hasAnnot<Query>`. A bare `P.hasAnnot<D>` is rejected,
          * so there is one spelling for "this is a question about a declaration"
          * wherever it is written.
          */
@@ -225,7 +225,7 @@ realm std {
 
         /**
          * Immutable compile-time metadata from decorator `D` on the parameter,
-         * read as `std::reflect<P>.annotMeta<D>.field`. A parameter that does not
+         * read as `reflect<P>.annotMeta<D>.field`. A parameter that does not
          * carry `D` answers with `D`'s own defaults - the branch guarded by a
          * false [hasAnnot] is expanded before anything knows it is dead.
          */
@@ -261,13 +261,13 @@ realm std {
 
     /**
      * Compile-time reflection handle for the declaration `T`. Used as a prop
-     * (`std::reflect<T>`). `includeInherited` also surfaces decorators inherited
+     * (`reflect<T>`). `includeInherited` also surfaces decorators inherited
      * from base declarations when set.
      */
     @Experimental(since: "0.1")
     bridge func reflect<T>(includeInherited: Bool = false): Reflected<T>
 
-    /** Compile-time handle for a lexical realm, from `std::reflect<T>.enclosingRealm`. */
+    /** Compile-time handle for a lexical realm, from `reflect<T>.enclosingRealm`. */
     @Experimental(since: "0.1")
     bridge pack Realm
 

@@ -94,34 +94,34 @@ realm std {
     /**
      * Builds a structural [Tuple].
      *
-     * @0 `@std::tup(1, "two", 3.0)` expands to `std::tupleOf(1, "two", 3.0)`.
+     * @0 `@tup(1, "two", 3.0)` expands to `tupleOf(1, "two", 3.0)`.
      */
     macro @tup {
-        [...$items] => std::tupleOf(...$items)
+        [...$items] => tupleOf(...$items)
     }
 }
 
 test "tupleOf preserves heterogeneous values" {
-    fin value = std::tupleOf(1, "two", 3.0)
+    fin value = tupleOf(1, "two", 3.0)
     assert value.0 == 1 { "tuple first value changed" }
     assert value.1 == "two" { "tuple second value changed" }
     assert value.2 == 3.0 { "tuple third value changed" }
 }
 
 test "tupleOf supports nested tuples" {
-    fin value = std::tupleOf(std::tupleOf(1, 2), "end")
+    fin value = tupleOf(tupleOf(1, 2), "end")
     assert value.0.0 == 1 && value.0.1 == 2 { "nested tuple values changed" }
     assert value.1 == "end" { "outer tuple value changed" }
 }
 
 test "tuple fields are fixed positional members" {
-    fin value: Tuple<Int, String> = std::tupleOf(7, "seven")
+    fin value: Tuple<Int, String> = tupleOf(7, "seven")
     assert value.0 == 7 && value.1 == "seven" { "explicit Tuple type changed" }
 }
 
 test "tuple string representation includes type and fields" {
-    fin value = std::tupleOf("a", "b")
-    assert std::convert::toString(value) == "std::Tuple<String, String>(\"a\", \"b\")" {
+    fin value = tupleOf("a", "b")
+    assert value as String == "Tuple<String, String>(\"a\", \"b\")" {
         "tuple diagnostic representation changed"
     }
 }

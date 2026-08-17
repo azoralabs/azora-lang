@@ -27,67 +27,67 @@ module std.io
  * @since 0.1
  */
 
-realm std {
-    realm fmt {
-        /** A newline character. */
-        @Since("0.1")
-        fin newline = "\n"
-
-        /** A tab character. */
-        @Since("0.1")
-        fin tab = "\t"
-
-        /** A single space character. */
-        @Since("0.1")
-        fin space = " "
-    }
-
-    /**
-     * Writes `value` to standard output without appending a newline.
-     *
-     * This compiler bridge uses the same value formatting as `println`.
-     * Consecutive calls continue on the same output line.
-     *
-     * @param value The value to write.
-     */
+factory Format {
+    /** A newline character. */
     @Since("0.1")
-    bridge func print(value: Any): Unit
+    fin newline = "\n"
 
-    /**
-     * Console output intrinsic.
-     *
-     * A real, importable bridge whose implementation is supplied by each
-     * backend and the interpreter. Reach as `std::println` after `import std.io`.
-     * Accepts `Any` so it prints every type; the backend dispatches on the
-     * argument's concrete type.
-     */
-    /** Prints `value` followed by a newline. */
+    /** A tab character. */
     @Since("0.1")
-    bridge func println(value: Any): Unit
+    fin tab = "\t"
 
-    /**
-     * Creates a separator string by repeating a character.
-     *
-     * @param char The character or string to repeat.
-     * @param length The number of times to repeat it.
-     * @return A string of the given character repeated length times.
-     */
-    @Experimental(since: "0.1")
-    func separator(char: String, length: Int): String = char * length
+    /** A single space character. */
+    @Since("0.1")
+    fin space = " "
+}
 
-    /**
-     * Prints a formatted section header with surrounding separator lines.
-     *
-     * @param title The header text to display.
-     * @param width The width of the separator lines.
-     * @return The title string.
-     */
-    @Experimental(since: "0.1")
-    func header(title: String, width: Int): String {
-        var line: String = separator("-", width)
-        println(line)
-        println(title)
-        println(line)
-        return title
-    }
+/**
+ * Writes `value` to standard output without appending a newline.
+ *
+ * This compiler bridge uses the same value formatting as `println`.
+ * Consecutive calls continue on the same output line.
+ *
+ * @param value The value to write.
+ */
+@Since("0.1")
+bridge func print(value: Any): Unit
+
+/**
+ * Console output intrinsic.
+ *
+ * A real, importable bridge whose implementation is supplied by each
+ * backend and the interpreter. Reach as `println` after `import std.io`.
+ * Accepts `Any` so it prints every type; the backend dispatches on the
+ * argument's concrete type.
+ */
+/** Prints `value` followed by a newline. */
+@Since("0.1")
+bridge func println(value: Any): Unit
+
+/**
+ * Creates a separator string by repeating a character.
+ *
+ * @param char The character or string to repeat.
+ * @param length The number of times to repeat it.
+ * @return A string of the given character repeated length times.
+ */
+@Experimental(since: "0.1")
+func separator(char: String, length: Int): String {
+    return char * length
+}
+
+/**
+ * Prints a formatted section header with surrounding separator lines.
+ *
+ * @param title The header text to display.
+ * @param width The width of the separator lines.
+ * @return The title string.
+ */
+@Experimental(since: "0.1")
+func header(title: String, width: Int): String {
+    var line = separator("-", width)
+    println(line)
+    println(title)
+    println(line)
+    return title
 }

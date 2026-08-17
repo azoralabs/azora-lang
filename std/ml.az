@@ -94,7 +94,7 @@ realm std {
     /** Creates a one-dimensional tensor from values. */
     @Experimental(since: "0.1")
     func vector(values: Array<Double>): Tensor {
-        var shape: Array<Int> = Array::fill<Int>(1)
+        var shape: Array<Int> = .() * 1
         shape[0] = values.size
         return tensor(shape, values)
     }
@@ -103,7 +103,7 @@ realm std {
     @Experimental(since: "0.1")
     func zeros(size: Int): Array<Double> {
         assert size >= 0 { "zero vector size must be non-negative" }
-        var result: Array<Double> = Array::fill<Double>(size)
+        var result: Array<Double> = .() * size
         for i in 0..<size {
             result[i] = 0.0
         }
@@ -114,7 +114,7 @@ realm std {
     @Experimental(since: "0.1")
     func ones(size: Int): Array<Double> {
         assert size >= 0 { "one vector size must be non-negative" }
-        var result: Array<Double> = Array::fill<Double>(size)
+        var result: Array<Double> = .() * size
         for i in 0..<size {
             result[i] = 1.0
         }
@@ -124,7 +124,7 @@ realm std {
     /** Applies ReLU element by element. */
     @Experimental(since: "0.1")
     func relu(values: Array<Double>): Array<Double> {
-        var result: Array<Double> = Array::fill<Double>(values.size)
+        var result: Array<Double> = .() * values.size
         for i in 0..<values.size {
             result[i] = if values[i] > 0.0 { values[i] } else { 0.0 }
         }
@@ -139,10 +139,10 @@ realm std {
         for i in 1..<values.size {
             if values[i] > maximum { maximum = values[i] }
         }
-        var result: Array<Double> = Array::fill<Double>(values.size)
+        var result: Array<Double> = .() * values.size
         var total = 0.0
         for i in 0..<values.size {
-            result[i] = std::exp(values[i] - maximum)
+            result[i] = exp(values[i] - maximum)
             total = total + result[i]
         }
         for i in 0..<values.size {

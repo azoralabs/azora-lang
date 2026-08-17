@@ -299,16 +299,16 @@ realm std {
         return Combined<A, B>(first, second)
     }
 
-    /** `left @combine right` expands to `std::combine(left, right)`. */
+    /** `left @combine right` expands to `combine(left, right)`. */
     @Experimental(since: "0.1")
-    macro $left @combine $right => std::combine($left, $right)
+    macro $left @combine $right => combine($left, $right)
 }
 
 test "state notifies in registration order and disposal is idempotent" {
-    var source = std::state(1)
+    var source = state(1)
     var observed = 0
     var calls = 0
-    var subscription = std::observe(source) { value: Int ->
+    var subscription = observe(source) { value: Int ->
         observed = value
         calls += 1
     }
@@ -324,17 +324,17 @@ test "state notifies in registration order and disposal is idempotent" {
 test "derived state reads the latest inputs" {
     var left = 2
     var right = 3
-    fin total = std::computed { left + right }
+    fin total = computed { left + right }
     assert total.value == 5 { "derived value used incorrect initial inputs" }
     right = 8
     assert total.value == 10 { "derived value did not read the latest inputs" }
 }
 
 test "snapshots restore value and revision" {
-    var source = std::state("draft")
+    var source = state("draft")
     source.set("ready")
-    fin saved = std::snapshot("document", source)
-    fin restored = std::restore(saved)
+    fin saved = snapshot("document", source)
+    fin restored = restore(saved)
     assert restored.value == "ready" { "snapshot restoration changed the value" }
     assert restored.version == source.version { "snapshot restoration changed the revision" }
 }

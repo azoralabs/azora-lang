@@ -117,7 +117,7 @@ realm std {
      * realm/import model like every other library function) whose bodies are
      * never emitted: each backend and the interpreter intercepts the call by
      * its realm-mangled name and lowers it to the native runtime operation.
-     * Reach them as `std::concurrency::cancel`, etc., after
+     * Reach them as `concurrency::cancel`, etc., after
      * `import std.concurrency`.
      */
     realm concurrency {

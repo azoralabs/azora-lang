@@ -29,14 +29,14 @@ import std.container.list
  * return type says what kind of stream it is:
  *
  * ```azora
- * func values(): std::Sequence<Int> = std::sequence<Int> [s: std::SequenceScope<Int>!] {
- *     std::yield(1)
- *     std::yield(2)
+ * func values(): Sequence<Int> = sequence<Int> [s: SequenceScope<Int>!] {
+ *     yield(1)
+ *     yield(2)
  * }
  *
- * func countdown(from: Int): std::Flow<Int> = std::flow<Int> [c: std::FlowCollector<Int>!] {
- *     reverse for n in from..0 {
- *         std::emit(n)
+ * func countdown(from: Int): Flow<Int> = flow<Int> [c: FlowCollector<Int>!] {
+ *     for n in from..0 {
+ *         emit(n)
  *     }
  * }
  * ```
@@ -87,7 +87,7 @@ realm std {
      * Adds `value` to the sequence being built.
      *
      * Takes its builder contextually, so a producer body calls it unqualified
-     * by the builder: `std::yield(1)`.
+     * by the builder: `yield(1)`.
      *
      * @param builder The sequence under construction.
      * @param value The value to append.
@@ -173,10 +173,10 @@ realm std {
 }
 
 test "sequence collects every yielded value in order" {
-    fin values = std::sequence<Int> [s: std::SequenceScope<Int>!] {
-        std::yield(1)
-        std::yield(2)
-        std::yield(3)
+    fin values = sequence<Int> [s: SequenceScope<Int>!] {
+        yield(1)
+        yield(2)
+        yield(3)
     }
     var seen = ""
     values.collect { n -> seen += "$n" }
@@ -184,9 +184,9 @@ test "sequence collects every yielded value in order" {
 }
 
 test "flow collects every emitted value in order" {
-    fin events = std::flow<Int> [c: std::FlowCollector<Int>!] {
-        std::emit(10)
-        std::emit(20)
+    fin events = flow<Int> [c: FlowCollector<Int>!] {
+        emit(10)
+        emit(20)
     }
     var total = 0
     events.collect { n -> total += n }
@@ -194,7 +194,7 @@ test "flow collects every emitted value in order" {
 }
 
 test "an empty producer yields an empty stream" {
-    fin values = std::sequence<Int> [s: std::SequenceScope<Int>!] { }
+    fin values = sequence<Int> [s: SequenceScope<Int>!] { }
     assert values.size == 0 { "a producer that yields nothing must be empty" }
 }
 

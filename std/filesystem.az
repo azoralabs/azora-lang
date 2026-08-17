@@ -424,7 +424,7 @@ realm std {
         if raw[0] != 0 {
             return .ReadFailed
         }
-        var bytes: Array<Byte> = Array::fill<Byte>(raw.size - 1)
+        var bytes: Array<Byte> = .() * raw.size - 1
         var index = 1
         while index < raw.size {
             bytes[index - 1] = raw[index] as Byte
@@ -476,7 +476,7 @@ realm std {
         if stringLength(parts[0]) > 0 {
             try _fail(parts[0])
         }
-        var entries: Array<Path> = Array::fill<Path>(parts.size - 1)
+        var entries: Array<Path> = .() * parts.size - 1
         var index = 1
         while index < parts.size {
             entries[index - 1] = Path(parts[index])

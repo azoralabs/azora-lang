@@ -562,6 +562,6 @@ delimiter).
 | `T!E` / `T![A, B]` | `T ?! E` / `T ?! [A, B]` |
 | `fail return .X` | `return .X` |
 | `name![…]` (macro) | `@name[…]`, mutable `@name![…]` |
-| `mut @vec[…]` | `@vec![…]` |
+| `@vec[…]` | `@vec![…]` |
 | `intern` / `shared` / `weak` keywords | removed (memory kinds via `std.memory`, planned) |
 | omitted return type → inferred | omitted return type → **`Unit`** (§1.4); lambdas and operators still infer |

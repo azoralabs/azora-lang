@@ -306,7 +306,7 @@ realm std {
             assert shape[i] > 0 { "layout dimensions must be positive" }
             total = total * shape[i]
         }
-        var strides: Array<Int> = Array::fill<Int>(shape.size)
+        var strides: Array<Int> = .() * shape.size
         var remaining = total
         for i in 0..<shape.size {
             remaining = remaining / shape[i]
@@ -319,7 +319,7 @@ realm std {
     @Experimental(since: "0.1")
     func columnMajor(shape: Array<Int>): GpuLayout {
         assert shape.size > 0 { "a GPU layout needs at least one dimension" }
-        var strides: Array<Int> = Array::fill<Int>(shape.size)
+        var strides: Array<Int> = .() * shape.size
         var stride = 1
         for i in 0..<shape.size {
             assert shape[i] > 0 { "layout dimensions must be positive" }

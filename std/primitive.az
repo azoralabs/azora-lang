@@ -25,8 +25,8 @@ import std.traits
  *
  * Each type is a `bridge pack` - a compiler-provided type with no emitted struct;
  * every backend supplies its representation and machine operations directly. The
- * declarations here give the primitives a reflectable site (so `std::reflect<Int>`
- * and decorator metadata work), a set of `Type::CONSTANT` limits via `impl realm`,
+ * declarations here give the primitives a reflectable site (so `reflect<Int>`
+ * and decorator metadata work), a set of `Type.Constant` limits via `impl realm`,
  * the numeric `spec`s (`Number`, `Integer`, …), and - generated with `inline for`
  * metaprogramming - the full operator surface. The operators are `bridge impl`s:
  * declarations the compiler recognises and lowers to native machine instructions,
@@ -38,558 +38,556 @@ import std.traits
  * @since 0.1
  */
 
-realm std {
-    /** Boolean truth value: `true` or `false`. */
-    @Since("0.1")
-    bridge pack Bool
+/** Boolean truth value: `true` or `false`. */
+@Since("0.1")
+bridge pack Bool
 
-    /** Signed 8-bit integer (`-128 … 127`). */
-    @Since("0.1")
-    bridge pack Byte
+/** Signed 8-bit integer (`-128 … 127`). */
+@Since("0.1")
+bridge pack Byte
 
-    /** Unsigned 8-bit integer (`0 … 255`). */
-    @Since("0.1")
-    bridge pack UByte
+/** Unsigned 8-bit integer (`0 … 255`). */
+@Since("0.1")
+bridge pack UByte
 
-    /** Signed 16-bit integer (`-32_768 … 32_767`). */
-    @Since("0.1")
-    bridge pack Short
+/** Signed 16-bit integer (`-32_768 … 32_767`). */
+@Since("0.1")
+bridge pack Short
 
-    /** Unsigned 16-bit integer (`0 … 65_535`). */
-    @Since("0.1")
-    bridge pack UShort
+/** Unsigned 16-bit integer (`0 … 65_535`). */
+@Since("0.1")
+bridge pack UShort
 
-    /** Signed 32-bit integer. The default integer type. */
-    @Since("0.1")
-    bridge pack Int
+/** Signed 32-bit integer. The default integer type. */
+@Since("0.1")
+bridge pack Int
 
-    /** Unsigned 32-bit integer. */
-    @Since("0.1")
-    bridge pack UInt
+/** Unsigned 32-bit integer. */
+@Since("0.1")
+bridge pack UInt
 
-    /** Signed 64-bit integer. */
-    @Since("0.1")
-    bridge pack Long
+/** Signed 64-bit integer. */
+@Since("0.1")
+bridge pack Long
 
-    /** Unsigned 64-bit integer. */
-    @Since("0.1")
-    bridge pack ULong
+/** Unsigned 64-bit integer. */
+@Since("0.1")
+bridge pack ULong
 
-    /** Signed 128-bit integer. */
-    @Since("0.1")
-    bridge pack Cent
+/** Signed 128-bit integer. */
+@Since("0.1")
+bridge pack Cent
 
-    /** Unsigned 128-bit integer. */
-    @Since("0.1")
-    bridge pack UCent
+/** Unsigned 128-bit integer. */
+@Since("0.1")
+bridge pack UCent
 
+/**
+ * Signed integer as wide as a pointer on the target.
+ *
+ * Sizes, offsets and alignments are pointer-width by definition. Spelling
+ * them `Long` happens to be right on a 64-bit target and wrong elsewhere,
+ * so they get a type that is right by construction.
+ */
+@Experimental(since: "0.1")
+bridge pack ISize
+
+/** Unsigned integer as wide as a pointer on the target. */
+@Experimental(since: "0.1")
+bridge pack USize
+
+/** 32-bit IEEE-754 binary floating-point number. */
+@Since("0.1")
+bridge pack Float
+
+/** 64-bit IEEE-754 binary floating-point number. The default real type. */
+@Since("0.1")
+bridge pack Double
+
+/** 128-bit IEEE-754 decimal floating-point number (currency-grade). */
+@Since("0.1")
+bridge pack Decimal
+
+/** Marker spec for the integer types (signed and unsigned). */
+@Since("0.1")
+spec Integer
+
+/** Marker spec for the unsigned integer types. */
+@Since("0.1")
+spec UnsignedInteger
+
+/** Marker spec for the signed integer types. */
+@Since("0.1")
+spec SignedInteger
+
+/** Marker spec for the floating-point types. */
+@Since("0.1")
+spec FloatingPoint
+
+/** Marker spec for the unsigned integer types and floating-point types. */
+@Since("0.1")
+spec UnsignedNumber
+
+/** Marker spec for the signed integer types and floating-point types. */
+@Since("0.1")
+spec SignedNumber
+
+/**
+ * Common contract for every numeric type.
+ *
+ * @member rank The promotion rank: in a mixed-type expression the operand type with
+ *   the higher `rank` is chosen as the result type (see `promote<…>`).
+ */
+@Since("0.1")
+factory spec Number {
+    prop rank: Int
+}
+
+/**
+ * Byte limits.
+ *
+ * @member minValue The smallest representable value, `-128`.
+ * @member maxValue The largest representable value, `127`.
+ */
+@Since("0.1")
+impl Byte {
+    inline fin minValue: Int = -128
+    inline fin maxValue: Int = 127
+}
+
+/**
+ * UByte limits.
+ *
+ * @member minValue The smallest representable value, `0`.
+ * @member maxValue The largest representable value, `255`.
+ */
+@Since("0.1")
+impl UByte {
+    inline fin minValue: Int = 0
+    inline fin maxValue: Int = 255
+}
+
+/**
+ * Storage size shared by the 8-bit integer types.
+ *
+ * @member sizeBytes Size in bytes, `1`.
+ * @member sizeBits Size in bits, `8`.
+ */
+@Since("0.1")
+impl [Byte, UByte] {
+    inline fin sizeBytes: Int = 1
+    inline fin sizeBits: Int = 8
+}
+
+/**
+ * Short limits.
+ *
+ * @member minValue The smallest representable value, `-32_768`.
+ * @member maxValue The largest representable value, `32_767`.
+ */
+@Since("0.1")
+impl Short {
+    inline fin minValue: Int = -32_768
+    inline fin maxValue: Int = 32_767
+}
+
+/**
+ * UShort limits.
+ *
+ * @member minValue The smallest representable value, `0`.
+ * @member maxValue The largest representable value, `65_535`.
+ */
+@Since("0.1")
+impl UShort {
+    inline fin minValue: Int = 0
+    inline fin maxValue: Int = 65_535
+}
+
+/**
+ * Storage size shared by the 16-bit integer types.
+ *
+ * @member sizeBytes Size in bytes, `2`.
+ * @member sizeBits Size in bits, `16`.
+ */
+@Since("0.1")
+impl [Short, UShort] {
+    inline fin sizeBytes: Int = 2
+    inline fin sizeBits: Int = 16
+}
+
+/**
+ * Int limits.
+ *
+ * @member minValue The smallest representable value, `-2_147_483_648`.
+ * @member maxValue The largest representable value, `2_147_483_647`.
+ */
+@Since("0.1")
+impl Int {
+    inline fin minValue: Int = -2_147_483_648
+    inline fin maxValue: Int = 2_147_483_647
+}
+
+/**
+ * UInt limits.
+ *
+ * @member minValue The smallest representable value, `0`.
+ * @member maxValue The largest representable value, `4_294_967_295`.
+ */
+@Since("0.1")
+impl UInt {
+    inline fin minValue: Int = 0
+    inline fin maxValue: Int = 4_294_967_295
+}
+
+/**
+ * Storage size shared by the 32-bit integer types.
+ *
+ * @member sizeBytes Size in bytes, `4`.
+ * @member sizeBits Size in bits, `32`.
+ */
+@Since("0.1")
+impl [Int, UInt] {
+    inline fin sizeBytes: Int = 4
+    inline fin sizeBits: Int = 32
+}
+
+/**
+ * Long limits.
+ *
+ * @member minValue The smallest representable value, `-2^63`.
+ * @member maxValue The largest representable value, `2^63 - 1`.
+ */
+@Since("0.1")
+impl Long {
+    inline fin minValue: Long = -9_223_372_036_854_775_807L -1L
+    inline fin maxValue: Long = 9_223_372_036_854_775_807L
+}
+
+/**
+ * ULong limits.
+ *
+ * @member minValue The smallest representable value, `0`.
+ * @member maxValue The largest representable value, `2^64 - 1`.
+ */
+@Since("0.1")
+impl ULong {
+    inline fin minValue: Long = 0
+    inline fin maxValue: Long = 18_446_744_073_709_551_615L
+}
+
+/**
+ * Storage size shared by the 64-bit integer types.
+ *
+ * @member sizeBytes Size in bytes, `8`.
+ * @member sizeBits Size in bits, `64`.
+ */
+@Since("0.1")
+impl [Long, ULong] {
+    inline fin sizeBytes: Int = 8
+    inline fin sizeBits: Int = 64
+}
+
+/**
+ * Cent limits.
+ *
+ * @member minValue The smallest representable value, `-2^127`.
+ * @member maxValue The largest representable value, `2^127 - 1`.
+ */
+@Since("0.1")
+impl Cent {
+    // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
+    // inline fin minValue: Cent = -170_141_183_460_469_231_731_687_303_715_884_105_728c
+    // inline fin maxValue: Cent = 170_141_183_460_469_231_731_687_303_715_884_105_727c
+}
+
+/**
+ * UCent limits.
+ *
+ * @member minValue The smallest representable value, `0`.
+ * @member maxValue The largest representable value, `2^128 - 1`.
+ */
+@Since("0.1")
+impl UCent {
+    inline fin minValue: UCent = 0uc
+    // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
+    // inline fin maxValue: UCent = 340_282_366_920_938_463_463_374_607_431_768_211_455uc
+}
+
+/**
+ * Storage size shared by the 128-bit integer types.
+ *
+ * @member sizeBytes Size in bytes, `16`.
+ * @member sizeBits Size in bits, `128`.
+ */
+@Since("0.1")
+impl [Cent, UCent] {
+    inline fin sizeBytes: Int = 16
+    inline fin sizeBits: Int = 128
+}
+
+/**
+ * Float limits and special values.
+ *
+ * @member minValue The smallest positive normal value.
+ * @member maxValue The largest finite value.
+ * @member positiveInfinity Positive infinity (`1f/0f`).
+ * @member negativeInfinity Negative infinity (`-1f/0f`).
+ * @member NAN Not-a-number.
+ * @member sizeBytes Size in bytes, `4`.
+ * @member sizeBits Size in bits, `32`.
+ */
+@Since("0.1")
+impl Float {
+    inline fin minValue: Float = 1.4E-45f
+    inline fin maxValue: Float = 3.4028235E38f
+    inline fin positiveInfinity: Float = 1f/0f
+    inline fin negativeInfinity: Float = -1f/0f
+    inline fin NAN: Float = -(0f/0f)
+    inline fin sizeBytes: Int = 4
+    inline fin sizeBits: Int = 32
+}
+
+/**
+ * Double limits and special values.
+ *
+ * @member minValue The smallest positive value.
+ * @member maxValue The largest finite value.
+ * @member positiveInfinity Positive infinity (`1./0.`).
+ * @member negativeInfinity Negative infinity (`-1./0.`).
+ * @member NAN Not-a-number.
+ * @member sizeBytes Size in bytes, `8`.
+ * @member sizeBits Size in bits, `64`.
+ */
+@Since("0.1")
+impl Double {
+    inline fin minValue: Double = 4.9E-324
+    inline fin maxValue: Double = 1.7976931348623157E308
+    inline fin positiveInfinity: Double = 1./0.
+    inline fin negativeInfinity: Double = -1./0.
+    inline fin NAN: Double = -(0./0.)
+    inline fin sizeBytes: Int = 8
+    inline fin sizeBits: Int = 64
+}
+
+/**
+ * Decimal limits, special values, and precision.
+ *
+ * @member minValue The smallest (most negative) finite value.
+ * @member maxValue The largest finite value.
+ * @member positiveInfinity Positive infinity (`1D/0D`).
+ * @member negativeInfinity Negative infinity (`-1D/0D`).
+ * @member NAN Not-a-number.
+ * @member sizeBytes Size in bytes, `16`.
+ * @member sizeBits Size in bits, `128`.
+ * @member DIGITS Significant decimal digits, `34`.
+ * @member minExponent The smallest decimal exponent, `-6143`.
+ * @member maxExponent The largest decimal exponent, `6144`.
+ */
+@Since("0.1")
+impl Decimal {
+    inline fin minValue: Decimal = -9.999999999999999999999999999999999E6144D
+    inline fin maxValue: Decimal =  9.999999999999999999999999999999999E6144D
+    inline fin positiveInfinity: Decimal = 1D / 0D
+    inline fin negativeInfinity: Decimal = -1D / 0D
+    inline fin NAN: Decimal = -(0D / 0D)
+    inline fin sizeBytes: Int = 16
+    inline fin sizeBits: Int = 128
+    inline fin DIGITS: Int = 34
+    inline fin minExponent: Int = -6143
+    inline fin maxExponent: Int = 6144
+}
+
+/** The unsigned integer types, in ascending width. A compile-time `[Type]` list. */
+@Since("0.1")
+typealias UnsignedIntegers = [UByte, UShort, UInt, ULong, UCent]
+
+/** The signed integer types, in ascending width. A compile-time `[Type]` list. */
+@Since("0.1")
+typealias SignedIntegers = [Byte, Short, Int, Long, Cent]
+
+/** All integer types. `+` appends two compile-time type lists. */
+@Since("0.1")
+typealias Integers = UnsignedIntegers + SignedIntegers
+
+/** The floating-point types, in ascending width. */
+@Since("0.1")
+typealias FloatingPoints = [Float, Double, Decimal]
+
+/** Every numeric type: integers followed by floating-point types. */
+@Since("0.1")
+typealias Numbers = Integers + FloatingPoints
+
+/** Every unsigned integer type conforms to `UnsignedInteger`. */
+@Since("0.1")
+derive UnsignedInteger for UnsignedIntegers
+
+/** Every signed integer type conforms to `SignedInteger`. */
+@Since("0.1")
+derive SignedInteger for SignedIntegers
+
+/** Every integer type conforms to `Integer`. */
+@Since("0.1")
+derive Integer for Integers
+
+/** Every floating-point type conforms to `FloatingPoint`. */
+@Since("0.1")
+derive FloatingPoint for FloatingPoints
+
+@Since("0.1")
+derive UnsignedNumber for UnsignedIntegers
+
+@Since("0.1")
+derive UnsignedNumber for FloatingPoints
+
+@Since("0.1")
+derive SignedNumber for SignedIntegers
+
+@Since("0.1")
+derive SignedNumber for FloatingPoints
+
+/**
+ * Every integer is totally ordered, and so are the remaining scalars.
+ *
+ * Bodyless, so the compiler supplies the members - for a primitive that is
+ * the backend's native comparison rather than a generated field walk. The
+ * conformance is the whole declaration, exactly as `derive [Clone, Copy]` is.
+ *
+ * `Bool` orders `false < true`; `Char` orders by code point; `String`
+ * orders lexicographically by code point, which is an order and not a
+ * collation - a locale-aware comparison is a function with a locale
+ * parameter and never what `<` does.
+ */
+@Since("0.1")
+derive [PartialEqual, Equal, Order, Hash] for Integers
+
+@Since("0.1")
+derive [PartialEqual, Equal, Order, Hash] for [Bool, Char, String]
+
+/**
+ * Floating point is **partially** ordered, and never `Equal`.
+ *
+ * `NaN != NaN`, so equality is not reflexive and nothing that keys off it -
+ * a hash key, a set's uniqueness - is sound. `f <=> g` answers a
+ * `PartialCompare`, which is what makes all four relational operators false
+ * for a NaN pair instead of the negation of one another.
+ */
+@Since("0.1")
+derive [PartialEqual, PartialOrder] for FloatingPoints
+
+inline fin _ranks: Array<Int> = @arr[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
+
+// Promotion ranks for every numeric type.
+inline for Ty in Numbers with index {
     /**
-     * Signed integer as wide as a pointer on the target.
+     * Promotion rank of `$Ty`.
      *
-     * Sizes, offsets and alignments are pointer-width by definition. Spelling
-     * them `Long` happens to be right on a 64-bit target and wrong elsewhere,
-     * so they get a type that is right by construction.
+     * In a mixed-type expression `promote<…>` keeps the operand type with the higher
+     * `rank` (`Candidate.rank > Result.rank`). Ranks grow with width, so a wider type
+     * always wins; the floating-point types outrank every integer type (so `Int + Double`
+     * yields `Double`). Signed and unsigned types of the same width share a rank.
+     *
+     * @member rank The promotion rank of `$Ty`.
+     */
+    @Since("0.1")
+    impl Number for Ty {
+        prop rank: Int = ${_ranks[index]}
+    }
+}
+
+inline for op in @arr["==", "!=", "&", "|", "^"] {
+    /**
+     * Boolean operator $op over Bool operands.
+     *
+     * @receiver self& The left Bool operand.
+     * @receiver rhs The right Bool operand.
+     * @return Bool
      */
     @Experimental(since: "0.1")
-    bridge pack ISize
+    bridge oper$op [self: Bool&](rhs: Bool): Bool
+}
 
-    /** Unsigned integer as wide as a pointer on the target. */
-    @Experimental(since: "0.1")
-    bridge pack USize
-
-    /** 32-bit IEEE-754 binary floating-point number. */
-    @Since("0.1")
-    bridge pack Float
-
-    /** 64-bit IEEE-754 binary floating-point number. The default real type. */
-    @Since("0.1")
-    bridge pack Double
-
-    /** 128-bit IEEE-754 decimal floating-point number (currency-grade). */
-    @Since("0.1")
-    bridge pack Decimal
-
-    /** Marker spec for the integer types (signed and unsigned). */
-    @Since("0.1")
-    spec Integer
-
-    /** Marker spec for the unsigned integer types. */
-    @Since("0.1")
-    spec UnsignedInteger
-
-    /** Marker spec for the signed integer types. */
-    @Since("0.1")
-    spec SignedInteger
-
-    /** Marker spec for the floating-point types. */
-    @Since("0.1")
-    spec FloatingPoint
-
-    /** Marker spec for the unsigned integer types and floating-point types. */
-    @Since("0.1")
-    spec UnsignedNumber
-
-    /** Marker spec for the signed integer types and floating-point types. */
-    @Since("0.1")
-    spec SignedNumber
-
-    /**
-     * Common contract for every numeric type.
-     *
-     * @member rank The promotion rank: in a mixed-type expression the operand type with
-     *   the higher `rank` is chosen as the result type (see `promote<…>`).
-     */
-    @Since("0.1")
-    spec Number {
-        prop rank: Int
-    }
-
-    /**
-     * Byte limits.
-     *
-     * @member minValue The smallest representable value, `-128`.
-     * @member maxValue The largest representable value, `127`.
-     */
-    @Since("0.1")
-    impl Byte:: {
-        inline fin minValue: Int = -128
-        inline fin maxValue: Int = 127
-    }
-
-    /**
-     * UByte limits.
-     *
-     * @member minValue The smallest representable value, `0`.
-     * @member maxValue The largest representable value, `255`.
-     */
-    @Since("0.1")
-    impl UByte:: {
-        inline fin minValue: Int = 0
-        inline fin maxValue: Int = 255
-    }
-
-    /**
-     * Storage size shared by the 8-bit integer types.
-     *
-     * @member sizeBytes Size in bytes, `1`.
-     * @member sizeBits Size in bits, `8`.
-     */
-    @Since("0.1")
-    impl [Byte, UByte]:: {
-        inline fin sizeBytes: Int = 1
-        inline fin sizeBits: Int = 8
-    }
-
-    /**
-     * Short limits.
-     *
-     * @member minValue The smallest representable value, `-32_768`.
-     * @member maxValue The largest representable value, `32_767`.
-     */
-    @Since("0.1")
-    impl Short:: {
-        inline fin minValue: Int = -32_768
-        inline fin maxValue: Int = 32_767
-    }
-
-    /**
-     * UShort limits.
-     *
-     * @member minValue The smallest representable value, `0`.
-     * @member maxValue The largest representable value, `65_535`.
-     */
-    @Since("0.1")
-    impl UShort:: {
-        inline fin minValue: Int = 0
-        inline fin maxValue: Int = 65_535
-    }
-
-    /**
-     * Storage size shared by the 16-bit integer types.
-     *
-     * @member sizeBytes Size in bytes, `2`.
-     * @member sizeBits Size in bits, `16`.
-     */
-    @Since("0.1")
-    impl [Short, UShort]:: {
-        inline fin sizeBytes: Int = 2
-        inline fin sizeBits: Int = 16
-    }
-
-    /**
-     * Int limits.
-     *
-     * @member minValue The smallest representable value, `-2_147_483_648`.
-     * @member maxValue The largest representable value, `2_147_483_647`.
-     */
-    @Since("0.1")
-    impl Int:: {
-        inline fin minValue: Int = -2_147_483_648
-        inline fin maxValue: Int = 2_147_483_647
-    }
-
-    /**
-     * UInt limits.
-     *
-     * @member minValue The smallest representable value, `0`.
-     * @member maxValue The largest representable value, `4_294_967_295`.
-     */
-    @Since("0.1")
-    impl UInt:: {
-        inline fin minValue: Int = 0
-        inline fin maxValue: Int = 4_294_967_295
-    }
-
-    /**
-     * Storage size shared by the 32-bit integer types.
-     *
-     * @member sizeBytes Size in bytes, `4`.
-     * @member sizeBits Size in bits, `32`.
-     */
-    @Since("0.1")
-    impl [Int, UInt]:: {
-        inline fin sizeBytes: Int = 4
-        inline fin sizeBits: Int = 32
-    }
-
-    /**
-     * Long limits.
-     *
-     * @member minValue The smallest representable value, `-2^63`.
-     * @member maxValue The largest representable value, `2^63 - 1`.
-     */
-    @Since("0.1")
-    impl Long:: {
-        inline fin minValue: Long = -9_223_372_036_854_775_807L -1L
-        inline fin maxValue: Long = 9_223_372_036_854_775_807L
-    }
-
-    /**
-     * ULong limits.
-     *
-     * @member minValue The smallest representable value, `0`.
-     * @member maxValue The largest representable value, `2^64 - 1`.
-     */
-    @Since("0.1")
-    impl ULong:: {
-        inline fin minValue: Long = 0
-        inline fin maxValue: Long = 18_446_744_073_709_551_615L
-    }
-
-    /**
-     * Storage size shared by the 64-bit integer types.
-     *
-     * @member sizeBytes Size in bytes, `8`.
-     * @member sizeBits Size in bits, `64`.
-     */
-    @Since("0.1")
-    impl [Long, ULong]:: {
-        inline fin sizeBytes: Int = 8
-        inline fin sizeBits: Int = 64
-    }
-
-    /**
-     * Cent limits.
-     *
-     * @member minValue The smallest representable value, `-2^127`.
-     * @member maxValue The largest representable value, `2^127 - 1`.
-     */
-    @Since("0.1")
-    impl Cent:: {
-        // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
-        // inline fin minValue: Cent = -170_141_183_460_469_231_731_687_303_715_884_105_728c
-        // inline fin maxValue: Cent = 170_141_183_460_469_231_731_687_303_715_884_105_727c
-    }
-
-    /**
-     * UCent limits.
-     *
-     * @member minValue The smallest representable value, `0`.
-     * @member maxValue The largest representable value, `2^128 - 1`.
-     */
-    @Since("0.1")
-    impl UCent:: {
-        inline fin minValue: UCent = 0uc
-        // Pending 128-bit literal support (the literal pipeline is currently Long-wide):
-        // inline fin maxValue: UCent = 340_282_366_920_938_463_463_374_607_431_768_211_455uc
-    }
-
-    /**
-     * Storage size shared by the 128-bit integer types.
-     *
-     * @member sizeBytes Size in bytes, `16`.
-     * @member sizeBits Size in bits, `128`.
-     */
-    @Since("0.1")
-    impl [Cent, UCent]:: {
-        inline fin sizeBytes: Int = 16
-        inline fin sizeBits: Int = 128
-    }
-
-    /**
-     * Float limits and special values.
-     *
-     * @member minValue The smallest positive normal value.
-     * @member maxValue The largest finite value.
-     * @member positiveInfinity Positive infinity (`1f/0f`).
-     * @member negativeInfinity Negative infinity (`-1f/0f`).
-     * @member NAN Not-a-number.
-     * @member sizeBytes Size in bytes, `4`.
-     * @member sizeBits Size in bits, `32`.
-     */
-    @Since("0.1")
-    impl Float:: {
-        inline fin minValue: Float = 1.4E-45f
-        inline fin maxValue: Float = 3.4028235E38f
-        inline fin positiveInfinity: Float = 1f/0f
-        inline fin negativeInfinity: Float = -1f/0f
-        inline fin NAN: Float = -(0f/0f)
-        inline fin sizeBytes: Int = 4
-        inline fin sizeBits: Int = 32
-    }
-
-    /**
-     * Double limits and special values.
-     *
-     * @member minValue The smallest positive value.
-     * @member maxValue The largest finite value.
-     * @member positiveInfinity Positive infinity (`1./0.`).
-     * @member negativeInfinity Negative infinity (`-1./0.`).
-     * @member NAN Not-a-number.
-     * @member sizeBytes Size in bytes, `8`.
-     * @member sizeBits Size in bits, `64`.
-     */
-    @Since("0.1")
-    impl Double:: {
-        inline fin minValue: Double = 4.9E-324
-        inline fin maxValue: Double = 1.7976931348623157E308
-        inline fin positiveInfinity: Double = 1./0.
-        inline fin negativeInfinity: Double = -1./0.
-        inline fin NAN: Double = -(0./0.)
-        inline fin sizeBytes: Int = 8
-        inline fin sizeBits: Int = 64
-    }
-
-    /**
-     * Decimal limits, special values, and precision.
-     *
-     * @member minValue The smallest (most negative) finite value.
-     * @member maxValue The largest finite value.
-     * @member positiveInfinity Positive infinity (`1D/0D`).
-     * @member negativeInfinity Negative infinity (`-1D/0D`).
-     * @member NAN Not-a-number.
-     * @member sizeBytes Size in bytes, `16`.
-     * @member sizeBits Size in bits, `128`.
-     * @member DIGITS Significant decimal digits, `34`.
-     * @member minExponent The smallest decimal exponent, `-6143`.
-     * @member maxExponent The largest decimal exponent, `6144`.
-     */
-    @Since("0.1")
-    impl Decimal:: {
-        inline fin minValue: Decimal = -9.999999999999999999999999999999999E6144D
-        inline fin maxValue: Decimal =  9.999999999999999999999999999999999E6144D
-        inline fin positiveInfinity: Decimal = 1D / 0D
-        inline fin negativeInfinity: Decimal = -1D / 0D
-        inline fin NAN: Decimal = -(0D / 0D)
-        inline fin sizeBytes: Int = 16
-        inline fin sizeBits: Int = 128
-        inline fin DIGITS: Int = 34
-        inline fin minExponent: Int = -6143
-        inline fin maxExponent: Int = 6144
-    }
-
-    /** The unsigned integer types, in ascending width. A compile-time `[Type]` list. */
-    @Since("0.1")
-    typealias UnsignedIntegers = [UByte, UShort, UInt, ULong, UCent]
-
-    /** The signed integer types, in ascending width. A compile-time `[Type]` list. */
-    @Since("0.1")
-    typealias SignedIntegers = [Byte, Short, Int, Long, Cent]
-
-    /** All integer types. `+` appends two compile-time type lists. */
-    @Since("0.1")
-    typealias Integers = UnsignedIntegers + SignedIntegers
-
-    /** The floating-point types, in ascending width. */
-    @Since("0.1")
-    typealias FloatingPoints = [Float, Double, Decimal]
-
-    /** Every numeric type: integers followed by floating-point types. */
-    @Since("0.1")
-    typealias Numbers = Integers + FloatingPoints
-
-    /** Every unsigned integer type conforms to `UnsignedInteger`. */
-    @Since("0.1")
-    derive UnsignedInteger for UnsignedIntegers
-
-    /** Every signed integer type conforms to `SignedInteger`. */
-    @Since("0.1")
-    derive SignedInteger for SignedIntegers
-
-    /** Every integer type conforms to `Integer`. */
-    @Since("0.1")
-    derive Integer for Integers
-
-    /** Every floating-point type conforms to `FloatingPoint`. */
-    @Since("0.1")
-    derive FloatingPoint for FloatingPoints
-
-    @Since("0.1")
-    derive UnsignedNumber for UnsignedIntegers
-
-    @Since("0.1")
-    derive UnsignedNumber for FloatingPoints
-
-    @Since("0.1")
-    derive SignedNumber for SignedIntegers
-
-    @Since("0.1")
-    derive SignedNumber for FloatingPoints
-
-    /**
-     * Every integer is totally ordered, and so are the remaining scalars.
-     *
-     * Bodyless, so the compiler supplies the members - for a primitive that is
-     * the backend's native comparison rather than a generated field walk. The
-     * conformance is the whole declaration, exactly as `derive [Clone, Copy]` is.
-     *
-     * `Bool` orders `false < true`; `Char` orders by code point; `String`
-     * orders lexicographically by code point, which is an order and not a
-     * collation - a locale-aware comparison is a function with a locale
-     * parameter and never what `<` does.
-     */
-    @Since("0.1")
-    derive [PartialEqual, Equal, Order, Hash] for Integers
-
-    @Since("0.1")
-    derive [PartialEqual, Equal, Order, Hash] for [Bool, Char, String]
-
-    /**
-     * Floating point is **partially** ordered, and never `Equal`.
-     *
-     * `NaN != NaN`, so equality is not reflexive and nothing that keys off it -
-     * a hash key, a set's uniqueness - is sound. `f <=> g` answers a
-     * `PartialCompare`, which is what makes all four relational operators false
-     * for a NaN pair instead of the negation of one another.
-     */
-    @Since("0.1")
-    derive [PartialEqual, PartialOrder] for FloatingPoints
-
-    inline fin _ranks: Array<Int> = @std::arr[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7]
-
-    // Promotion ranks for every numeric type.
-    inline for Ty in Numbers with index {
+inline for op in @arr["+", "-"] {
+    inline for Ty in SignedIntegers {
         /**
-         * Promotion rank of `$Ty`.
-         *
-         * In a mixed-type expression `promote<…>` keeps the operand type with the higher
-         * `rank` (`Candidate.rank > Result.rank`). Ranks grow with width, so a wider type
-         * always wins; the floating-point types outrank every integer type (so `Int + Double`
-         * yields `Double`). Signed and unsigned types of the same width share a rank.
-         *
-         * @member rank The promotion rank of `$Ty`.
-         */
-        @Since("0.1")
-        impl Number for Ty:: {
-            prop rank: Int = ${_ranks[index]}
-        }
-    }
-
-    inline for op in @std::arr["==", "!=", "&", "|", "^"] {
-        /**
-         * Boolean operator $op over Bool operands.
-         *
-         * @receiver self& The left Bool operand.
-         * @receiver rhs The right Bool operand.
-         * @return Bool
-         */
-        @Experimental(since: "0.1")
-        bridge oper$op [self: Bool&](rhs: Bool): Bool
-    }
-
-    inline for op in @std::arr["+", "-"] {
-        inline for Ty in SignedIntegers {
-            /**
-             * Unary arithmetic operator $op on a signed integer type.
-             *
-             * @receiver self& The operand; the result has the same type.
-             * @return the operand type
-             */
-            @Experimental(since: "0.1")
-            bridge oper$op [self: Ty&]: Ty
-        }
-    }
-
-    inline for Ty in Integers {
-        /**
-         * Bitwise complement (~) on an integer type (signed or unsigned).
+         * Unary arithmetic operator $op on a signed integer type.
          *
          * @receiver self& The operand; the result has the same type.
          * @return the operand type
          */
         @Experimental(since: "0.1")
-        bridge oper~ [self: Ty&]: Ty
+        bridge oper$op [self: Ty&]: Ty
     }
+}
 
-    inline for op in @std::arr["+", "-", "*", "/", "%"] {
-        inline for LhsTy in Numbers {
-            inline for RhsTy in Numbers {
-                /**
-                 * Arithmetic operator $op over a pair of numeric operand types.
-                 *
-                 * @receiver self& The left operand.
-                 * @receiver rhs The right operand (any numeric type).
-                 * @return promote<LhsTy, RhsTy> - the wider of the two operand types
-                 */
-                @Experimental(since: "0.1")
-                bridge oper$op [self: LhsTy&](rhs: RhsTy): std::promote<LhsTy, RhsTy>
-            }
-        }
-    }
+inline for Ty in Integers {
+    /**
+     * Bitwise complement (~) on an integer type (signed or unsigned).
+     *
+     * @receiver self& The operand; the result has the same type.
+     * @return the operand type
+     */
+    @Experimental(since: "0.1")
+    bridge oper~ [self: Ty&]: Ty
+}
 
-    inline for op in @std::arr["&", "|", "^"] {
-        inline for LhsTy in Integers {
-            inline for RhsTy in Integers {
-                /**
-                 * Bitwise operator $op over a pair of integer operand types.
-                 *
-                 * @receiver self& The left operand.
-                 * @receiver rhs The right operand (any integer type).
-                 * @return promote<LhsTy, RhsTy> - the wider of the two operand types
-                 */
-                @Experimental(since: "0.1")
-                bridge oper$op [self: LhsTy&](rhs: RhsTy): std::promote<LhsTy, RhsTy>
-            }
-        }
-    }
-
-    inline for op in @std::arr["<<", ">>"] {
-        inline for Ty in Integers {
+inline for op in @arr["+", "-", "*", "/", "%"] {
+    inline for LhsTy in Numbers {
+        inline for RhsTy in Numbers {
             /**
-             * Shift operator $op on an integer type; the shift count is a UInt.
+             * Arithmetic operator $op over a pair of numeric operand types.
              *
-             * @receiver self& The value being shifted; the result has its type.
-             * @receiver rhs The shift count.
-             * @return the operand type
+             * @receiver self& The left operand.
+             * @receiver rhs The right operand (any numeric type).
+             * @return promote<LhsTy, RhsTy> - the wider of the two operand types
              */
             @Experimental(since: "0.1")
-            bridge oper$op [self: Ty&](rhs: UInt): Ty
+            bridge oper$op [self: LhsTy&](rhs: RhsTy): promote<LhsTy, RhsTy>
         }
     }
+}
 
-    inline for op in @std::arr["<", ">", "<=", ">=", "==", "!="] {
-        inline for LhsTy in Numbers {
-            inline for RhsTy in Numbers {
-                /**
-                 * Comparison operator $op over every pair of numeric operand types.
-                 *
-                 * @receiver self& The left operand.
-                 * @receiver rhs The right operand (any numeric type).
-                 * @return Bool
-                 */
-                @Experimental(since: "0.1")
-                bridge oper$op [self: LhsTy&](rhs: RhsTy): Bool
-            }
+inline for op in @arr["&", "|", "^"] {
+    inline for LhsTy in Integers {
+        inline for RhsTy in Integers {
+            /**
+             * Bitwise operator $op over a pair of integer operand types.
+             *
+             * @receiver self& The left operand.
+             * @receiver rhs The right operand (any integer type).
+             * @return promote<LhsTy, RhsTy> - the wider of the two operand types
+             */
+            @Experimental(since: "0.1")
+            bridge oper$op [self: LhsTy&](rhs: RhsTy): promote<LhsTy, RhsTy>
+        }
+    }
+}
+
+inline for op in @arr["<<", ">>"] {
+    inline for Ty in Integers {
+        /**
+         * Shift operator $op on an integer type; the shift count is a UInt.
+         *
+         * @receiver self& The value being shifted; the result has its type.
+         * @receiver rhs The shift count.
+         * @return the operand type
+         */
+        @Experimental(since: "0.1")
+        bridge oper$op [self: Ty&](rhs: UInt): Ty
+    }
+}
+
+inline for op in @arr["<", ">", "<=", ">=", "==", "!="] {
+    inline for LhsTy in Numbers {
+        inline for RhsTy in Numbers {
+            /**
+             * Comparison operator $op over every pair of numeric operand types.
+             *
+             * @receiver self& The left operand.
+             * @receiver rhs The right operand (any numeric type).
+             * @return Bool
+             */
+            @Experimental(since: "0.1")
+            bridge oper$op [self: LhsTy&](rhs: RhsTy): Bool
         }
     }
 }

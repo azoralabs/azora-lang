@@ -149,7 +149,7 @@ realm std {
             var s = "["
             for i in 0..<size {
                 if i > 0 { s = s + ", " }
-                s = s + std::convert::toString(data[i])
+                s = s + data[i] as String
             }
             return s + "]"
         }
@@ -195,7 +195,7 @@ test "queue clear permits reuse" {
 }
 
 test "queue serialization metadata is declared" {
-    inline assert std::reflect<Queue>.hasAnnot<Serializable> { "Queue must carry Serializable metadata" }
+    inline assert reflect<Queue>.hasAnnot<Serializable> { "Queue must carry Serializable metadata" }
 }
 
 test .All "queue"

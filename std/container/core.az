@@ -16,83 +16,81 @@
 
 exposed module std.container.core
 
-exposed import std.container.{array, list, map, set}
+/**
+ * Builds a fixed-size [Array].
+ *
+ * @1 `@arr[1, 2, 3]` expands to `std.container.array::Array<Int>(1, 2, 3)`.
+ */
+macro @arr[...$items] => std.container.array::Array(...$items) // generic will infer from first item type
 
-realm std {
-    /**
-     * Builds a fixed-size [Array].
-     *
-     * @0 `@std::arr[]` expands to `std::emptyArray()`.
-     * @1 `@std::arr[1, 2, 3]` expands to `std::arrayOf(1, 2, 3)`.
-     */
-    macro @arr {
-        [] => std::emptyArray()
-        [...$items] => std::arrayOf(...$items)
-    }
+/**
+ * Builds an immutable [List].
+ *
+ * @1 `@vec[1, 2, 3]` expands to `std.container.list::List<Int>(1, 2, 3)`.
+ */
+macro @vec [...$items] => std.container.list::List(...$items) // generic will infer from first item type
 
-    /**
-     * Builds an immutable [List].
-     *
-     * @0 `@std::vec[]` expands to `std::emptyList()`.
-     * @1 `@std::vec[1, 2, 3]` expands to `std::listOf(1, 2, 3)`.
-     */
-    macro @vec {
-        [] => std::emptyList()
-        [...$items] => std::listOf(...$items)
-    }
+/**
+ * Builds a mutable [List].
+ *
+ * @0 `@vec![]` expands to `emptyMutableList()`.
+ * @1 `@vec![1, 2, 3]` expands to `mutableListOf(1, 2, 3)`.
+ */
+macro @vec! {
+    [] => emptyMutableList()
+    [...$items] => mutableListOf(...$items)
+}
 
-    /**
-     * Builds a mutable [List].
-     *
-     * @0 `@std::vec![]` expands to `std::emptyMutableList()`.
-     * @1 `@std::vec![1, 2, 3]` expands to `std::mutableListOf(1, 2, 3)`.
-     */
-    macro @vec! {
-        [] => std::emptyMutableList()
-        [...$items] => std::mutableListOf(...$items)
-    }
+/**
+ * Builds an immutable [Set].
+ *
+ * @0 `@set[]` expands to `emptySet()`.
+ * @1 `@set[1, 2, 3]` expands to `setOf(1, 2, 3)`.
+ */
+macro @set {
+    [] => emptySet()
+    [...$items] => setOf(...$items)
+}
 
-    /**
-     * Builds an immutable [Set].
-     *
-     * @0 `@std::set[]` expands to `std::emptySet()`.
-     * @1 `@std::set[1, 2, 3]` expands to `std::setOf(1, 2, 3)`.
-     */
-    macro @set {
-        [] => std::emptySet()
-        [...$items] => std::setOf(...$items)
-    }
+/**
+ * Builds a mutable [Set].
+ *
+ * @0 `@set![]` expands to `emptyMutableSet()`.
+ * @1 `@set![1, 2, 3]` expands to `mutableSetOf(1, 2, 3)`.
+ */
+macro @set! {
+    [] => emptyMutableSet()
+    [...$items] => mutableSetOf(...$items)
+}
 
-    /**
-     * Builds a mutable [Set].
-     *
-     * @0 `@std::set![]` expands to `std::emptyMutableSet()`.
-     * @1 `@std::set![1, 2, 3]` expands to `std::mutableSetOf(1, 2, 3)`.
-     */
-    macro @set! {
-        [] => std::emptyMutableSet()
-        [...$items] => std::mutableSetOf(...$items)
-    }
+/**
+ * Builds an immutable [Map].
+ *
+ * @0 `@map[]` expands to `emptyMap()`.
+ * @1 `@map["One": 1, "Two": 2]` expands to `mapOf("One" to 1, "Two" to 2)`.
+ */
+macro @map {
+    [] => emptyMap()
+    [...${key: value}] => mapOf(...mapEntry($key, $value))
+}
 
-    /**
-     * Builds an immutable [Map].
-     *
-     * @0 `@std::map[]` expands to `std::emptyMap()`.
-     * @1 `@std::map["One": 1, "Two": 2]` expands to `std::mapOf("One" to 1, "Two" to 2)`.
-     */
-    macro @map {
-        [] => std::emptyMap()
-        [...${key: value}] => std::mapOf(...std::mapEntry($key, $value))
-    }
+/**
+ * Builds a mutable [Map].
+ *
+ * @0 `@map![]` expands to `emptyMutableMap()`.
+ * @1 `@map!["One": 1]` expands to `mutableMapOf("One" to 1)`.
+ */
+macro @map! {
+    [] => emptyMutableMap()
+    [...${key: value}] => mutableMapOf(...mapEntry($key, $value))
+}
 
-    /**
-     * Builds a mutable [Map].
-     *
-     * @0 `@std::map![]` expands to `std::emptyMutableMap()`.
-     * @1 `@std::map!["One": 1]` expands to `std::mutableMapOf("One" to 1)`.
-     */
-    macro @map! {
-        [] => std::emptyMutableMap()
-        [...${key: value}] => std::mutableMapOf(...std::mapEntry($key, $value))
-    }
+/**
+ * Builds a [Deque].
+ *
+ * @1 `@deq![1, 2, 3]` expands to `Deque<T>(1, 2, 3)`.
+ */
+macro @deq! {
+    [] => std.container.deque::Deque()
+    [...${key: value}] => mutableMapOf(...mapEntry($key, $value))
 }

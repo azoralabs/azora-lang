@@ -16,148 +16,133 @@
 
 module std.container.queue
 
-import std.serializer
-import std.convert
+import std.serializer.Serializable
 
 /**
- * @file std/container/queue
+ * A generic first-in-first-out (FIFO) queue.
  *
- * Generic FIFO queue collection.
+ * Queue provides pointer-backed storage where elements are
+ * added at the back and removed from the front.
  *
- * Provides a first-in-first-out queue backed by a pointer array,
- * with enqueue, dequeue, and peek operations.
- * Uses pointer-based storage with explicit capacity management.
- *
- * @since 0.1
+ * @generic T The type of elements stored in this queue.
  */
+@Since("0.1")
+@Serializable
+pack Queue<T> {
+    var data: T* = alloc T[8]
+    var size: Int = 0
+    var capacity: Int = 8
+}
 
-realm std {
-    /**
-     * A generic first-in-first-out (FIFO) queue.
-     *
-     * Queue provides pointer-backed storage where elements are
-     * added at the back and removed from the front.
-     *
-     * @generic T The type of elements stored in this queue.
-     */
+/** Constructs an empty `Queue<T>` with default capacity. */
+@Experimental(since: "0.1")
+impl ctor() for Queue<T> { self! ->
+    self.data = alloc T[8]
+    self.size = 0
+    self.capacity = 8
+}
+
+/** Queue operations: enqueue, dequeue, peek, clear, and string conversion. */
+impl Queue<T> {
+    // --- Properties ---
+
+    /** Whether the queue contains no elements. */
     @Since("0.1")
-    @Serializable
-    pack Queue<T> {
-        var data: T* = alloc T[8]
-        var size: Int = 0
-        var capacity: Int = 8
+    prop isEmpty[self: Self&]: Bool = size == 0
+
+    /** Whether the queue contains at least one element. */
+    @Since("0.1")
+    prop isNotEmpty[self: Self&]: Bool = size > 0
+
+    // --- Internal ---
+
+    /** Doubles the backing buffer's capacity, copying existing elements. */
+    @Experimental(since: "0.1")
+    func growQueue() {
+        fin newCap = capacity * 2
+        let newData = alloc T[newCap]
+        for i in 0..<size {
+            newData[i] = data[i]
+        }
+        fin oldData = data
+        self.data = newData
+        self.capacity = newCap
+        purge oldData
     }
 
-    /** Constructs an empty `Queue<T>` with default capacity. */
+    // --- Operations ---
+
+    /**
+     * Adds an element to the back of the queue.
+     *
+     * @param element The element to enqueue.
+     */
     @Experimental(since: "0.1")
-    impl ctor() for Queue<T> { self! ->
+    func enqueue(element: T) {
+        if size >= capacity { self.growQueue() }
+        data[size] = element
+        self.size = size + 1
+    }
+
+    /**
+     * Removes and returns the front element of the queue.
+     *
+     * @return The removed front element.
+     * @throws AssertionError if the queue is empty.
+     */
+    @Experimental(since: "0.1")
+    func dequeue(): T {
+        assert size > 0 { "Queue is empty" }
+        fin front = data[0]
+        for i in 0..<size - 1 {
+            data[i] = data[i + 1]
+        }
+        self.size = size - 1
+        return front
+    }
+
+    /**
+     * Returns the front element without removing it.
+     *
+     * @return The front element.
+     * @throws AssertionError if the queue is empty.
+     */
+    @Experimental(since: "0.1")
+    func peek(): T {
+        assert size > 0 { "Queue is empty" }
+        return data[0]
+    }
+
+    /** Removes all elements from the queue. */
+    @Experimental(since: "0.1")
+    func clear() {
+        fin oldData = data
         self.data = alloc T[8]
         self.size = 0
         self.capacity = 8
+        purge oldData
     }
 
-    /** Queue operations: enqueue, dequeue, peek, clear, and string conversion. */
-    impl Queue<T> {
-        // --- Properties ---
+    // --- String ---
 
-        /** Whether the queue contains no elements. */
-        @Since("0.1")
-        prop isEmpty[self: Self&]: Bool = size == 0
-
-        /** Whether the queue contains at least one element. */
-        @Since("0.1")
-        prop isNotEmpty[self: Self&]: Bool = size > 0
-
-        // --- Internal ---
-
-        /** Doubles the backing buffer's capacity, copying existing elements. */
-        @Experimental(since: "0.1")
-        func growQueue() {
-            fin newCap = capacity * 2
-            let newData = alloc T[newCap]
-            for i in 0..<size {
-                newData[i] = data[i]
-            }
-            fin oldData = data
-            self.data = newData
-            self.capacity = newCap
-            purge oldData
+    /**
+     * Returns a string representation of the queue.
+     *
+     * @return A string in the format "[front, ..., back]".
+     */
+    @Experimental(since: "0.1")
+    func toString(): String {
+        var s = "["
+        for i in 0..<size {
+            if i > 0 { s = s + ", " }
+            s = s + data[i] as String
         }
-
-        // --- Operations ---
-
-        /**
-         * Adds an element to the back of the queue.
-         *
-         * @param element The element to enqueue.
-         */
-        @Experimental(since: "0.1")
-        func enqueue(element: T) {
-            if size >= capacity { self.growQueue() }
-            data[size] = element
-            self.size = size + 1
-        }
-
-        /**
-         * Removes and returns the front element of the queue.
-         *
-         * @return The removed front element.
-         * @throws AssertionError if the queue is empty.
-         */
-        @Experimental(since: "0.1")
-        func dequeue(): T {
-            assert size > 0 { "Queue is empty" }
-            fin front = data[0]
-            for i in 0..<size - 1 {
-                data[i] = data[i + 1]
-            }
-            self.size = size - 1
-            return front
-        }
-
-        /**
-         * Returns the front element without removing it.
-         *
-         * @return The front element.
-         * @throws AssertionError if the queue is empty.
-         */
-        @Experimental(since: "0.1")
-        func peek(): T {
-            assert size > 0 { "Queue is empty" }
-            return data[0]
-        }
-
-        /** Removes all elements from the queue. */
-        @Experimental(since: "0.1")
-        func clear() {
-            fin oldData = data
-            self.data = alloc T[8]
-            self.size = 0
-            self.capacity = 8
-            purge oldData
-        }
-
-        // --- String ---
-
-        /**
-         * Returns a string representation of the queue.
-         *
-         * @return A string in the format "[front, ..., back]".
-         */
-        @Experimental(since: "0.1")
-        func toString(): String {
-            var s = "["
-            for i in 0..<size {
-                if i > 0 { s = s + ", " }
-                s = s + data[i] as String
-            }
-            return s + "]"
-        }
+        return s + "]"
     }
 }
 
 test "queue starts empty" {
-    fin value = Queue<Int>()
+    fin value: Queue<Int> = .()
     assert value.size == 0 && value.isEmpty { "new queue must be empty" }
 }
 

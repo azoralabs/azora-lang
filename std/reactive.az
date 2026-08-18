@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-module std.reactive
-
-import std.container.list
-
 /**
- * @file std.reactive
+ * @file std.reactive.az
  *
  * Rendering-independent reactive state, derived values, and deterministic
  * effects. Nothing in this module assumes a DOM, scene graph, widget toolkit,
@@ -43,266 +39,267 @@ import std.container.list
  * - `effect [a, b] { ... }` observes an explicit dependency list.
  * - `effect defer { ... }` runs when its owner is disposed.
  */
+module std.reactive
 
-realm std {
-    /** Lifetime selected by a language-level reactive binding. */
-    @Experimental(since: "0.1")
-    enum ReactiveLifetime {
-        /** Survives reruns of the current owner. */
-        Remembered
+import std.container.list.*
 
-        /** Survives recreation of the current owner in this process. */
-        Retained
+/** Lifetime selected by a language-level reactive binding. */
+@Experimental(since: "0.1")
+enum ReactiveLifetime {
+    /** Survives reruns of the current owner. */
+    Remembered
 
-        /** Participates in explicit snapshot and restoration. */
-        Preserved
-    }
+    /** Survives recreation of the current owner in this process. */
+    Retained
 
-    /** Stable key used to identify persisted state independently of source order. */
-    @Experimental(since: "0.1")
-    pack ReactiveKey {
-        fin value: String
-    }
-
-    /**
-     * Runtime identity and lifecycle state for a reactive scope.
-     *
-     * Most programs receive owners from `react`; this type exists for engines,
-     * servers, tests, and embedding APIs that need to manage a scope directly.
-     */
-    @Experimental(since: "0.1")
-    pack ReactiveOwner {
-        fin key: ReactiveKey
-        var disposed: Bool = false
-    }
-
-    /** A serializable value captured from reactive state. */
-    @Experimental(since: "0.1")
-    @Serializable
-    pack ReactiveSnapshot<T> {
-        fin key: ReactiveKey
-        fin value: T
-        fin lifetime: ReactiveLifetime
-        fin version: Int
-    }
-
-    /** Read-only observable value contract. */
-    @Experimental(since: "0.1")
-    spec Read<T> {
-        /** Current value. Reading it never mutates the source. */
-        prop value[self: Self&]: T
-
-        /** Monotonic revision incremented after each distinct write. */
-        prop version[self: Self&]: Int
-
-        /** Registers an observer and immediately emits the current value. */
-        func subscribe[self: Self!](observer: (T) -> Unit): Subscription
-    }
-
-    /** Mutable observable value contract. */
-    @Experimental(since: "0.1")
-    spec Write<T> : Read<T> {
-        /** Replaces the value and synchronously notifies active observers. */
-        func set[self: Self!](value: T)
-
-        /** Computes and stores a replacement from the current value. */
-        func update[self: Self!](transform: (T) -> T)
-    }
-
-    /** Internal observer record retained by a [State]. */
-    @Experimental(since: "0.1")
-    pack ReactiveObserver<T> {
-        fin id: Int
-        var active: Bool = true
-        fin callback: (T) -> Unit
-    }
-
-    /**
-     * Deterministic subscription handle.
-     *
-     * Disposal is idempotent. A subscription never owns the observed value;
-     * it owns only the right to receive future notifications.
-     */
-    @Experimental(since: "0.1")
-    pack Subscription {
-        var active: Bool = true
-        fin cancel: () -> Unit
-    }
-
-    impl Subscription {
-        /** Stops future notifications. Calling this more than once is harmless. */
-        @Experimental(since: "0.1")
-        func dispose[self: Self!]() {
-            if self.active {
-                self.active = false
-                self.cancel()
-            }
-        }
-    }
-
-    /**
-     * Mutable observable state independent of language-level owner storage.
-     *
-     * Notification order is registration order. A write completes all current
-     * observers synchronously before returning; observers added during a
-     * notification participate in the next write.
-     */
-    @Experimental(since: "0.1")
-    pack State<T> {
-        var current: T
-        var revision: Int = 0
-        var nextObserverId: Int = 0
-        var observers: ArrayList<ReactiveObserver<T>> = ArrayList<ReactiveObserver<T>>()
-    }
-
-    impl Read<T> for State<T> {
-        prop value[self: Self&]: T = self.current
-        prop version[self: Self&]: Int = self.revision
-
-        func subscribe[self: Self!](observer: (T) -> Unit): Subscription {
-            fin id = self.nextObserverId
-            self.nextObserverId += 1
-            self.observers.add(ReactiveObserver<T>(id, true, observer))
-            observer(self.current)
-            // The disposer reaches back into the state it was made from, so it
-            // says so: `self` by mutable reference, `id` copied.
-            return Subscription(true) [; self.!, id] {
-                for i in 0..<self.observers.size {
-                    let item: ReactiveObserver<T> = self.observers.get(i)
-                    if item.id == id {
-                        item.active = false
-                    }
-                }
-            }
-        }
-    }
-
-    impl Write<T> for State<T> {
-        func set[self: Self!](value: T) {
-            self.current = value
-            self.revision += 1
-            fin count = self.observers.size
-            for i in 0..<count {
-                let item: ReactiveObserver<T> = self.observers.get(i)
-                if item.active {
-                    item.callback(value)
-                }
-            }
-        }
-
-        func update[self: Self!](transform: (T) -> T) {
-            self.set(transform(self.current))
-        }
-    }
-
-    /** A value calculated from a producer whenever it is read. */
-    @Experimental(since: "0.1")
-    pack Derived<T> {
-        fin producer: () -> T
-    }
-
-    impl Derived<T> {
-        /** Returns the producer's latest result. */
-        @Experimental(since: "0.1")
-        prop value[self: Self&]: T = self.producer()
-    }
-
-    /** Abstract persistence boundary for hosts that store preserved snapshots. */
-    @Experimental(since: "0.1")
-    spec PreserveStore {
-        /** Whether the store has a snapshot for `key`. */
-        func contains[self: Self&](key: ReactiveKey): Bool
-
-        /** Stores an erased snapshot payload. */
-        func write[self: Self!](key: ReactiveKey, value: Any)
-
-        /** Reads an erased snapshot payload. */
-        func read[self: Self&](key: ReactiveKey): Any
-
-        /** Deletes one persisted key. */
-        func remove[self: Self!](key: ReactiveKey)
-    }
-
-    /** Creates mutable observable state. */
-    @Experimental(since: "0.1")
-    func state<T>(value: T): State<T> {
-        return State<T>(value, 0, 0, ArrayList<ReactiveObserver<T>>())
-    }
-
-    /** Creates a derived value from a producer. */
-    @Experimental(since: "0.1")
-    func computed<T>(producer: () -> T): Derived<T> {
-        return Derived<T>(producer)
-    }
-
-    /** Registers an observer and returns its deterministic disposal handle. */
-    @Experimental(since: "0.1")
-    func observe<T>(source: State<T>!, observer: (T) -> Unit): Subscription {
-        return source.subscribe(observer)
-    }
-
-    /** Executes several synchronous mutations as one explicit operation. */
-    @Experimental(since: "0.1")
-    func batch(action: () -> Unit) {
-        action()
-    }
-
-    /** Executes a calculation without introducing a language-level effect. */
-    @Experimental(since: "0.1")
-    func untracked<T>(producer: () -> T): T {
-        return producer()
-    }
-
-    /** Associates a stable key with a value for owner and persistence APIs. */
-    @Experimental(since: "0.1")
-    func keyed<T>(key: String, value: T): ReactiveSnapshot<T> {
-        return ReactiveSnapshot<T>(ReactiveKey(key), value, ReactiveLifetime.Preserved, 0)
-    }
-
-    /** Captures the current state value and revision. */
-    @Experimental(since: "0.1")
-    func snapshot<T>(key: String, source: State<T>&): ReactiveSnapshot<T> {
-        return ReactiveSnapshot<T>(ReactiveKey(key), source.value, ReactiveLifetime.Preserved, source.version)
-    }
-
-    /** Creates new state initialized from a snapshot. */
-    @Experimental(since: "0.1")
-    func restore<T>(saved: ReactiveSnapshot<T>): State<T> {
-        return State<T>(saved.value, saved.version, 0, ArrayList<ReactiveObserver<T>>())
-    }
-
-    /** Disposes a subscription. */
-    @Experimental(since: "0.1")
-    func dispose(subscription: Subscription!) {
-        subscription.dispose()
-    }
-
-    /**
-     * Explicit synchronization point for hosts with queued adapters.
-     *
-     * Core Azora effects and [State] notifications are synchronous, so this is
-     * intentionally a no-op unless an adapter wraps it with a scheduler.
-     */
-    @Experimental(since: "0.1")
-    func flush() { }
-
-    /** Pair of values produced by the [@combine] convenience macro. */
-    @Experimental(since: "0.1")
-    pack Combined<A, B> {
-        fin first: A
-        fin second: B
-    }
-
-    /** Creates a typed pair without requiring tuple grammar. */
-    @Experimental(since: "0.1")
-    func combine<A, B>(first: A, second: B): Combined<A, B> {
-        return Combined<A, B>(first, second)
-    }
-
-    /** `left @combine right` expands to `combine(left, right)`. */
-    @Experimental(since: "0.1")
-    macro $left @combine $right => combine($left, $right)
+    /** Participates in explicit snapshot and restoration. */
+    Preserved
 }
+
+/** Stable key used to identify persisted state independently of source order. */
+@Experimental(since: "0.1")
+pack ReactiveKey {
+    fin value: String
+}
+
+/**
+ * Runtime identity and lifecycle state for a reactive scope.
+ *
+ * Most programs receive owners from `react`; this type exists for engines,
+ * servers, tests, and embedding APIs that need to manage a scope directly.
+ */
+@Experimental(since: "0.1")
+pack ReactiveOwner {
+    fin key: ReactiveKey
+    var disposed: Bool = false
+}
+
+/** A serializable value captured from reactive state. */
+@Experimental(since: "0.1")
+@Serializable
+pack ReactiveSnapshot<T> {
+    fin key: ReactiveKey
+    fin value: T
+    fin lifetime: ReactiveLifetime
+    fin version: Int
+}
+
+/** Read-only observable value contract. */
+@Experimental(since: "0.1")
+spec Read<T> {
+    /** Current value. Reading it never mutates the source. */
+    prop value[self: Self&]: T
+
+    /** Monotonic revision incremented after each distinct write. */
+    prop version[self: Self&]: Int
+
+    /** Registers an observer and immediately emits the current value. */
+    func subscribe[self: Self!](observer: (T) -> Unit): Subscription
+}
+
+/** Mutable observable value contract. */
+@Experimental(since: "0.1")
+spec Write<T> : Read<T> {
+    /** Replaces the value and synchronously notifies active observers. */
+    func set[self: Self!](value: T)
+
+    /** Computes and stores a replacement from the current value. */
+    func update[self: Self!](transform: (T) -> T)
+}
+
+/** Internal observer record retained by a [State]. */
+@Experimental(since: "0.1")
+pack ReactiveObserver<T> {
+    fin id: Int
+    var active: Bool = true
+    fin callback: (T) -> Unit
+}
+
+/**
+ * Deterministic subscription handle.
+ *
+ * Disposal is idempotent. A subscription never owns the observed value;
+ * it owns only the right to receive future notifications.
+ */
+@Experimental(since: "0.1")
+pack Subscription {
+    var active: Bool = true
+    fin cancel: () -> Unit
+}
+
+impl Subscription {
+    /** Stops future notifications. Calling this more than once is harmless. */
+    @Experimental(since: "0.1")
+    func dispose[self: Self!]() {
+        if self.active {
+            self.active = false
+            self.cancel()
+        }
+    }
+}
+
+/**
+ * Mutable observable state independent of language-level owner storage.
+ *
+ * Notification order is registration order. A write completes all current
+ * observers synchronously before returning; observers added during a
+ * notification participate in the next write.
+ */
+@Experimental(since: "0.1")
+pack State<T> {
+    var current: T
+    var revision: Int = 0
+    var nextObserverId: Int = 0
+    var observers: ArrayList<ReactiveObserver<T>> = ArrayList<ReactiveObserver<T>>()
+}
+
+impl Read<T> for State<T> {
+    prop value[self: Self&]: T = self.current
+    prop version[self: Self&]: Int = self.revision
+
+    func subscribe[self: Self!](observer: (T) -> Unit): Subscription {
+        fin id = self.nextObserverId
+        self.nextObserverId += 1
+        self.observers.add(ReactiveObserver<T>(id, true, observer))
+        observer(self.current)
+        // The disposer reaches back into the state it was made from, so it
+        // says so: `self` by mutable reference, `id` copied.
+        return Subscription(true) [; self.!, id] {
+            for i in 0..<self.observers.size {
+                let item: ReactiveObserver<T> = self.observers.get(i)
+                if item.id == id {
+                    item.active = false
+                }
+            }
+        }
+    }
+}
+
+impl Write<T> for State<T> {
+    func set[self: Self!](value: T) {
+        self.current = value
+        self.revision += 1
+        fin count = self.observers.size
+        for i in 0..<count {
+            let item: ReactiveObserver<T> = self.observers.get(i)
+            if item.active {
+                item.callback(value)
+            }
+        }
+    }
+
+    func update[self: Self!](transform: (T) -> T) {
+        self.set(transform(self.current))
+    }
+}
+
+/** A value calculated from a producer whenever it is read. */
+@Experimental(since: "0.1")
+pack Derived<T> {
+    fin producer: () -> T
+}
+
+impl Derived<T> {
+    /** Returns the producer's latest result. */
+    @Experimental(since: "0.1")
+    prop value[self: Self&]: T = self.producer()
+}
+
+/** Abstract persistence boundary for hosts that store preserved snapshots. */
+@Experimental(since: "0.1")
+spec PreserveStore {
+    /** Whether the store has a snapshot for `key`. */
+    func contains[self: Self&](key: ReactiveKey): Bool
+
+    /** Stores an erased snapshot payload. */
+    func write[self: Self!](key: ReactiveKey, value: Any)
+
+    /** Reads an erased snapshot payload. */
+    func read[self: Self&](key: ReactiveKey): Any
+
+    /** Deletes one persisted key. */
+    func remove[self: Self!](key: ReactiveKey)
+}
+
+/** Creates mutable observable state. */
+@Experimental(since: "0.1")
+func state<T>(value: T): State<T> {
+    return State<T>(value, 0, 0, ArrayList<ReactiveObserver<T>>())
+}
+
+/** Creates a derived value from a producer. */
+@Experimental(since: "0.1")
+func computed<T>(producer: () -> T): Derived<T> {
+    return Derived<T>(producer)
+}
+
+/** Registers an observer and returns its deterministic disposal handle. */
+@Experimental(since: "0.1")
+func observe<T>(source: State<T>!, observer: (T) -> Unit): Subscription {
+    return source.subscribe(observer)
+}
+
+/** Executes several synchronous mutations as one explicit operation. */
+@Experimental(since: "0.1")
+func batch(action: () -> Unit) {
+    action()
+}
+
+/** Executes a calculation without introducing a language-level effect. */
+@Experimental(since: "0.1")
+func untracked<T>(producer: () -> T): T {
+    return producer()
+}
+
+/** Associates a stable key with a value for owner and persistence APIs. */
+@Experimental(since: "0.1")
+func keyed<T>(key: String, value: T): ReactiveSnapshot<T> {
+    return ReactiveSnapshot<T>(ReactiveKey(key), value, ReactiveLifetime.Preserved, 0)
+}
+
+/** Captures the current state value and revision. */
+@Experimental(since: "0.1")
+func snapshot<T>(key: String, source: State<T>&): ReactiveSnapshot<T> {
+    return ReactiveSnapshot<T>(ReactiveKey(key), source.value, ReactiveLifetime.Preserved, source.version)
+}
+
+/** Creates new state initialized from a snapshot. */
+@Experimental(since: "0.1")
+func restore<T>(saved: ReactiveSnapshot<T>): State<T> {
+    return State<T>(saved.value, saved.version, 0, ArrayList<ReactiveObserver<T>>())
+}
+
+/** Disposes a subscription. */
+@Experimental(since: "0.1")
+func dispose(subscription: Subscription!) {
+    subscription.dispose()
+}
+
+/**
+ * Explicit synchronization point for hosts with queued adapters.
+ *
+ * Core Azora effects and [State] notifications are synchronous, so this is
+ * intentionally a no-op unless an adapter wraps it with a scheduler.
+ */
+@Experimental(since: "0.1")
+func flush() { }
+
+/** Pair of values produced by the [@combine] convenience macro. */
+@Experimental(since: "0.1")
+pack Combined<A, B> {
+    fin first: A
+    fin second: B
+}
+
+/** Creates a typed pair without requiring tuple grammar. */
+@Experimental(since: "0.1")
+func combine<A, B>(first: A, second: B): Combined<A, B> {
+    return Combined<A, B>(first, second)
+}
+
+/** `left @combine right` expands to `combine(left, right)`. */
+@Experimental(since: "0.1")
+macro $left @combine $right => combine($left, $right)
 
 test "state notifies in registration order and disposal is idempotent" {
     var source = state(1)

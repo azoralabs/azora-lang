@@ -91,7 +91,7 @@ impl Array<T, N: Int> {
     bridge fin size: Int
 }
 
-typealias Array<T> = Array<T, *>
+// typealias Array<T> = Array<T, *> remove this wildcard from compiler, we will always construct Arrya<Int, 8>, Array wont have .() * 6 ; only list and other containers
 
 test "arrayOf preserves values and order" {
     fin values: Array<Int> = arrayOf(10, 20, 30)

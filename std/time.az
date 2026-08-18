@@ -14,16 +14,8 @@
  * limitations under the License.
  */
 
-module std.time
-
-import std.char
-import std.container.list
-import std.convert
-import std.serializer
-import std.string
-
 /**
- * @file std/time
+ * @file std/time.az
  *
  * Wall-clock, monotonic-clock, duration, and civil-calendar primitives.
  *
@@ -38,708 +30,714 @@ import std.string
  * the year-2262 overflow of a single signed 64-bit nanosecond counter and keeps
  * sub-second arithmetic exact.
  */
+module std.time
 
-realm std {
-    /** Errors raised by validation, parsing, and unsafe temporal arithmetic. */
-    @Experimental(since: "0.1")
-    error TimeError {
-        InvalidDuration
-        InvalidDate
-        InvalidTime
-        InvalidOffset
-        InvalidFormat
-        ArithmeticOverflow
-        UnsupportedRange
+import std.[
+    char.*
+    container.list.*
+    serializer.*
+    string.*
+]
+
+/** Errors raised by validation, parsing, and unsafe temporal arithmetic. */
+@Experimental(since: "0.1")
+error TimeError {
+    InvalidDuration
+    InvalidDate
+    InvalidTime
+    InvalidOffset
+    InvalidFormat
+    ArithmeticOverflow
+    UnsupportedRange
+}
+
+/** Days of the ISO week, ordered from Monday through Sunday. */
+@Experimental(since: "0.1")
+enum Weekday {
+    Monday
+    Tuesday
+    Wednesday
+    Thursday
+    Friday
+    Saturday
+    Sunday
+}
+
+/**
+ * Exact signed duration with nanosecond precision.
+ *
+ * The canonical representation keeps `nanosecondAdjustment` in
+ * `0..999,999,999`; negative fractions are carried in `seconds`.
+ */
+@Experimental(since: "0.1")
+@Serializable
+pack Duration {
+    fin seconds: Long = 0L
+    fin nanosecondAdjustment: Int = 0
+}
+
+/** A point on the Unix time line, independent of any calendar or offset. */
+@Experimental(since: "0.1")
+@Serializable
+pack Instant {
+    fin epochSecond: Long
+    fin nanosecond: Int = 0
+}
+
+/** Opaque reading from a monotonic clock, used only for elapsed time. */
+@Experimental(since: "0.1")
+pack MonotonicInstant {
+    fin readingNanoseconds: Long
+}
+
+/** A validated proleptic-Gregorian calendar date. */
+@Experimental(since: "0.1")
+@Serializable
+pack LocalDate {
+    fin year: Int
+    fin month: Int
+    fin day: Int
+}
+
+/** A validated time of day with nanosecond precision. */
+@Experimental(since: "0.1")
+@Serializable
+pack LocalTime {
+    fin hour: Int
+    fin minute: Int
+    fin second: Int
+    fin nanosecond: Int = 0
+}
+
+/** Fixed displacement from UTC, constrained to the ISO range of +/-18:00. */
+@Experimental(since: "0.1")
+@Serializable
+pack UtcOffset {
+    fin totalSeconds: Int = 0
+}
+
+/** A local civil date and time paired with a fixed UTC offset. */
+@Experimental(since: "0.1")
+@Serializable
+pack DateTime {
+    fin date: LocalDate
+    fin time: LocalTime
+    fin offset: UtcOffset
+}
+
+/** Source of wall-clock and monotonic time. Injectable clocks make tests deterministic. */
+@Experimental(since: "0.1")
+spec Clock {
+    /** Returns the current Unix instant. */
+    func now[self: Self&](): Instant
+
+    /** Returns an opaque monotonic reading. */
+    func monotonicNow[self: Self&](): MonotonicInstant
+}
+
+/** Host-backed implementation of `Clock`. */
+@Experimental(since: "0.1")
+pack SystemClock
+
+@Experimental(since: "0.1")
+impl Clock for SystemClock {
+    func now[self: Self&](): Instant {
+        return instantFromEpochNanoseconds(azoraTimeUnixNanoseconds())
     }
 
-    /** Days of the ISO week, ordered from Monday through Sunday. */
-    @Experimental(since: "0.1")
-    enum Weekday {
-        Monday
-        Tuesday
-        Wednesday
-        Thursday
-        Friday
-        Saturday
-        Sunday
+    func monotonicNow[self: Self&](): MonotonicInstant {
+        return MonotonicInstant(azoraTimeMonotonicNanoseconds())
+    }
+}
+
+/** Creates a normalized duration from seconds plus an arbitrary nanosecond adjustment. */
+@Experimental(since: "0.1")
+func duration(seconds: Long, nanosecondAdjustment: Long = 0L): Duration {
+    var normalizedSeconds = seconds + nanosecondAdjustment / 1000000000L
+    var normalizedNanos = nanosecondAdjustment % 1000000000L
+    if normalizedNanos < 0L {
+        normalizedSeconds -= 1L
+        normalizedNanos += 1000000000L
+    }
+    return Duration(normalizedSeconds, normalizedNanos as Int)
+}
+
+/** Creates a duration measured in whole nanoseconds. */
+@Experimental(since: "0.1")
+func nanoseconds(value: Long): Duration = duration(0L, value)
+
+/** Creates a duration measured in whole microseconds. */
+@Experimental(since: "0.1")
+func microseconds(value: Long): Duration = duration(0L, value * 1000L)
+
+/** Creates a duration measured in whole milliseconds. */
+@Experimental(since: "0.1")
+func milliseconds(value: Long): Duration = duration(0L, value * 1000000L)
+
+/** Creates a duration measured in whole seconds. */
+@Experimental(since: "0.1")
+func seconds(value: Long): Duration = duration(value)
+
+/** Creates a duration measured in whole minutes. */
+@Experimental(since: "0.1")
+func minutes(value: Long): Duration = duration(value * 60L)
+
+/** Creates a duration measured in fixed 60-minute hours. */
+@Experimental(since: "0.1")
+func hours(value: Long): Duration = duration(value * 3600L)
+
+/** Creates a duration measured in fixed 24-hour days. */
+@Experimental(since: "0.1")
+func days(value: Long): Duration = duration(value * 86400L)
+
+// Unit suffixes: `250.milliseconds` reads as the value it denotes, so a call
+// site states its unit instead of leaving a bare number to be interpreted.
+// Each one delegates to the factory of the same name above.
+
+/** This many whole nanoseconds, as a [Duration]. */
+@Experimental(since: "0.1")
+prop nanoseconds[self: Int&]: Duration = nanoseconds(self as Long)
+
+/** This many whole microseconds, as a [Duration]. */
+@Experimental(since: "0.1")
+prop microseconds[self: Int&]: Duration = microseconds(self as Long)
+
+/** This many whole milliseconds, as a [Duration]. */
+@Experimental(since: "0.1")
+prop milliseconds[self: Int&]: Duration = milliseconds(self as Long)
+
+/** This many whole seconds, as a [Duration]. */
+@Experimental(since: "0.1")
+prop seconds[self: Int&]: Duration = seconds(self as Long)
+
+/** This many whole minutes, as a [Duration]. */
+@Experimental(since: "0.1")
+prop minutes[self: Int&]: Duration = minutes(self as Long)
+
+/** This many fixed 60-minute hours, as a [Duration]. */
+@Experimental(since: "0.1")
+prop hours[self: Int&]: Duration = hours(self as Long)
+
+/** This many fixed 24-hour days, as a [Duration]. */
+@Experimental(since: "0.1")
+prop days[self: Int&]: Duration = days(self as Long)
+
+/** This many whole nanoseconds, as a [Duration]. */
+@Experimental(since: "0.1")
+prop nanoseconds[self: Long&]: Duration = nanoseconds(self)
+
+/** This many whole microseconds, as a [Duration]. */
+@Experimental(since: "0.1")
+prop microseconds[self: Long&]: Duration = microseconds(self)
+
+/** This many whole milliseconds, as a [Duration]. */
+@Experimental(since: "0.1")
+prop milliseconds[self: Long&]: Duration = milliseconds(self)
+
+/** This many whole seconds, as a [Duration]. */
+@Experimental(since: "0.1")
+prop seconds[self: Long&]: Duration = seconds(self)
+
+/** This many whole minutes, as a [Duration]. */
+@Experimental(since: "0.1")
+prop minutes[self: Long&]: Duration = minutes(self)
+
+/** This many fixed 60-minute hours, as a [Duration]. */
+@Experimental(since: "0.1")
+prop hours[self: Long&]: Duration = hours(self)
+
+/** This many fixed 24-hour days, as a [Duration]. */
+@Experimental(since: "0.1")
+prop days[self: Long&]: Duration = days(self)
+
+impl Duration {
+    /** Whether this duration is exactly zero. */
+    prop isZero[self: Self&]: Bool = self.seconds == 0L && self.nanosecondAdjustment == 0
+
+    /** Whether this duration is strictly negative. */
+    prop isNegative[self: Self&]: Bool = self.seconds < 0L
+
+    /** Whole milliseconds truncated toward negative infinity. */
+    prop inWholeMilliseconds[self: Self&]: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
+
+    /** Returns the magnitude with its sign reversed. */
+    func negated[self: Self&](): Duration {
+        return duration(0L - self.seconds, 0L - self.nanosecondAdjustment as Long)
     }
 
-    /**
-     * Exact signed duration with nanosecond precision.
-     *
-     * The canonical representation keeps `nanosecondAdjustment` in
-     * `0..999,999,999`; negative fractions are carried in `seconds`.
-     */
-    @Experimental(since: "0.1")
-    @Serializable
-    pack Duration {
-        fin seconds: Long = 0L
-        fin nanosecondAdjustment: Int = 0
+    /** Adds another exact duration. */
+    func plus[self: Self&](other: Duration&): Duration {
+        return duration(
+            self.seconds + other.seconds,
+            self.nanosecondAdjustment as Long + other.nanosecondAdjustment as Long
+        )
     }
 
-    /** A point on the Unix time line, independent of any calendar or offset. */
-    @Experimental(since: "0.1")
-    @Serializable
-    pack Instant {
-        fin epochSecond: Long
-        fin nanosecond: Int = 0
+    /** Subtracts another exact duration. */
+    func minus[self: Self&](other: Duration&): Duration {
+        return self.plus(other.negated())
+    }
+}
+
+/** Creates a normalized Unix instant. */
+@Experimental(since: "0.1")
+func instant(epochSecond: Long, nanosecondAdjustment: Long = 0L): Instant {
+    fin normalized = duration(epochSecond, nanosecondAdjustment)
+    return Instant(normalized.seconds, normalized.nanosecondAdjustment)
+}
+
+/** Converts a signed Unix nanosecond count to a normalized instant. */
+@Experimental(since: "0.1")
+func instantFromEpochNanoseconds(value: Long): Instant {
+    return instant(0L, value)
+}
+
+/** Returns the current wall-clock instant from the system clock. */
+@Experimental(since: "0.1")
+func now(): Instant = SystemClock().now()
+
+/** Returns the current monotonic reading from the system clock. */
+@Experimental(since: "0.1")
+func monotonicNow(): MonotonicInstant = SystemClock().monotonicNow()
+
+impl Instant {
+    /** Whole Unix milliseconds, truncated toward negative infinity. */
+    prop epochMilliseconds[self: Self&]: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
+
+    /** Adds an exact duration while retaining the normalized representation. */
+    func plus[self: Self&](value: Duration&): Instant {
+        return instant(
+            self.epochSecond + value.seconds,
+            self.nanosecond as Long + value.nanosecondAdjustment as Long
+        )
     }
 
-    /** Opaque reading from a monotonic clock, used only for elapsed time. */
-    @Experimental(since: "0.1")
-    pack MonotonicInstant {
-        fin readingNanoseconds: Long
+    /** Subtracts an exact duration. */
+    func minus[self: Self&](value: Duration&): Instant {
+        return self.plus(value.negated())
     }
 
-    /** A validated proleptic-Gregorian calendar date. */
-    @Experimental(since: "0.1")
-    @Serializable
-    pack LocalDate {
-        fin year: Int
-        fin month: Int
-        fin day: Int
+    /** Returns the exact elapsed duration from `earlier` to this instant. */
+    func durationSince[self: Self&](earlier: Instant&): Duration {
+        return duration(
+            self.epochSecond - earlier.epochSecond,
+            self.nanosecond as Long - earlier.nanosecond as Long
+        )
     }
 
-    /** A validated time of day with nanosecond precision. */
-    @Experimental(since: "0.1")
-    @Serializable
-    pack LocalTime {
-        fin hour: Int
-        fin minute: Int
-        fin second: Int
-        fin nanosecond: Int = 0
+    /** Converts this instant to civil time at a fixed UTC offset. */
+    func atOffset[self: Self&](offset: UtcOffset): DateTime {
+        return atOffset(self, offset)
     }
 
-    /** Fixed displacement from UTC, constrained to the ISO range of +/-18:00. */
-    @Experimental(since: "0.1")
-    @Serializable
-    pack UtcOffset {
-        fin totalSeconds: Int = 0
+    /** Formats this instant as canonical UTC ISO-8601 text. */
+    func formatIso[self: Self&](): String {
+        return formatIsoInstant(self)
+    }
+}
+
+impl MonotonicInstant {
+    /** Returns elapsed time; fails if the readings are not ordered. */
+    func elapsedSince[self: Self&](earlier: MonotonicInstant&): Duration ?! TimeError {
+        if self.readingNanoseconds < earlier.readingNanoseconds { return .InvalidDuration }
+        return nanoseconds(self.readingNanoseconds - earlier.readingNanoseconds)
+    }
+}
+
+/** Returns whether `year` is a leap year in the proleptic Gregorian calendar. */
+@Experimental(since: "0.1")
+func isLeapYear(year: Int): Bool {
+    return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+}
+
+/** Returns the number of days in a validated month. */
+@Experimental(since: "0.1")
+func daysInMonth(year: Int, month: Int): Int ?! TimeError {
+    if month < 1 || month > 12 { return .InvalidDate }
+    if month == 2 {
+        if isLeapYear(year) { return 29 }
+        return 28
+    }
+    if month == 4 || month == 6 || month == 9 || month == 11 { return 30 }
+    return 31
+}
+
+/** Creates and validates a Gregorian date. */
+@Experimental(since: "0.1")
+func localDate(year: Int, month: Int, day: Int): LocalDate ?! TimeError {
+    if day < 1 || day > try daysInMonth(year, month) { return .InvalidDate }
+    return LocalDate(year, month, day)
+}
+
+/** Creates and validates a local time of day. Leap seconds are not accepted. */
+@Experimental(since: "0.1")
+func localTime(hour: Int, minute: Int, second: Int, nanosecond: Int = 0): LocalTime ?! TimeError {
+    if hour < 0 || hour > 23 { return .InvalidTime }
+    if minute < 0 || minute > 59 { return .InvalidTime }
+    if second < 0 || second > 59 { return .InvalidTime }
+    if nanosecond < 0 || nanosecond > 999999999 { return .InvalidTime }
+    return LocalTime(hour, minute, second, nanosecond)
+}
+
+/** Creates a validated fixed UTC offset. */
+@Experimental(since: "0.1")
+func utcOffset(totalSeconds: Int): UtcOffset ?! TimeError {
+    if totalSeconds < -64800 || totalSeconds > 64800 { return .InvalidOffset }
+    return UtcOffset(totalSeconds)
+}
+
+/** Creates a validated fixed UTC offset from signed hours and minutes. */
+@Experimental(since: "0.1")
+func utcOffsetOf(hours: Int, minutes: Int = 0): UtcOffset ?! TimeError {
+    if minutes < 0 || minutes > 59 { return .InvalidOffset }
+    if hours < -18 || hours > 18 { return .InvalidOffset }
+    var sign = 1
+    if hours < 0 { sign = -1 }
+    var absoluteHours = hours
+    if hours < 0 { absoluteHours = 0 - hours }
+    if absoluteHours == 18 && minutes != 0 { return .InvalidOffset }
+    return utcOffset(sign * (absoluteHours * 3600 + minutes * 60))
+}
+
+/** Creates a validated offset date-time. */
+@Experimental(since: "0.1")
+func dateTime(date: LocalDate, time: LocalTime, offset: UtcOffset): DateTime {
+    return DateTime(date, time, offset)
+}
+
+impl LocalDate {
+    /** ISO weekday corresponding to this date. */
+    prop weekday[self: Self&]: Weekday = weekday(self)
+}
+
+impl DateTime {
+    /** Converts this fixed-offset civil value to its unique Unix instant. */
+    func toInstant[self: Self&](): Instant {
+        return toInstant(self)
     }
 
-    /** A local civil date and time paired with a fixed UTC offset. */
-    @Experimental(since: "0.1")
-    @Serializable
-    pack DateTime {
-        fin date: LocalDate
-        fin time: LocalTime
-        fin offset: UtcOffset
+    /** Formats this value as canonical ISO-8601 offset date-time text. */
+    func formatIso[self: Self&](): String {
+        return formatIsoDateTime(self)
+    }
+}
+
+/** Converts a date-time to its unique Unix instant. */
+@Experimental(since: "0.1")
+func toInstant(value: DateTime&): Instant {
+    fin epochDay = _daysFromCivil(value.date.year, value.date.month, value.date.day)
+    fin localSecond = epochDay * 86400L +
+        (value.time.hour as Long) * 3600L +
+        (value.time.minute as Long) * 60L +
+        (value.time.second as Long)
+    return instant(localSecond - (value.offset.totalSeconds as Long), value.time.nanosecond as Long)
+}
+
+/** Converts an instant to a date-time at the requested fixed offset. */
+@Experimental(since: "0.1")
+func atOffset(value: Instant&, offset: UtcOffset): DateTime {
+    fin localSecond = value.epochSecond + offset.totalSeconds as Long
+    fin epochDay = _floorDiv(localSecond, 86400L)
+    fin secondOfDay = localSecond - epochDay * 86400L
+    fin date = _civilFromDays(epochDay)
+    fin hour = (secondOfDay / 3600L) as Int
+    fin minute = ((secondOfDay % 3600L) / 60L) as Int
+    fin second = (secondOfDay % 60L) as Int
+    return DateTime(date, LocalTime(hour, minute, second, value.nanosecond), offset)
+}
+
+/** Returns the ISO weekday for a date. */
+@Experimental(since: "0.1")
+func weekday(value: LocalDate&): Weekday {
+    fin epochDay = _daysFromCivil(value.year, value.month, value.day)
+    fin index = _floorMod(epochDay + 3L, 7L) as Int
+    if index == 0 { return Weekday.Monday }
+    if index == 1 { return Weekday.Tuesday }
+    if index == 2 { return Weekday.Wednesday }
+    if index == 3 { return Weekday.Thursday }
+    if index == 4 { return Weekday.Friday }
+    if index == 5 { return Weekday.Saturday }
+    return Weekday.Sunday
+}
+
+/** Formats a date-time using the canonical ISO-8601 extended representation. */
+@Experimental(since: "0.1")
+func formatIsoDateTime(value: DateTime&): String {
+    var result = _pad4(value.date.year) + "-" + _pad2(value.date.month) + "-" + _pad2(value.date.day) +
+        "T" + _pad2(value.time.hour) + ":" + _pad2(value.time.minute) + ":" + _pad2(value.time.second)
+    if value.time.nanosecond != 0 { result = result + _formatFraction(value.time.nanosecond) }
+    if value.offset.totalSeconds == 0 { return result + "Z" }
+    var offset = value.offset.totalSeconds
+    var sign = "+"
+    if offset < 0 {
+        sign = "-"
+        offset = 0 - offset
+    }
+    fin offsetSecond = offset % 60
+    var suffix = sign + _pad2(offset / 3600) + ":" + _pad2((offset % 3600) / 60)
+    if offsetSecond != 0 { suffix = suffix + ":" + _pad2(offsetSecond) }
+    return result + suffix
+}
+
+/** Formats an instant in canonical UTC ISO-8601 form. */
+@Experimental(since: "0.1")
+func formatIsoInstant(value: Instant&): String {
+    return formatIsoDateTime(atOffset(value, UtcOffset(0)))
+}
+
+/**
+ * Parses canonical ISO-8601 offset date-time text.
+ *
+ * Accepted years are `0000..9999`; offsets must be `Z`, `+/-HH:MM`, or
+ * `+/-HH:MM:SS` when second precision is required.
+ * Fractional seconds may contain one through nine digits.
+ */
+@Experimental(since: "0.1")
+func parseIsoDateTime(value: String): DateTime ?! TimeError {
+    fin length = stringLength(value)
+    if length < 20 { return .InvalidFormat }
+    if charAt(value, 4) != '-' || charAt(value, 7) != '-' ||
+        (charAt(value, 10) != 'T' && charAt(value, 10) != 't') ||
+        charAt(value, 13) != ':' || charAt(value, 16) != ':' {
+        return .InvalidFormat
+    }
+    if !_digitsAt(value, 0, 4) || !_digitsAt(value, 5, 2) || !_digitsAt(value, 8, 2) ||
+        !_digitsAt(value, 11, 2) || !_digitsAt(value, 14, 2) || !_digitsAt(value, 17, 2) {
+        return .InvalidFormat
     }
 
-    /** Source of wall-clock and monotonic time. Injectable clocks make tests deterministic. */
-    @Experimental(since: "0.1")
-    spec Clock {
-        /** Returns the current Unix instant. */
-        func now[self: Self&](): Instant
+    fin year = _decimalAt(value, 0, 4)
+    fin month = _decimalAt(value, 5, 2)
+    fin day = _decimalAt(value, 8, 2)
+    fin hour = _decimalAt(value, 11, 2)
+    fin minute = _decimalAt(value, 14, 2)
+    fin second = _decimalAt(value, 17, 2)
+    var nanosecond = 0
+    var index = 19
 
-        /** Returns an opaque monotonic reading. */
-        func monotonicNow[self: Self&](): MonotonicInstant
-    }
-
-    /** Host-backed implementation of `Clock`. */
-    @Experimental(since: "0.1")
-    pack SystemClock
-
-    @Experimental(since: "0.1")
-    impl Clock for SystemClock {
-        func now[self: Self&](): Instant {
-            return instantFromEpochNanoseconds(azoraTimeUnixNanoseconds())
+    if index < length && charAt(value, index) == '.' {
+        index += 1
+        fin fractionStart = index
+        while index < length && charIsDigit(charAt(value, index)) { index += 1 }
+        fin digits = index - fractionStart
+        if digits < 1 || digits > 9 { return .InvalidFormat }
+        nanosecond = _decimalAt(value, fractionStart, digits)
+        for scale in digits..<9 {
+            nanosecond *= 10
         }
-
-        func monotonicNow[self: Self&](): MonotonicInstant {
-            return MonotonicInstant(azoraTimeMonotonicNanoseconds())
-        }
     }
 
-    /** Creates a normalized duration from seconds plus an arbitrary nanosecond adjustment. */
-    @Experimental(since: "0.1")
-    func duration(seconds: Long, nanosecondAdjustment: Long = 0L): Duration {
-        var normalizedSeconds = seconds + nanosecondAdjustment / 1000000000L
-        var normalizedNanos = nanosecondAdjustment % 1000000000L
-        if normalizedNanos < 0L {
-            normalizedSeconds -= 1L
-            normalizedNanos += 1000000000L
-        }
-        return Duration(normalizedSeconds, normalizedNanos as Int)
-    }
-
-    /** Creates a duration measured in whole nanoseconds. */
-    @Experimental(since: "0.1")
-    func nanoseconds(value: Long): Duration = duration(0L, value)
-
-    /** Creates a duration measured in whole microseconds. */
-    @Experimental(since: "0.1")
-    func microseconds(value: Long): Duration = duration(0L, value * 1000L)
-
-    /** Creates a duration measured in whole milliseconds. */
-    @Experimental(since: "0.1")
-    func milliseconds(value: Long): Duration = duration(0L, value * 1000000L)
-
-    /** Creates a duration measured in whole seconds. */
-    @Experimental(since: "0.1")
-    func seconds(value: Long): Duration = duration(value)
-
-    /** Creates a duration measured in whole minutes. */
-    @Experimental(since: "0.1")
-    func minutes(value: Long): Duration = duration(value * 60L)
-
-    /** Creates a duration measured in fixed 60-minute hours. */
-    @Experimental(since: "0.1")
-    func hours(value: Long): Duration = duration(value * 3600L)
-
-    /** Creates a duration measured in fixed 24-hour days. */
-    @Experimental(since: "0.1")
-    func days(value: Long): Duration = duration(value * 86400L)
-
-    // Unit suffixes: `250.milliseconds` reads as the value it denotes, so a call
-    // site states its unit instead of leaving a bare number to be interpreted.
-    // Each one delegates to the factory of the same name above.
-
-    /** This many whole nanoseconds, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop nanoseconds[self: Int&]: Duration = nanoseconds(self as Long)
-
-    /** This many whole microseconds, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop microseconds[self: Int&]: Duration = microseconds(self as Long)
-
-    /** This many whole milliseconds, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop milliseconds[self: Int&]: Duration = milliseconds(self as Long)
-
-    /** This many whole seconds, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop seconds[self: Int&]: Duration = seconds(self as Long)
-
-    /** This many whole minutes, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop minutes[self: Int&]: Duration = minutes(self as Long)
-
-    /** This many fixed 60-minute hours, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop hours[self: Int&]: Duration = hours(self as Long)
-
-    /** This many fixed 24-hour days, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop days[self: Int&]: Duration = days(self as Long)
-
-    /** This many whole nanoseconds, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop nanoseconds[self: Long&]: Duration = nanoseconds(self)
-
-    /** This many whole microseconds, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop microseconds[self: Long&]: Duration = microseconds(self)
-
-    /** This many whole milliseconds, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop milliseconds[self: Long&]: Duration = milliseconds(self)
-
-    /** This many whole seconds, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop seconds[self: Long&]: Duration = seconds(self)
-
-    /** This many whole minutes, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop minutes[self: Long&]: Duration = minutes(self)
-
-    /** This many fixed 60-minute hours, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop hours[self: Long&]: Duration = hours(self)
-
-    /** This many fixed 24-hour days, as a [Duration]. */
-    @Experimental(since: "0.1")
-    prop days[self: Long&]: Duration = days(self)
-
-    impl Duration {
-        /** Whether this duration is exactly zero. */
-        prop isZero[self: Self&]: Bool = self.seconds == 0L && self.nanosecondAdjustment == 0
-
-        /** Whether this duration is strictly negative. */
-        prop isNegative[self: Self&]: Bool = self.seconds < 0L
-
-        /** Whole milliseconds truncated toward negative infinity. */
-        prop inWholeMilliseconds[self: Self&]: Long = self.seconds * 1000L + (self.nanosecondAdjustment / 1000000) as Long
-
-        /** Returns the magnitude with its sign reversed. */
-        func negated[self: Self&](): Duration {
-            return duration(0L - self.seconds, 0L - self.nanosecondAdjustment as Long)
-        }
-
-        /** Adds another exact duration. */
-        func plus[self: Self&](other: Duration&): Duration {
-            return duration(
-                self.seconds + other.seconds,
-                self.nanosecondAdjustment as Long + other.nanosecondAdjustment as Long
-            )
-        }
-
-        /** Subtracts another exact duration. */
-        func minus[self: Self&](other: Duration&): Duration {
-            return self.plus(other.negated())
-        }
-    }
-
-    /** Creates a normalized Unix instant. */
-    @Experimental(since: "0.1")
-    func instant(epochSecond: Long, nanosecondAdjustment: Long = 0L): Instant {
-        fin normalized = duration(epochSecond, nanosecondAdjustment)
-        return Instant(normalized.seconds, normalized.nanosecondAdjustment)
-    }
-
-    /** Converts a signed Unix nanosecond count to a normalized instant. */
-    @Experimental(since: "0.1")
-    func instantFromEpochNanoseconds(value: Long): Instant {
-        return instant(0L, value)
-    }
-
-    /** Returns the current wall-clock instant from the system clock. */
-    @Experimental(since: "0.1")
-    func now(): Instant = SystemClock().now()
-
-    /** Returns the current monotonic reading from the system clock. */
-    @Experimental(since: "0.1")
-    func monotonicNow(): MonotonicInstant = SystemClock().monotonicNow()
-
-    impl Instant {
-        /** Whole Unix milliseconds, truncated toward negative infinity. */
-        prop epochMilliseconds[self: Self&]: Long = self.epochSecond * 1000L + (self.nanosecond / 1000000) as Long
-
-        /** Adds an exact duration while retaining the normalized representation. */
-        func plus[self: Self&](value: Duration&): Instant {
-            return instant(
-                self.epochSecond + value.seconds,
-                self.nanosecond as Long + value.nanosecondAdjustment as Long
-            )
-        }
-
-        /** Subtracts an exact duration. */
-        func minus[self: Self&](value: Duration&): Instant {
-            return self.plus(value.negated())
-        }
-
-        /** Returns the exact elapsed duration from `earlier` to this instant. */
-        func durationSince[self: Self&](earlier: Instant&): Duration {
-            return duration(
-                self.epochSecond - earlier.epochSecond,
-                self.nanosecond as Long - earlier.nanosecond as Long
-            )
-        }
-
-        /** Converts this instant to civil time at a fixed UTC offset. */
-        func atOffset[self: Self&](offset: UtcOffset): DateTime {
-            return atOffset(self, offset)
-        }
-
-        /** Formats this instant as canonical UTC ISO-8601 text. */
-        func formatIso[self: Self&](): String {
-            return formatIsoInstant(self)
-        }
-    }
-
-    impl MonotonicInstant {
-        /** Returns elapsed time; fails if the readings are not ordered. */
-        func elapsedSince[self: Self&](earlier: MonotonicInstant&): Duration ?! TimeError {
-            if self.readingNanoseconds < earlier.readingNanoseconds { return .InvalidDuration }
-            return nanoseconds(self.readingNanoseconds - earlier.readingNanoseconds)
-        }
-    }
-
-    /** Returns whether `year` is a leap year in the proleptic Gregorian calendar. */
-    @Experimental(since: "0.1")
-    func isLeapYear(year: Int): Bool {
-        return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
-    }
-
-    /** Returns the number of days in a validated month. */
-    @Experimental(since: "0.1")
-    func daysInMonth(year: Int, month: Int): Int ?! TimeError {
-        if month < 1 || month > 12 { return .InvalidDate }
-        if month == 2 {
-            if isLeapYear(year) { return 29 }
-            return 28
-        }
-        if month == 4 || month == 6 || month == 9 || month == 11 { return 30 }
-        return 31
-    }
-
-    /** Creates and validates a Gregorian date. */
-    @Experimental(since: "0.1")
-    func localDate(year: Int, month: Int, day: Int): LocalDate ?! TimeError {
-        if day < 1 || day > try daysInMonth(year, month) { return .InvalidDate }
-        return LocalDate(year, month, day)
-    }
-
-    /** Creates and validates a local time of day. Leap seconds are not accepted. */
-    @Experimental(since: "0.1")
-    func localTime(hour: Int, minute: Int, second: Int, nanosecond: Int = 0): LocalTime ?! TimeError {
-        if hour < 0 || hour > 23 { return .InvalidTime }
-        if minute < 0 || minute > 59 { return .InvalidTime }
-        if second < 0 || second > 59 { return .InvalidTime }
-        if nanosecond < 0 || nanosecond > 999999999 { return .InvalidTime }
-        return LocalTime(hour, minute, second, nanosecond)
-    }
-
-    /** Creates a validated fixed UTC offset. */
-    @Experimental(since: "0.1")
-    func utcOffset(totalSeconds: Int): UtcOffset ?! TimeError {
-        if totalSeconds < -64800 || totalSeconds > 64800 { return .InvalidOffset }
-        return UtcOffset(totalSeconds)
-    }
-
-    /** Creates a validated fixed UTC offset from signed hours and minutes. */
-    @Experimental(since: "0.1")
-    func utcOffsetOf(hours: Int, minutes: Int = 0): UtcOffset ?! TimeError {
-        if minutes < 0 || minutes > 59 { return .InvalidOffset }
-        if hours < -18 || hours > 18 { return .InvalidOffset }
-        var sign = 1
-        if hours < 0 { sign = -1 }
-        var absoluteHours = hours
-        if hours < 0 { absoluteHours = 0 - hours }
-        if absoluteHours == 18 && minutes != 0 { return .InvalidOffset }
-        return utcOffset(sign * (absoluteHours * 3600 + minutes * 60))
-    }
-
-    /** Creates a validated offset date-time. */
-    @Experimental(since: "0.1")
-    func dateTime(date: LocalDate, time: LocalTime, offset: UtcOffset): DateTime {
-        return DateTime(date, time, offset)
-    }
-
-    impl LocalDate {
-        /** ISO weekday corresponding to this date. */
-        prop weekday[self: Self&]: Weekday = weekday(self)
-    }
-
-    impl DateTime {
-        /** Converts this fixed-offset civil value to its unique Unix instant. */
-        func toInstant[self: Self&](): Instant {
-            return toInstant(self)
-        }
-
-        /** Formats this value as canonical ISO-8601 offset date-time text. */
-        func formatIso[self: Self&](): String {
-            return formatIsoDateTime(self)
-        }
-    }
-
-    /** Converts a date-time to its unique Unix instant. */
-    @Experimental(since: "0.1")
-    func toInstant(value: DateTime&): Instant {
-        fin epochDay = _daysFromCivil(value.date.year, value.date.month, value.date.day)
-        fin localSecond = epochDay * 86400L +
-            (value.time.hour as Long) * 3600L +
-            (value.time.minute as Long) * 60L +
-            (value.time.second as Long)
-        return instant(localSecond - (value.offset.totalSeconds as Long), value.time.nanosecond as Long)
-    }
-
-    /** Converts an instant to a date-time at the requested fixed offset. */
-    @Experimental(since: "0.1")
-    func atOffset(value: Instant&, offset: UtcOffset): DateTime {
-        fin localSecond = value.epochSecond + offset.totalSeconds as Long
-        fin epochDay = _floorDiv(localSecond, 86400L)
-        fin secondOfDay = localSecond - epochDay * 86400L
-        fin date = _civilFromDays(epochDay)
-        fin hour = (secondOfDay / 3600L) as Int
-        fin minute = ((secondOfDay % 3600L) / 60L) as Int
-        fin second = (secondOfDay % 60L) as Int
-        return DateTime(date, LocalTime(hour, minute, second, value.nanosecond), offset)
-    }
-
-    /** Returns the ISO weekday for a date. */
-    @Experimental(since: "0.1")
-    func weekday(value: LocalDate&): Weekday {
-        fin epochDay = _daysFromCivil(value.year, value.month, value.day)
-        fin index = _floorMod(epochDay + 3L, 7L) as Int
-        if index == 0 { return Weekday.Monday }
-        if index == 1 { return Weekday.Tuesday }
-        if index == 2 { return Weekday.Wednesday }
-        if index == 3 { return Weekday.Thursday }
-        if index == 4 { return Weekday.Friday }
-        if index == 5 { return Weekday.Saturday }
-        return Weekday.Sunday
-    }
-
-    /** Formats a date-time using the canonical ISO-8601 extended representation. */
-    @Experimental(since: "0.1")
-    func formatIsoDateTime(value: DateTime&): String {
-        var result = _pad4(value.date.year) + "-" + _pad2(value.date.month) + "-" + _pad2(value.date.day) +
-            "T" + _pad2(value.time.hour) + ":" + _pad2(value.time.minute) + ":" + _pad2(value.time.second)
-        if value.time.nanosecond != 0 { result = result + _formatFraction(value.time.nanosecond) }
-        if value.offset.totalSeconds == 0 { return result + "Z" }
-        var offset = value.offset.totalSeconds
-        var sign = "+"
-        if offset < 0 {
-            sign = "-"
-            offset = 0 - offset
-        }
-        fin offsetSecond = offset % 60
-        var suffix = sign + _pad2(offset / 3600) + ":" + _pad2((offset % 3600) / 60)
-        if offsetSecond != 0 { suffix = suffix + ":" + _pad2(offsetSecond) }
-        return result + suffix
-    }
-
-    /** Formats an instant in canonical UTC ISO-8601 form. */
-    @Experimental(since: "0.1")
-    func formatIsoInstant(value: Instant&): String {
-        return formatIsoDateTime(atOffset(value, UtcOffset(0)))
-    }
-
-    /**
-     * Parses canonical ISO-8601 offset date-time text.
-     *
-     * Accepted years are `0000..9999`; offsets must be `Z`, `+/-HH:MM`, or
-     * `+/-HH:MM:SS` when second precision is required.
-     * Fractional seconds may contain one through nine digits.
-     */
-    @Experimental(since: "0.1")
-    func parseIsoDateTime(value: String): DateTime ?! TimeError {
-        fin length = stringLength(value)
-        if length < 20 { return .InvalidFormat }
-        if charAt(value, 4) != '-' || charAt(value, 7) != '-' ||
-            (charAt(value, 10) != 'T' && charAt(value, 10) != 't') ||
-            charAt(value, 13) != ':' || charAt(value, 16) != ':' {
+    var offsetSeconds = 0
+    if index < length && (charAt(value, index) == 'Z' || charAt(value, index) == 'z') {
+        index += 1
+    } else {
+        fin remaining = length - index
+        if remaining != 6 && remaining != 9 { return .InvalidFormat }
+        fin signChar = charAt(value, index)
+        if signChar != '+' && signChar != '-' { return .InvalidFormat }
+        if charAt(value, index + 3) != ':' || !_digitsAt(value, index + 1, 2) || !_digitsAt(value, index + 4, 2) {
             return .InvalidFormat
         }
-        if !_digitsAt(value, 0, 4) || !_digitsAt(value, 5, 2) || !_digitsAt(value, 8, 2) ||
-            !_digitsAt(value, 11, 2) || !_digitsAt(value, 14, 2) || !_digitsAt(value, 17, 2) {
-            return .InvalidFormat
+        fin offsetHour = _decimalAt(value, index + 1, 2)
+        fin offsetMinute = _decimalAt(value, index + 4, 2)
+        if offsetHour > 18 || offsetMinute > 59 { return .InvalidOffset }
+        offsetSeconds = offsetHour * 3600 + offsetMinute * 60
+        if remaining == 9 {
+            if charAt(value, index + 6) != ':' || !_digitsAt(value, index + 7, 2) { return .InvalidFormat }
+            fin offsetSecond = _decimalAt(value, index + 7, 2)
+            if offsetSecond > 59 { return .InvalidOffset }
+            offsetSeconds += offsetSecond
         }
+        if offsetHour == 18 && offsetSeconds != 64800 { return .InvalidOffset }
+        if signChar == '-' { offsetSeconds = 0 - offsetSeconds }
+        index += remaining
+    }
+    if index != length { return .InvalidFormat }
 
-        fin year = _decimalAt(value, 0, 4)
-        fin month = _decimalAt(value, 5, 2)
-        fin day = _decimalAt(value, 8, 2)
-        fin hour = _decimalAt(value, 11, 2)
-        fin minute = _decimalAt(value, 14, 2)
-        fin second = _decimalAt(value, 17, 2)
-        var nanosecond = 0
-        var index = 19
+    fin date = try localDate(year, month, day)
+    fin time = try localTime(hour, minute, second, nanosecond)
+    fin offset = try utcOffset(offsetSeconds)
+    return DateTime(date, time, offset)
+}
 
-        if index < length && charAt(value, index) == '.' {
-            index += 1
-            fin fractionStart = index
-            while index < length && charIsDigit(charAt(value, index)) { index += 1 }
-            fin digits = index - fractionStart
-            if digits < 1 || digits > 9 { return .InvalidFormat }
-            nanosecond = _decimalAt(value, fractionStart, digits)
-            for scale in digits..<9 {
-                nanosecond *= 10
-            }
-        }
+/** Parses canonical UTC instant text. */
+@Experimental(since: "0.1")
+func parseIsoInstant(value: String): Instant ?! TimeError {
+    return toInstant(try parseIsoDateTime(value))
+}
 
-        var offsetSeconds = 0
-        if index < length && (charAt(value, index) == 'Z' || charAt(value, index) == 'z') {
-            index += 1
-        } else {
-            fin remaining = length - index
-            if remaining != 6 && remaining != 9 { return .InvalidFormat }
-            fin signChar = charAt(value, index)
-            if signChar != '+' && signChar != '-' { return .InvalidFormat }
-            if charAt(value, index + 3) != ':' || !_digitsAt(value, index + 1, 2) || !_digitsAt(value, index + 4, 2) {
-                return .InvalidFormat
-            }
-            fin offsetHour = _decimalAt(value, index + 1, 2)
-            fin offsetMinute = _decimalAt(value, index + 4, 2)
-            if offsetHour > 18 || offsetMinute > 59 { return .InvalidOffset }
-            offsetSeconds = offsetHour * 3600 + offsetMinute * 60
-            if remaining == 9 {
-                if charAt(value, index + 6) != ':' || !_digitsAt(value, index + 7, 2) { return .InvalidFormat }
-                fin offsetSecond = _decimalAt(value, index + 7, 2)
-                if offsetSecond > 59 { return .InvalidOffset }
-                offsetSeconds += offsetSecond
-            }
-            if offsetHour == 18 && offsetSeconds != 64800 { return .InvalidOffset }
-            if signChar == '-' { offsetSeconds = 0 - offsetSeconds }
-            index += remaining
-        }
-        if index != length { return .InvalidFormat }
+/** Serializer that represents `Instant` as canonical UTC ISO-8601 text. */
+@Experimental(since: "0.1")
+pack InstantSerializer
 
-        fin date = try localDate(year, month, day)
-        fin time = try localTime(hour, minute, second, nanosecond)
-        fin offset = try utcOffset(offsetSeconds)
-        return DateTime(date, time, offset)
+@Experimental(since: "0.1")
+impl Serializer<Instant> for InstantSerializer {
+    func toSerialValue[self: Self&](value: Instant&): SerialValue ?! SerializationError {
+        return SerialValue.Text(formatIsoInstant(value))
     }
 
-    /** Parses canonical UTC instant text. */
-    @Experimental(since: "0.1")
-    func parseIsoInstant(value: String): Instant ?! TimeError {
-        return toInstant(try parseIsoDateTime(value))
-    }
-
-    /** Serializer that represents `Instant` as canonical UTC ISO-8601 text. */
-    @Experimental(since: "0.1")
-    pack InstantSerializer
-
-    @Experimental(since: "0.1")
-    impl Serializer<Instant> for InstantSerializer {
-        func toSerialValue[self: Self&](value: Instant&): SerialValue ?! SerializationError {
-            return SerialValue.Text(formatIsoInstant(value))
-        }
-
-        func fromSerialValue[self: Self&](value: SerialValue&): Instant ?! SerializationError {
-            when value {
-                SerialValue.Text(text) -> {
-                    try {
-                        return try parseIsoInstant(text)
-                    } catch {
-                        return .UnexpectedType
-                    }
+    func fromSerialValue[self: Self&](value: SerialValue&): Instant ?! SerializationError {
+        when value {
+            SerialValue.Text(text) -> {
+                try {
+                    return try parseIsoInstant(text)
+                } catch {
+                    return .UnexpectedType
                 }
-                else -> { return .UnexpectedType }
             }
+            else -> { return .UnexpectedType }
         }
     }
+}
 
-    /** Serializer that represents `DateTime` as canonical offset ISO-8601 text. */
-    @Experimental(since: "0.1")
-    pack DateTimeSerializer
+/** Serializer that represents `DateTime` as canonical offset ISO-8601 text. */
+@Experimental(since: "0.1")
+pack DateTimeSerializer
 
-    @Experimental(since: "0.1")
-    impl Serializer<DateTime> for DateTimeSerializer {
-        func toSerialValue[self: Self&](value: DateTime&): SerialValue ?! SerializationError {
-            return SerialValue.Text(formatIsoDateTime(value))
-        }
+@Experimental(since: "0.1")
+impl Serializer<DateTime> for DateTimeSerializer {
+    func toSerialValue[self: Self&](value: DateTime&): SerialValue ?! SerializationError {
+        return SerialValue.Text(formatIsoDateTime(value))
+    }
 
-        func fromSerialValue[self: Self&](value: SerialValue&): DateTime ?! SerializationError {
-            when value {
-                SerialValue.Text(text) -> {
-                    try {
-                        return try parseIsoDateTime(text)
-                    } catch {
-                        return .UnexpectedType
-                    }
+    func fromSerialValue[self: Self&](value: SerialValue&): DateTime ?! SerializationError {
+        when value {
+            SerialValue.Text(text) -> {
+                try {
+                    return try parseIsoDateTime(text)
+                } catch {
+                    return .UnexpectedType
                 }
-                else -> { return .UnexpectedType }
             }
+            else -> { return .UnexpectedType }
         }
     }
+}
 
-    /** Serializer that preserves the normalized split representation of `Duration`. */
-    @Experimental(since: "0.1")
-    pack DurationSerializer
+/** Serializer that preserves the normalized split representation of `Duration`. */
+@Experimental(since: "0.1")
+pack DurationSerializer
 
-    @Experimental(since: "0.1")
-    impl Serializer<Duration> for DurationSerializer {
-        func toSerialValue[self: Self&](value: Duration&): SerialValue ?! SerializationError {
-            var fields = List<SerialField>()
-            fields.add(SerialField("seconds", SerialValue.Number(value.seconds as String)))
-            fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(value.nanosecondAdjustment as String)))
-            return SerialValue.Object(fields)
-        }
+@Experimental(since: "0.1")
+impl Serializer<Duration> for DurationSerializer {
+    func toSerialValue[self: Self&](value: Duration&): SerialValue ?! SerializationError {
+        var fields = List<SerialField>()
+        fields.add(SerialField("seconds", SerialValue.Number(value.seconds as String)))
+        fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(value.nanosecondAdjustment as String)))
+        return SerialValue.Object(fields)
+    }
 
-        func fromSerialValue[self: Self&](value: SerialValue&): Duration ?! SerializationError {
-            fin secondsValue = try serialField(value, "seconds")
-            fin nanosValue = try serialField(value, "nanosecondAdjustment")
-            when secondsValue {
-                SerialValue.Number(secondsText) -> {
-                    when nanosValue {
-                        SerialValue.Number(nanosText) -> {
-                            return duration(try _parseLong(secondsText), try _parseLong(nanosText) as Long)
-                        }
-                        else -> { return .UnexpectedType }
+    func fromSerialValue[self: Self&](value: SerialValue&): Duration ?! SerializationError {
+        fin secondsValue = try serialField(value, "seconds")
+        fin nanosValue = try serialField(value, "nanosecondAdjustment")
+        when secondsValue {
+            SerialValue.Number(secondsText) -> {
+                when nanosValue {
+                    SerialValue.Number(nanosText) -> {
+                        return duration(try _parseLong(secondsText), try _parseLong(nanosText) as Long)
                     }
+                    else -> { return .UnexpectedType }
                 }
-                else -> { return .UnexpectedType }
             }
+            else -> { return .UnexpectedType }
         }
     }
+}
 
-    func _floorDiv(value: Long, divisor: Long): Long {
-        var quotient = value / divisor
-        fin remainder = value % divisor
-        if remainder != 0L && ((remainder < 0L) != (divisor < 0L)) { quotient -= 1L }
-        return quotient
-    }
+func _floorDiv(value: Long, divisor: Long): Long {
+    var quotient = value / divisor
+    fin remainder = value % divisor
+    if remainder != 0L && ((remainder < 0L) != (divisor < 0L)) { quotient -= 1L }
+    return quotient
+}
 
-    func _floorMod(value: Long, divisor: Long): Long {
-        return value - _floorDiv(value, divisor) * divisor
-    }
+func _floorMod(value: Long, divisor: Long): Long {
+    return value - _floorDiv(value, divisor) * divisor
+}
 
-    func _daysFromCivil(year: Int, month: Int, day: Int): Long {
-        var y = year as Long
-        fin m = month as Long
-        if m <= 2L { y -= 1L }
-        fin era = _floorDiv(y, 400L)
-        fin yearOfEra = y - era * 400L
-        var adjustedMonth = m - 3L
-        if m <= 2L { adjustedMonth = m + 9L }
-        fin dayOfYear = (153L * adjustedMonth + 2L) / 5L + day as Long - 1L
-        fin dayOfEra = yearOfEra * 365L + yearOfEra / 4L - yearOfEra / 100L + dayOfYear
-        return era * 146097L + dayOfEra - 719468L
-    }
+func _daysFromCivil(year: Int, month: Int, day: Int): Long {
+    var y = year as Long
+    fin m = month as Long
+    if m <= 2L { y -= 1L }
+    fin era = _floorDiv(y, 400L)
+    fin yearOfEra = y - era * 400L
+    var adjustedMonth = m - 3L
+    if m <= 2L { adjustedMonth = m + 9L }
+    fin dayOfYear = (153L * adjustedMonth + 2L) / 5L + day as Long - 1L
+    fin dayOfEra = yearOfEra * 365L + yearOfEra / 4L - yearOfEra / 100L + dayOfYear
+    return era * 146097L + dayOfEra - 719468L
+}
 
-    func _civilFromDays(epochDay: Long): LocalDate {
-        fin z = epochDay + 719468L
-        fin era = _floorDiv(z, 146097L)
-        fin dayOfEra = z - era * 146097L
-        fin yearOfEra = (dayOfEra - dayOfEra / 1460L + dayOfEra / 36524L - dayOfEra / 146096L) / 365L
-        var year = yearOfEra + era * 400L
-        fin dayOfYear = dayOfEra - (365L * yearOfEra + yearOfEra / 4L - yearOfEra / 100L)
-        fin monthPrime = (5L * dayOfYear + 2L) / 153L
-        fin day = dayOfYear - (153L * monthPrime + 2L) / 5L + 1L
-        var month = monthPrime + 3L
-        if monthPrime >= 10L { month = monthPrime - 9L }
-        if month <= 2L { year += 1L }
-        return LocalDate(year as Int, month as Int, day as Int)
-    }
+func _civilFromDays(epochDay: Long): LocalDate {
+    fin z = epochDay + 719468L
+    fin era = _floorDiv(z, 146097L)
+    fin dayOfEra = z - era * 146097L
+    fin yearOfEra = (dayOfEra - dayOfEra / 1460L + dayOfEra / 36524L - dayOfEra / 146096L) / 365L
+    var year = yearOfEra + era * 400L
+    fin dayOfYear = dayOfEra - (365L * yearOfEra + yearOfEra / 4L - yearOfEra / 100L)
+    fin monthPrime = (5L * dayOfYear + 2L) / 153L
+    fin day = dayOfYear - (153L * monthPrime + 2L) / 5L + 1L
+    var month = monthPrime + 3L
+    if monthPrime >= 10L { month = monthPrime - 9L }
+    if month <= 2L { year += 1L }
+    return LocalDate(year as Int, month as Int, day as Int)
+}
 
-    func _pad2(value: Int): String {
-        if value < 10 { return "0$value" }
-        return value as String
-    }
+func _pad2(value: Int): String {
+    if value < 10 { return "0$value" }
+    return value as String
+}
 
-    func _pad4(value: Int): String {
-        fin text = value as String
-        if value < 0 || value > 9999 { return text }
-        if value < 10 { return "000" + text }
-        if value < 100 { return "00" + text }
-        if value < 1000 { return "0" + text }
-        return text
-    }
+func _pad4(value: Int): String {
+    fin text = value as String
+    if value < 0 || value > 9999 { return text }
+    if value < 10 { return "000" + text }
+    if value < 100 { return "00" + text }
+    if value < 1000 { return "0" + text }
+    return text
+}
 
-    func _formatFraction(value: Int): String {
-        var text = value as String
-        while stringLength(text) < 9 { text = "0" + text }
-        var end = stringLength(text)
-        while end > 1 && charAt(text, end - 1) == '0' { end -= 1 }
-        return "." + substring(text, 0, end)
-    }
+func _formatFraction(value: Int): String {
+    var text = value as String
+    while stringLength(text) < 9 { text = "0" + text }
+    var end = stringLength(text)
+    while end > 1 && charAt(text, end - 1) == '0' { end -= 1 }
+    return "." + substring(text, 0, end)
+}
 
-    func _digitsAt(value: String, start: Int, count: Int): Bool {
-        if start < 0 || count < 0 || start + count > stringLength(value) { return false }
-        for i in start..<start + count {
-            if !charIsDigit(charAt(value, i)) { return false }
-        }
-        return true
+func _digitsAt(value: String, start: Int, count: Int): Bool {
+    if start < 0 || count < 0 || start + count > stringLength(value) { return false }
+    for i in start..<start + count {
+        if !charIsDigit(charAt(value, i)) { return false }
     }
+    return true
+}
 
-    func _decimalAt(value: String, start: Int, count: Int): Int {
-        var result = 0
-        for i in start..<start + count {
-            result = result * 10 + charToCode(charAt(value, i)) - 48
-        }
-        return result
+func _decimalAt(value: String, start: Int, count: Int): Int {
+    var result = 0
+    for i in start..<start + count {
+        result = result * 10 + charToCode(charAt(value, i)) - 48
     }
+    return result
+}
 
-    func _parseLong(value: String): Long ?! SerializationError {
-        if stringLength(value) == 0 { return .InvalidNumber }
-        var sign = 1L
-        var index = 0
-        if charAt(value, 0) == '-' {
-            sign = -1L
-            index = 1
-        }
-        if index >= stringLength(value) { return .InvalidNumber }
-        var result = 0L
-        while index < stringLength(value) {
-            fin c = charAt(value, index)
-            if !charIsDigit(c) { return .InvalidNumber }
-            result = result * 10L + (charToCode(c) - 48) as Long
-            index += 1
-        }
-        return result * sign
+func _parseLong(value: String): Long ?! SerializationError {
+    if stringLength(value) == 0 { return .InvalidNumber }
+    var sign = 1L
+    var index = 0
+    if charAt(value, 0) == '-' {
+        sign = -1L
+        index = 1
     }
+    if index >= stringLength(value) { return .InvalidNumber }
+    var result = 0L
+    while index < stringLength(value) {
+        fin c = charAt(value, index)
+        if !charIsDigit(c) { return .InvalidNumber }
+        result = result * 10L + (charToCode(c) - 48) as Long
+        index += 1
+    }
+    return result * sign
 }
 
 bridge [.C, .WebAssembly] {

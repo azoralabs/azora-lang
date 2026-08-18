@@ -1,3 +1,5 @@
+We can have scope in global scope, like scope vhs, it will act just like realm did!!!
+
 I think you can probably drop realm if your module/import system already gives you all of this.
 Your proposal already covers the main reasons namespaces exist:
 
@@ -101,6 +103,11 @@ Remove "exposed import", i do not want reexport anymore
 add "ambient" keyword, replacement for "exposed confined"
 add "resident" keyword - read MODULES_DIP.MD updated and update with last changes
 
+One more rule must be, in a public module like "module a" we can have "exposed func f1()" or other exposed types, what this means? when we "import a" it is ok to write like this, f1 will automatically be imported, no need to import it explicitly or use .*
+
+* allow underscores in names, maybe user wants to name it f_1() or something, also update azls and azora idea plugin to allow them
+* fix in compiler, azls and azora idea plugin, func and prop that returns a Type must start mandatory with big letter
+* await(handle) - wrong syntax ;; await handle - correct syntax - fix in compiler
  
 * factory Alloc { when we want only static access , no self, no fields - no constructor available 
 - add using keyword, currently no use of it, fully remove use keyword

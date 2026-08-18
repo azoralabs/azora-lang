@@ -14,13 +14,8 @@
  * limitations under the License.
  */
 
-module std.filesystem
-
-import std.container.array
-import std.time
-
 /**
- * @file std/filesystem
+ * @file std/filesystem.az
  *
  * Files, directories, paths and metadata.
  *
@@ -38,597 +33,598 @@ import std.time
  *
  * @since 0.1
  */
+module std.filesystem
 
-realm std {
+import std.container.array.*
+import std.time.*
 
-    /** The separator this module writes. Both are accepted when reading a path. */
-    @Experimental(since: "0.1")
-    fin pathSeparator = "/"
+/** The separator this module writes. Both are accepted when reading a path. */
+@Experimental(since: "0.1")
+fin pathSeparator = "/"
+
+/**
+ * Failures raised by filesystem operations.
+ *
+ * Small and closed on purpose: it names the cases a caller can act on -
+ * retry elsewhere, ask for permission, choose another name - and folds the
+ * rest into [ReadFailed] / [WriteFailed]. A set mirroring every `errno`
+ * makes exhaustive handling impossible and teaches callers to write a
+ * catch-all, which is what it was meant to prevent.
+ */
+@Experimental(since: "0.1")
+error FileError {
+    NotFound
+    PermissionDenied
+    AlreadyExists
+    NotADirectory
+    IsADirectory
+    DirectoryNotEmpty
+    InvalidPath
+    ReadFailed
+    WriteFailed
+    Unsupported
+}
+
+/** What sits at a path. */
+@Experimental(since: "0.1")
+enum FileKind {
+    File
+    Directory
+    Symlink
+    Other
+}
+
+/** What the filesystem knows about an entry. */
+@Experimental(since: "0.1")
+pack FileInfo {
+    var kind: FileKind = .Other
+    /** Size in bytes; 0 for a directory. */
+    var size: Long = 0L
+    /** Last modification time. */
+    var modified: Instant = .(0L, 0)
+}
+
+impl FileInfo {
+    /** True when this entry is an ordinary file. */
+    prop isFile[self: Self&]: Bool = self.kind == FileKind.File
+
+    /** True when this entry is a directory. */
+    prop isDirectory[self: Self&]: Bool = self.kind == FileKind.Directory
+}
+
+// ── Paths ───────────────────────────────────────────────────────────
+
+/**
+ * A filesystem path, as text.
+ *
+ * A value rather than a bare `String` so that joining cannot silently
+ * produce `a//b` or `ab`, and so a path cannot be passed where a message was
+ * meant. The cost is a conversion at every platform boundary; [text] is it.
+ */
+@Experimental(since: "0.1")
+pack Path {
+    var text: String = ""
+}
+
+/** The path [text] names. */
+@Experimental(since: "0.1")
+func path(text: String): Path {
+    return Path(text)
+}
+
+impl Path {
 
     /**
-     * Failures raised by filesystem operations.
+     * [segment] appended below this path, with exactly one separator.
      *
-     * Small and closed on purpose: it names the cases a caller can act on -
-     * retry elsewhere, ask for permission, choose another name - and folds the
-     * rest into [ReadFailed] / [WriteFailed]. A set mirroring every `errno`
-     * makes exhaustive handling impossible and teaches callers to write a
-     * catch-all, which is what it was meant to prevent.
+     * An absolute [segment] replaces the path rather than being appended to
+     * it, which is what every other path library does and what a caller
+     * building a path from configuration expects.
      */
     @Experimental(since: "0.1")
-    error FileError {
-        NotFound
-        PermissionDenied
-        AlreadyExists
-        NotADirectory
-        IsADirectory
-        DirectoryNotEmpty
-        InvalidPath
-        ReadFailed
-        WriteFailed
-        Unsupported
+    func join[self: Self&](segment: String): Path {
+        if stringLength(segment) == 0 {
+            return Path(self.text)
+        }
+        if stringLength(self.text) == 0 {
+            return Path(segment)
+        }
+        if _isSeparator(charAt(segment, 0)) {
+            return Path(segment)
+        }
+        if _isSeparator(charAt(self.text, stringLength(self.text) - 1)) {
+            return Path(self.text + segment)
+        }
+        return Path(self.text + pathSeparator + segment)
     }
 
-    /** What sits at a path. */
+    /** The directory holding this path; `"."` when there is no separator. */
     @Experimental(since: "0.1")
-    enum FileKind {
-        File
-        Directory
-        Symlink
-        Other
+    prop parent[self: Self&]: Path {
+        fin cut = _lastSeparator(self.text)
+        if cut < 0 {
+            return Path(".")
+        }
+        if cut == 0 {
+            // "/x" - the parent is the root, not the empty string.
+            return Path(pathSeparator)
+        }
+        return Path(substring(self.text, 0, cut))
     }
 
-    /** What the filesystem knows about an entry. */
+    /** The final segment: `a/b/c.az` → `c.az`. */
     @Experimental(since: "0.1")
-    pack FileInfo {
-        var kind: FileKind = FileKind.Other
-        /** Size in bytes; 0 for a directory. */
-        var size: Long = 0L
-        /** Last modification time. */
-        var modified: Instant = Instant(0L, 0)
+    prop fileName[self: Self&]: String {
+        fin cut = _lastSeparator(self.text)
+        if cut < 0 {
+            return self.text
+        }
+        return substring(self.text, cut + 1, stringLength(self.text))
     }
 
-    impl FileInfo {
-        /** True when this entry is an ordinary file. */
-        prop isFile[self: Self&]: Bool = self.kind == FileKind.File
-
-        /** True when this entry is a directory. */
-        prop isDirectory[self: Self&]: Bool = self.kind == FileKind.Directory
+    /** The final segment without its extension: `a/b/c.az` → `c`. */
+    @Experimental(since: "0.1")
+    prop stem[self: Self&]: String {
+        fin name = self.fileName
+        fin dot = _lastDot(name)
+        if dot <= 0 {
+            return name
+        }
+        return substring(name, 0, dot)
     }
-
-    // ── Paths ───────────────────────────────────────────────────────────
 
     /**
-     * A filesystem path, as text.
+     * The extension without its dot: `a/b/c.az` → `az`.
      *
-     * A value rather than a bare `String` so that joining cannot silently
-     * produce `a//b` or `ab`, and so a path cannot be passed where a message was
-     * meant. The cost is a conversion at every platform boundary; [text] is it.
+     * A leading dot is a hidden file, not an extension, so `.gitignore` has
+     * stem `.gitignore` and no extension.
      */
     @Experimental(since: "0.1")
-    pack Path {
-        var text: String = ""
+    prop extension[self: Self&]: String {
+        fin name = self.fileName
+        fin dot = _lastDot(name)
+        if dot <= 0 {
+            return ""
+        }
+        return substring(name, dot + 1, stringLength(name))
     }
 
-    /** The path [text] names. */
+    /** This path with its extension replaced (or added when it had none). */
     @Experimental(since: "0.1")
-    func path(text: String): Path {
-        return Path(text)
+    func withExtension[self: Self&](extension: String): Path {
+        fin base = self.parent
+        fin name = self.stem
+        fin renamed = if stringLength(extension) == 0 { name } else { name + "." + extension }
+        if self.parent.text == "." && _lastSeparator(self.text) < 0 {
+            return Path(renamed)
+        }
+        return base.join(renamed)
     }
 
-    impl Path {
-
-        /**
-         * [segment] appended below this path, with exactly one separator.
-         *
-         * An absolute [segment] replaces the path rather than being appended to
-         * it, which is what every other path library does and what a caller
-         * building a path from configuration expects.
-         */
-        @Experimental(since: "0.1")
-        func join[self: Self&](segment: String): Path {
-            if stringLength(segment) == 0 {
-                return Path(self.text)
-            }
-            if stringLength(self.text) == 0 {
-                return Path(segment)
-            }
-            if _isSeparator(charAt(segment, 0)) {
-                return Path(segment)
-            }
-            if _isSeparator(charAt(self.text, stringLength(self.text) - 1)) {
-                return Path(self.text + segment)
-            }
-            return Path(self.text + pathSeparator + segment)
-        }
-
-        /** The directory holding this path; `"."` when there is no separator. */
-        @Experimental(since: "0.1")
-        prop parent[self: Self&]: Path {
-            fin cut = _lastSeparator(self.text)
-            if cut < 0 {
-                return Path(".")
-            }
-            if cut == 0 {
-                // "/x" - the parent is the root, not the empty string.
-                return Path(pathSeparator)
-            }
-            return Path(substring(self.text, 0, cut))
-        }
-
-        /** The final segment: `a/b/c.az` → `c.az`. */
-        @Experimental(since: "0.1")
-        prop fileName[self: Self&]: String {
-            fin cut = _lastSeparator(self.text)
-            if cut < 0 {
-                return self.text
-            }
-            return substring(self.text, cut + 1, stringLength(self.text))
-        }
-
-        /** The final segment without its extension: `a/b/c.az` → `c`. */
-        @Experimental(since: "0.1")
-        prop stem[self: Self&]: String {
-            fin name = self.fileName
-            fin dot = _lastDot(name)
-            if dot <= 0 {
-                return name
-            }
-            return substring(name, 0, dot)
-        }
-
-        /**
-         * The extension without its dot: `a/b/c.az` → `az`.
-         *
-         * A leading dot is a hidden file, not an extension, so `.gitignore` has
-         * stem `.gitignore` and no extension.
-         */
-        @Experimental(since: "0.1")
-        prop extension[self: Self&]: String {
-            fin name = self.fileName
-            fin dot = _lastDot(name)
-            if dot <= 0 {
-                return ""
-            }
-            return substring(name, dot + 1, stringLength(name))
-        }
-
-        /** This path with its extension replaced (or added when it had none). */
-        @Experimental(since: "0.1")
-        func withExtension[self: Self&](extension: String): Path {
-            fin base = self.parent
-            fin name = self.stem
-            fin renamed = if stringLength(extension) == 0 { name } else { name + "." + extension }
-            if self.parent.text == "." && _lastSeparator(self.text) < 0 {
-                return Path(renamed)
-            }
-            return base.join(renamed)
-        }
-
-        /** True when this path starts at a filesystem root. */
-        @Experimental(since: "0.1")
-        prop isAbsolute[self: Self&]: Bool {
-            if stringLength(self.text) == 0 {
-                return false
-            }
-            if _isSeparator(charAt(self.text, 0)) {
-                return true
-            }
-            // A Windows drive letter: "C:\…" or "C:/…".
-            if stringLength(self.text) >= 3 && charAt(self.text, 1) == ':' {
-                return _isSeparator(charAt(self.text, 2))
-            }
+    /** True when this path starts at a filesystem root. */
+    @Experimental(since: "0.1")
+    prop isAbsolute[self: Self&]: Bool {
+        if stringLength(self.text) == 0 {
             return false
         }
-
-        /**
-         * This path with `.` removed and `..` resolved against the segment
-         * before it - textually.
-         *
-         * Textual on purpose: resolving `..` through a symlink needs the disk
-         * and gives a different answer. [canonical] is the one that asks.
-         */
-        @Experimental(since: "0.1")
-        prop normalized[self: Self&]: Path {
-            fin rooted = self.isAbsolute
-            var kept: MutableList<String> = mutableListOf<String>()
-            fin total = stringLength(self.text)
-            // Segments are cut by index rather than accumulated character by
-            // character: the text is already there, and slicing it avoids
-            // building one string per character of the path.
-            var start = 0
-            var index = 0
-            while index <= total {
-                if index == total || _isSeparator(charAt(self.text, index)) {
-                    _pushSegment(kept, substring(self.text, start, index), rooted)
-                    start = index + 1
-                }
-                index += 1
-            }
-
-            var joined = ""
-            var i = 0
-            while i < kept.size {
-                if i > 0 {
-                    joined = joined + pathSeparator
-                }
-                joined = joined + kept.get(i)
-                i += 1
-            }
-            if rooted {
-                return Path(pathSeparator + joined)
-            }
-            if stringLength(joined) == 0 {
-                return Path(".")
-            }
-            return Path(joined)
+        if _isSeparator(charAt(self.text, 0)) {
+            return true
         }
+        // A Windows drive letter: "C:\…" or "C:/…".
+        if stringLength(self.text) >= 3 && charAt(self.text, 1) == ':' {
+            return _isSeparator(charAt(self.text, 2))
+        }
+        return false
     }
 
     /**
-     * Adds one segment to a normalization in progress.
+     * This path with `.` removed and `..` resolved against the segment
+     * before it - textually.
      *
-     * `.` contributes nothing. `..` cancels the segment before it, unless there
-     * is nothing to cancel - in which case an absolute path drops it (there is
-     * nothing above the root) and a relative one keeps it, because `../x` names
-     * something real.
+     * Textual on purpose: resolving `..` through a symlink needs the disk
+     * and gives a different answer. [canonical] is the one that asks.
      */
     @Experimental(since: "0.1")
-    func _pushSegment(kept: MutableList<String>!, segment: String, rooted: Bool) {
-        if stringLength(segment) == 0 || segment == "." {
-            return
-        }
-        if segment != ".." {
-            kept.add(segment)
-            return
-        }
-        if kept.size > 0 && kept.get(kept.size - 1) != ".." {
-            kept.removeAt(kept.size - 1)
-            return
-        }
-        if !rooted {
-            kept.add(segment)
-        }
-    }
-
-    /** True for either separator, so a Windows path reads correctly too. */
-    @Experimental(since: "0.1")
-    func _isSeparator(value: Char): Bool {
-        return value == '/' || value == '\\'
-    }
-
-    /** The index of the last separator in [text], or -1. */
-    @Experimental(since: "0.1")
-    func _lastSeparator(text: String): Int {
-        var found = 0 - 1
+    prop normalized[self: Self&]: Path {
+        fin rooted = self.isAbsolute
+        var kept: MutableList<String> = mutableListOf<String>()
+        fin total = stringLength(self.text)
+        // Segments are cut by index rather than accumulated character by
+        // character: the text is already there, and slicing it avoids
+        // building one string per character of the path.
+        var start = 0
         var index = 0
-        while index < stringLength(text) {
-            if _isSeparator(charAt(text, index)) {
-                found = index
+        while index <= total {
+            if index == total || _isSeparator(charAt(self.text, index)) {
+                _pushSegment(kept, substring(self.text, start, index), rooted)
+                start = index + 1
             }
             index += 1
         }
-        return found
-    }
 
-    /** The index of the last `.` in [text], or -1. */
-    @Experimental(since: "0.1")
-    func _lastDot(text: String): Int {
-        var found = 0 - 1
-        var index = 0
-        while index < stringLength(text) {
-            if charAt(text, index) == '.' {
-                found = index
+        var joined = ""
+        var i = 0
+        while i < kept.size {
+            if i > 0 {
+                joined = joined + pathSeparator
             }
-            index += 1
+            joined = joined + kept.get(i)
+            i += 1
         }
-        return found
+        if rooted {
+            return Path(pathSeparator + joined)
+        }
+        if stringLength(joined) == 0 {
+            return Path(".")
+        }
+        return Path(joined)
     }
+}
 
-    // ── Reaching the disk ───────────────────────────────────────────────
-    //
-    // Every bridge below reports failure the same way: the first element of its
-    // result (or its whole result, for the ones that return only a status) is
-    // the *name* of a FileError variant, or "" on success. One encoding, so the
-    // mapping from a platform's errors to this error set lives in the backend
-    // and is read back in one place - `_raise`.
+/**
+ * Adds one segment to a normalization in progress.
+ *
+ * `.` contributes nothing. `..` cancels the segment before it, unless there
+ * is nothing to cancel - in which case an absolute path drops it (there is
+ * nothing above the root) and a relative one keeps it, because `../x` names
+ * something real.
+ */
+@Experimental(since: "0.1")
+func _pushSegment(kept: MutableList<String>!, segment: String, rooted: Bool) {
+    if stringLength(segment) == 0 || segment == "." {
+        return
+    }
+    if segment != ".." {
+        kept.add(segment)
+        return
+    }
+    if kept.size > 0 && kept.get(kept.size - 1) != ".." {
+        kept.removeAt(kept.size - 1)
+        return
+    }
+    if !rooted {
+        kept.add(segment)
+    }
+}
 
-    /**
-     * Reads a whole file; the error name, a newline, then the contents.
-     *
-     * One string rather than a pair, because a bridge that returns an array has
-     * to build one in every backend - and the native one would be raw IR. The
-     * error name cannot contain a newline, so the first line is unambiguous
-     * however many the contents have.
-     */
-    @Experimental(since: "0.1")
-    bridge func _fsRead(path: String): String
+/** True for either separator, so a Windows path reads correctly too. */
+@Experimental(since: "0.1")
+func _isSeparator(value: Char): Bool {
+    return value == '/' || value == '\\'
+}
 
-    /** Reads raw bytes; `[status, b0, b1, …]` with status 0 on success. */
-    @Experimental(since: "0.1")
-    bridge func _fsReadBytes(path: String): Array<Int>
-
-    /** Writes or appends; the error name, or `""`. */
-    @Experimental(since: "0.1")
-    bridge func _fsWrite(path: String, content: String, append: Bool): String
-
-    /** Lists a directory; `[error, entry, entry, …]`. */
-    @Experimental(since: "0.1")
-    bridge func _fsList(path: String): Array<String>
-
-    /** Metadata; `[error, kind, size, seconds, nanoseconds]`. */
-    @Experimental(since: "0.1")
-    bridge func _fsStat(path: String): Array<String>
-
-    /** Whether anything is at [path]. Never fails - see [exists]. */
-    @Experimental(since: "0.1")
-    bridge func _fsExists(path: String): Bool
-
-    /** One mutating operation, named by [op]; the error name, or `""`. */
-    @Experimental(since: "0.1")
-    bridge func _fsMutate(op: String, from: String, to: String): String
-
-    /** A path-producing query; `[error, path]`. */
-    @Experimental(since: "0.1")
-    bridge func _fsPathQuery(op: String, argument: String): Array<String>
-
-    /**
-     * Fails with the [FileError] the backend named.
-     *
-     * A variant is a way of failing, not a value, so this raises rather than
-     * returning one - callers write `try _fail(name)`. An unrecognised name
-     * becomes [FileError.ReadFailed] rather than being ignored: a failure the
-     * backend could not classify is still a failure, and quietly succeeding is
-     * the one unacceptable outcome.
-     */
-    @Experimental(since: "0.1")
-    func _fail(name: String): Unit ?! FileError {
-        when name {
-            "NotFound" -> { return .NotFound }
-            "PermissionDenied" -> { return .PermissionDenied }
-            "AlreadyExists" -> { return .AlreadyExists }
-            "NotADirectory" -> { return .NotADirectory }
-            "IsADirectory" -> { return .IsADirectory }
-            "DirectoryNotEmpty" -> { return .DirectoryNotEmpty }
-            "InvalidPath" -> { return .InvalidPath }
-            "WriteFailed" -> { return .WriteFailed }
-            "Unsupported" -> { return .Unsupported }
-            else -> { return .ReadFailed }
+/** The index of the last separator in [text], or -1. */
+@Experimental(since: "0.1")
+func _lastSeparator(text: String): Int {
+    var found = 0 - 1
+    var index = 0
+    while index < stringLength(text) {
+        if _isSeparator(charAt(text, index)) {
+            found = index
         }
+        index += 1
+    }
+    return found
+}
+
+/** The index of the last `.` in [text], or -1. */
+@Experimental(since: "0.1")
+func _lastDot(text: String): Int {
+    var found = 0 - 1
+    var index = 0
+    while index < stringLength(text) {
+        if charAt(text, index) == '.' {
+            found = index
+        }
+        index += 1
+    }
+    return found
+}
+
+// ── Reaching the disk ───────────────────────────────────────────────
+//
+// Every bridge below reports failure the same way: the first element of its
+// result (or its whole result, for the ones that return only a status) is
+// the *name* of a FileError variant, or "" on success. One encoding, so the
+// mapping from a platform's errors to this error set lives in the backend
+// and is read back in one place - `_raise`.
+
+/**
+ * Reads a whole file; the error name, a newline, then the contents.
+ *
+ * One string rather than a pair, because a bridge that returns an array has
+ * to build one in every backend - and the native one would be raw IR. The
+ * error name cannot contain a newline, so the first line is unambiguous
+ * however many the contents have.
+ */
+@Experimental(since: "0.1")
+bridge func _fsRead(path: String): String
+
+/** Reads raw bytes; `[status, b0, b1, …]` with status 0 on success. */
+@Experimental(since: "0.1")
+bridge func _fsReadBytes(path: String): Array<Int>
+
+/** Writes or appends; the error name, or `""`. */
+@Experimental(since: "0.1")
+bridge func _fsWrite(path: String, content: String, append: Bool): String
+
+/** Lists a directory; `[error, entry, entry, …]`. */
+@Experimental(since: "0.1")
+bridge func _fsList(path: String): Array<String>
+
+/** Metadata; `[error, kind, size, seconds, nanoseconds]`. */
+@Experimental(since: "0.1")
+bridge func _fsStat(path: String): Array<String>
+
+/** Whether anything is at [path]. Never fails - see [exists]. */
+@Experimental(since: "0.1")
+bridge func _fsExists(path: String): Bool
+
+/** One mutating operation, named by [op]; the error name, or `""`. */
+@Experimental(since: "0.1")
+bridge func _fsMutate(op: String, from: String, to: String): String
+
+/** A path-producing query; `[error, path]`. */
+@Experimental(since: "0.1")
+bridge func _fsPathQuery(op: String, argument: String): Array<String>
+
+/**
+ * Fails with the [FileError] the backend named.
+ *
+ * A variant is a way of failing, not a value, so this raises rather than
+ * returning one - callers write `try _fail(name)`. An unrecognised name
+ * becomes [FileError.ReadFailed] rather than being ignored: a failure the
+ * backend could not classify is still a failure, and quietly succeeding is
+ * the one unacceptable outcome.
+ */
+@Experimental(since: "0.1")
+func _fail(name: String): Unit ?! FileError {
+    when name {
+        "NotFound" -> { return .NotFound }
+        "PermissionDenied" -> { return .PermissionDenied }
+        "AlreadyExists" -> { return .AlreadyExists }
+        "NotADirectory" -> { return .NotADirectory }
+        "IsADirectory" -> { return .IsADirectory }
+        "DirectoryNotEmpty" -> { return .DirectoryNotEmpty }
+        "InvalidPath" -> { return .InvalidPath }
+        "WriteFailed" -> { return .WriteFailed }
+        "Unsupported" -> { return .Unsupported }
+        else -> { return .ReadFailed }
+    }
+    return .ReadFailed
+}
+
+// ── Reading ─────────────────────────────────────────────────────────
+
+/** The whole of [target] as text. */
+@Experimental(since: "0.1")
+func readText(target: Path): String ?! FileError {
+    fin raw = _fsRead(target.text)
+    fin cut = indexOf(raw, "\n")
+    if cut < 0 {
         return .ReadFailed
     }
+    fin failure = substring(raw, 0, cut)
+    if stringLength(failure) > 0 {
+        try _fail(failure)
+    }
+    return substring(raw, cut + 1, stringLength(raw))
+}
 
-    // ── Reading ─────────────────────────────────────────────────────────
+/** The whole of [target] as bytes. */
+@Experimental(since: "0.1")
+func readBytes(target: Path): Array<Byte> ?! FileError {
+    fin raw: Array<Int> = _fsReadBytes(target.text)
+    if raw.size < 1 {
+        return .ReadFailed
+    }
+    if raw[0] != 0 {
+        return .ReadFailed
+    }
+    var bytes: Array<Byte> = .() * raw.size - 1
+    var index = 1
+    while index < raw.size {
+        bytes[index - 1] = raw[index] as Byte
+        index += 1
+    }
+    return bytes
+}
 
-    /** The whole of [target] as text. */
-    @Experimental(since: "0.1")
-    func readText(target: Path): String ?! FileError {
-        fin raw = _fsRead(target.text)
-        fin cut = indexOf(raw, "\n")
-        if cut < 0 {
-            return .ReadFailed
+// ── Writing ─────────────────────────────────────────────────────────
+
+/**
+ * Replaces [target]'s contents with [content].
+ *
+ * The replacement is atomic where the platform allows it: an interrupted
+ * write leaves the previous file intact rather than a truncated one.
+ */
+@Experimental(since: "0.1")
+func writeText(target: Path, content: String): Unit ?! FileError {
+    fin failure = _fsWrite(target.text, content, false)
+    if stringLength(failure) > 0 {
+        try _fail(failure)
+    }
+}
+
+/**
+ * Adds [content] to the end of [target].
+ *
+ * Not atomic, and cannot be - appending is defined as adding to what is
+ * already there. It is a separate function so the difference shows at the
+ * call site rather than hiding in a flag.
+ */
+@Experimental(since: "0.1")
+func appendText(target: Path, content: String): Unit ?! FileError {
+    fin failure = _fsWrite(target.text, content, true)
+    if stringLength(failure) > 0 {
+        try _fail(failure)
+    }
+}
+
+// ── Directories ─────────────────────────────────────────────────────
+
+/** The entries under [target], as full paths, sorted by text. */
+@Experimental(since: "0.1")
+func listDirectory(target: Path): Array<Path> ?! FileError {
+    fin parts: Array<String> = _fsList(target.text)
+    if parts.size < 1 {
+        return .ReadFailed
+    }
+    if stringLength(parts[0]) > 0 {
+        try _fail(parts[0])
+    }
+    var entries: Array<Path> = .() * parts.size - 1
+    var index = 1
+    while index < parts.size {
+        entries[index - 1] = Path(parts[index])
+        index += 1
+    }
+    return entries
+}
+
+/** Creates [target]; fails when its parent is missing or it already exists. */
+@Experimental(since: "0.1")
+func createDirectory(target: Path): Unit ?! FileError {
+    return try _mutate("createDirectory", target, target)
+}
+
+/** Creates [target] and every missing directory above it. */
+@Experimental(since: "0.1")
+func createDirectories(target: Path): Unit ?! FileError {
+    return try _mutate("createDirectories", target, target)
+}
+
+/** Removes a file, or an empty directory. */
+@Experimental(since: "0.1")
+func remove(target: Path): Unit ?! FileError {
+    return try _mutate("remove", target, target)
+}
+
+/** Removes [target] and everything beneath it. */
+@Experimental(since: "0.1")
+func removeAll(target: Path): Unit ?! FileError {
+    return try _mutate("removeAll", target, target)
+}
+
+/** Copies [from] over [to], replacing it. */
+@Experimental(since: "0.1")
+func copyFile(from: Path, to: Path): Unit ?! FileError {
+    return try _mutate("copyFile", from, to)
+}
+
+/** Moves [from] to [to], replacing it. */
+@Experimental(since: "0.1")
+func rename(from: Path, to: Path): Unit ?! FileError {
+    return try _mutate("rename", from, to)
+}
+
+/** Shared tail of the mutating operations. */
+@Experimental(since: "0.1")
+func _mutate(op: String, from: Path, to: Path): Unit ?! FileError {
+    fin failure = _fsMutate(op, from.text, to.text)
+    if stringLength(failure) > 0 {
+        try _fail(failure)
+    }
+}
+
+// ── Metadata ────────────────────────────────────────────────────────
+
+/** What the filesystem knows about [target]. */
+@Experimental(since: "0.1")
+func fileInfo(target: Path): FileInfo ?! FileError {
+    fin parts: Array<String> = _fsStat(target.text)
+    if parts.size < 5 {
+        return .ReadFailed
+    }
+    if stringLength(parts[0]) > 0 {
+        try _fail(parts[0])
+    }
+    fin kind = when parts[1] {
+        "File" -> FileKind.File
+        "Directory" -> FileKind.Directory
+        "Symlink" -> FileKind.Symlink
+        else -> FileKind.Other
+    }
+    return FileInfo(kind, _digits(parts[2]), Instant(_digits(parts[3]), _digits(parts[4]) as Int))
+}
+
+/**
+ * Whether anything exists at [target].
+ *
+ * A predicate rather than a failable operation: "is there a file here" has a
+ * defensible answer even when the path cannot be read, and forcing `try` on
+ * it makes the common shape worse for no gain. Callers that need to know
+ * *why* ask [fileInfo].
+ */
+@Experimental(since: "0.1")
+func exists(target: Path): Bool {
+    return _fsExists(target.text)
+}
+
+/** Whether [target] is an ordinary file. */
+@Experimental(since: "0.1")
+func isFile(target: Path): Bool {
+    fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
+    return info.kind == FileKind.File
+}
+
+/** Whether [target] is a directory. */
+@Experimental(since: "0.1")
+func isDirectory(target: Path): Bool {
+    fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
+    return info.kind == FileKind.Directory
+}
+
+/** [target] with symlinks resolved. Needs the disk, unlike `normalized`. */
+@Experimental(since: "0.1")
+func canonical(target: Path): Path ?! FileError {
+    return Path(try _pathQuery("canonical", target.text))
+}
+
+// ── Temporary files ─────────────────────────────────────────────────
+
+/** The system temporary directory. */
+@Experimental(since: "0.1")
+func temporaryDirectory(): Path ?! FileError {
+    return Path(try _pathQuery("temporaryDirectory", ""))
+}
+
+/**
+ * A directory that did not exist a moment ago.
+ *
+ * The standard library owns uniqueness because a caller inventing its own
+ * name from a clock or a process id races with every other copy of itself.
+ */
+@Experimental(since: "0.1")
+func createTemporaryDirectory(prefix: String): Path ?! FileError {
+    return Path(try _pathQuery("createTemporaryDirectory", prefix))
+}
+
+/** Shared tail of the path-producing queries. */
+@Experimental(since: "0.1")
+func _pathQuery(op: String, argument: String): String ?! FileError {
+    fin parts: Array<String> = _fsPathQuery(op, argument)
+    if parts.size < 2 {
+        return .ReadFailed
+    }
+    if stringLength(parts[0]) > 0 {
+        try _fail(parts[0])
+    }
+    return parts[1]
+}
+
+/** A non-negative decimal, or 0. Kept here so metadata parsing has no dependency. */
+@Experimental(since: "0.1")
+func _digits(text: String): Long {
+    var value = 0L
+    var index = 0
+    while index < stringLength(text) {
+        fin digit = charAt(text, index)
+        if !isDigit(digit) {
+            return value
         }
-        fin failure = substring(raw, 0, cut)
-        if stringLength(failure) > 0 {
-            try _fail(failure)
-        }
-        return substring(raw, cut + 1, stringLength(raw))
+        value = value * 10L + ((ord(digit) - ord('0')) as Long)
+        index += 1
     }
-
-    /** The whole of [target] as bytes. */
-    @Experimental(since: "0.1")
-    func readBytes(target: Path): Array<Byte> ?! FileError {
-        fin raw: Array<Int> = _fsReadBytes(target.text)
-        if raw.size < 1 {
-            return .ReadFailed
-        }
-        if raw[0] != 0 {
-            return .ReadFailed
-        }
-        var bytes: Array<Byte> = .() * raw.size - 1
-        var index = 1
-        while index < raw.size {
-            bytes[index - 1] = raw[index] as Byte
-            index += 1
-        }
-        return bytes
-    }
-
-    // ── Writing ─────────────────────────────────────────────────────────
-
-    /**
-     * Replaces [target]'s contents with [content].
-     *
-     * The replacement is atomic where the platform allows it: an interrupted
-     * write leaves the previous file intact rather than a truncated one.
-     */
-    @Experimental(since: "0.1")
-    func writeText(target: Path, content: String): Unit ?! FileError {
-        fin failure = _fsWrite(target.text, content, false)
-        if stringLength(failure) > 0 {
-            try _fail(failure)
-        }
-    }
-
-    /**
-     * Adds [content] to the end of [target].
-     *
-     * Not atomic, and cannot be - appending is defined as adding to what is
-     * already there. It is a separate function so the difference shows at the
-     * call site rather than hiding in a flag.
-     */
-    @Experimental(since: "0.1")
-    func appendText(target: Path, content: String): Unit ?! FileError {
-        fin failure = _fsWrite(target.text, content, true)
-        if stringLength(failure) > 0 {
-            try _fail(failure)
-        }
-    }
-
-    // ── Directories ─────────────────────────────────────────────────────
-
-    /** The entries under [target], as full paths, sorted by text. */
-    @Experimental(since: "0.1")
-    func listDirectory(target: Path): Array<Path> ?! FileError {
-        fin parts: Array<String> = _fsList(target.text)
-        if parts.size < 1 {
-            return .ReadFailed
-        }
-        if stringLength(parts[0]) > 0 {
-            try _fail(parts[0])
-        }
-        var entries: Array<Path> = .() * parts.size - 1
-        var index = 1
-        while index < parts.size {
-            entries[index - 1] = Path(parts[index])
-            index += 1
-        }
-        return entries
-    }
-
-    /** Creates [target]; fails when its parent is missing or it already exists. */
-    @Experimental(since: "0.1")
-    func createDirectory(target: Path): Unit ?! FileError {
-        return try _mutate("createDirectory", target, target)
-    }
-
-    /** Creates [target] and every missing directory above it. */
-    @Experimental(since: "0.1")
-    func createDirectories(target: Path): Unit ?! FileError {
-        return try _mutate("createDirectories", target, target)
-    }
-
-    /** Removes a file, or an empty directory. */
-    @Experimental(since: "0.1")
-    func remove(target: Path): Unit ?! FileError {
-        return try _mutate("remove", target, target)
-    }
-
-    /** Removes [target] and everything beneath it. */
-    @Experimental(since: "0.1")
-    func removeAll(target: Path): Unit ?! FileError {
-        return try _mutate("removeAll", target, target)
-    }
-
-    /** Copies [from] over [to], replacing it. */
-    @Experimental(since: "0.1")
-    func copyFile(from: Path, to: Path): Unit ?! FileError {
-        return try _mutate("copyFile", from, to)
-    }
-
-    /** Moves [from] to [to], replacing it. */
-    @Experimental(since: "0.1")
-    func rename(from: Path, to: Path): Unit ?! FileError {
-        return try _mutate("rename", from, to)
-    }
-
-    /** Shared tail of the mutating operations. */
-    @Experimental(since: "0.1")
-    func _mutate(op: String, from: Path, to: Path): Unit ?! FileError {
-        fin failure = _fsMutate(op, from.text, to.text)
-        if stringLength(failure) > 0 {
-            try _fail(failure)
-        }
-    }
-
-    // ── Metadata ────────────────────────────────────────────────────────
-
-    /** What the filesystem knows about [target]. */
-    @Experimental(since: "0.1")
-    func fileInfo(target: Path): FileInfo ?! FileError {
-        fin parts: Array<String> = _fsStat(target.text)
-        if parts.size < 5 {
-            return .ReadFailed
-        }
-        if stringLength(parts[0]) > 0 {
-            try _fail(parts[0])
-        }
-        fin kind = when parts[1] {
-            "File" -> FileKind.File
-            "Directory" -> FileKind.Directory
-            "Symlink" -> FileKind.Symlink
-            else -> FileKind.Other
-        }
-        return FileInfo(kind, _digits(parts[2]), Instant(_digits(parts[3]), _digits(parts[4]) as Int))
-    }
-
-    /**
-     * Whether anything exists at [target].
-     *
-     * A predicate rather than a failable operation: "is there a file here" has a
-     * defensible answer even when the path cannot be read, and forcing `try` on
-     * it makes the common shape worse for no gain. Callers that need to know
-     * *why* ask [fileInfo].
-     */
-    @Experimental(since: "0.1")
-    func exists(target: Path): Bool {
-        return _fsExists(target.text)
-    }
-
-    /** Whether [target] is an ordinary file. */
-    @Experimental(since: "0.1")
-    func isFile(target: Path): Bool {
-        fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
-        return info.kind == FileKind.File
-    }
-
-    /** Whether [target] is a directory. */
-    @Experimental(since: "0.1")
-    func isDirectory(target: Path): Bool {
-        fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
-        return info.kind == FileKind.Directory
-    }
-
-    /** [target] with symlinks resolved. Needs the disk, unlike `normalized`. */
-    @Experimental(since: "0.1")
-    func canonical(target: Path): Path ?! FileError {
-        return Path(try _pathQuery("canonical", target.text))
-    }
-
-    // ── Temporary files ─────────────────────────────────────────────────
-
-    /** The system temporary directory. */
-    @Experimental(since: "0.1")
-    func temporaryDirectory(): Path ?! FileError {
-        return Path(try _pathQuery("temporaryDirectory", ""))
-    }
-
-    /**
-     * A directory that did not exist a moment ago.
-     *
-     * The standard library owns uniqueness because a caller inventing its own
-     * name from a clock or a process id races with every other copy of itself.
-     */
-    @Experimental(since: "0.1")
-    func createTemporaryDirectory(prefix: String): Path ?! FileError {
-        return Path(try _pathQuery("createTemporaryDirectory", prefix))
-    }
-
-    /** Shared tail of the path-producing queries. */
-    @Experimental(since: "0.1")
-    func _pathQuery(op: String, argument: String): String ?! FileError {
-        fin parts: Array<String> = _fsPathQuery(op, argument)
-        if parts.size < 2 {
-            return .ReadFailed
-        }
-        if stringLength(parts[0]) > 0 {
-            try _fail(parts[0])
-        }
-        return parts[1]
-    }
-
-    /** A non-negative decimal, or 0. Kept here so metadata parsing has no dependency. */
-    @Experimental(since: "0.1")
-    func _digits(text: String): Long {
-        var value = 0L
-        var index = 0
-        while index < stringLength(text) {
-            fin digit = charAt(text, index)
-            if !isDigit(digit) {
-                return value
-            }
-            value = value * 10L + ((ord(digit) - ord('0')) as Long)
-            index += 1
-        }
-        return value
-    }
+    return value
 }

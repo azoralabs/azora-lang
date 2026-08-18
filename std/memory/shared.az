@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-module std.memory.shared
-
 /**
- * @file std/memory/shared
+ * @file std/memory/shared.az
  *
  * A shared pointer counted on one thread (`Shared<T>`).
  *
@@ -32,78 +30,77 @@ module std.memory.shared
  *
  * @since 0.1
  */
+module std.memory.shared
 
-realm std {
-    /**
-     * A reference-counted pointer to a `T`, counted without synchronisation.
-     *
-     * @generic T the pointee type.
-     */
+/**
+ * A reference-counted pointer to a `T`, counted without synchronisation.
+ *
+ * @generic T the pointee type.
+ */
+@Experimental(since: "0.1")
+pack Shared<T> {
+    var raw: T*
+    var count: Int
+}
+
+@Experimental(since: "0.1") // mandatory spec deref
+oper.* [self: Shared<T>&]: T {
+    return self.raw.*
+}
+
+/**
+ * Cloning a `Shared` produces another owner of the *same* value - it does
+ * not duplicate the pointee. It is never `Copy`: a new owner is a change to
+ * the reference count, and the model keeps that visible at the call site.
+ *
+ * The count is adjusted by `retain`/`release`, which take an exclusive
+ * receiver; `clone` borrows shared, so a caller that keeps the clone past
+ * the original's lifetime pairs it with a `retain`.
+ */
+@Since("0.1")
+impl Clone for Shared<T> {
+    func clone[self: Self&]() { // same here, mandatory return type
+        return Shared<T>(self.raw, self.count)
+    }
+}
+
+impl Shared<T> {
+    /** The pointed-to value. */
     @Experimental(since: "0.1")
-    pack Shared<T> {
-        var raw: T*
-        var count: Int
-    }
+    prop get[self: Self&]: T = self.raw.*
 
+    /** Replaces the pointed-to value without changing ownership. */
     @Experimental(since: "0.1")
-    oper.* [self: Shared<T>&]: T {
-        return self.raw.*
-    }
+    func set(value: T) { self.raw[0] = value }
 
-    /**
-     * Cloning a `Shared` produces another owner of the *same* value - it does
-     * not duplicate the pointee. It is never `Copy`: a new owner is a change to
-     * the reference count, and the model keeps that visible at the call site.
-     *
-     * The count is adjusted by `retain`/`release`, which take an exclusive
-     * receiver; `clone` borrows shared, so a caller that keeps the clone past
-     * the original's lifetime pairs it with a `retain`.
-     */
-    @Since("0.1")
-    impl Clone for Shared<T> {
-        func clone[self: Self&]() {
-            return Shared<T>(self.raw, self.count)
-        }
-    }
-
-    impl Shared<T> {
-        /** The pointed-to value. */
-        @Experimental(since: "0.1")
-        prop get[self: Self&]: T = self.raw.*
-
-        /** Replaces the pointed-to value without changing ownership. */
-        @Experimental(since: "0.1")
-        func set(value: T) { self.raw[0] = value }
-
-        /** Records a new shared owner. Returns the new reference count. */
-        @Experimental(since: "0.1")
-        func retain(): Int {
-            self.count = self.count + 1
-            return self.count
-        }
-
-        /** Gives up one owner; reclaims the allocation when the last one leaves. */
-        @Experimental(since: "0.1")
-        func release(): Int {
-            self.count = self.count - 1
-            if self.count <= 0 {
-                purge self.raw
-            }
-            return self.count
-        }
-
-        /** The current number of live references. */
-        @Experimental(since: "0.1")
-        prop refCount[self: Self&]: Int = self.count
-
-        /** The underlying `T*` (escapes the counting). */
-        @Experimental(since: "0.1")
-        prop ptr[self: Self&]: T* = self.raw
-    }
-
-    /** A `Shared<T>` owning a fresh copy of [value], with one live reference. */
+    /** Records a new shared owner. Returns the new reference count. */
     @Experimental(since: "0.1")
-    func sharedOf<T>(value: T): Shared<T> {
-        return Shared(alloc value, 1)
+    func retain(): Int {
+        self.count = self.count + 1
+        return self.count
     }
+
+    /** Gives up one owner; reclaims the allocation when the last one leaves. */
+    @Experimental(since: "0.1")
+    func release(): Int {
+        self.count = self.count - 1
+        if self.count <= 0 {
+            purge self.raw
+        }
+        return self.count
+    }
+
+    /** The current number of live references. */
+    @Experimental(since: "0.1")
+    prop refCount[self: Self&]: Int = self.count
+
+    /** The underlying `T*` (escapes the counting). */
+    @Experimental(since: "0.1")
+    prop ptr[self: Self&]: T* = self.raw
+}
+
+/** A `Shared<T>` owning a fresh copy of [value], with one live reference. */
+@Experimental(since: "0.1")
+func sharedOf<T>(value: T): Shared<T> {
+    return Shared(alloc value, 1)
 }

@@ -26,8 +26,7 @@
  */
 module std.traits
 
-exposed import std.traits.core
-import std.convert
+import std.traits.core.*
 
 /**
  * Chooses the type with the highest primitive promotion rank.

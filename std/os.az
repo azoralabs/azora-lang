@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-module std.os
-
-import std.container.array
-
 /**
- * @file std/os
+ * @file std/os.az
  *
  * The process and its surroundings: environment, working directory, and running
  * other programs.
@@ -35,174 +31,174 @@ import std.container.array
  *
  * @since 0.1
  */
+module std.os
 
-realm std {
+import std.container.array.*
 
-    /**
-     * A finished command: what it printed, and how it ended.
-     *
-     * [started] separates "printed nothing" from "never ran". Both leave
-     * [output] empty, and a caller that cannot tell them apart will report a
-     * missing program as a program that succeeded silently.
-     */
-    @Experimental(since: "0.1")
-    pack ProcessResult {
-        /** Standard output and standard error, interleaved as they were written. */
-        var output: String = ""
-        /** The command's exit status; negative when it was killed by a signal. */
-        var exitCode: Int = 0
-        /** False when the command could not be started at all. */
-        var started: Bool = false
+/**
+ * A finished command: what it printed, and how it ended.
+ *
+ * [started] separates "printed nothing" from "never ran". Both leave
+ * [output] empty, and a caller that cannot tell them apart will report a
+ * missing program as a program that succeeded silently.
+ */
+@Experimental(since: "0.1")
+pack ProcessResult {
+    /** Standard output and standard error, interleaved as they were written. */
+    var output: String = ""
+    /** The command's exit status; negative when it was killed by a signal. */
+    var exitCode: Int = 0
+    /** False when the command could not be started at all. */
+    var started: Bool = false
+}
+
+impl ProcessResult {
+    /** True when the command ran and reported success. */
+    prop succeeded[self: Self&]: Bool = self.started && self.exitCode == 0
+}
+
+// ── Environment ─────────────────────────────────────────────────────
+
+/**
+ * The value of environment variable [name], or `""` when it is unset.
+ *
+ * An unset variable reads as empty rather than failing, because the
+ * overwhelmingly common use is a fallback: `envOr` expresses that directly.
+ *
+ * @param name The variable to read.
+ * @return Its value, or `""`.
+ */
+@Experimental(since: "0.1")
+bridge func envVar(name: String): String
+
+/**
+ * True when [name] is set, even if its value is empty.
+ *
+ * Distinguishes "set to nothing" from "not set", which some tools mean
+ * differently and [envVar] alone cannot express.
+ */
+@Experimental(since: "0.1")
+bridge func hasEnvVar(name: String): Bool
+
+/**
+ * Sets [name] for commands this process starts.
+ *
+ * Not every platform lets a running process edit its own environment, so
+ * this is defined as affecting what [runCommand] launches - the thing
+ * setting a variable is nearly always for. [envVar] reads the value back.
+ *
+ * @return false where the platform has no environment at all.
+ */
+@Experimental(since: "0.1")
+bridge func setEnvVar(name: String, value: String): Bool
+
+/**
+ * [name]'s value, or [fallback] when it is unset.
+ *
+ * @param name The variable to read.
+ * @param fallback Used when the variable is not set.
+ */
+@Experimental(since: "0.1")
+func envOr(name: String, fallback: String): String {
+    if hasEnvVar(name) {
+        return envVar(name)
     }
+    return fallback
+}
 
-    impl ProcessResult {
-        /** True when the command ran and reported success. */
-        prop succeeded[self: Self&]: Bool = self.started && self.exitCode == 0
+// ── Working directory ───────────────────────────────────────────────
+
+/** The directory relative paths resolve against. */
+@Experimental(since: "0.1")
+bridge func currentDirectory(): String
+
+/**
+ * Moves to [path], reporting whether it moved.
+ *
+ * A path that is not a directory returns false and leaves the process where
+ * it was, so a failed change cannot silently redirect later file access.
+ */
+@Experimental(since: "0.1")
+bridge func changeDirectory(path: String): Bool
+
+// ── Process ─────────────────────────────────────────────────────────
+
+/** This process's identifier, or 0 where the platform has no such thing. */
+@Experimental(since: "0.1")
+bridge func processId(): Int
+
+/**
+ * Runs [command] through the platform shell and waits for it to finish.
+ *
+ * Output is captured, not streamed: the result is the whole of what the
+ * command wrote. A command that produces output indefinitely will therefore
+ * not return - streaming belongs to `std.io`'s readers, once those exist.
+ *
+ * `stderr` is folded into `stdout` in the order the two were written.
+ * Splitting them would lose that interleaving permanently, and a build log
+ * whose errors have floated away from the lines that caused them is worth
+ * less than one that reads in order.
+ *
+ * @param command A shell command line.
+ * @return What it printed and how it ended.
+ */
+@Experimental(since: "0.1")
+func runCommand(command: String): ProcessResult {
+    // The bridge returns [exitCode, started, output] as text, because a
+    // bridge yields one value and this needs three. The wrapper is what
+    // callers see, so the encoding stays an implementation detail.
+    //
+    // Named so it shares no suffix with `runCommand`: symbol lookup matches
+    // a scope-qualified name by its tail, so a private twin differing only
+    // by a leading underscore resolves back to its own caller.
+    fin raw = _commandParts(command)
+    fin codeEnd = indexOf(raw, "\n")
+    if codeEnd < 0 {
+        return ProcessResult("std.os could not run the command", -1, false)
     }
-
-    // ── Environment ─────────────────────────────────────────────────────
-
-    /**
-     * The value of environment variable [name], or `""` when it is unset.
-     *
-     * An unset variable reads as empty rather than failing, because the
-     * overwhelmingly common use is a fallback: `envOr` expresses that directly.
-     *
-     * @param name The variable to read.
-     * @return Its value, or `""`.
-     */
-    @Experimental(since: "0.1")
-    bridge func envVar(name: String): String
-
-    /**
-     * True when [name] is set, even if its value is empty.
-     *
-     * Distinguishes "set to nothing" from "not set", which some tools mean
-     * differently and [envVar] alone cannot express.
-     */
-    @Experimental(since: "0.1")
-    bridge func hasEnvVar(name: String): Bool
-
-    /**
-     * Sets [name] for commands this process starts.
-     *
-     * Not every platform lets a running process edit its own environment, so
-     * this is defined as affecting what [runCommand] launches - the thing
-     * setting a variable is nearly always for. [envVar] reads the value back.
-     *
-     * @return false where the platform has no environment at all.
-     */
-    @Experimental(since: "0.1")
-    bridge func setEnvVar(name: String, value: String): Bool
-
-    /**
-     * [name]'s value, or [fallback] when it is unset.
-     *
-     * @param name The variable to read.
-     * @param fallback Used when the variable is not set.
-     */
-    @Experimental(since: "0.1")
-    func envOr(name: String, fallback: String): String {
-        if hasEnvVar(name) {
-            return envVar(name)
-        }
-        return fallback
+    fin rest = substring(raw, codeEnd + 1, stringLength(raw))
+    fin startedEnd = indexOf(rest, "\n")
+    if startedEnd < 0 {
+        return ProcessResult("std.os could not run the command", -1, false)
     }
+    return ProcessResult(
+        substring(rest, startedEnd + 1, stringLength(rest)),
+        _decimalValue(substring(raw, 0, codeEnd)),
+        substring(rest, 0, startedEnd) == "true",
+    )
+}
 
-    // ── Working directory ───────────────────────────────────────────────
+/**
+ * Raw command execution; see [runCommand], which is the API.
+ *
+ * Returns the exit code, whether it started, and the output - each on its
+ * own line, in that order. One string rather than an array because a bridge
+ * returning an array must build one in every backend, and the native one
+ * would be raw IR; only the output can contain newlines, and it is last.
+ */
+@Experimental(since: "0.1")
+bridge func _commandParts(command: String): String
 
-    /** The directory relative paths resolve against. */
-    @Experimental(since: "0.1")
-    bridge func currentDirectory(): String
-
-    /**
-     * Moves to [path], reporting whether it moved.
-     *
-     * A path that is not a directory returns false and leaves the process where
-     * it was, so a failed change cannot silently redirect later file access.
-     */
-    @Experimental(since: "0.1")
-    bridge func changeDirectory(path: String): Bool
-
-    // ── Process ─────────────────────────────────────────────────────────
-
-    /** This process's identifier, or 0 where the platform has no such thing. */
-    @Experimental(since: "0.1")
-    bridge func processId(): Int
-
-    /**
-     * Runs [command] through the platform shell and waits for it to finish.
-     *
-     * Output is captured, not streamed: the result is the whole of what the
-     * command wrote. A command that produces output indefinitely will therefore
-     * not return - streaming belongs to `std.io`'s readers, once those exist.
-     *
-     * `stderr` is folded into `stdout` in the order the two were written.
-     * Splitting them would lose that interleaving permanently, and a build log
-     * whose errors have floated away from the lines that caused them is worth
-     * less than one that reads in order.
-     *
-     * @param command A shell command line.
-     * @return What it printed and how it ended.
-     */
-    @Experimental(since: "0.1")
-    func runCommand(command: String): ProcessResult {
-        // The bridge returns [exitCode, started, output] as text, because a
-        // bridge yields one value and this needs three. The wrapper is what
-        // callers see, so the encoding stays an implementation detail.
-        //
-        // Named so it shares no suffix with `runCommand`: symbol lookup matches
-        // a realm-qualified name by its tail, so a private twin differing only
-        // by a leading underscore resolves back to its own caller.
-        fin raw = _commandParts(command)
-        fin codeEnd = indexOf(raw, "\n")
-        if codeEnd < 0 {
-            return ProcessResult("std.os could not run the command", -1, false)
-        }
-        fin rest = substring(raw, codeEnd + 1, stringLength(raw))
-        fin startedEnd = indexOf(rest, "\n")
-        if startedEnd < 0 {
-            return ProcessResult("std.os could not run the command", -1, false)
-        }
-        return ProcessResult(
-            substring(rest, startedEnd + 1, stringLength(rest)),
-            _decimalValue(substring(raw, 0, codeEnd)),
-            substring(rest, 0, startedEnd) == "true",
-        )
+/** A signed decimal integer, or 0 when [text] is not one. */
+@Experimental(since: "0.1")
+func _decimalValue(text: String): Int {
+    if stringLength(text) == 0 {
+        return 0
     }
-
-    /**
-     * Raw command execution; see [runCommand], which is the API.
-     *
-     * Returns the exit code, whether it started, and the output - each on its
-     * own line, in that order. One string rather than an array because a bridge
-     * returning an array must build one in every backend, and the native one
-     * would be raw IR; only the output can contain newlines, and it is last.
-     */
-    @Experimental(since: "0.1")
-    bridge func _commandParts(command: String): String
-
-    /** A signed decimal integer, or 0 when [text] is not one. */
-    @Experimental(since: "0.1")
-    func _decimalValue(text: String): Int {
-        if stringLength(text) == 0 {
+    var index = 0
+    var sign = 1
+    if charAt(text, 0) == '-' {
+        sign = 0 - 1
+        index = 1
+    }
+    var value = 0
+    while index < stringLength(text) {
+        fin digit = charAt(text, index)
+        if !isDigit(digit) {
             return 0
         }
-        var index = 0
-        var sign = 1
-        if charAt(text, 0) == '-' {
-            sign = 0 - 1
-            index = 1
-        }
-        var value = 0
-        while index < stringLength(text) {
-            fin digit = charAt(text, index)
-            if !isDigit(digit) {
-                return 0
-            }
-            value = value * 10 + (ord(digit) - ord('0'))
-            index += 1
-        }
-        return value * sign
+        value = value * 10 + (ord(digit) - ord('0'))
+        index += 1
     }
+    return value * sign
 }

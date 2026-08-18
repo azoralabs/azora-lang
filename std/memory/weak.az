@@ -5,8 +5,6 @@
  * you may not use this file except in compliance with the License.
  */
 
-module std.memory.weak
-
 /**
  * @file std/memory/weak
  *
@@ -15,50 +13,49 @@ module std.memory.weak
  *
  * @since 0.1
  */
+module std.memory.weak
 
-realm std {
-    @Since("0.1")
-    pack Weak<T> {
-        var _raw: T*
+@Since("0.1")
+pack Weak<T> {
+    var _raw: T*
+}
+
+@Experimental(since: "0.1")
+oper.* [self: Weak<T>&]: T { // here we need to implement mandatory deref...
+    assert self._raw != null { "Weak pointer is null" }
+    return self._raw.*
+}
+
+/**
+ * Cloning a `Weak` duplicates the non-owning handle, never the object. It is
+ * not `Copy`: a weak handle is still a thing you decide to make another of.
+ */
+@Since("0.1")
+impl Clone for Weak<T> {
+    func clone[self: Self&]() { // return type must be specified mandatory, it is not Unit, fix in compiler
+        return Weak<T>(self._raw)
     }
+}
 
+impl Weak<T> {
+    /** Returns the referenced value (panics if the pointer is null). */
     @Experimental(since: "0.1")
-    oper.* [self: Weak<T>&]: T {
+    prop get[self: Self&]: T {
         assert self._raw != null { "Weak pointer is null" }
         return self._raw.*
     }
 
-    /**
-     * Cloning a `Weak` duplicates the non-owning handle, never the object. It is
-     * not `Copy`: a weak handle is still a thing you decide to make another of.
-     */
+    /** Returns the raw `T*` (may be null). */
     @Since("0.1")
-    impl Clone for Weak<T> {
-        func clone[self: Self&]() {
-            return Weak<T>(self._raw)
-        }
-    }
+    prop ptr[self: Self&]: T* = self._raw
 
-    impl Weak<T> {
-        /** Returns the referenced value (panics if the pointer is null). */
-        @Experimental(since: "0.1")
-        prop get[self: Self&]: T {
-            assert self._raw != null { "Weak pointer is null" }
-            return self._raw.*
-        }
+    /** `true` when the pointer is null (does not own a reference). */
+    @Since("0.1")
+    prop isNull[self: Self&]: Bool = self._raw == null
+}
 
-        /** Returns the raw `T*` (may be null). */
-        @Since("0.1")
-        prop ptr[self: Self&]: T* = self._raw
-
-        /** `true` when the pointer is null (does not own a reference). */
-        @Since("0.1")
-        prop isNull[self: Self&]: Bool = self._raw == null
-    }
-
-    /** Wraps a raw `T*` as a non-owning `Weak<T>`. */
-    @Experimental(since: "0.1")
-    func weakOf<T>(ptr: T*): Weak<T> {
-        return Weak(ptr)
-    }
+/** Wraps a raw `T*` as a non-owning `Weak<T>`. */
+@Experimental(since: "0.1")
+func weakOf<T>(ptr: T*): Weak<T> {
+    return Weak(ptr)
 }

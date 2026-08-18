@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-module std.parallelism.channel
-
 /**
- * @file std/parallelism/channel
+ * @file std/parallelism/channel.az
  *
  * Thread-safe message channel.
  *
@@ -26,93 +24,92 @@ module std.parallelism.channel
  *
  * @since 0.1
  */
+module std.parallelism.channel
 
-realm std {
-    /**
-     * A thread-safe FIFO message channel for inter-thread communication.
-     *
-     * Channel provides a synchronized queue that allows threads to
-     * send and receive messages safely.
-     *
-     * @generic T The type of messages in this channel.
-     */
+/**
+ * A thread-safe FIFO message channel for inter-thread communication.
+ *
+ * Channel provides a synchronized queue that allows threads to
+ * send and receive messages safely.
+ *
+ * @generic T The type of messages in this channel.
+ */
+@Since("0.1")
+pack Channel<T> {
+    var _queue: Queue<T> = .()
+    var _mutex: Mutex = .(0)
+    var _closed: Bool = false
+}
+
+impl Channel<T> {
+    // --- Capacity ---
+
+    /** The number of messages currently in the channel. */
     @Since("0.1")
-    pack Channel<T> {
-        var _queue: Queue<T> = Queue<T>()
-        var _mutex: Mutex = Mutex(0)
-        var _closed: Bool = false
+    prop length[self: Self&]: Int = queue.length
+
+    /** Whether the channel has no messages. */
+    @Since("0.1")
+    prop isEmpty[self: Self&]: Bool = queue.isEmpty
+
+    /** Whether the channel has been closed. */
+    @Since("0.1")
+    prop isClosed[self: Self&]: Bool = closed
+
+    // --- Operations ---
+
+    /**
+     * Sends a message to the channel.
+     *
+     * @param value The message to send.
+     * @throws AssertionError if the channel is closed.
+     */
+    @Experimental(since: "0.1")
+    func send(value: T) {
+        assert !closed { "Cannot send on closed channel" }
+        mutex.lock()
+        queue.enqueue(value)
+        mutex.unlock()
     }
 
-    impl Channel<T> {
-        // --- Capacity ---
+    /**
+     * Receives and removes the next message from the channel.
+     *
+     * @return The next message.
+     * @throws AssertionError if the channel is empty.
+     */
+    @Experimental(since: "0.1")
+    func receive(): T {
+        assert queue.isNotEmpty { "Channel is empty" }
+        mutex.lock()
+        fin value = queue.dequeue()
+        mutex.unlock()
+        return value
+    }
 
-        /** The number of messages currently in the channel. */
-        @Since("0.1")
-        prop length[self: Self&]: Int = queue.length
-
-        /** Whether the channel has no messages. */
-        @Since("0.1")
-        prop isEmpty[self: Self&]: Bool = queue.isEmpty
-
-        /** Whether the channel has been closed. */
-        @Since("0.1")
-        prop isClosed[self: Self&]: Bool = closed
-
-        // --- Operations ---
-
-        /**
-         * Sends a message to the channel.
-         *
-         * @param value The message to send.
-         * @throws AssertionError if the channel is closed.
-         */
-        @Experimental(since: "0.1")
-        func send(value: T) {
-            assert !closed { "Cannot send on closed channel" }
-            mutex.lock()
-            queue.enqueue(value)
+    /**
+     * Attempts to receive a message without blocking.
+     *
+     * @param default The value to return if the channel is empty.
+     * @return The next message, or the default value if empty.
+     */
+    @Experimental(since: "0.1")
+    func tryReceive(default: T): T {
+        mutex.lock()
+        if queue.isEmpty {
             mutex.unlock()
+            return default
         }
+        fin value = queue.dequeue()
+        mutex.unlock()
+        return value
+    }
 
-        /**
-         * Receives and removes the next message from the channel.
-         *
-         * @return The next message.
-         * @throws AssertionError if the channel is empty.
-         */
-        @Experimental(since: "0.1")
-        func receive(): T {
-            assert queue.isNotEmpty { "Channel is empty" }
-            mutex.lock()
-            fin value = queue.dequeue()
-            mutex.unlock()
-            return value
-        }
-
-        /**
-         * Attempts to receive a message without blocking.
-         *
-         * @param default The value to return if the channel is empty.
-         * @return The next message, or the default value if empty.
-         */
-        @Experimental(since: "0.1")
-        func tryReceive(default: T): T {
-            mutex.lock()
-            if queue.isEmpty {
-                mutex.unlock()
-                return default
-            }
-            fin value = queue.dequeue()
-            mutex.unlock()
-            return value
-        }
-
-        /**
-         * Closes the channel, preventing further sends.
-         */
-        @Since("0.1")
-        func close() {
-            self._closed = true
-        }
+    /**
+     * Closes the channel, preventing further sends.
+     */
+    @Since("0.1")
+    func close() {
+        self._closed = true
     }
 }

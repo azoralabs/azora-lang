@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-module std.functional
-
-import std.container.array
-
 /**
- * @file std/functional
+ * @file std/functional.az
  *
  * Higher-order function utilities.
  *
@@ -28,498 +24,499 @@ import std.container.array
  *
  * @since 0.1
  */
+module std.functional
 
-realm std {
-    /**
-     * Returns the identity value (passes through unchanged).
-     *
-     * @param x The value.
-     * @return The same value.
-     */
-    @Experimental(since: "0.1")
-    func identity<T>(x: T): T = x
+import std.container.array.*
 
-    /**
-     * Applies a transformation to each element of an array.
-     *
-     * @param arr The source array.
-     * @param f The transformation function.
-     * @return A new array with transformed elements.
-     */
-    @Experimental(since: "0.1")
-    func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
-        var result: Array<T> = .() * arr.size
-        for i in 0..<arr.size {
-            result[i] = f(arr[i])
-        }
-        return result
+/**
+ * Returns the identity value (passes through unchanged).
+ *
+ * @param x The value.
+ * @return The same value.
+ */
+@Experimental(since: "0.1")
+func identity<T>(x: T): T = x
+
+/**
+ * Applies a transformation to each element of an array.
+ *
+ * @param arr The source array.
+ * @param f The transformation function.
+ * @return A new array with transformed elements.
+ */
+@Experimental(since: "0.1")
+func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
+    var result: Array<T> = .() * arr.size
+    for i in 0..<arr.size {
+        result[i] = f(arr[i])
     }
+    return result
+}
 
-    /**
-     * Returns a new array containing only elements that satisfy the predicate.
-     *
-     * @param arr The source array.
-     * @param pred The predicate function.
-     * @return A filtered array.
-     */
-    @Experimental(since: "0.1")
-    func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
-        var tmp: Array<T> = .() * arr.size
-        var count = 0
-        for i in 0..<arr.size {
-            if pred(arr[i]) {
-                tmp[count] = arr[i]
-                count += 1
-            }
-        }
-        var result: Array<T> = .() * count
-        for j in 0..<count {
-            result[j] = tmp[j]
-        }
-        return result
-    }
-
-    /**
-     * Reduces an array to a single value using an accumulator function.
-     *
-     * @param arr The source array (must be non-empty).
-     * @param initial The initial accumulator value.
-     * @param f The accumulator function taking (accumulator, element).
-     * @return The final accumulated value.
-     */
-    @Experimental(since: "0.1")
-    func reduce<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
-        var acc = initial
-        for i in 0..<arr.size {
-            acc = f(acc, arr[i])
-        }
-        return acc
-    }
-
-    /**
-     * Applies an action to each element of an array.
-     *
-     * @param arr The source array.
-     * @param action The function to apply.
-     */
-    @Experimental(since: "0.1")
-    func forEach<T>(arr: Array<T>, action: (T) -> Unit) {
-        for i in 0..<arr.size {
-            action(arr[i])
+/**
+ * Returns a new array containing only elements that satisfy the predicate.
+ *
+ * @param arr The source array.
+ * @param pred The predicate function.
+ * @return A filtered array.
+ */
+@Experimental(since: "0.1")
+func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
+    var tmp: Array<T> = .() * arr.size
+    var count = 0
+    for i in 0..<arr.size {
+        if pred(arr[i]) {
+            tmp[count] = arr[i]
+            count += 1
         }
     }
-
-    /**
-     * Returns true if any element satisfies the predicate.
-     *
-     * @param arr The source array.
-     * @param pred The predicate function.
-     * @return true if at least one element matches.
-     */
-    @Experimental(since: "0.1")
-    func any<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
-        for i in 0..<arr.size {
-            if pred(arr[i]) { return true }
-        }
-        return false
+    var result: Array<T> = .() * count
+    for j in 0..<count {
+        result[j] = tmp[j]
     }
+    return result
+}
 
-    /**
-     * Returns true if all elements satisfy the predicate.
-     *
-     * @param arr The source array.
-     * @param pred The predicate function.
-     * @return true if every element matches.
-     */
-    @Experimental(since: "0.1")
-    func all<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
-        for i in 0..<arr.size {
-            if !pred(arr[i]) { return false }
-        }
-        return true
+/**
+ * Reduces an array to a single value using an accumulator function.
+ *
+ * @param arr The source array (must be non-empty).
+ * @param initial The initial accumulator value.
+ * @param f The accumulator function taking (accumulator, element).
+ * @return The final accumulated value.
+ */
+@Experimental(since: "0.1")
+func reduce<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
+    var acc = initial
+    for i in 0..<arr.size {
+        acc = f(acc, arr[i])
     }
+    return acc
+}
 
-    /**
-     * Returns true if no elements satisfy the predicate.
-     *
-     * @param arr The source array.
-     * @param pred The predicate function.
-     * @return true if no element matches.
-     */
-    @Experimental(since: "0.1")
-    func none<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
-        for i in 0..<arr.size {
-            if pred(arr[i]) { return false }
-        }
-        return true
+/**
+ * Applies an action to each element of an array.
+ *
+ * @param arr The source array.
+ * @param action The function to apply.
+ */
+@Experimental(since: "0.1")
+func forEach<T>(arr: Array<T>, action: (T) -> Unit) {
+    for i in 0..<arr.size {
+        action(arr[i])
     }
+}
 
-    /**
-     * Returns the first N elements of an array.
-     *
-     * @param arr The source array.
-     * @param n The number of elements to take.
-     * @return A new array with at most n elements.
-     */
-    @Experimental(since: "0.1")
-    func take<T>(arr: Array<T>, n: Int): Array<T>
-    in {
-        assert n >= 0 { "take count must be non-negative" }
-    } scope {
-        fin len = if n < arr.size { n } else { arr.size }
-        var result: Array<T> = .() * len
-        for i in 0..<len {
-            result[i] = arr[i]
-        }
-        return result
+/**
+ * Returns true if any element satisfies the predicate.
+ *
+ * @param arr The source array.
+ * @param pred The predicate function.
+ * @return true if at least one element matches.
+ */
+@Experimental(since: "0.1")
+func any<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+    for i in 0..<arr.size {
+        if pred(arr[i]) { return true }
     }
+    return false
+}
 
-    /**
-     * Skips the first N elements and returns the rest.
-     *
-     * @param arr The source array.
-     * @param n The number of elements to skip.
-     * @return A new array without the first n elements.
-     */
-    @Experimental(since: "0.1")
-    func drop<T>(arr: Array<T>, n: Int): Array<T>
-    in {
-        assert n >= 0 { "purge count must be non-negative" }
-    } scope {
-        fin start = if n < arr.size { n } else { arr.size }
-        var result: Array<T> = .() * arr.size - start
-        var i = start
-        var j = 0
-        while i < arr.size {
-            result[j] = arr[i]
-            i += 1
-            j += 1
-        }
-        return result
+/**
+ * Returns true if all elements satisfy the predicate.
+ *
+ * @param arr The source array.
+ * @param pred The predicate function.
+ * @return true if every element matches.
+ */
+@Experimental(since: "0.1")
+func all<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+    for i in 0..<arr.size {
+        if !pred(arr[i]) { return false }
     }
+    return true
+}
 
-    /**
-     * Zips two arrays into an array of pairs (2-element arrays).
-     *
-     * @param a The first array.
-     * @param b The second array.
-     * @return An array of [a[i], b[i]] pairs, up to the shorter length.
-     */
-    @Experimental(since: "0.1")
-    func zip<T>(a: Array<T>, b: Array<T>): Array<T> {
-        fin len = if a.size < b.size { a.size } else { b.size }
-        var result: Array<T> = .() * len
-        for i in 0..<len {
-            result[i] = arrayOf(a[i], b[i])
-        }
-        return result
+/**
+ * Returns true if no elements satisfy the predicate.
+ *
+ * @param arr The source array.
+ * @param pred The predicate function.
+ * @return true if no element matches.
+ */
+@Experimental(since: "0.1")
+func none<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+    for i in 0..<arr.size {
+        if pred(arr[i]) { return false }
     }
+    return true
+}
 
-    /**
-     * Creates an array filled with a given value.
-     *
-     * @param value The fill value.
-     * @param count The number of elements.
-     * @return A new array of count elements, all set to value.
-     */
-    @Experimental(since: "0.1")
-    func fill<T>(value: T, count: Int): Array<T>
-    in {
-        assert count >= 0 { "fill count must be non-negative" }
-    } scope {
-        var result: Array<T> = .() * count
-        for i in 0..<count {
-            result[i] = value
-        }
-        return result
+/**
+ * Returns the first N elements of an array.
+ *
+ * @param arr The source array.
+ * @param n The number of elements to take.
+ * @return A new array with at most n elements.
+ */
+@Experimental(since: "0.1")
+func take<T>(arr: Array<T>, n: Int): Array<T>
+in {
+    assert n >= 0 { "take count must be non-negative" }
+} scope {
+    fin len = if n < arr.size { n } else { arr.size }
+    var result: Array<T> = .() * len
+    for i in 0..<len {
+        result[i] = arr[i]
     }
+    return result
+}
 
-    /**
-     * Generates an array by applying a function to each index.
-     *
-     * @param count The number of elements.
-     * @param f The generator function taking the index.
-     * @return A new array of generated elements.
-     */
-    @Experimental(since: "0.1")
-    func generate<T>(count: T, f: (T) -> T): Array<T> {
-        var result: Array<T> = .() * count
-        for i in 0..<count {
-            result[i] = f(i)
-        }
-        return result
+/**
+ * Skips the first N elements and returns the rest.
+ *
+ * @param arr The source array.
+ * @param n The number of elements to skip.
+ * @return A new array without the first n elements.
+ */
+@Experimental(since: "0.1")
+func drop<T>(arr: Array<T>, n: Int): Array<T>
+in {
+    assert n >= 0 { "purge count must be non-negative" }
+} scope {
+    fin start = if n < arr.size { n } else { arr.size }
+    var result: Array<T> = .() * arr.size - start
+    var i = start
+    var j = 0
+    while i < arr.size {
+        result[j] = arr[i]
+        i += 1
+        j += 1
     }
+    return result
+}
 
-    /**
-     * Counts elements that satisfy a predicate.
-     *
-     * @param arr The source array.
-     * @param pred The predicate function.
-     * @return The count of matching elements.
-     */
-    @Experimental(since: "0.1")
-    func countWhere<T>(arr: Array<T>, pred: (T) -> Bool): Int {
-        var c = 0
-        for i in 0..<arr.size {
-            if pred(arr[i]) { c += 1 }
-        }
-        return c
+/**
+ * Zips two arrays into an array of pairs (2-element arrays).
+ *
+ * @param a The first array.
+ * @param b The second array.
+ * @return An array of [a[i], b[i]] pairs, up to the shorter length.
+ */
+@Experimental(since: "0.1")
+func zip<T>(a: Array<T>, b: Array<T>): Array<T> {
+    fin len = if a.size < b.size { a.size } else { b.size }
+    var result: Array<T> = .() * len
+    for i in 0..<len {
+        result[i] = arrayOf(a[i], b[i])
     }
+    return result
+}
 
-    /**
-     * Finds the first element satisfying a predicate, or returns the default.
-     *
-     * @param arr The source array.
-     * @param pred The predicate function.
-     * @param default The default value if no match.
-     * @return The first matching element or default.
-     */
-    @Experimental(since: "0.1")
-    func findOr<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
-        for i in 0..<arr.size {
-            if pred(arr[i]) { return arr[i] }
-        }
-        return default
+/**
+ * Creates an array filled with a given value.
+ *
+ * @param value The fill value.
+ * @param count The number of elements.
+ * @return A new array of count elements, all set to value.
+ */
+@Experimental(since: "0.1")
+func fill<T>(value: T, count: Int): Array<T>
+in {
+    assert count >= 0 { "fill count must be non-negative" }
+} scope {
+    var result: Array<T> = .() * count
+    for i in 0..<count {
+        result[i] = value
     }
+    return result
+}
 
-    /**
-     * Maps each element to an array and flattens the results.
-     */
-    @Experimental(since: "0.1")
-    func flatMap<T>(arr: Array<T>, f: (T) -> Array<T>): Array<T> {
-        // Two-pass: first count total, then fill
-        var total = 0
-        var i = 0
-        while i < arr.size {
-            var mapped: Array<T> = f(arr[i])
-            total += mapped.size
-            i += 1
-        }
-        var result: Array<T> = .() * total
-        var ri = 0
-        i = 0
-        while i < arr.size {
-            var mapped: Array<T> = f(arr[i])
-            for j in 0..<mapped.size {
-                result[ri] = mapped[j]
-                ri += 1
-            }
-            i += 1
-        }
-        return result
+/**
+ * Generates an array by applying a function to each index.
+ *
+ * @param count The number of elements.
+ * @param f The generator function taking the index.
+ * @return A new array of generated elements.
+ */
+@Experimental(since: "0.1")
+func generate<T>(count: T, f: (T) -> T): Array<T> {
+    var result: Array<T> = .() * count
+    for i in 0..<count {
+        result[i] = f(i)
     }
+    return result
+}
 
-    /**
-     * Left fold with a separate accumulator type.
-     * Since Azora generics are single-type, accumulator uses same type T.
-     */
-    @Experimental(since: "0.1")
-    func fold<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
-        var acc: T = initial
-        for i in 0..<arr.size {
-            acc = f(acc, arr[i])
-        }
-        return acc
+/**
+ * Counts elements that satisfy a predicate.
+ *
+ * @param arr The source array.
+ * @param pred The predicate function.
+ * @return The count of matching elements.
+ */
+@Experimental(since: "0.1")
+func countWhere<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+    var c = 0
+    for i in 0..<arr.size {
+        if pred(arr[i]) { c += 1 }
     }
+    return c
+}
 
-    /**
-     * Like reduce but returns all intermediate accumulator values.
-     */
-    @Experimental(since: "0.1")
-    func scan<T>(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
-        var result: Array<T> = .() * arr.size + 1
-        var acc: T = initial
-        result[0] = acc
-        for i in 0..<arr.size {
-            acc = f(acc, arr[i])
-            result[i + 1] = acc
-        }
-        return result
+/**
+ * Finds the first element satisfying a predicate, or returns the default.
+ *
+ * @param arr The source array.
+ * @param pred The predicate function.
+ * @param default The default value if no match.
+ * @return The first matching element or default.
+ */
+@Experimental(since: "0.1")
+func findOr<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
+    for i in 0..<arr.size {
+        if pred(arr[i]) { return arr[i] }
     }
+    return default
+}
 
-    /**
-     * Maps with index: f(index, element).
-     * Returns transformed array. Index passed as first element of a 2-element array.
-     */
-    @Experimental(since: "0.1")
-    func mapIndexed<T>(arr: Array<T>, f: (T, T) -> T): Array<T> {
-        var result: Array<T> = .() * arr.size
-        for i in 0..<arr.size {
-            result[i] = f(arr[i], arr[i])
-        }
-        return result
+/**
+ * Maps each element to an array and flattens the results.
+ */
+@Experimental(since: "0.1")
+func flatMap<T>(arr: Array<T>, f: (T) -> Array<T>): Array<T> {
+    // Two-pass: first count total, then fill
+    var total = 0
+    var i = 0
+    while i < arr.size {
+        var mapped: Array<T> = f(arr[i])
+        total += mapped.size
+        i += 1
     }
-
-    /**
-     * Calls function N times, collecting results.
-     */
-    @Experimental(since: "0.1")
-    func repeatCall<T>(count: T, f: () -> T): Array<T> {
-        var result: Array<T> = .() * count
-        for idx in 0..<count {
-            result[idx] = f()
-        }
-        return result
-    }
-
-    /**
-     * Returns the first element matching the predicate, or default.
-     */
-    @Experimental(since: "0.1")
-    func firstWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
-        for i in 0..<arr.size {
-            if pred(arr[i]) {
-                return arr[i]
-            }
-        }
-        return default
-    }
-
-    /**
-     * Returns the last element matching the predicate, or default.
-     */
-    @Experimental(since: "0.1")
-    func lastWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
-        var result: T = default
-        for i in 0..<arr.size {
-            if pred(arr[i]) {
-                result = arr[i]
-            }
-        }
-        return result
-    }
-
-    /**
-     * Splits an array into two: elements matching pred and elements not matching.
-     * Returns a 2-element array: [matching, nonMatching].
-     */
-    @Experimental(since: "0.1")
-    func partition<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
-        var yes: Array<T> = .() * arr.size
-        var no: Array<T> = .() * arr.size
-        var yi = 0
-        var ni = 0
-        for i in 0..<arr.size {
-            if pred(arr[i]) {
-                yes[yi] = arr[i]
-                yi += 1
-            } else {
-                no[ni] = arr[i]
-                ni += 1
-            }
-        }
-        // Trim to actual sizes
-        var yTrim: Array<T> = .() * yi
-        var j = 0
-        while j < yi {
-            yTrim[j] = yes[j]
-            j += 1
-        }
-        var nTrim: Array<T> = .() * ni
-        j = 0
-        while j < ni {
-            nTrim[j] = no[j]
-            j += 1
-        }
-        return @arr[yTrim, nTrim]
-    }
-
-    /**
-     * Splits array into chunks of given size.
-     */
-    @Experimental(since: "0.1")
-    func chunk<T>(arr: Array<T>, size: Int): Array<T> {
-        fin numChunks = (arr.size + size - 1) / size
-        var result: Array<T> = .() * numChunks
-        var ri = 0
-        var i = 0
-        while i < arr.size {
-            fin remaining = arr.size - i
-            fin chunkSize = if remaining < size { remaining } else { size }
-            var ch: Array<T> = .() * chunkSize
-            for j in 0..<chunkSize {
-                ch[j] = arr[i + j]
-            }
-            result[ri] = ch
-            ri += 1
-            i += size
-        }
-        return result
-    }
-
-    /**
-     * Flattens a nested array by one level.
-     */
-    @Experimental(since: "0.1")
-    func flatten<T>(arr: Array<T>): Array<T> {
-        // Two-pass: count total, then fill
-        var total = 0
-        var i = 0
-        while i < arr.size {
-            total += arr[i].size
-            i += 1
-        }
-        var result: Array<T> = .() * total
-        var ri = 0
-        i = 0
-        while i < arr.size {
-            var inner: Array<T> = arr[i]
-            for j in 0..<inner.size {
-                result[ri] = inner[j]
-                ri += 1
-            }
-            i += 1
-        }
-        return result
-    }
-
-    /**
-     * Removes all duplicate elements (not just consecutive), preserving first occurrence.
-     */
-    @Experimental(since: "0.1")
-    func distinct<T>(arr: Array<T>): Array<T> {
-        var tmp: Array<T> = .() * arr.size
-        var ri = 0
-        for i in 0..<arr.size {
-            var found = false
-            for j in 0..<ri {
-                if tmp[j] == arr[i] {
-                    found = true
-                }
-            }
-            if !found {
-                tmp[ri] = arr[i]
-                ri += 1
-            }
-        }
-        var result: Array<T> = .() * ri
-        for k in 0..<ri {
-            result[k] = tmp[k]
-        }
-        return result
-    }
-
-    /**
-     * Returns a new array with elements in the given index range.
-     */
-    @Experimental(since: "0.1")
-    func slice<T>(arr: Array<T>, start: Int, end: Int): Array<T> {
-        fin actualEnd = if end < arr.size {
-            end
-        } else {
-            arr.size
-        }
-        fin len = if actualEnd > start {
-            actualEnd - start
-        } else {
-            0
-        }
-        var result: Array<T> = .() * len
-        var ri = 0
-        for i in start..<actualEnd {
-            result[ri] = arr[i]
+    var result: Array<T> = .() * total
+    var ri = 0
+    i = 0
+    while i < arr.size {
+        var mapped: Array<T> = f(arr[i])
+        for j in 0..<mapped.size {
+            result[ri] = mapped[j]
             ri += 1
         }
-        return result
+        i += 1
     }
+    return result
+}
+
+/**
+ * Left fold with a separate accumulator type.
+ * Since Azora generics are single-type, accumulator uses same type T.
+ */
+@Experimental(since: "0.1")
+func fold<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
+    var acc: T = initial
+    for i in 0..<arr.size {
+        acc = f(acc, arr[i])
+    }
+    return acc
+}
+
+/**
+ * Like reduce but returns all intermediate accumulator values.
+ */
+@Experimental(since: "0.1")
+func scan<T>(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
+    var result: Array<T> = .() * arr.size + 1
+    var acc: T = initial
+    result[0] = acc
+    for i in 0..<arr.size {
+        acc = f(acc, arr[i])
+        result[i + 1] = acc
+    }
+    return result
+}
+
+/**
+ * Maps with index: f(index, element).
+ * Returns transformed array. Index passed as first element of a 2-element array.
+ */
+@Experimental(since: "0.1")
+func mapIndexed<T>(arr: Array<T>, f: (T, T) -> T): Array<T> {
+    var result: Array<T> = .() * arr.size
+    for i in 0..<arr.size {
+        result[i] = f(arr[i], arr[i])
+    }
+    return result
+}
+
+/**
+ * Calls function N times, collecting results.
+ */
+@Experimental(since: "0.1")
+func repeatCall<T>(count: T, f: () -> T): Array<T> {
+    var result: Array<T> = .() * count
+    for idx in 0..<count {
+        result[idx] = f()
+    }
+    return result
+}
+
+/**
+ * Returns the first element matching the predicate, or default.
+ */
+@Experimental(since: "0.1")
+func firstWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
+    for i in 0..<arr.size {
+        if pred(arr[i]) {
+            return arr[i]
+        }
+    }
+    return default
+}
+
+/**
+ * Returns the last element matching the predicate, or default.
+ */
+@Experimental(since: "0.1")
+func lastWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
+    var result: T = default
+    for i in 0..<arr.size {
+        if pred(arr[i]) {
+            result = arr[i]
+        }
+    }
+    return result
+}
+
+/**
+ * Splits an array into two: elements matching pred and elements not matching.
+ * Returns a 2-element array: [matching, nonMatching].
+ */
+@Experimental(since: "0.1")
+func partition<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
+    var yes: Array<T> = .() * arr.size
+    var no: Array<T> = .() * arr.size
+    var yi = 0
+    var ni = 0
+    for i in 0..<arr.size {
+        if pred(arr[i]) {
+            yes[yi] = arr[i]
+            yi += 1
+        } else {
+            no[ni] = arr[i]
+            ni += 1
+        }
+    }
+    // Trim to actual sizes
+    var yTrim: Array<T> = .() * yi
+    var j = 0
+    while j < yi {
+        yTrim[j] = yes[j]
+        j += 1
+    }
+    var nTrim: Array<T> = .() * ni
+    j = 0
+    while j < ni {
+        nTrim[j] = no[j]
+        j += 1
+    }
+    return @arr[yTrim, nTrim]
+}
+
+/**
+ * Splits array into chunks of given size.
+ */
+@Experimental(since: "0.1")
+func chunk<T>(arr: Array<T>, size: Int): Array<T> {
+    fin numChunks = (arr.size + size - 1) / size
+    var result: Array<T> = .() * numChunks
+    var ri = 0
+    var i = 0
+    while i < arr.size {
+        fin remaining = arr.size - i
+        fin chunkSize = if remaining < size { remaining } else { size }
+        var ch: Array<T> = .() * chunkSize
+        for j in 0..<chunkSize {
+            ch[j] = arr[i + j]
+        }
+        result[ri] = ch
+        ri += 1
+        i += size
+    }
+    return result
+}
+
+/**
+ * Flattens a nested array by one level.
+ */
+@Experimental(since: "0.1")
+func flatten<T>(arr: Array<T>): Array<T> {
+    // Two-pass: count total, then fill
+    var total = 0
+    var i = 0
+    while i < arr.size {
+        total += arr[i].size
+        i += 1
+    }
+    var result: Array<T> = .() * total
+    var ri = 0
+    i = 0
+    while i < arr.size {
+        var inner: Array<T> = arr[i]
+        for j in 0..<inner.size {
+            result[ri] = inner[j]
+            ri += 1
+        }
+        i += 1
+    }
+    return result
+}
+
+/**
+ * Removes all duplicate elements (not just consecutive), preserving first occurrence.
+ */
+@Experimental(since: "0.1")
+func distinct<T>(arr: Array<T>): Array<T> {
+    var tmp: Array<T> = .() * arr.size
+    var ri = 0
+    for i in 0..<arr.size {
+        var found = false
+        for j in 0..<ri {
+            if tmp[j] == arr[i] {
+                found = true
+            }
+        }
+        if !found {
+            tmp[ri] = arr[i]
+            ri += 1
+        }
+    }
+    var result: Array<T> = .() * ri
+    for k in 0..<ri {
+        result[k] = tmp[k]
+    }
+    return result
+}
+
+/**
+ * Returns a new array with elements in the given index range.
+ */
+@Experimental(since: "0.1")
+func slice<T>(arr: Array<T>, start: Int, end: Int): Array<T> {
+    fin actualEnd = if end < arr.size {
+        end
+    } else {
+        arr.size
+    }
+    fin len = if actualEnd > start {
+        actualEnd - start
+    } else {
+        0
+    }
+    var result: Array<T> = .() * len
+    var ri = 0
+    for i in start..<actualEnd {
+        result[ri] = arr[i]
+        ri += 1
+    }
+    return result
 }

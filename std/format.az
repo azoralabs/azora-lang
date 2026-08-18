@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-module std.format
-
 /**
- * @file std/format
+ * @file std/format.az
  *
  * Rendering a value as text.
  *
@@ -34,60 +32,59 @@ module std.format
  *
  * @since 0.1
  */
+module std.format
 
-realm std {
-    /**
-     * The text buffer a [Display] writes into.
-     *
-     * Every `write` appends; nothing here can rewind or inspect what has been
-     * written, so a nested `display` cannot corrupt its caller's output.
-     */
-    @Since("0.1")
-    pack Formatter {
-        var buffer: String = ""
+/**
+ * The text buffer a [Display] writes into.
+ *
+ * Every `write` appends; nothing here can rewind or inspect what has been
+ * written, so a nested `display` cannot corrupt its caller's output.
+ */
+@Since("0.1")
+pack Formatter {
+    var buffer: String = ""
+}
+
+@Since("0.1")
+impl Formatter {
+    /** Appends [text] as it stands. */
+    func write[self: Self!](text: String) {
+        self.buffer = self.buffer + text
     }
 
-    @Since("0.1")
-    impl Formatter {
-        /** Appends [text] as it stands. */
-        func write[self: Self!](text: String) {
-            self.buffer = self.buffer + text
-        }
-
-        /** Appends [text] followed by a newline. */
-        func writeLine[self: Self!](text: String) {
-            self.buffer = self.buffer + text + "\n"
-        }
-
-        /** Everything written so far. */
-        prop rendered[self: Self&]: String {
-            return self.buffer
-        }
+    /** Appends [text] followed by a newline. */
+    func writeLine[self: Self!](text: String) {
+        self.buffer = self.buffer + text + "\n"
     }
 
-    /**
-     * A type with a canonical text form.
-     *
-     * `bridge` so that the primitives can conform without writing a body - the
-     * backends already render an `Int` - while any other type states how it
-     * prints and gets `"${value}"` for it.
-     */
-    @Since("0.1")
-    bridge spec Display {
-        func display[self: Self&](formatter: Formatter!)
+    /** Everything written so far. */
+    prop rendered[self: Self&]: String {
+        return self.buffer
     }
+}
 
-    /**
-     * Renders [value] through its [Display] implementation.
-     *
-     * The one-shot form, for when a `String` really is what is wanted; a
-     * composite should take the caller's [Formatter] instead of calling this
-     * per part.
-     */
-    @Since("0.1")
-    func format<T>(value: T&): String {
-        var formatter = Formatter()
-        value.display(formatter)
-        return formatter.rendered
-    }
+/**
+ * A type with a canonical text form.
+ *
+ * `bridge` so that the primitives can conform without writing a body - the
+ * backends already render an `Int` - while any other type states how it
+ * prints and gets `"${value}"` for it.
+ */
+@Since("0.1")
+bridge spec Display {
+    func display[self: Self&](formatter: Formatter!)
+}
+
+/**
+ * Renders [value] through its [Display] implementation.
+ *
+ * The one-shot form, for when a `String` really is what is wanted; a
+ * composite should take the caller's [Formatter] instead of calling this
+ * per part.
+ */
+@Since("0.1")
+func format<T>(value: T&): String {
+    var formatter = Formatter()
+    value.display(formatter)
+    return formatter.rendered
 }

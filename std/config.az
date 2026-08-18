@@ -16,7 +16,7 @@
 
 exposed module std.config
 
-deepinline realm {
+deepinline scope {
     @Since("0.1")
     enum CompilerTarget {
         Interpret
@@ -28,19 +28,19 @@ deepinline realm {
      * Overriden by compiler flag -Target=Native
      */
     @Since("0.1")
-    fin TARGET: CompilerTarget = CompilerTarget.Interpret
+    fin target: CompilerTarget = .Interpret
 
     /**
      * Overriden by compiler flag --debug and --release
      */
     @Since("0.1")
-    fin DEBUG: Bool = true
+    fin debug: Bool = true
 
     /**
      * Overriden by compiler flag --debug and --release
      */
     @Since("0.1")
-    fin RELEASE: Bool = !DEBUG
+    fin release: Bool = !DEBUG
 
     /**
      * Overriden by compiler flag --test

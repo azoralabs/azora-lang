@@ -16,66 +16,63 @@
 
 exposed module std.traits.core
 
-realm std {
+/**
+ * A value `for … in` can walk.
+ *
+ * `for row in xs { … }` positions the iterator, asks whether there is a row
+ * and binds the one there is - those three operations are the whole
+ * contract. `loop` repeats and does not walk: what a row is belongs to the
+ * type, and saying which of the two is meant belongs to the keyword.
+ */
+@Experimental(since: "0.1")
+spec Iterator assoc Item {
+    /** Positions the cursor before the first row. */
+    func reset[self: Self!]()
+
+    /** Advances to the next row, answering whether there was one. */
+    prop hasNext[self: Self!]: Bool
+
+    /** The row the cursor is on, after [hasNext] said there was one. */
+    prop next[self: Self!]: Item
 
     /**
-     * A value `for … in` can walk.
+     * Runs [body] on every remaining row.
      *
-     * `for row in xs { … }` positions the iterator, asks whether there is a row
-     * and binds the one there is - those three operations are the whole
-     * contract. `loop` repeats and does not walk: what a row is belongs to the
-     * type, and saying which of the two is meant belongs to the keyword.
+     * `shapes.forEach { shape -> … }` says what to do with each row and
+     * nothing about how to walk them - positioning, testing and advancing
+     * are the iterator's business.
+     *
+     * Provided, because every iterator would write this identically out of
+     * [reset], [hasNext] and [next].
      */
-    @Experimental(since: "0.1")
-    spec Iterator assoc Item {
-        /** Positions the cursor before the first row. */
-        func reset[self: Self!]()
-
-        /** Advances to the next row, answering whether there was one. */
-        prop hasNext[self: Self!]: Bool
-
-        /** The row the cursor is on, after [hasNext] said there was one. */
-        prop next[self: Self!]: Item
-
-        /**
-         * Runs [body] on every remaining row.
-         *
-         * `shapes.forEach { shape -> … }` says what to do with each row and
-         * nothing about how to walk them - positioning, testing and advancing
-         * are the iterator's business.
-         *
-         * Provided, because every iterator would write this identically out of
-         * [reset], [hasNext] and [next].
-         */
-        func forEach[self: Self!](body: inline (Item) -> Unit) {
-            for row in self {
-                body(row)
-            }
+    func forEach[self: Self!](body: inline (Item) -> Unit) {
+        for row in self {
+            body(row)
         }
     }
+}
 
-    inline for Ty in Numbers {
-        /** Ascending range over [Ty], stepping by one. */
-        bridge oper.. [self: Ty&](rhs: Ty&) by 1
+inline for Ty in Numbers {
+    /** Ascending range over [Ty], stepping by one. */
+    bridge oper.. [self: Ty&](rhs: Ty&) by 1
 
-        /**
-         * Every numeric type clones and copies: they are small immutable
-         * values, so duplicating one is a register move and cannot alias.
-         */
-        @Since("0.1")
-        derive [Clone, Copy] for Ty
-    }
+    /**
+     * Every numeric type clones and copies: they are small immutable
+     * values, so duplicating one is a register move and cannot alias.
+     */
+    @Since("0.1")
+    derive [Clone, Copy] for Ty
+}
 
-    inline for Ty in [Bool, Char, String] {
-        /**
-         * The remaining primitives. A `String` is an immutable value rather than
-         * an owned buffer, so it copies like the rest.
-         *
-         * `Unit` is left out: it carries nothing, so there is no value to clone
-         * or copy - and a `clone` taking one would have a `void` parameter,
-         * which is not a thing.
-         */
-        @Since("0.1")
-        derive [Clone, Copy] for Ty
-    }
+inline for Ty in [Bool, Char, String] {
+    /**
+     * The remaining primitives. A `String` is an immutable value rather than
+     * an owned buffer, so it copies like the rest.
+     *
+     * `Unit` is left out: it carries nothing, so there is no value to clone
+     * or copy - and a `clone` taking one would have a `void` parameter,
+     * which is not a thing.
+     */
+    @Since("0.1")
+    derive [Clone, Copy] for Ty
 }

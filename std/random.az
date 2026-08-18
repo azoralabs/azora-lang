@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-module std.random
-
-import std.container.array
-
 /**
- * @file std/random
+ * @file std/random.az
  *
  * Pseudo-random number generation using a Linear Congruential Generator (LCG).
  * Not cryptographically secure - suitable for games, simulations, and testing.
@@ -28,91 +24,92 @@ import std.container.array
  *
  * @since 0.1
  */
+module std.random
 
-realm std {
+import std.container.array.Array
+
+/**
+ * A pseudo-random number generator.
+ */
+@Since("0.1")
+pack Random {
+    var seed: Int = 12345
+}
+
+impl Random {
     /**
-     * A pseudo-random number generator.
-     */
-    @Since("0.1")
-    pack Random {
-        var seed: Int = 12345
-    }
-
-    impl Random {
-        /**
-         * Returns the next pseudo-random integer (0 to 2^30 - 1).
-         */
-        @Experimental(since: "0.1")
-        func next(): Int {
-            self.seed = (self.seed * 1103515245 + 12345) % 2147483647
-            if self.seed < 0 {
-                self.seed = 0 - self.seed
-            }
-            return self.seed
-        }
-
-        /**
-         * Returns a pseudo-random integer in [0, max).
-         */
-        @Experimental(since: "0.1")
-        func nextInt(max: Int): Int {
-            var n: Int = self.next()
-            if max <= 0 { return 0 }
-            return n % max
-        }
-
-        /**
-         * Returns a pseudo-random integer in [min, max].
-         */
-        @Experimental(since: "0.1")
-        func nextRange(min: Int, max: Int): Int {
-            var range: Int = max - min + 1
-            return min + self.nextInt(range)
-        }
-
-        /**
-         * Returns a pseudo-random boolean.
-         */
-        @Experimental(since: "0.1")
-        func nextBool(): Bool {
-            return self.next() % 2 == 0
-        }
-    }
-
-    /**
-     * Shuffles an array in-place using Fisher-Yates algorithm.
+     * Returns the next pseudo-random integer (0 to 2^30 - 1).
      */
     @Experimental(since: "0.1")
-    func shuffle<T>(arr: Array<T>, rng: Random): Array<T> {
-        var result: Array<T> = .() * arr.size
-        var i = 0
-        while i < arr.size {
-            result[i] = arr[i]
-            i += 1
+    func next(): Int {
+        self.seed = (self.seed * 1103515245 + 12345) % 2147483647
+        if self.seed < 0 {
+            self.seed = 0 - self.seed
         }
-        i = result.size - 1
-        while i > 0 {
-            var j: Int = rng.nextInt(i + 1)
-            var temp: T = result[i]
-            result[i] = result[j]
-            result[j] = temp
-            i -= 1
-        }
-        return result
+        return self.seed
     }
 
     /**
-     * Returns a random sample of n elements from the array.
+     * Returns a pseudo-random integer in [0, max).
      */
     @Experimental(since: "0.1")
-    func sample<T>(arr: Array<T>, count: Int, rng: Random): Array<T> {
-        var shuffled: Array<T> = shuffle<T>(arr, rng)
-        var limit: Int = count
-        if limit > shuffled.size { limit = shuffled.size }
-        var result: Array<T> = .() * limit
-        for i in 0..<limit {
-            result[i] = shuffled[i]
-        }
-        return result
+    func nextInt(max: Int): Int {
+        var n: Int = self.next()
+        if max <= 0 { return 0 }
+        return n % max
     }
+
+    /**
+     * Returns a pseudo-random integer in [min, max].
+     */
+    @Experimental(since: "0.1")
+    func nextRange(min: Int, max: Int): Int {
+        var range: Int = max - min + 1
+        return min + self.nextInt(range)
+    }
+
+    /**
+     * Returns a pseudo-random boolean.
+     */
+    @Experimental(since: "0.1")
+    func nextBool(): Bool {
+        return self.next() % 2 == 0
+    }
+}
+
+/**
+ * Shuffles an array in-place using Fisher-Yates algorithm.
+ */
+@Experimental(since: "0.1")
+func shuffle<T>(arr: Array<T>, rng: Random): Array<T> {
+    var result: Array<T> = .() * arr.size
+    var i = 0
+    while i < arr.size {
+        result[i] = arr[i]
+        i += 1
+    }
+    i = result.size - 1
+    while i > 0 {
+        var j: Int = rng.nextInt(i + 1)
+        var temp: T = result[i]
+        result[i] = result[j]
+        result[j] = temp
+        i -= 1
+    }
+    return result
+}
+
+/**
+ * Returns a random sample of n elements from the array.
+ */
+@Experimental(since: "0.1")
+func sample<T>(arr: Array<T>, count: Int, rng: Random): Array<T> {
+    var shuffled: Array<T> = shuffle<T>(arr, rng)
+    var limit: Int = count
+    if limit > shuffled.size { limit = shuffled.size }
+    var result: Array<T> = .() * limit
+    for i in 0..<limit {
+        result[i] = shuffled[i]
+    }
+    return result
 }

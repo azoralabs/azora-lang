@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-module std.concurrency.generators
-
-import std.container.list
-
 /**
- * @file std/concurrency/generators
+ * @file std/concurrency/generators.az
  *
  * Stream builders and the types they produce.
  *
@@ -48,127 +44,128 @@ import std.container.list
  *
  * @since 0.1
  */
+module std.concurrency.generators
 
-realm std {
+import std.container.list.*
+
+/**
+ * The collector a `sequence` producer emits into.
+ *
+ * Passed to the producer as a contextual receiver, which is what lets the
+ * body call [yield] without naming it.
+ */
+@Experimental(since: "0.1")
+pack SequenceScope<T> {
+    var items: ArrayList<T>
+}
+
+/**
+ * The collector a `flow` producer emits into.
+ *
+ * The asynchronous counterpart of [SequenceScope]; the body calls [emit].
+ */
+@Experimental(since: "0.1")
+pack FlowCollector<T> {
+    var items: ArrayList<T>
+}
+
+/** A synchronous series of values. */
+@Experimental(since: "0.1")
+pack Sequence<T> {
+    fin items: ArrayList<T>
+}
+
+/** An asynchronous series of values. */
+@Experimental(since: "0.1")
+pack Flow<T> {
+    fin items: ArrayList<T>
+}
+
+/**
+ * Adds `value` to the sequence being built.
+ *
+ * Takes its builder contextually, so a producer body calls it unqualified
+ * by the builder: `yield(1)`.
+ *
+ * @param builder The sequence under construction.
+ * @param value The value to append.
+ */
+@Experimental(since: "0.1")
+func yield[builder: SequenceScope<T>!](value: T) {
+    builder.items.add(value)
+}
+
+/**
+ * Adds `value` to the flow being built. The [yield] of [flow].
+ *
+ * @param collector The flow under construction.
+ * @param value The value to append.
+ */
+@Experimental(since: "0.1")
+func emit[collector: FlowCollector<T>!](value: T) {
+    collector.items.add(value)
+}
+
+/**
+ * Builds a [Sequence] from a producer that yields its values.
+ *
+ * The producer runs to completion here, so the returned sequence is already
+ * complete when the call returns.
+ *
+ * @generic T The element type.
+ * @param produce The producer, which emits with [yield].
+ * @return The sequence of every yielded value, in order.
+ */
+@Experimental(since: "0.1")
+func sequence<T>(produce: [SequenceScope<T>!]() -> Unit): Sequence<T> {
+    var builder = SequenceScope<T>(arrayListOf<T>())
+    with builder { produce() }
+    return Sequence<T>(builder.items)
+}
+
+/**
+ * Builds a [Flow] from a producer that emits its values.
+ *
+ * @generic T The element type.
+ * @param builder The producer, which emits with [emit].
+ * @return The flow of every emitted value, in order.
+ */
+@Experimental(since: "0.1")
+func flow<T>(builder: [FlowCollector<T>!]() -> Unit): Flow<T> {
+    var collector = FlowCollector<T>(arrayListOf<T>())
+    with collector { builder() }
+    return Flow<T>(collector.items)
+}
+
+impl Sequence {
+    /** Number of values in this sequence. */
+    @Experimental(since: "0.1")
+    prop size[self: Self&]: Int = self.items.size
+
     /**
-     * The collector a `sequence` producer emits into.
+     * Invokes `action` once for every value, in order.
      *
-     * Passed to the producer as a contextual receiver, which is what lets the
-     * body call [yield] without naming it.
+     * @param action Receives each value in turn.
      */
     @Experimental(since: "0.1")
-    pack SequenceScope<T> {
-        var items: ArrayList<T>
+    func collect[self: Self&](action: (T) -> Unit) {
+        self.items.forEach(action)
     }
+}
+
+impl Flow {
+    /** Number of values in this flow. */
+    @Experimental(since: "0.1")
+    prop size[self: Self&]: Int = self.items.size
 
     /**
-     * The collector a `flow` producer emits into.
+     * Invokes `action` once for every value, in order.
      *
-     * The asynchronous counterpart of [SequenceScope]; the body calls [emit].
+     * @param action Receives each value in turn.
      */
     @Experimental(since: "0.1")
-    pack FlowCollector<T> {
-        var items: ArrayList<T>
-    }
-
-    /** A synchronous series of values. */
-    @Experimental(since: "0.1")
-    pack Sequence<T> {
-        fin items: ArrayList<T>
-    }
-
-    /** An asynchronous series of values. */
-    @Experimental(since: "0.1")
-    pack Flow<T> {
-        fin items: ArrayList<T>
-    }
-
-    /**
-     * Adds `value` to the sequence being built.
-     *
-     * Takes its builder contextually, so a producer body calls it unqualified
-     * by the builder: `yield(1)`.
-     *
-     * @param builder The sequence under construction.
-     * @param value The value to append.
-     */
-    @Experimental(since: "0.1")
-    func yield[builder: SequenceScope<T>!](value: T) {
-        builder.items.add(value)
-    }
-
-    /**
-     * Adds `value` to the flow being built. The [yield] of [flow].
-     *
-     * @param collector The flow under construction.
-     * @param value The value to append.
-     */
-    @Experimental(since: "0.1")
-    func emit[collector: FlowCollector<T>!](value: T) {
-        collector.items.add(value)
-    }
-
-    /**
-     * Builds a [Sequence] from a producer that yields its values.
-     *
-     * The producer runs to completion here, so the returned sequence is already
-     * complete when the call returns.
-     *
-     * @generic T The element type.
-     * @param produce The producer, which emits with [yield].
-     * @return The sequence of every yielded value, in order.
-     */
-    @Experimental(since: "0.1")
-    func sequence<T>(produce: [SequenceScope<T>!]() -> Unit): Sequence<T> {
-        var builder = SequenceScope<T>(arrayListOf<T>())
-        with builder { produce() }
-        return Sequence<T>(builder.items)
-    }
-
-    /**
-     * Builds a [Flow] from a producer that emits its values.
-     *
-     * @generic T The element type.
-     * @param builder The producer, which emits with [emit].
-     * @return The flow of every emitted value, in order.
-     */
-    @Experimental(since: "0.1")
-    func flow<T>(builder: [FlowCollector<T>!]() -> Unit): Flow<T> {
-        var collector = FlowCollector<T>(arrayListOf<T>())
-        with collector { builder() }
-        return Flow<T>(collector.items)
-    }
-
-    impl Sequence {
-        /** Number of values in this sequence. */
-        @Experimental(since: "0.1")
-        prop size[self: Self&]: Int = self.items.size
-
-        /**
-         * Invokes `action` once for every value, in order.
-         *
-         * @param action Receives each value in turn.
-         */
-        @Experimental(since: "0.1")
-        func collect[self: Self&](action: (T) -> Unit) {
-            self.items.forEach(action)
-        }
-    }
-
-    impl Flow {
-        /** Number of values in this flow. */
-        @Experimental(since: "0.1")
-        prop size[self: Self&]: Int = self.items.size
-
-        /**
-         * Invokes `action` once for every value, in order.
-         *
-         * @param action Receives each value in turn.
-         */
-        @Experimental(since: "0.1")
-        func collect[self: Self&](action: (T) -> Unit) {
-            self.items.forEach(action)
-        }
+    func collect[self: Self&](action: (T) -> Unit) {
+        self.items.forEach(action)
     }
 }
 

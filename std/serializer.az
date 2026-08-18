@@ -14,15 +14,8 @@
  * limitations under the License.
  */
 
-module std.serializer
-
-import std.container.list
-import std.char
-import std.convert
-import std.string
-
 /**
- * @file std/serializer
+ * @file std/serializer.az
  *
  * Deterministic, format-independent serialization primitives.
  *
@@ -45,820 +38,822 @@ import std.string
  * This API is experimental, but its wire-format rules are intentionally strict
  * so data written today can remain readable as the implementation evolves.
  */
+module std.serializer
 
-realm std {
-    /** Failures reported by text decoders and typed serializers. */
-    @Experimental(since: "0.1")
-    error SerializationError {
-        InvalidSyntax
-        InvalidEscape
-        InvalidNumber
-        UnexpectedEnd
-        TrailingContent
-        DuplicateField
-        MissingField
-        UnknownField
-        UnexpectedType
-        MaxDepthExceeded
-        InputTooLarge
-    }
+import std.[container.list.*, char.*, string.*]
 
+/** Failures reported by text decoders and typed serializers. */
+@Experimental(since: "0.1")
+error SerializationError {
+    InvalidSyntax
+    InvalidEscape
+    InvalidNumber
+    UnexpectedEnd
+    TrailingContent
+    DuplicateField
+    MissingField
+    UnknownField
+    UnexpectedType
+    MaxDepthExceeded
+    InputTooLarge
+}
+
+/**
+ * Marks a pack for compiler-generated value-tree and AZON codecs.
+ *
+ * Use `AzonSerializable` when only the text form is part of a type's public
+ * contract. Configuration is immutable compile-time metadata and can be
+ * inspected from inline code with
+ * `reflect<value>.annotMeta<Serializable>.ignoreUnknownFields`.
+*/
+@Experimental(since: "0.1")
+@Derive(
+    generator: "serializer",
+    role: "all",
+    provider: "std",
+    conversionProvider: "convert",
+    providerModule: "std.serializer",
+    conversionModule: "std.convert",
+    deferGeneric: true
+)
+annot Serializable for .Pack binds [Serializer, AzonSerializer] {
+    /** Accepts object members which do not map to an exposed pack field. */
+    fin ignoreUnknownFields: Bool = false
+
+    /** Includes fields whose value is equal to the declared default. */
+    fin encodeDefaults: Bool = true
+}
+
+/** Marks a pack for compiler-generated AZON serialization only. */
+@Experimental(since: "0.1")
+@Derive(
+    generator: "serializer",
+    role: "azon",
+    provider: "std",
+    conversionProvider: "convert",
+    providerModule: "std.serializer",
+    conversionModule: "std.convert",
+    deferGeneric: true
+)
+annot AzonSerializable for .Pack binds AzonSerializer {
+    /** Accepts AZON object members which do not map to an exposed pack field. */
+    fin ignoreUnknownFields: Bool = false
+
+    /** Includes fields whose value is equal to the declared default. */
+    fin encodeDefaults: Bool = true
+}
+
+/** Overrides the serialized name of a field or type. */
+@Experimental(since: "0.1")
+@Derive(generator: "serializer", role: "name")
+annot SerialName for [.Pack, .Enum, .Field] {
     /**
-     * Marks a pack for compiler-generated value-tree and AZON codecs.
+     * Name written to and read from the serialized representation.
      *
-     * Use `AzonSerializable` when only the text form is part of a type's public
-     * contract. Configuration is immutable compile-time metadata and can be
-     * inspected from inline code with
-     * `reflect<value>.annotMeta<Serializable>.ignoreUnknownFields`.
-    */
-    @Experimental(since: "0.1")
-    @Derive(
-        generator: "serializer",
-        role: "all",
-        provider: "std",
-        conversionProvider: "convert",
-        providerModule: "std.serializer",
-        conversionModule: "std.convert",
-        deferGeneric: true
-    )
-    annot Serializable for .Pack binds [Serializer, AzonSerializer] {
-        /** Accepts object members which do not map to an exposed pack field. */
-        fin ignoreUnknownFields: Bool = false
-
-        /** Includes fields whose value is equal to the declared default. */
-        fin encodeDefaults: Bool = true
-    }
-
-    /** Marks a pack for compiler-generated AZON serialization only. */
-    @Experimental(since: "0.1")
-    @Derive(
-        generator: "serializer",
-        role: "azon",
-        provider: "std",
-        conversionProvider: "convert",
-        providerModule: "std.serializer",
-        conversionModule: "std.convert",
-        deferGeneric: true
-    )
-    annot AzonSerializable for .Pack binds AzonSerializer {
-        /** Accepts AZON object members which do not map to an exposed pack field. */
-        fin ignoreUnknownFields: Bool = false
-
-        /** Includes fields whose value is equal to the declared default. */
-        fin encodeDefaults: Bool = true
-    }
-
-    /** Overrides the serialized name of a field or type. */
-    @Experimental(since: "0.1")
-    @Derive(generator: "serializer", role: "name")
-    annot SerialName for [.Pack, .Enum, .Field] {
-        /**
-         * Name written to and read from the serialized representation.
-         *
-         * An empty value retains the declaration's source name. This makes the
-         * marker form usable in grouped decorator implementations while an
-         * explicit non-empty value performs an actual rename.
-         */
-        fin value: String = ""
-    }
-
-    /** Excludes a field from generated serialization and deserialization. */
-    @Experimental(since: "0.1")
-    @Derive(generator: "serializer", role: "ignore")
-    annot SerialIgnore for .Field
-
-    /** Requires a field to be present even when its Azora field has a default. */
-    @Experimental(since: "0.1")
-    @Derive(generator: "serializer", role: "required")
-    annot SerialRequired for .Field
-
-    /**
-     * Resource and formatting limits for untrusted serialized input.
-     *
-     * `maxDepth` and `maxInputLength` are security limits. Applications should
-     * lower them for protocols with known payload bounds.
+     * An empty value retains the declaration's source name. This makes the
+     * marker form usable in grouped decorator implementations while an
+     * explicit non-empty value performs an actual rename.
      */
-    @Experimental(since: "0.1")
-    pack SerializerOptions {
-        var pretty: Bool = false
-        var indent: String = "  "
-        var encodeNulls: Bool = true
-        var allowDuplicateFields: Bool = false
-        var maxDepth: Int = 64
-        var maxInputLength: Int = 16777216
-    }
+    fin value: String = ""
+}
 
-    /** A named member in an ordered serialized object. */
-    @Experimental(since: "0.1")
-    pack SerialField {
-        fin name: String
-        fin value: SerialValue
-    }
+/** Excludes a field from generated serialization and deserialization. */
+@Experimental(since: "0.1")
+@Derive(generator: "serializer", role: "ignore")
+annot SerialIgnore for .Field
 
-    /**
-     * Lossless format-independent serialized data.
-     *
-     * `Number` stores a validated AZON number token. Object fields are ordered,
-     * which provides deterministic output and permits duplicate detection before
-     * a typed decoder consumes the value.
-     */
-    @Experimental(since: "0.1")
-    variant enum SerialValue {
-        Null
-        Bool(value: Bool)
-        Number(value: String)
-        Text(value: String)
-        Array(elements: List<SerialValue>)
-        Object(fields: List<SerialField>)
-    }
+/** Requires a field to be present even when its Azora field has a default. */
+@Experimental(since: "0.1")
+@Derive(generator: "serializer", role: "required")
+annot SerialRequired for .Field
 
-    /**
-     * Bidirectional codec for `T`.
-     *
-     * Implement this spec when a type needs a custom representation. Generated
-     * serializers created by `@Serializable` implement the same contract.
-     * Implementations must not retain references to `value` after returning.
-     *
-     * @generic T The value type handled by this serializer.
-     */
-    @Experimental(since: "0.1")
-    spec Serializer<T> {
-        /** Converts a typed value into the format-independent value tree. */
-        func toSerialValue[self: Self&](value: T&): SerialValue ?! SerializationError
+/**
+ * Resource and formatting limits for untrusted serialized input.
+ *
+ * `maxDepth` and `maxInputLength` are security limits. Applications should
+ * lower them for protocols with known payload bounds.
+ */
+@Experimental(since: "0.1")
+pack SerializerOptions {
+    var pretty: Bool = false
+    var indent: String = "  "
+    var encodeNulls: Bool = true
+    var allowDuplicateFields: Bool = false
+    var maxDepth: Int = 64
+    var maxInputLength: Int = 16777216
+}
 
-        /** Reconstructs a typed value, validating all required fields and types. */
-        func fromSerialValue[self: Self&](value: SerialValue&): T ?! SerializationError
-    }
+/** A named member in an ordered serialized object. */
+@Experimental(since: "0.1")
+pack SerialField {
+    fin name: String
+    fin value: SerialValue
+}
 
-    /**
-     * Bidirectional AZON codec for `T`.
-     *
-     * AZON writes `:` between object names and values. Generated
-     * implementations created by `@Serializable` and `@AzonSerializable` use
-     * this contract, and obey the same strict limits as `decodeSerialValue`.
-     *
-     * @generic T The value type handled by this AZON codec.
-     */
-    @Experimental(since: "0.1")
-    spec AzonSerializer<T> {
-        /** Encodes `value` as one complete AZON document. */
-        func toAzon[self: Self&](value: T&, options: SerializerOptions&): String ?! SerializationError
+/**
+ * Lossless format-independent serialized data.
+ *
+ * `Number` stores a validated AZON number token. Object fields are ordered,
+ * which provides deterministic output and permits duplicate detection before
+ * a typed decoder consumes the value.
+ */
+@Experimental(since: "0.1")
+variant enum SerialValue {
+    Null
+    Bool(value: Bool)
+    Number(value: String)
+    Text(value: String)
+    Array(elements: List<SerialValue>)
+    Object(fields: List<SerialField>)
+}
 
-        /** Decodes one complete AZON document into `T`. */
-        func fromAzon[self: Self&](input: String, options: SerializerOptions&): T ?! SerializationError
-    }
+/**
+ * Bidirectional codec for `T`.
+ *
+ * Implement this spec when a type needs a custom representation. Generated
+ * serializers created by `@Serializable` implement the same contract.
+ * Implementations must not retain references to `value` after returning.
+ *
+ * @generic T The value type handled by this serializer.
+ */
+@Experimental(since: "0.1")
+spec Serializer<T> {
+    /** Converts a typed value into the format-independent value tree. */
+    func toSerialValue[self: Self&](value: T&): SerialValue ?! SerializationError
 
-    /** Creates conservative defaults suitable for processing untrusted input. */
-    @Experimental(since: "0.1")
-    func serializerOptions(): SerializerOptions {
-        return SerializerOptions()
-    }
+    /** Reconstructs a typed value, validating all required fields and types. */
+    func fromSerialValue[self: Self&](value: SerialValue&): T ?! SerializationError
+}
 
-    /** Creates an exact number node after validating the number token. */
-    @Experimental(since: "0.1")
-    func serialNumber(value: String): SerialValue ?! SerializationError {
-        if !isValidSerialNumber(value) { return .InvalidNumber }
-        return SerialValue.Number(value)
-    }
+/**
+ * Bidirectional AZON codec for `T`.
+ *
+ * AZON writes `:` between object names and values. Generated
+ * implementations created by `@Serializable` and `@AzonSerializable` use
+ * this contract, and obey the same strict limits as `decodeSerialValue`.
+ *
+ * @generic T The value type handled by this AZON codec.
+ */
+@Experimental(since: "0.1")
+spec AzonSerializer<T> {
+    /** Encodes `value` as one complete AZON document. */
+    func toAzon[self: Self&](value: T&, options: SerializerOptions&): String ?! SerializationError
 
-    /** Returns the named object field, or fails when it is absent. */
-    @Experimental(since: "0.1")
-    func serialField(value: SerialValue&, name: String): SerialValue ?! SerializationError {
-        when value {
-            SerialValue.Object(fields) -> {
-                for i in 0..<fields.size {
-                    if fields[i].name == name { return fields[i].value }
-                }
-                return .MissingField
+    /** Decodes one complete AZON document into `T`. */
+    func fromAzon[self: Self&](input: String, options: SerializerOptions&): T ?! SerializationError
+}
+
+/** Creates conservative defaults suitable for processing untrusted input. */
+@Experimental(since: "0.1")
+func serializerOptions(): SerializerOptions {
+    return SerializerOptions()
+}
+
+/** Creates an exact number node after validating the number token. */
+@Experimental(since: "0.1")
+func serialNumber(value: String): SerialValue ?! SerializationError {
+    if !isValidSerialNumber(value) { return .InvalidNumber }
+    return SerialValue.Number(value)
+}
+
+/** Returns the named object field, or fails when it is absent. */
+@Experimental(since: "0.1")
+func serialField(value: SerialValue&, name: String): SerialValue ?! SerializationError {
+    when value {
+        SerialValue.Object(fields) -> {
+            for i in 0..<fields.size {
+                if fields[i].name == name { return fields[i].value }
             }
-            else -> { return .UnexpectedType }
+            return .MissingField
         }
+        else -> { return .UnexpectedType }
     }
+}
 
-    /** Returns one typed object field by positional index. */
-    func serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
-        return fields[index]
+/** Returns one typed object field by positional index. */
+func serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
+    return fields[index]
+}
+
+/** Returns one typed serialized array element by positional index. */
+func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
+    return values[index]
+}
+
+/** Extracts a text value or reports an incompatible serialized type. */
+@Experimental(since: "0.1")
+func serialAsText(value: SerialValue&): String ?! SerializationError {
+    when value {
+        SerialValue.Text(text) -> { return text }
+        else -> { return .UnexpectedType }
     }
+}
 
-    /** Returns one typed serialized array element by positional index. */
-    func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
-        return values[index]
+/** Extracts a Boolean value or reports an incompatible serialized type. */
+@Experimental(since: "0.1")
+func serialAsBool(value: SerialValue&): Bool ?! SerializationError {
+    when value {
+        SerialValue.Bool(boolean) -> { return boolean }
+        else -> { return .UnexpectedType }
     }
+}
 
-    /** Extracts a text value or reports an incompatible serialized type. */
-    @Experimental(since: "0.1")
-    func serialAsText(value: SerialValue&): String ?! SerializationError {
-        when value {
-            SerialValue.Text(text) -> { return text }
-            else -> { return .UnexpectedType }
-        }
-    }
+/** Extracts exactly one character from a serialized text value. */
+@Experimental(since: "0.1")
+func serialAsChar(value: SerialValue&): Char ?! SerializationError {
+    fin text = try serialAsText(value)
+    if stringLength(text) != 1 { return .UnexpectedType }
+    return charAt(text, 0)
+}
 
-    /** Extracts a Boolean value or reports an incompatible serialized type. */
-    @Experimental(since: "0.1")
-    func serialAsBool(value: SerialValue&): Bool ?! SerializationError {
-        when value {
-            SerialValue.Bool(boolean) -> { return boolean }
-            else -> { return .UnexpectedType }
-        }
-    }
-
-    /** Extracts exactly one character from a serialized text value. */
-    @Experimental(since: "0.1")
-    func serialAsChar(value: SerialValue&): Char ?! SerializationError {
-        fin text = try serialAsText(value)
-        if stringLength(text) != 1 { return .UnexpectedType }
-        return charAt(text, 0)
-    }
-
-    /**
-     * Extracts a signed integral number with overflow checking.
-     *
-     * Fractional and exponent forms are rejected even though they are valid
-     * serialized real numbers.
-     */
-    @Experimental(since: "0.1")
-    func serialAsLong(value: SerialValue&): Long ?! SerializationError {
-        when value {
-            SerialValue.Number(text) -> {
-                if stringLength(text) == 0 { return .InvalidNumber }
-                if text == "-9223372036854775808" {
-                    fin minimum = 0L - 9223372036854775807L
-                    return minimum - 1L
-                }
-                var index = 0
-                var negative = false
-                if charAt(text, index) == '-' {
-                    negative = true
-                    index += 1
-                }
-                if index >= stringLength(text) { return .InvalidNumber }
-                var result = 0L
-                while index < stringLength(text) {
-                    fin c = charAt(text, index)
-                    if !charIsDigit(c) { return .InvalidNumber }
-                    fin digit = (charToCode(c) - 48) as Long
-                    if result > 922337203685477580L ||
-                        (result == 922337203685477580L && digit > 7L) {
-                        return .InvalidNumber
-                    }
-                    result = result * 10L + digit
-                    index += 1
-                }
-                return if negative { 0L - result } else { result }
+/**
+ * Extracts a signed integral number with overflow checking.
+ *
+ * Fractional and exponent forms are rejected even though they are valid
+ * serialized real numbers.
+ */
+@Experimental(since: "0.1")
+func serialAsLong(value: SerialValue&): Long ?! SerializationError {
+    when value {
+        SerialValue.Number(text) -> {
+            if stringLength(text) == 0 { return .InvalidNumber }
+            if text == "-9223372036854775808" {
+                fin minimum = 0L - 9223372036854775807L
+                return minimum - 1L
             }
-            else -> { return .UnexpectedType }
-        }
-    }
-
-    /** Extracts a range-checked signed byte. */
-    func serialAsByte(value: SerialValue&): Byte ?! SerializationError {
-        fin parsed = try serialAsLong(value)
-        if parsed < -128L || parsed > 127L { return .InvalidNumber }
-        return parsed as Byte
-    }
-
-    /** Extracts a range-checked unsigned byte. */
-    func serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
-        fin parsed = try serialAsLong(value)
-        if parsed < 0L || parsed > 255L { return .InvalidNumber }
-        return parsed as UByte
-    }
-
-    /** Extracts a range-checked signed short. */
-    func serialAsShort(value: SerialValue&): Short ?! SerializationError {
-        fin parsed = try serialAsLong(value)
-        if parsed < -32768L || parsed > 32767L { return .InvalidNumber }
-        return parsed as Short
-    }
-
-    /** Extracts a range-checked unsigned short. */
-    func serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
-        fin parsed = try serialAsLong(value)
-        if parsed < 0L || parsed > 65535L { return .InvalidNumber }
-        return parsed as UShort
-    }
-
-    /** Extracts a range-checked signed integer. */
-    func serialAsInt(value: SerialValue&): Int ?! SerializationError {
-        fin parsed = try serialAsLong(value)
-        if (parsed < 0L && parsed + 2147483648L < 0L) || parsed > 2147483647L {
-            return .InvalidNumber
-        }
-        return parsed as Int
-    }
-
-    /** Extracts a range-checked unsigned integer. */
-    func serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
-        fin parsed = try serialAsLong(value)
-        if parsed < 0L || parsed > 4294967295L { return .InvalidNumber }
-        return parsed as UInt
-    }
-
-    /** Extracts a non-negative value representable by the current ULong runtime. */
-    func serialAsULong(value: SerialValue&): ULong ?! SerializationError {
-        fin parsed = try serialAsLong(value)
-        if parsed < 0L { return .InvalidNumber }
-        return parsed as ULong
-    }
-
-    /** Extracts a signed 128-bit value from the supported integer token range. */
-    func serialAsCent(value: SerialValue&): Cent ?! SerializationError {
-        return try serialAsLong(value) as Cent
-    }
-
-    /** Extracts an unsigned 128-bit value from the supported integer token range. */
-    func serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
-        fin parsed = try serialAsLong(value)
-        if parsed < 0L { return .InvalidNumber }
-        return parsed as UCent
-    }
-
-    /** Extracts a finite real number, including fraction and exponent forms. */
-    @Experimental(since: "0.1")
-    func serialAsReal(value: SerialValue&): Double ?! SerializationError {
-        when value {
-            SerialValue.Number(text) -> {
-                if !isValidSerialNumber(text) { return .InvalidNumber }
-                var index = 0
-                var sign = 1.0
-                if charAt(text, index) == '-' {
-                    sign = -1.0
-                    index += 1
+            var index = 0
+            var negative = false
+            if charAt(text, index) == '-' {
+                negative = true
+                index += 1
+            }
+            if index >= stringLength(text) { return .InvalidNumber }
+            var result = 0L
+            while index < stringLength(text) {
+                fin c = charAt(text, index)
+                if !charIsDigit(c) { return .InvalidNumber }
+                fin digit = (charToCode(c) - 48) as Long
+                if result > 922337203685477580L ||
+                    (result == 922337203685477580L && digit > 7L) {
+                    return .InvalidNumber
                 }
-                var result = 0.0
+                result = result * 10L + digit
+                index += 1
+            }
+            return if negative { 0L - result } else { result }
+        }
+        else -> { return .UnexpectedType }
+    }
+}
+
+/** Extracts a range-checked signed byte. */
+func serialAsByte(value: SerialValue&): Byte ?! SerializationError {
+    fin parsed = try serialAsLong(value)
+    if parsed < -128L || parsed > 127L { return .InvalidNumber }
+    return parsed as Byte
+}
+
+/** Extracts a range-checked unsigned byte. */
+func serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
+    fin parsed = try serialAsLong(value)
+    if parsed < 0L || parsed > 255L { return .InvalidNumber }
+    return parsed as UByte
+}
+
+/** Extracts a range-checked signed short. */
+func serialAsShort(value: SerialValue&): Short ?! SerializationError {
+    fin parsed = try serialAsLong(value)
+    if parsed < -32768L || parsed > 32767L { return .InvalidNumber }
+    return parsed as Short
+}
+
+/** Extracts a range-checked unsigned short. */
+func serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
+    fin parsed = try serialAsLong(value)
+    if parsed < 0L || parsed > 65535L { return .InvalidNumber }
+    return parsed as UShort
+}
+
+/** Extracts a range-checked signed integer. */
+func serialAsInt(value: SerialValue&): Int ?! SerializationError {
+    fin parsed = try serialAsLong(value)
+    if (parsed < 0L && parsed + 2147483648L < 0L) || parsed > 2147483647L {
+        return .InvalidNumber
+    }
+    return parsed as Int
+}
+
+/** Extracts a range-checked unsigned integer. */
+func serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
+    fin parsed = try serialAsLong(value)
+    if parsed < 0L || parsed > 4294967295L { return .InvalidNumber }
+    return parsed as UInt
+}
+
+/** Extracts a non-negative value representable by the current ULong runtime. */
+func serialAsULong(value: SerialValue&): ULong ?! SerializationError {
+    fin parsed = try serialAsLong(value)
+    if parsed < 0L { return .InvalidNumber }
+    return parsed as ULong
+}
+
+/** Extracts a signed 128-bit value from the supported integer token range. */
+func serialAsCent(value: SerialValue&): Cent ?! SerializationError {
+    return try serialAsLong(value) as Cent
+}
+
+/** Extracts an unsigned 128-bit value from the supported integer token range. */
+func serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
+    fin parsed = try serialAsLong(value)
+    if parsed < 0L { return .InvalidNumber }
+    return parsed as UCent
+}
+
+/** Extracts a finite real number, including fraction and exponent forms. */
+@Experimental(since: "0.1")
+func serialAsReal(value: SerialValue&): Double ?! SerializationError {
+    when value {
+        SerialValue.Number(text) -> {
+            if !isValidSerialNumber(text) { return .InvalidNumber }
+            var index = 0
+            var sign = 1.0
+            if charAt(text, index) == '-' {
+                sign = -1.0
+                index += 1
+            }
+            var result = 0.0
+            while index < stringLength(text) && charIsDigit(charAt(text, index)) {
+                result = result * 10.0 + (charToCode(charAt(text, index)) - 48) as Double
+                index += 1
+            }
+            if index < stringLength(text) && charAt(text, index) == '.' {
+                index += 1
+                var divisor = 10.0
                 while index < stringLength(text) && charIsDigit(charAt(text, index)) {
-                    result = result * 10.0 + (charToCode(charAt(text, index)) - 48) as Double
+                    fin digit: Double = (charToCode(charAt(text, index)) - 48) as Double
+                    result = result + digit / divisor
+                    divisor = divisor * 10.0
                     index += 1
                 }
-                if index < stringLength(text) && charAt(text, index) == '.' {
-                    index += 1
-                    var divisor = 10.0
-                    while index < stringLength(text) && charIsDigit(charAt(text, index)) {
-                        fin digit: Double = (charToCode(charAt(text, index)) - 48) as Double
-                        result = result + digit / divisor
-                        divisor = divisor * 10.0
-                        index += 1
-                    }
-                }
-                if index < stringLength(text) &&
-                    (charAt(text, index) == 'e' || charAt(text, index) == 'E') {
-                    index += 1
-                    var exponentNegative = false
-                    if index < stringLength(text) && charAt(text, index) == '+' { index += 1 }
-                    else if index < stringLength(text) && charAt(text, index) == '-' {
-                        exponentNegative = true
-                        index += 1
-                    }
-                    var exponent = 0
-                    while index < stringLength(text) {
-                        exponent = exponent * 10 + charToCode(charAt(text, index)) - 48
-                        index += 1
-                    }
-                    var factor = 1.0
-                    for power in 0..<exponent {
-                        factor = factor * 10.0
-                    }
-                    if exponentNegative { result = result / factor }
-                    else { result = result * factor }
-                }
-                return sign * result
             }
-            else -> { return .UnexpectedType }
+            if index < stringLength(text) &&
+                (charAt(text, index) == 'e' || charAt(text, index) == 'E') {
+                index += 1
+                var exponentNegative = false
+                if index < stringLength(text) && charAt(text, index) == '+' { index += 1 }
+                else if index < stringLength(text) && charAt(text, index) == '-' {
+                    exponentNegative = true
+                    index += 1
+                }
+                var exponent = 0
+                while index < stringLength(text) {
+                    exponent = exponent * 10 + charToCode(charAt(text, index)) - 48
+                    index += 1
+                }
+                var factor = 1.0
+                for power in 0..<exponent {
+                    factor = factor * 10.0
+                }
+                if exponentNegative { result = result / factor }
+                else { result = result * factor }
+            }
+            return sign * result
+        }
+        else -> { return .UnexpectedType }
+    }
+}
+
+/** Encodes a value tree as canonical compact AZON. */
+@Experimental(since: "0.1")
+func encodeSerialValue(
+    value: SerialValue&,
+    options: SerializerOptions&
+): String ?! SerializationError {
+    return try _encodeSerialValueAtDepth(value, options, 0)
+}
+
+/**
+ * Decodes one complete AZON document.
+ *
+ * The decoder rejects trailing content, malformed UTF escapes, invalid
+ * number grammar, excessive nesting, oversized input, and duplicate keys by
+ * default.
+ */
+@Experimental(since: "0.1")
+func decodeSerialValue(
+    input: String,
+    options: SerializerOptions&
+): SerialValue ?! SerializationError {
+    if stringLength(input) > options.maxInputLength { return .InputTooLarge }
+    var reader = _SerialReader(input, 0, options)
+    fin value = try reader.readValue(0)
+    reader.skipWhitespace()
+    if !reader.isAtEnd { return .TrailingContent }
+    return value
+}
+
+/** Internal cursor used by the strict text decoder. */
+pack _SerialReader {
+    var input: String
+    var index: Int
+    fin options: SerializerOptions
+}
+
+impl _SerialReader {
+    prop isAtEnd[self: Self&]: Bool = self.index >= stringLength(self.input)
+
+    func skipWhitespace[self: Self!](): Unit {
+        while !self.isAtEnd {
+            fin c = charAt(self.input, self.index)
+            if c != ' ' && c != '\n' && c != '\r' && c != '\t' { return }
+            self.index += 1
         }
     }
 
-    /** Encodes a value tree as canonical compact AZON. */
-    @Experimental(since: "0.1")
-    func encodeSerialValue(
-        value: SerialValue&,
-        options: SerializerOptions&
-    ): String ?! SerializationError {
-        return try _encodeSerialValueAtDepth(value, options, 0)
+    func take[self: Self!](): Char ?! SerializationError {
+        if self.isAtEnd { return .UnexpectedEnd }
+        fin c = charAt(self.input, self.index)
+        self.index += 1
+        return c
     }
 
-    /**
-     * Decodes one complete AZON document.
-     *
-     * The decoder rejects trailing content, malformed UTF escapes, invalid
-     * number grammar, excessive nesting, oversized input, and duplicate keys by
-     * default.
-     */
-    @Experimental(since: "0.1")
-    func decodeSerialValue(
-        input: String,
-        options: SerializerOptions&
-    ): SerialValue ?! SerializationError {
-        if stringLength(input) > options.maxInputLength { return .InputTooLarge }
-        var reader = _SerialReader(input, 0, options)
-        fin value = try reader.readValue(0)
-        reader.skipWhitespace()
-        if !reader.isAtEnd { return .TrailingContent }
+    func expect[self: Self!](expected: Char): Unit ?! SerializationError {
+        fin actual = try self.take()
+        if actual != expected { return .InvalidSyntax }
+    }
+
+    func readValue[self: Self!](depth: Int): SerialValue ?! SerializationError {
+        if depth > self.options.maxDepth { return .MaxDepthExceeded }
+        self.skipWhitespace()
+        if self.isAtEnd { return .UnexpectedEnd }
+        fin c = charAt(self.input, self.index)
+        if c == '"' { return SerialValue.Text(try self.readString()) }
+        if c == '[' { return try self.readArray(depth + 1) }
+        if c == '{' { return try self.readObject(depth + 1) }
+        if c == 't' {
+            try self.readLiteral("true")
+            return SerialValue.Bool(true)
+        }
+        if c == 'f' {
+            try self.readLiteral("false")
+            return SerialValue.Bool(false)
+        }
+        if c == 'n' {
+            try self.readLiteral("null")
+            return SerialValue.Null
+        }
+        if c == '-' || (c >= '0' && c <= '9') {
+            return SerialValue.Number(try self.readNumber())
+        }
+        return .InvalidSyntax
+    }
+
+    func readLiteral[self: Self!](expected: String): Unit ?! SerializationError {
+        for i in 0..<stringLength(expected) {
+            if try self.take() != charAt(expected, i) { return .InvalidSyntax }
+        }
+    }
+
+    func readString[self: Self!](): String ?! SerializationError {
+        try self.expect('"')
+        var result = ""
+        while !self.isAtEnd {
+            fin c = try self.take()
+            if c == '"' { return result }
+            if charToCode(c) < 32 { return .InvalidEscape }
+            if c != '\\' {
+                result = result + c as String
+            } else {
+                fin escaped = try self.take()
+                if escaped == '"' { result = result + "\"" }
+                else if escaped == '\\' { result = result + "\\" }
+                else if escaped == '/' { result = result + "/" }
+                else if escaped == 'b' { result = result + "\b" }
+                else if escaped == 'f' { result = result + "\f" }
+                else if escaped == 'n' { result = result + "\n" }
+                else if escaped == 'r' { result = result + "\r" }
+                else if escaped == 't' { result = result + "\t" }
+                else if escaped == 'u' {
+                    fin codePoint = try self.readEscapedCodePoint()
+                    result += codeToChar(codePoint) as String
+                } else {
+                    return .InvalidEscape
+                }
+            }
+        }
+        return .UnexpectedEnd
+    }
+
+    func readHexUnit[self: Self!](): Int ?! SerializationError {
+        var value = 0
+        for i in 0..<4 {
+            fin c = try self.take()
+            if !charIsHexDigit(c) { return .InvalidEscape }
+            value = value * 16 + hexDigitToInt(c)
+        }
         return value
     }
 
-    /** Internal cursor used by the strict text decoder. */
-    pack _SerialReader {
-        var input: String
-        var index: Int
-        fin options: SerializerOptions
+    func readEscapedCodePoint[self: Self!](): Int ?! SerializationError {
+        fin first = try self.readHexUnit()
+        if first >= 56320 && first <= 57343 { return .InvalidEscape }
+        if first < 55296 || first > 56319 { return first }
+
+        // A high surrogate must be immediately followed by a low surrogate.
+        if try self.take() != '\\' || try self.take() != 'u' { return .InvalidEscape }
+        fin second = try self.readHexUnit()
+        if second < 56320 || second > 57343 { return .InvalidEscape }
+        return 65536 + (first - 55296) * 1024 + (second - 56320)
     }
 
-    impl _SerialReader {
-        prop isAtEnd[self: Self&]: Bool = self.index >= stringLength(self.input)
+    func readNumber[self: Self!](): String ?! SerializationError {
+        fin start = self.index
+        if charAt(self.input, self.index) == '-' { self.index += 1 }
+        if self.isAtEnd { return .InvalidNumber }
 
-        func skipWhitespace[self: Self!](): Unit {
-            while !self.isAtEnd {
-                fin c = charAt(self.input, self.index)
-                if c != ' ' && c != '\n' && c != '\r' && c != '\t' { return }
-                self.index += 1
-            }
-        }
-
-        func take[self: Self!](): Char ?! SerializationError {
-            if self.isAtEnd { return .UnexpectedEnd }
-            fin c = charAt(self.input, self.index)
+        if charAt(self.input, self.index) == '0' {
             self.index += 1
-            return c
-        }
-
-        func expect[self: Self!](expected: Char): Unit ?! SerializationError {
-            fin actual = try self.take()
-            if actual != expected { return .InvalidSyntax }
-        }
-
-        func readValue[self: Self!](depth: Int): SerialValue ?! SerializationError {
-            if depth > self.options.maxDepth { return .MaxDepthExceeded }
-            self.skipWhitespace()
-            if self.isAtEnd { return .UnexpectedEnd }
-            fin c = charAt(self.input, self.index)
-            if c == '"' { return SerialValue.Text(try self.readString()) }
-            if c == '[' { return try self.readArray(depth + 1) }
-            if c == '{' { return try self.readObject(depth + 1) }
-            if c == 't' {
-                try self.readLiteral("true")
-                return SerialValue.Bool(true)
-            }
-            if c == 'f' {
-                try self.readLiteral("false")
-                return SerialValue.Bool(false)
-            }
-            if c == 'n' {
-                try self.readLiteral("null")
-                return SerialValue.Null
-            }
-            if c == '-' || (c >= '0' && c <= '9') {
-                return SerialValue.Number(try self.readNumber())
-            }
-            return .InvalidSyntax
-        }
-
-        func readLiteral[self: Self!](expected: String): Unit ?! SerializationError {
-            for i in 0..<stringLength(expected) {
-                if try self.take() != charAt(expected, i) { return .InvalidSyntax }
-            }
-        }
-
-        func readString[self: Self!](): String ?! SerializationError {
-            try self.expect('"')
-            var result = ""
-            while !self.isAtEnd {
-                fin c = try self.take()
-                if c == '"' { return result }
-                if charToCode(c) < 32 { return .InvalidEscape }
-                if c != '\\' {
-                    result = result + c as String
-                } else {
-                    fin escaped = try self.take()
-                    if escaped == '"' { result = result + "\"" }
-                    else if escaped == '\\' { result = result + "\\" }
-                    else if escaped == '/' { result = result + "/" }
-                    else if escaped == 'b' { result = result + "\b" }
-                    else if escaped == 'f' { result = result + "\f" }
-                    else if escaped == 'n' { result = result + "\n" }
-                    else if escaped == 'r' { result = result + "\r" }
-                    else if escaped == 't' { result = result + "\t" }
-                    else if escaped == 'u' {
-                        fin codePoint = try self.readEscapedCodePoint()
-                        result += codeToChar(codePoint) as String
-                    } else {
-                        return .InvalidEscape
-                    }
-                }
-            }
-            return .UnexpectedEnd
-        }
-
-        func readHexUnit[self: Self!](): Int ?! SerializationError {
-            var value = 0
-            for i in 0..<4 {
-                fin c = try self.take()
-                if !charIsHexDigit(c) { return .InvalidEscape }
-                value = value * 16 + hexDigitToInt(c)
-            }
-            return value
-        }
-
-        func readEscapedCodePoint[self: Self!](): Int ?! SerializationError {
-            fin first = try self.readHexUnit()
-            if first >= 56320 && first <= 57343 { return .InvalidEscape }
-            if first < 55296 || first > 56319 { return first }
-
-            // A high surrogate must be immediately followed by a low surrogate.
-            if try self.take() != '\\' || try self.take() != 'u' { return .InvalidEscape }
-            fin second = try self.readHexUnit()
-            if second < 56320 || second > 57343 { return .InvalidEscape }
-            return 65536 + (first - 55296) * 1024 + (second - 56320)
-        }
-
-        func readNumber[self: Self!](): String ?! SerializationError {
-            fin start = self.index
-            if charAt(self.input, self.index) == '-' { self.index += 1 }
-            if self.isAtEnd { return .InvalidNumber }
-
-            if charAt(self.input, self.index) == '0' {
-                self.index += 1
-            } else {
-                if !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
-                while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
-            }
-
-            if !self.isAtEnd && charAt(self.input, self.index) == '.' {
-                self.index += 1
-                if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
-                while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
-            }
-
-            if !self.isAtEnd && (charAt(self.input, self.index) == 'e' || charAt(self.input, self.index) == 'E') {
-                self.index += 1
-                if !self.isAtEnd && (charAt(self.input, self.index) == '+' || charAt(self.input, self.index) == '-') {
-                    self.index += 1
-                }
-                if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
-                while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
-            }
-            return substring(self.input, start, self.index)
-        }
-
-        func readArray[self: Self!](depth: Int): SerialValue ?! SerializationError {
-            try self.expect('[')
-            var values = ArrayList<SerialValue>()
-            self.skipWhitespace()
-            if !self.isAtEnd && charAt(self.input, self.index) == ']' {
-                self.index += 1
-                return SerialValue.Array(values)
-            }
-            loop {
-                values.add(try self.readValue(depth))
-                self.skipWhitespace()
-                fin separator = try self.take()
-                if separator == ']' { return SerialValue.Array(values) }
-                if separator != ',' { return .InvalidSyntax }
-                self.skipWhitespace()
-            }
-        }
-
-        func readObject[self: Self!](depth: Int): SerialValue ?! SerializationError {
-            try self.expect('{')
-            var fields = ArrayList<SerialField>()
-            self.skipWhitespace()
-            if !self.isAtEnd && charAt(self.input, self.index) == '}' {
-                self.index += 1
-                return SerialValue.Object(fields)
-            }
-            loop {
-                self.skipWhitespace()
-                if self.isAtEnd || charAt(self.input, self.index) != '"' { return .InvalidSyntax }
-                fin name = try self.readString()
-                self.skipWhitespace()
-                try self.expect(':')
-                self.skipWhitespace()
-                fin value = try self.readValue(depth)
-
-                var duplicate = false
-                for i in 0..<fields.size {
-                    if serialFieldAt(fields, i).name == name { duplicate = true }
-                }
-                if duplicate && !self.options.allowDuplicateFields { return .DuplicateField }
-                fields.add(SerialField(name, value))
-
-                self.skipWhitespace()
-                fin separator = try self.take()
-                if separator == '}' { return SerialValue.Object(fields) }
-                if separator != ',' { return .InvalidSyntax }
-                self.skipWhitespace()
-            }
-        }
-    }
-
-    func _encodeSerialValueAtDepth(
-        value: SerialValue&,
-        options: SerializerOptions&,
-        depth: Int
-    ): String ?! SerializationError {
-        if depth > options.maxDepth { return .MaxDepthExceeded }
-        when value {
-            SerialValue.Null -> { return "null" }
-            SerialValue.Bool(v) -> { return if v { "true" } else { "false" } }
-            SerialValue.Number(v) -> {
-                if !isValidSerialNumber(v) { return .InvalidNumber }
-                return v
-            }
-            SerialValue.Text(v) -> { return _quoteSerialString(v) }
-            SerialValue.Array(values) -> {
-                var result = "["
-                for i in 0..<values.size {
-                    if i > 0 { result = result + "," }
-                    if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
-                    result = result + try _encodeSerialValueAtDepth(values[i], options, depth + 1)
-                }
-                if options.pretty && values.size > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
-                return result + "]"
-            }
-            SerialValue.Object(fields) -> {
-                var result = "{"
-                var i = 0
-                var written = 0
-                while i < fields.size {
-                    fin field = serialFieldAt(fields, i)
-                    var include = true
-                    when field.value {
-                        SerialValue.Null -> { include = options.encodeNulls }
-                        else -> {}
-                    }
-                    if include {
-                        if written > 0 { result = result + "," }
-                        if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
-                        result = result + _quoteSerialString(field.name)
-                        result = result + ":"
-                        if options.pretty { result = result + " " }
-                        result = result + try _encodeSerialValueAtDepth(field.value, options, depth + 1)
-                        written += 1
-                    }
-                    i += 1
-                }
-                if options.pretty && written > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
-                return result + "}"
-            }
-        }
-        return .UnexpectedType
-    }
-
-    func _quoteSerialString(value: String): String {
-        var result = "\""
-        for i in 0..<stringLength(value) {
-            fin c = charAt(value, i)
-            if c == '"' { result = result + "\\\"" }
-            else if c == '\\' { result = result + "\\\\" }
-            else if c == '\b' { result = result + "\\b" }
-            else if c == '\f' { result = result + "\\f" }
-            else if c == '\n' { result = result + "\\n" }
-            else if c == '\r' { result = result + "\\r" }
-            else if c == '\t' { result = result + "\\t" }
-            else if charToCode(c) < 32 { result = result + "\\u" + _hex4(charToCode(c)) }
-            else { result += c as String }
-        }
-        return result + "\""
-    }
-
-    func _repeatIndent(indent: String, count: Int): String {
-        var result = ""
-        for i in 0..<count {
-            result = result + indent
-        }
-        return result
-    }
-
-    func _hex4(value: Int): String {
-        fin digits = "0123456789abcdef"
-        return charAt(digits, (value / 4096) % 16) as String +
-            charAt(digits, (value / 256) % 16) as String +
-            charAt(digits, (value / 16) % 16) as String +
-            charAt(digits, value % 16) as String
-    }
-
-    /** Validates the complete AZON number grammar without converting it. */
-    @Experimental(since: "0.1")
-    func isValidSerialNumber(value: String): Bool {
-        if stringLength(value) == 0 { return false }
-        var i = 0
-        if charAt(value, i) == '-' { i += 1 }
-        if i >= stringLength(value) { return false }
-        if charAt(value, i) == '0' {
-            i += 1
         } else {
-            if !charIsDigit(charAt(value, i)) { return false }
-            while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+            if !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
+            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
         }
-        if i < stringLength(value) && charAt(value, i) == '.' {
-            i += 1
-            if i >= stringLength(value) || !charIsDigit(charAt(value, i)) { return false }
-            while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+
+        if !self.isAtEnd && charAt(self.input, self.index) == '.' {
+            self.index += 1
+            if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
+            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
         }
-        if i < stringLength(value) && (charAt(value, i) == 'e' || charAt(value, i) == 'E') {
-            i += 1
-            if i < stringLength(value) && (charAt(value, i) == '+' || charAt(value, i) == '-') { i += 1 }
-            if i >= stringLength(value) || !charIsDigit(charAt(value, i)) { return false }
-            while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+
+        if !self.isAtEnd && (charAt(self.input, self.index) == 'e' || charAt(self.input, self.index) == 'E') {
+            self.index += 1
+            if !self.isAtEnd && (charAt(self.input, self.index) == '+' || charAt(self.input, self.index) == '-') {
+                self.index += 1
+            }
+            if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
+            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
         }
-        return i == stringLength(value)
+        return substring(self.input, start, self.index)
+    }
+
+    func readArray[self: Self!](depth: Int): SerialValue ?! SerializationError {
+        try self.expect('[')
+        var values = ArrayList<SerialValue>()
+        self.skipWhitespace()
+        if !self.isAtEnd && charAt(self.input, self.index) == ']' {
+            self.index += 1
+            return SerialValue.Array(values)
+        }
+        loop {
+            values.add(try self.readValue(depth))
+            self.skipWhitespace()
+            fin separator = try self.take()
+            if separator == ']' { return SerialValue.Array(values) }
+            if separator != ',' { return .InvalidSyntax }
+            self.skipWhitespace()
+        }
+    }
+
+    func readObject[self: Self!](depth: Int): SerialValue ?! SerializationError {
+        try self.expect('{')
+        var fields = ArrayList<SerialField>()
+        self.skipWhitespace()
+        if !self.isAtEnd && charAt(self.input, self.index) == '}' {
+            self.index += 1
+            return SerialValue.Object(fields)
+        }
+        loop {
+            self.skipWhitespace()
+            if self.isAtEnd || charAt(self.input, self.index) != '"' { return .InvalidSyntax }
+            fin name = try self.readString()
+            self.skipWhitespace()
+            try self.expect(':')
+            self.skipWhitespace()
+            fin value = try self.readValue(depth)
+
+            var duplicate = false
+            for i in 0..<fields.size {
+                if serialFieldAt(fields, i).name == name { duplicate = true }
+            }
+            if duplicate && !self.options.allowDuplicateFields { return .DuplicateField }
+            fields.add(SerialField(name, value))
+
+            self.skipWhitespace()
+            fin separator = try self.take()
+            if separator == '}' { return SerialValue.Object(fields) }
+            if separator != ',' { return .InvalidSyntax }
+            self.skipWhitespace()
+        }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Compile-time decorator fixtures
-// ---------------------------------------------------------------------------
-
-@Serializable(ignoreUnknownFields: true, encodeDefaults: false)
-pack SerializerMetadataFixture {
-    @SerialIgnore
-    fin secret: String = ""
-
-    @SerialName("display_name")
-    fin displayName: String
-}
-
-@AzonSerializable(ignoreUnknownFields: true, encodeDefaults: true)
-pack _AzonMetadataFixture
-
-pack _ManualTextValue {
-    fin value: String
-}
-
-pack _ManualTextSerializer
-
-impl Serializer<_ManualTextValue> for _ManualTextSerializer {
-    func toSerialValue[self: Self&](value: _ManualTextValue&): SerialValue ?! SerializationError {
-        return SerialValue.Text(value.value)
-    }
-
-    func fromSerialValue[self: Self&](value: SerialValue&): _ManualTextValue ?! SerializationError {
-        when value {
-            SerialValue.Text(text) -> { return _ManualTextValue(text) }
-            else -> { return .UnexpectedType }
+func _encodeSerialValueAtDepth(
+    value: SerialValue&,
+    options: SerializerOptions&,
+    depth: Int
+): String ?! SerializationError {
+    if depth > options.maxDepth { return .MaxDepthExceeded }
+    when value {
+        SerialValue.Null -> { return "null" }
+        SerialValue.Bool(v) -> { return if v { "true" } else { "false" } }
+        SerialValue.Number(v) -> {
+            if !isValidSerialNumber(v) { return .InvalidNumber }
+            return v
+        }
+        SerialValue.Text(v) -> { return _quoteSerialString(v) }
+        SerialValue.Array(values) -> {
+            var result = "["
+            for i in 0..<values.size {
+                if i > 0 { result = result + "," }
+                if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
+                result = result + try _encodeSerialValueAtDepth(values[i], options, depth + 1)
+            }
+            if options.pretty && values.size > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
+            return result + "]"
+        }
+        SerialValue.Object(fields) -> {
+            var result = "{"
+            var i = 0
+            var written = 0
+            while i < fields.size {
+                fin field = serialFieldAt(fields, i)
+                var include = true
+                when field.value {
+                    SerialValue.Null -> { include = options.encodeNulls }
+                    else -> {}
+                }
+                if include {
+                    if written > 0 { result = result + "," }
+                    if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
+                    result = result + _quoteSerialString(field.name)
+                    result = result + ":"
+                    if options.pretty { result = result + " " }
+                    result = result + try _encodeSerialValueAtDepth(field.value, options, depth + 1)
+                    written += 1
+                }
+                i += 1
+            }
+            if options.pretty && written > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
+            return result + "}"
         }
     }
+    return .UnexpectedType
 }
 
-pack _ImplSerializableFixture {
-    fin value: String
+func _quoteSerialString(value: String): String {
+    var result = "\""
+    for i in 0..<stringLength(value) {
+        fin c = charAt(value, i)
+        if c == '"' { result = result + "\\\"" }
+        else if c == '\\' { result = result + "\\\\" }
+        else if c == '\b' { result = result + "\\b" }
+        else if c == '\f' { result = result + "\\f" }
+        else if c == '\n' { result = result + "\\n" }
+        else if c == '\r' { result = result + "\\r" }
+        else if c == '\t' { result = result + "\\t" }
+        else if charToCode(c) < 32 { result = result + "\\u" + _hex4(charToCode(c)) }
+        else { result += c as String }
+    }
+    return result + "\""
 }
 
-impl Serializable(
-    ignoreUnknownFields: true,
-    encodeDefaults: false
-) for _ImplSerializableFixture {}
-
-pack _DefaultSerializableFixture {
-    fin value: String
+func _repeatIndent(indent: String, count: Int): String {
+    var result = ""
+    for i in 0..<count {
+        result = result + indent
+    }
+    return result
 }
 
-impl Serializable for _DefaultSerializableFixture {}
-
-pack _DirectFieldDecoratorFixture {
-    fin name: String = ""
-    fin password: String = ""
+func _hex4(value: Int): String {
+    fin digits = "0123456789abcdef"
+    return charAt(digits, (value / 4096) % 16) as String +
+        charAt(digits, (value / 256) % 16) as String +
+        charAt(digits, (value / 16) % 16) as String +
+        charAt(digits, value % 16) as String
 }
 
-impl SerialName(value: "display_name") for _DirectFieldDecoratorFixture::name {}
-
-pack _GroupedDecoratorFixture {
-    fin name: String = ""
+/** Validates the complete AZON number grammar without converting it. */
+@Experimental(since: "0.1")
+func isValidSerialNumber(value: String): Bool {
+    if stringLength(value) == 0 { return false }
+    var i = 0
+    if charAt(value, i) == '-' { i += 1 }
+    if i >= stringLength(value) { return false }
+    if charAt(value, i) == '0' {
+        i += 1
+    } else {
+        if !charIsDigit(charAt(value, i)) { return false }
+        while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+    }
+    if i < stringLength(value) && charAt(value, i) == '.' {
+        i += 1
+        if i >= stringLength(value) || !charIsDigit(charAt(value, i)) { return false }
+        while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+    }
+    if i < stringLength(value) && (charAt(value, i) == 'e' || charAt(value, i) == 'E') {
+        i += 1
+        if i < stringLength(value) && (charAt(value, i) == '+' || charAt(value, i) == '-') { i += 1 }
+        if i >= stringLength(value) || !charIsDigit(charAt(value, i)) { return false }
+        while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+    }
+    return i == stringLength(value)
 }
 
-impl [SerialName, SerialRequired] for _GroupedDecoratorFixture::name {}
+test scope {
+    @Serializable(ignoreUnknownFields: true, encodeDefaults: false)
+    pack SerializerMetadataFixture {
+        @SerialIgnore
+        fin secret: String = ""
 
-pack _GroupedTargetFixture {
-    fin name: String = ""
-    fin password: String = ""
+        @SerialName("display_name")
+        fin displayName: String
+    }
+
+    @AzonSerializable(ignoreUnknownFields: true, encodeDefaults: true)
+    pack _AzonMetadataFixture
+
+    pack _ManualTextValue {
+        fin value: String
+    }
+
+    pack _ManualTextSerializer
+
+    impl Serializer<_ManualTextValue> for _ManualTextSerializer {
+        func toSerialValue[self: Self&](
+            value: _ManualTextValue&
+        ): SerialValue ?! SerializationError {
+            return .Text(value.value)
+        }
+
+        func fromSerialValue[self: Self&](
+            value: SerialValue&
+        ): _ManualTextValue ?! SerializationError {
+            return when value {
+                .Text(text) -> .(text)
+                else -> .UnexpectedType
+            }
+        }
+    }
+
+    pack _ImplSerializableFixture {
+        fin value: String
+    }
+
+    derive Serializable(
+        ignoreUnknownFields: true,
+        encodeDefaults: false
+    ) for _ImplSerializableFixture
+
+    pack _DefaultSerializableFixture {
+        fin value: String
+    }
+
+    derive Serializable for _DefaultSerializableFixture
+
+    pack _DirectFieldDecoratorFixture {
+        fin name: String = ""
+        fin password: String = ""
+    }
+
+    derive SerialName(value: "display_name") for _DirectFieldDecoratorFixture::name
+
+    pack _GroupedDecoratorFixture {
+        fin name: String = ""
+    }
+
+    derive [SerialName, SerialRequired] for _GroupedDecoratorFixture::name
+
+    pack _GroupedTargetFixture {
+        fin name: String = ""
+        fin password: String = ""
+    }
+
+    derive SerialIgnore for [_GroupedTargetFixture::name, _GroupedTargetFixture::password]
+
+    pack _CrossProductDecoratorFixture {
+        fin name: String = ""
+        fin password: String = ""
+    }
+
+    derive [SerialName, SerialRequired] for [
+        _CrossProductDecoratorFixture::name
+        _CrossProductDecoratorFixture::password
+    ]
+
+    pack WildcardDecoratorFixture {
+        fin name: String = ""
+        fin password: String = ""
+    }
+
+    derive SerialIgnore for WildcardDecoratorFixture::*
+
+    pack _GroupedWildcardDecoratorFixture {
+        fin name: String = ""
+        fin password: String = ""
+    }
+
+    derive [SerialName, SerialRequired] for _GroupedWildcardDecoratorFixture::*
 }
-
-impl SerialIgnore for [_GroupedTargetFixture::name, _GroupedTargetFixture::password] {}
-
-pack _CrossProductDecoratorFixture {
-    fin name: String = ""
-    fin password: String = ""
-}
-
-impl [SerialName, SerialRequired] for [_CrossProductDecoratorFixture::name, _CrossProductDecoratorFixture::password] {}
-
-pack WildcardDecoratorFixture {
-    fin name: String = ""
-    fin password: String = ""
-}
-
-impl SerialIgnore for WildcardDecoratorFixture::* {}
-
-pack _GroupedWildcardDecoratorFixture {
-    fin name: String = ""
-    fin password: String = ""
-}
-
-impl [SerialName, SerialRequired] for _GroupedWildcardDecoratorFixture::* {}
-
-// ---------------------------------------------------------------------------
-// Unit tests
-// ---------------------------------------------------------------------------
 
 test "serializer decorator is visible at compile time" {
     inline assert reflect<SerializerMetadataFixture>.hasAnnot<Serializable> {

@@ -26,8 +26,7 @@
  */
 module std.io.convert
 
-import std.convert
-import std.container.array
+import std.container.array.*
 
 // todo. I THINK THIS IS NOT NECESSARY AS WE HAVE OPERATORS
 

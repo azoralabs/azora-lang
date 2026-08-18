@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-module std.concurrency.coroutines
-
 /**
- * @file std/concurrency/coroutines
+ * @file std/concurrency/coroutines.az
  *
  * Coroutine-based concurrency primitives.
  *
@@ -26,19 +24,18 @@ module std.concurrency.coroutines
  *
  * @since 0.1
  */
+module std.concurrency.coroutines
 
-realm std {
-    /**
-     * Executes an action after a specified delay.
-     *
-     * Suspends for the given number of milliseconds, then invokes the action.
-     *
-     * @param ms The delay in milliseconds before executing the action.
-     * @param action The function to execute after the delay.
-     */
-    @Experimental(since: "0.1")
-    async func delayed(ms: Int, action: () -> Unit) {
-        delay ms
-        action()
-    }
+/**
+ * Executes an action after a specified delay.
+ *
+ * Suspends for the given number of milliseconds, then invokes the action.
+ *
+ * @param ms The delay in milliseconds before executing the action.
+ * @param action The function to execute after the delay.
+ */
+@Experimental(since: "0.1")
+async func delayed(ms: Int, action: () -> Unit) {
+    delay ms
+    action()
 }

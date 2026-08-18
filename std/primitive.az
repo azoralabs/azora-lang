@@ -14,29 +14,16 @@
  * limitations under the License.
  */
 
-exposed module std.primitive
-
-import std.traits
-
 /**
- * @file std/primitive
+ * @file std/primitive.az
  *
  * The built-in scalar types and their operators.
  *
- * Each type is a `bridge pack` - a compiler-provided type with no emitted struct;
- * every backend supplies its representation and machine operations directly. The
- * declarations here give the primitives a reflectable site (so `reflect<Int>`
- * and decorator metadata work), a set of `Type.Constant` limits via `impl realm`,
- * the numeric `spec`s (`Number`, `Integer`, …), and - generated with `inline for`
- * metaprogramming - the full operator surface. The operators are `bridge impl`s:
- * declarations the compiler recognises and lowers to native machine instructions,
- * so their bodies are never executed.
- *
- * Because this is an `expose mod`, everything here is available in every unit
- * without a `use`.
- *
  * @since 0.1
  */
+exposed module std.primitive
+
+import std.traits.*
 
 /** Boolean truth value: `true` or `false`. */
 @Since("0.1")
@@ -81,6 +68,12 @@ bridge pack Cent
 /** Unsigned 128-bit integer. */
 @Since("0.1")
 bridge pack UCent
+
+@Since("0.1")
+bridge pack Char
+
+@Since("0.1")
+bridge pack String
 
 /**
  * Signed integer as wide as a pointer on the target.

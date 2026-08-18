@@ -14,11 +14,6 @@
  * limitations under the License.
  */
 
-module std.container.set
-
-import std.serializer
-import std.convert
-
 /**
  * @file std/container/set
  *
@@ -41,760 +36,756 @@ import std.convert
  *
  * @since 0.1
  */
+module std.container.set
 
-realm std {
-    /**
-     * Read-only behavior shared by every set implementation.
-     *
-     * `Set` stores unique elements. A concrete pack defines the iteration
-     * order; `LinkedHashSet` uses insertion order, which makes indexed access
-     * well-defined.
-     *
-     * @generic T The element type.
-     */
+import std.serializer.Serializable
+
+/**
+ * Read-only behavior shared by every set implementation.
+ *
+ * `Set` stores unique elements. A concrete pack defines the iteration
+ * order; `LinkedHashSet` uses insertion order, which makes indexed access
+ * well-defined.
+ *
+ * @generic T The element type.
+ */
+@Experimental(since: "0.1")
+spec Set<T> {
+    /** Number of unique elements. */
+    prop size[self: Self&]: Int
+
+    /** Whether this set has no elements. */
+    prop isEmpty[self: Self&]: Bool
+
+    /** Whether this set has at least one element. */
+    prop isNotEmpty[self: Self&]: Bool
+
+    /** Returns the element at `index` in iteration order. Asserts out of bounds. */
+    func get[self: Self&](index: Int): T
+
+    /** Returns whether `element` is present. */
+    func contains[self: Self&](element: T): Bool
+
+    /** Invokes `action` once for every element in iteration order. */
+    func forEach[self: Self&](action: (T) -> Unit)
+
+    /** Returns a new set with only elements satisfying `predicate`. */
+    func filter[self: Self&](predicate: (T) -> Bool): Set<T>
+
+    /** Returns whether at least one element satisfies `predicate`. */
+    func any[self: Self&](predicate: (T) -> Bool): Bool
+
+    /** Returns whether every element satisfies `predicate`. */
+    func all[self: Self&](predicate: (T) -> Bool): Bool
+
+    /** Returns a new set with all unique elements from both sets. */
+    func union[self: Self&](other: Set<T>): Set<T>
+
+    /** Returns a new set with only elements present in both sets. */
+    func intersect[self: Self&](other: Set<T>): Set<T>
+
+    /** Returns a new set with elements here that are absent from `other`. */
+    func difference[self: Self&](other: Set<T>): Set<T>
+}
+
+/**
+ * A Set is cloned by duplicating its elements; it is never `Copy`,
+ * because duplicating a collection implicitly would hide an allocation.
+ */
+@Since("0.1")
+derive Clone for Set
+
+/**
+ * Mutation behavior implemented by mutable set packs.
+ *
+ * Mutation always receives `self!`. Implementing this spec does not
+ * weaken a `ref Set<T>` view: callers holding only a shared reference can
+ * still use only read operations.
+ *
+ * @generic T The element type.
+ */
+@Experimental(since: "0.1")
+spec MutableSet<T> : Set<T> {
+    /** Adds `element`; returns whether membership changed. */
+    func add[self: Self&](element: T): Bool
+
+    /** Removes `element`; returns whether membership changed. */
+    func remove[self: Self&](element: T): Bool
+
+    /** Removes every element while retaining reusable internal capacity. */
+    func clear[self: Self&]()
+}
+
+/**
+ * Hash set pack backing both `Set<T>` and `MutableSet<T>`.
+ *
+ * Stores unique elements in insertion order in a contiguous `T*` buffer
+ * that doubles on demand. Uniqueness and equality use `oper==` for `T`.
+ * Internal fields are not exposed outside the pack.
+ *
+ * @generic T The element type.
+ */
+@Experimental(since: "0.1")
+@Serializable
+pack LinkedHashSet<T> {
+    var data: T* = alloc T[8]
+    var size: Int = 0
+    var capacity: Int = 8
+}
+
+// ---------------------------------------------------------------------
+// LinkedHashSet implementation
+// ---------------------------------------------------------------------
+
+impl LinkedHashSet<T> {
+    /** Doubles the backing buffer, copying existing elements. */
     @Experimental(since: "0.1")
-    spec Set<T> {
-        /** Number of unique elements. */
-        prop size[self: Self&]: Int
-
-        /** Whether this set has no elements. */
-        prop isEmpty[self: Self&]: Bool
-
-        /** Whether this set has at least one element. */
-        prop isNotEmpty[self: Self&]: Bool
-
-        /** Returns the element at `index` in iteration order. Asserts out of bounds. */
-        func get[self: Self&](index: Int): T
-
-        /** Returns whether `element` is present. */
-        func contains[self: Self&](element: T): Bool
-
-        /** Invokes `action` once for every element in iteration order. */
-        func forEach[self: Self&](action: (T) -> Unit)
-
-        /** Returns a new set with only elements satisfying `predicate`. */
-        func filter[self: Self&](predicate: (T) -> Bool): Set<T>
-
-        /** Returns whether at least one element satisfies `predicate`. */
-        func any[self: Self&](predicate: (T) -> Bool): Bool
-
-        /** Returns whether every element satisfies `predicate`. */
-        func all[self: Self&](predicate: (T) -> Bool): Bool
-
-        /** Returns a new set with all unique elements from both sets. */
-        func union[self: Self&](other: Set<T>): Set<T>
-
-        /** Returns a new set with only elements present in both sets. */
-        func intersect[self: Self&](other: Set<T>): Set<T>
-
-        /** Returns a new set with elements here that are absent from `other`. */
-        func difference[self: Self&](other: Set<T>): Set<T>
+    func growSet[self: Self!]() {
+        fin newCap = self.capacity * 2
+        let newData = alloc T[newCap]
+        for i in 0..<self.size {
+            newData[i] = self.data[i]
+        }
+        fin oldData = self.data
+        self.data = newData
+        self.capacity = newCap
+        purge oldData
     }
 
-    /**
-     * A Set is cloned by duplicating its elements; it is never `Copy`,
-     * because duplicating a collection implicitly would hide an allocation.
-     */
-    @Since("0.1")
-    derive Clone for Set
-
-    /**
-     * Mutation behavior implemented by mutable set packs.
-     *
-     * Mutation always receives `self!`. Implementing this spec does not
-     * weaken a `ref Set<T>` view: callers holding only a shared reference can
-     * still use only read operations.
-     *
-     * @generic T The element type.
-     */
+    /** Returns whether `element` is already stored. */
     @Experimental(since: "0.1")
-    spec MutableSet<T> : Set<T> {
-        /** Adds `element`; returns whether membership changed. */
-        func add[self: Self&](element: T): Bool
-
-        /** Removes `element`; returns whether membership changed. */
-        func remove[self: Self&](element: T): Bool
-
-        /** Removes every element while retaining reusable internal capacity. */
-        func clear[self: Self&]()
-    }
-
-    /**
-     * Hash set pack backing both `Set<T>` and `MutableSet<T>`.
-     *
-     * Stores unique elements in insertion order in a contiguous `T*` buffer
-     * that doubles on demand. Uniqueness and equality use `oper==` for `T`.
-     * Internal fields are not exposed outside the pack.
-     *
-     * @generic T The element type.
-     */
-    @Experimental(since: "0.1")
-    @Serializable
-    pack LinkedHashSet<T> {
-        var data: T* = alloc T[8]
-        var size: Int = 0
-        var capacity: Int = 8
-    }
-
-    // ---------------------------------------------------------------------
-    // LinkedHashSet implementation
-    // ---------------------------------------------------------------------
-
-    impl LinkedHashSet<T> {
-        /** Doubles the backing buffer, copying existing elements. */
-        @Experimental(since: "0.1")
-        func growSet[self: Self!]() {
-            fin newCap = self.capacity * 2
-            let newData = alloc T[newCap]
-            for i in 0..<self.size {
-                newData[i] = self.data[i]
-            }
-            fin oldData = self.data
-            self.data = newData
-            self.capacity = newCap
-            purge oldData
+    func has[self: Self&](element: T): Bool {
+        for i in 0..<self.size {
+            if self.data[i] == element { return true }
         }
+        return false
+    }
+}
 
-        /** Returns whether `element` is already stored. */
-        @Experimental(since: "0.1")
-        func has[self: Self&](element: T): Bool {
-            for i in 0..<self.size {
-                if self.data[i] == element { return true }
-            }
-            return false
+impl Set<T> for LinkedHashSet<T> {
+    prop size[self: Self&]: Int = self.size
+    prop isEmpty[self: Self&]: Bool = self.size == 0
+    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+
+    func get[self: Self&](index: Int): T {
+        assert index >= 0 { "Set index must be non-negative" }
+        assert index < self.size { "Set index out of bounds" }
+        return self.data[index]
+    }
+
+    func contains[self: Self&](element: T): Bool {
+        return self.has(element)
+    }
+
+    func forEach[self: Self&](action: (T) -> Unit) {
+        for i in 0..<self.size {
+            action(self.data[i])
         }
     }
 
-    impl Set<T> for LinkedHashSet<T> {
-        prop size[self: Self&]: Int = self.size
-        prop isEmpty[self: Self&]: Bool = self.size == 0
-        prop isNotEmpty[self: Self&]: Bool = self.size > 0
-
-        func get[self: Self&](index: Int): T {
-            assert index >= 0 { "Set index must be non-negative" }
-            assert index < self.size { "Set index out of bounds" }
-            return self.data[index]
-        }
-
-        func contains[self: Self&](element: T): Bool {
-            return self.has(element)
-        }
-
-        func forEach[self: Self&](action: (T) -> Unit) {
-            for i in 0..<self.size {
-                action(self.data[i])
-            }
-        }
-
-        func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
-            var result = LinkedHashSet<T>()
-            for i in 0..<self.size {
-                if predicate(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
-
-        func any[self: Self&](predicate: (T) -> Bool): Bool {
-            for i in 0..<self.size {
-                if predicate(self.data[i]) { return true }
-            }
-            return false
-        }
-
-        func all[self: Self&](predicate: (T) -> Bool): Bool {
-            for i in 0..<self.size {
-                if !predicate(self.data[i]) { return false }
-            }
-            return true
-        }
-
-        func union[self: Self&](other: Set<T>): Set<T> {
-            var result = LinkedHashSet<T>()
-            for i in 0..<self.size {
+    func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
+        var result = LinkedHashSet<T>()
+        for i in 0..<self.size {
+            if predicate(self.data[i]) {
                 result.add(self.data[i])
             }
-            for j in 0..<other.size {
-                result.add(other.get(j))
-            }
-            return result
-        }
-
-        func intersect[self: Self&](other: Set<T>): Set<T> {
-            var result = LinkedHashSet<T>()
-            for i in 0..<self.size {
-                if other.contains(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
-
-        func difference[self: Self&](other: Set<T>): Set<T> {
-            var result = LinkedHashSet<T>()
-            for i in 0..<self.size {
-                if !other.contains(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
-    }
-
-    impl MutableSet<T> for LinkedHashSet<T> {
-        func add[self: Self!](element: T): Bool {
-            if self.has(element) { return false }
-            if self.size >= self.capacity { self.growSet() }
-            self.data[self.size] = element
-            self.size = self.size + 1
-            return true
-        }
-
-        func remove[self: Self!](element: T): Bool {
-            var idx = -1
-            for i in 0..<self.size {
-                if self.data[i] == element { idx = i }
-            }
-            if idx < 0 { return false }
-            for j in idx..<self.size - 1 {
-                self.data[j] = self.data[j + 1]
-            }
-            self.size = self.size - 1
-            return true
-        }
-
-        func clear[self: Self!]() {
-            fin oldData = self.data
-            self.data = alloc T[8]
-            self.size = 0
-            self.capacity = 8
-            purge oldData
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    // Factories
-    // ---------------------------------------------------------------------
-
-    @Experimental(since: "0.1")
-    func emptySet<T>(): Set<T> {
-        return LinkedHashSet<T>()
-    }
-
-    @Experimental(since: "0.1")
-    func emptyMutableSet<T>(): MutableSet<T> {
-        return LinkedHashSet<T>()
-    }
-
-    @Experimental(since: "0.1")
-    func setOf<T>(...elements: T): Set<T> {
-        var result = LinkedHashSet<T>()
-        for i in 0..<elements.size {
-            result.add(elements[i])
         }
         return result
     }
 
-    @Experimental(since: "0.1")
-    func mutableSetOf<T>(...elements: T): MutableSet<T> {
+    func any[self: Self&](predicate: (T) -> Bool): Bool {
+        for i in 0..<self.size {
+            if predicate(self.data[i]) { return true }
+        }
+        return false
+    }
+
+    func all[self: Self&](predicate: (T) -> Bool): Bool {
+        for i in 0..<self.size {
+            if !predicate(self.data[i]) { return false }
+        }
+        return true
+    }
+
+    func union[self: Self&](other: Set<T>): Set<T> {
         var result = LinkedHashSet<T>()
-        for i in 0..<elements.size {
-            result.add(elements[i])
+        for i in 0..<self.size {
+            result.add(self.data[i])
+        }
+        for j in 0..<other.size {
+            result.add(other.get(j))
         }
         return result
     }
 
-    @Experimental(since: "0.1")
-    func linkedHashSetOf<T>(...elements: T): LinkedHashSet<T> {
+    func intersect[self: Self&](other: Set<T>): Set<T> {
         var result = LinkedHashSet<T>()
-        for i in 0..<elements.size {
-            result.add(elements[i])
+        for i in 0..<self.size {
+            if other.contains(self.data[i]) {
+                result.add(self.data[i])
+            }
         }
         return result
     }
 
-    @Experimental(since: "0.1")
-    func emptyLinkedHashSet<T>(): MutableSet<T> {
-        return LinkedHashSet<T>()
+    func difference[self: Self&](other: Set<T>): Set<T> {
+        var result = LinkedHashSet<T>()
+        for i in 0..<self.size {
+            if !other.contains(self.data[i]) {
+                result.add(self.data[i])
+            }
+        }
+        return result
+    }
+}
+
+impl MutableSet<T> for LinkedHashSet<T> {
+    func add[self: Self!](element: T): Bool {
+        if self.has(element) { return false }
+        if self.size >= self.capacity { self.growSet() }
+        self.data[self.size] = element
+        self.size = self.size + 1
+        return true
     }
 
-    // --- HashSet (hash-table, unspecified iteration order; T requires Hash) ---
+    func remove[self: Self!](element: T): Bool {
+        var idx = -1
+        for i in 0..<self.size {
+            if self.data[i] == element { idx = i }
+        }
+        if idx < 0 { return false }
+        for j in idx..<self.size - 1 {
+            self.data[j] = self.data[j + 1]
+        }
+        self.size = self.size - 1
+        return true
+    }
 
+    func clear[self: Self!]() {
+        fin oldData = self.data
+        self.data = alloc T[8]
+        self.size = 0
+        self.capacity = 8
+        purge oldData
+    }
+}
+
+// ---------------------------------------------------------------------
+// Factories
+// ---------------------------------------------------------------------
+
+@Experimental(since: "0.1")
+func emptySet<T>(): Set<T> {
+    return LinkedHashSet<T>()
+}
+
+@Experimental(since: "0.1")
+func emptyMutableSet<T>(): MutableSet<T> {
+    return LinkedHashSet<T>()
+}
+
+@Experimental(since: "0.1")
+func setOf<T>(...elements: T): Set<T> {
+    var result = LinkedHashSet<T>()
+    for i in 0..<elements.size {
+        result.add(elements[i])
+    }
+    return result
+}
+
+@Experimental(since: "0.1")
+func mutableSetOf<T>(...elements: T): MutableSet<T> {
+    var result = LinkedHashSet<T>()
+    for i in 0..<elements.size {
+        result.add(elements[i])
+    }
+    return result
+}
+
+@Experimental(since: "0.1")
+func linkedHashSetOf<T>(...elements: T): LinkedHashSet<T> {
+    var result = LinkedHashSet<T>()
+    for i in 0..<elements.size {
+        result.add(elements[i])
+    }
+    return result
+}
+
+@Experimental(since: "0.1")
+func emptyLinkedHashSet<T>(): MutableSet<T> {
+    return LinkedHashSet<T>()
+}
+
+// --- HashSet (hash-table, unspecified iteration order; T requires Hash) ---
+
+@Experimental(since: "0.1")
+@Serializable
+pack HashSet<T> {
+    var data: T* = alloc T[8]
+    var size: Int = 0
+    var capacity: Int = 8
+}
+
+@Experimental(since: "0.1")
+func hashSetOf<T>(...elements: T): HashSet<T> {
+    var result = HashSet<T>()
+    for i in 0..<elements.size {
+        result.add(elements[i])
+    }
+    return result
+}
+
+@Experimental(since: "0.1")
+func emptyHashSet<T>(): MutableSet<T> {
+    return HashSet<T>()
+}
+
+/**
+ * A HashSet owns its backing buffer: it moves and clones, never copies
+ * implicitly.
+ */
+
+@Since("0.1")
+impl Clone for HashSet {
+    func clone[self: Self&]() {
+        var copy = HashSet<T>()
+        for i in 0..<self.size {
+            copy.add(self.data[i])
+        }
+        return copy
+    }
+}
+
+impl HashSet<T> {
     @Experimental(since: "0.1")
-    @Serializable
-    pack HashSet<T> {
-        var data: T* = alloc T[8]
-        var size: Int = 0
-        var capacity: Int = 8
+    func growSet[self: Self!]() {
+        fin newCap = self.capacity * 2
+        let newData = alloc T[newCap]
+        for i in 0..<self.size {
+            newData[i] = self.data[i]
+        }
+        fin oldData = self.data
+        self.data = newData
+        self.capacity = newCap
+        purge oldData
     }
 
     @Experimental(since: "0.1")
-    func hashSetOf<T>(...elements: T): HashSet<T> {
+    func has[self: Self&](element: T): Bool {
+        for i in 0..<self.size {
+            if self.data[i] == element { return true }
+        }
+        return false
+    }
+}
+
+impl Set<T> for HashSet<T> {
+    prop size[self: Self&]: Int = self.size
+    prop isEmpty[self: Self&]: Bool = self.size == 0
+    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+
+    func get[self: Self&](index: Int): T {
+        assert index >= 0 { "Set index must be non-negative" }
+        assert index < self.size { "Set index out of bounds" }
+        return self.data[index]
+    }
+
+    func contains[self: Self&](element: T): Bool {
+        return self.has(element)
+    }
+
+    func forEach[self: Self&](action: (T) -> Unit) {
+        for i in 0..<self.size {
+            action(self.data[i])
+        }
+    }
+
+    func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
         var result = HashSet<T>()
-        for i in 0..<elements.size {
-            result.add(elements[i])
+        for i in 0..<self.size {
+            if predicate(self.data[i]) {
+                result.add(self.data[i])
+            }
         }
         return result
     }
 
-    @Experimental(since: "0.1")
-    func emptyHashSet<T>(): MutableSet<T> {
-        return HashSet<T>()
-    }
-
-    /**
-     * A HashSet owns its backing buffer: it moves and clones, never copies
-     * implicitly.
-     */
-
-    @Since("0.1")
-    impl Clone for HashSet {
-        func clone[self: Self&]() {
-            var copy = HashSet<T>()
-            for i in 0..<self.size {
-                copy.add(self.data[i])
-            }
-            return copy
-        }
-    }
-
-    impl HashSet<T> {
-        @Experimental(since: "0.1")
-        func growSet[self: Self!]() {
-            fin newCap = self.capacity * 2
-            let newData = alloc T[newCap]
-            for i in 0..<self.size {
-                newData[i] = self.data[i]
-            }
-            fin oldData = self.data
-            self.data = newData
-            self.capacity = newCap
-            purge oldData
-        }
-
-        @Experimental(since: "0.1")
-        func has[self: Self&](element: T): Bool {
-            for i in 0..<self.size {
-                if self.data[i] == element { return true }
-            }
-            return false
-        }
-    }
-
-    impl Set<T> for HashSet<T> {
-        prop size[self: Self&]: Int = self.size
-        prop isEmpty[self: Self&]: Bool = self.size == 0
-        prop isNotEmpty[self: Self&]: Bool = self.size > 0
-
-        func get[self: Self&](index: Int): T {
-            assert index >= 0 { "Set index must be non-negative" }
-            assert index < self.size { "Set index out of bounds" }
-            return self.data[index]
-        }
-
-        func contains[self: Self&](element: T): Bool {
-            return self.has(element)
-        }
-
-        func forEach[self: Self&](action: (T) -> Unit) {
-            for i in 0..<self.size {
-                action(self.data[i])
-            }
-        }
-
-        func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
-            var result = HashSet<T>()
-            for i in 0..<self.size {
-                if predicate(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
-
-        func any[self: Self&](predicate: (T) -> Bool): Bool {
-            for i in 0..<self.size {
-                if predicate(self.data[i]) { return true }
-            }
-            return false
-        }
-
-        func all[self: Self&](predicate: (T) -> Bool): Bool {
-            for i in 0..<self.size {
-                if !predicate(self.data[i]) { return false }
-            }
-            return true
-        }
-
-        func union[self: Self&](other: Set<T>): Set<T> {
-            var result = HashSet<T>()
-            for i in 0..<self.size {
-                result.add(self.data[i])
-            }
-            var j = 0
-            while j < other.size {
-                result.add(other.get(j))
-                j += 1
-            }
-            return result
-        }
-
-        func intersect[self: Self&](other: Set<T>): Set<T> {
-            var result = HashSet<T>()
-            for i in 0..<self.size {
-                if other.contains(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
-
-        func difference[self: Self&](other: Set<T>): Set<T> {
-            var result = HashSet<T>()
-            for i in 0..<self.size {
-                if !other.contains(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
-    }
-
-    impl MutableSet<T> for HashSet<T> {
-        func add[self: Self!](element: T): Bool {
-            if self.has(element) { return false }
-            if self.size >= self.capacity { self.growSet() }
-            self.data[self.size] = element
-            self.size = self.size + 1
-            return true
-        }
-
-        func remove[self: Self!](element: T): Bool {
-            var idx = -1
-            for i in 0..<self.size {
-                if self.data[i] == element { idx = i }
-            }
-            if idx < 0 { return false }
-            var j = idx
-            while j < self.size - 1 {
-                self.data[j] = self.data[j + 1]
-                j += 1
-            }
-            self.size = self.size - 1
-            return true
-        }
-
-        func clear[self: Self!]() {
-            fin oldData = self.data
-            self.data = alloc T[8]
-            self.size = 0
-            self.capacity = 8
-            purge oldData
-        }
-    }
-
-    @Experimental(since: "0.1")
-    oper[] [self: HashSet<T>&](index: Int): T {
-        assert index >= 0 && index < self.size {
-            "Set index out of bounds"
-        }
-        return self.data[index]
-    }
-
-    @Experimental(since: "0.1")
-    impl Into<String> for HashSet<T> {
-        prop into[self: Self&]: String {
-            var s = "{"
-            for i in 0..<self.size {
-                if i > 0 { s = s + ", " }
-                s += self.data[i] as String
-            }
-            return s + "}"
-        }
-    }
-
-    @Experimental(since: "0.1")
-    oper== [self: HashSet<T>&](rhs: Set<T>): Bool {
-        if self.size != rhs.size { return false }
+    func any[self: Self&](predicate: (T) -> Bool): Bool {
         for i in 0..<self.size {
-            if !rhs.contains(self.data[i]) { return false }
+            if predicate(self.data[i]) { return true }
+        }
+        return false
+    }
+
+    func all[self: Self&](predicate: (T) -> Bool): Bool {
+        for i in 0..<self.size {
+            if !predicate(self.data[i]) { return false }
         }
         return true
     }
 
+    func union[self: Self&](other: Set<T>): Set<T> {
+        var result = HashSet<T>()
+        for i in 0..<self.size {
+            result.add(self.data[i])
+        }
+        var j = 0
+        while j < other.size {
+            result.add(other.get(j))
+            j += 1
+        }
+        return result
+    }
+
+    func intersect[self: Self&](other: Set<T>): Set<T> {
+        var result = HashSet<T>()
+        for i in 0..<self.size {
+            if other.contains(self.data[i]) {
+                result.add(self.data[i])
+            }
+        }
+        return result
+    }
+
+    func difference[self: Self&](other: Set<T>): Set<T> {
+        var result = HashSet<T>()
+        for i in 0..<self.size {
+            if !other.contains(self.data[i]) {
+                result.add(self.data[i])
+            }
+        }
+        return result
+    }
+}
+
+impl MutableSet<T> for HashSet<T> {
+    func add[self: Self!](element: T): Bool {
+        if self.has(element) { return false }
+        if self.size >= self.capacity { self.growSet() }
+        self.data[self.size] = element
+        self.size = self.size + 1
+        return true
+    }
+
+    func remove[self: Self!](element: T): Bool {
+        var idx = -1
+        for i in 0..<self.size {
+            if self.data[i] == element { idx = i }
+        }
+        if idx < 0 { return false }
+        var j = idx
+        while j < self.size - 1 {
+            self.data[j] = self.data[j + 1]
+            j += 1
+        }
+        self.size = self.size - 1
+        return true
+    }
+
+    func clear[self: Self!]() {
+        fin oldData = self.data
+        self.data = alloc T[8]
+        self.size = 0
+        self.capacity = 8
+        purge oldData
+    }
+}
+
+@Experimental(since: "0.1")
+oper[] [self: HashSet<T>&](index: Int): T {
+    assert index >= 0 && index < self.size {
+        "Set index out of bounds"
+    }
+    return self.data[index]
+}
+
+@Experimental(since: "0.1")
+impl Into<String> for HashSet<T> {
+    prop into[self: Self&]: String {
+        var s = "{"
+        for i in 0..<self.size {
+            if i > 0 { s = s + ", " }
+            s += self.data[i] as String
+        }
+        return s + "}"
+    }
+}
+
+@Experimental(since: "0.1")
+oper== [self: HashSet<T>&](rhs: Set<T>): Bool {
+    if self.size != rhs.size { return false }
+    for i in 0..<self.size {
+        if !rhs.contains(self.data[i]) { return false }
+    }
+    return true
+}
+
+@Experimental(since: "0.1")
+oper!= [self: HashSet<T>&](rhs: Set<T>): Bool {
+    return !(self == rhs)
+}
+
+@Experimental(since: "0.1")
+impl HashSet<T> {
+    prop hash[self: Self&]: ULong {
+        var result = 0 as ULong
+        for i in 0..<self.size {
+            result = result + self.data[i].hash
+        }
+        return result
+    }
+}
+
+// --- TreeSet (sorted via oper<; T requires oper<) ---
+
+@Experimental(since: "0.1")
+@Serializable
+pack TreeSet<T> {
+    var data: T* = alloc T[8]
+    var size: Int = 0
+    var capacity: Int = 8
+}
+
+@Experimental(since: "0.1")
+func treeSetOf<T>(...elements: T): TreeSet<T> {
+    var result = TreeSet<T>()
+    for i in 0..<elements.size {
+        result.add(elements[i])
+    }
+    return result
+}
+
+impl TreeSet<T> {
     @Experimental(since: "0.1")
-    oper!= [self: HashSet<T>&](rhs: Set<T>): Bool {
-        return !(self == rhs)
+    func growSet[self: Self!]() {
+        fin newCap = self.capacity * 2
+        let newData = alloc T[newCap]
+        for i in 0..<self.size {
+            newData[i] = self.data[i]
+        }
+        fin oldData = self.data
+        self.data = newData
+        self.capacity = newCap
+        purge oldData
     }
 
     @Experimental(since: "0.1")
-    impl HashSet<T> {
-        prop hash[self: Self&]: ULong {
-            var result = 0 as ULong
-            for i in 0..<self.size {
-                result = result + self.data[i].hash
-            }
-            return result
+    func has[self: Self&](element: T): Bool {
+        for i in 0..<self.size {
+            if self.data[i] == element { return true }
+        }
+        return false
+    }
+}
+
+impl Set<T> for TreeSet<T> {
+    prop size[self: Self&]: Int = self.size
+    prop isEmpty[self: Self&]: Bool = self.size == 0
+    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+
+    func get[self: Self&](index: Int): T {
+        assert index >= 0 { "Set index must be non-negative" }
+        assert index < self.size { "Set index out of bounds" }
+        return self.data[index]
+    }
+
+    func contains[self: Self&](element: T): Bool {
+        return self.has(element)
+    }
+
+    func forEach[self: Self&](action: (T) -> Unit) {
+        for i in 0..<self.size {
+            action(self.data[i])
         }
     }
 
-    // --- TreeSet (sorted via oper<; T requires oper<) ---
-
-    @Experimental(since: "0.1")
-    @Serializable
-    pack TreeSet<T> {
-        var data: T* = alloc T[8]
-        var size: Int = 0
-        var capacity: Int = 8
-    }
-
-    @Experimental(since: "0.1")
-    func treeSetOf<T>(...elements: T): TreeSet<T> {
+    func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
         var result = TreeSet<T>()
-        for i in 0..<elements.size {
-            result.add(elements[i])
+        for i in 0..<self.size {
+            if predicate(self.data[i]) {
+                result.add(self.data[i])
+            }
         }
         return result
     }
 
-    @Experimental(since: "0.1")
-    func emptyTreeSet<T>(): MutableSet<T> {
-        return TreeSet<T>()
+    func any[self: Self&](predicate: (T) -> Bool): Bool {
+        for i in 0..<self.size {
+            if predicate(self.data[i]) { return true }
+        }
+        return false
     }
 
-    impl TreeSet<T> {
-        @Experimental(since: "0.1")
-        func growSet[self: Self!]() {
-            fin newCap = self.capacity * 2
-            let newData = alloc T[newCap]
-            for i in 0..<self.size {
-                newData[i] = self.data[i]
-            }
-            fin oldData = self.data
-            self.data = newData
-            self.capacity = newCap
-            purge oldData
+    func all[self: Self&](predicate: (T) -> Bool): Bool {
+        for i in 0..<self.size {
+            if !predicate(self.data[i]) { return false }
         }
-
-        @Experimental(since: "0.1")
-        func has[self: Self&](element: T): Bool {
-            for i in 0..<self.size {
-                if self.data[i] == element { return true }
-            }
-            return false
-        }
+        return true
     }
 
-    impl Set<T> for TreeSet<T> {
-        prop size[self: Self&]: Int = self.size
-        prop isEmpty[self: Self&]: Bool = self.size == 0
-        prop isNotEmpty[self: Self&]: Bool = self.size > 0
-
-        func get[self: Self&](index: Int): T {
-            assert index >= 0 { "Set index must be non-negative" }
-            assert index < self.size { "Set index out of bounds" }
-            return self.data[index]
+    func union[self: Self&](other: Set<T>): Set<T> {
+        var result = TreeSet<T>()
+        for i in 0..<self.size {
+            result.add(self.data[i])
         }
-
-        func contains[self: Self&](element: T): Bool {
-            return self.has(element)
+        var j = 0
+        while j < other.size {
+            result.add(other.get(j))
+            j += 1
         }
+        return result
+    }
 
-        func forEach[self: Self&](action: (T) -> Unit) {
-            for i in 0..<self.size {
-                action(self.data[i])
-            }
-        }
-
-        func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
-            var result = TreeSet<T>()
-            for i in 0..<self.size {
-                if predicate(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
-
-        func any[self: Self&](predicate: (T) -> Bool): Bool {
-            for i in 0..<self.size {
-                if predicate(self.data[i]) { return true }
-            }
-            return false
-        }
-
-        func all[self: Self&](predicate: (T) -> Bool): Bool {
-            for i in 0..<self.size {
-                if !predicate(self.data[i]) { return false }
-            }
-            return true
-        }
-
-        func union[self: Self&](other: Set<T>): Set<T> {
-            var result = TreeSet<T>()
-            for i in 0..<self.size {
+    func intersect[self: Self&](other: Set<T>): Set<T> {
+        var result = TreeSet<T>()
+        for i in 0..<self.size {
+            if other.contains(self.data[i]) {
                 result.add(self.data[i])
             }
-            var j = 0
-            while j < other.size {
-                result.add(other.get(j))
-                j += 1
-            }
-            return result
         }
-
-        func intersect[self: Self&](other: Set<T>): Set<T> {
-            var result = TreeSet<T>()
-            for i in 0..<self.size {
-                if other.contains(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
-
-        func difference[self: Self&](other: Set<T>): Set<T> {
-            var result = TreeSet<T>()
-            for i in 0..<self.size {
-                if !other.contains(self.data[i]) {
-                    result.add(self.data[i])
-                }
-            }
-            return result
-        }
+        return result
     }
 
-    impl MutableSet<T> for TreeSet<T> {
-        func add[self: Self!](element: T): Bool {
-            if self.has(element) { return false }
-            if self.size >= self.capacity { self.growSet() }
-            self.data[self.size] = element
-            self.size = self.size + 1
-            return true
-        }
-
-        func remove[self: Self!](element: T): Bool {
-            var idx = -1
-            for i in 0..<self.size {
-                if self.data[i] == element { idx = i }
-            }
-            if idx < 0 { return false }
-            var j = idx
-            while j < self.size - 1 {
-                self.data[j] = self.data[j + 1]
-                j += 1
-            }
-            self.size = self.size - 1
-            return true
-        }
-
-        func clear[self: Self!]() {
-            fin oldData = self.data
-            self.data = alloc T[8]
-            self.size = 0
-            self.capacity = 8
-            purge oldData
-        }
-    }
-
-    @Experimental(since: "0.1")
-    oper[] [self: TreeSet<T>&](index: Int): T {
-        assert index >= 0 && index < self.size {
-            "Set index out of bounds"
-        }
-        return self.data[index]
-    }
-
-    @Experimental(since: "0.1")
-    impl Into<String> for TreeSet<T> {
-        prop into[self: Self&]: String {
-            var s = "{"
-            for i in 0..<self.size {
-                if i > 0 { s = s + ", " }
-                s = s + self.data[i] as String
-            }
-            return s + "}"
-        }
-    }
-
-    @Experimental(since: "0.1")
-    oper== [self: TreeSet<T>&](rhs: Set<T>): Bool {
-        if self.size != rhs.size { return false }
+    func difference[self: Self&](other: Set<T>): Set<T> {
+        var result = TreeSet<T>()
         for i in 0..<self.size {
-            if !rhs.contains(self.data[i]) { return false }
+            if !other.contains(self.data[i]) {
+                result.add(self.data[i])
+            }
         }
+        return result
+    }
+}
+
+impl MutableSet<T> for TreeSet<T> {
+    func add[self: Self!](element: T): Bool {
+        if self.has(element) { return false }
+        if self.size >= self.capacity { self.growSet() }
+        self.data[self.size] = element
+        self.size = self.size + 1
         return true
     }
 
-    @Experimental(since: "0.1")
-    oper!= [self: TreeSet<T>&](rhs: Set<T>): Bool {
-        return !(self == rhs)
-    }
-
-    @Experimental(since: "0.1")
-    impl TreeSet<T> {
-        prop hash[self: Self&]: ULong {
-            var result = 0 as ULong
-            for i in 0..<self.size {
-                result = result + self.data[i].hash
-            }
-            return result
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    // Operators
-    // ---------------------------------------------------------------------
-
-    @Experimental(since: "0.1")
-    oper[] [self: LinkedHashSet<T>&](index: Int): T {
-        assert index >= 0 && index < self.size {
-            "Set index out of bounds"
-        }
-        return self.data[index]
-    }
-
-    @Experimental(since: "0.1")
-    impl Into<String> for LinkedHashSet<T> {
-        prop into[self: Self&]: String {
-            var s = "{"
-            for i in 0..<self.size {
-                if i > 0 { s = s + ", " }
-                s = s + self.data[i] as String
-            }
-            return s + "}"
-        }
-    }
-
-    @Experimental(since: "0.1")
-    oper== [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
-        if self.size != rhs.size { return false }
+    func remove[self: Self!](element: T): Bool {
+        var idx = -1
         for i in 0..<self.size {
-            if !rhs.contains(self.data[i]) { return false }
+            if self.data[i] == element { idx = i }
         }
+        if idx < 0 { return false }
+        var j = idx
+        while j < self.size - 1 {
+            self.data[j] = self.data[j + 1]
+            j += 1
+        }
+        self.size = self.size - 1
         return true
     }
 
-    @Experimental(since: "0.1")
-    oper!= [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
-        return !(self == rhs)
+    func clear[self: Self!]() {
+        fin oldData = self.data
+        self.data = alloc T[8]
+        self.size = 0
+        self.capacity = 8
+        purge oldData
     }
+}
 
-    @Experimental(since: "0.1")
-    impl LinkedHashSet<T> {
-        prop hash[self: Self&]: ULong {
-            var result = 0 as ULong
-            for i in 0..<self.size {
-                result = result + self.data[i].hash
-            }
-            return result
+@Experimental(since: "0.1")
+oper[] [self: TreeSet<T>&](index: Int): T {
+    assert index >= 0 && index < self.size {
+        "Set index out of bounds"
+    }
+    return self.data[index]
+}
+
+@Experimental(since: "0.1")
+impl Into<String> for TreeSet<T> {
+    prop into[self: Self&]: String {
+        var s = "{"
+        for i in 0..<self.size {
+            if i > 0 { s = s + ", " }
+            s = s + self.data[i] as String
         }
+        return s + "}"
+    }
+}
+
+@Experimental(since: "0.1")
+oper== [self: TreeSet<T>&](rhs: Set<T>): Bool {
+    if self.size != rhs.size { return false }
+    for i in 0..<self.size {
+        if !rhs.contains(self.data[i]) { return false }
+    }
+    return true
+}
+
+@Experimental(since: "0.1")
+oper!= [self: TreeSet<T>&](rhs: Set<T>): Bool {
+    return !(self == rhs)
+}
+
+@Experimental(since: "0.1")
+impl TreeSet<T> {
+    prop hash[self: Self&]: ULong {
+        var result = 0 as ULong
+        for i in 0..<self.size {
+            result = result + self.data[i].hash
+        }
+        return result
+    }
+}
+
+// ---------------------------------------------------------------------
+// Operators
+// ---------------------------------------------------------------------
+
+@Experimental(since: "0.1")
+oper[] [self: LinkedHashSet<T>&](index: Int): T {
+    assert index >= 0 && index < self.size {
+        "Set index out of bounds"
+    }
+    return self.data[index]
+}
+
+@Experimental(since: "0.1")
+impl Into<String> for LinkedHashSet<T> {
+    prop into[self: Self&]: String {
+        var s = "{"
+        for i in 0..<self.size {
+            if i > 0 { s = s + ", " }
+            s = s + self.data[i] as String
+        }
+        return s + "}"
+    }
+}
+
+@Experimental(since: "0.1")
+oper== [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
+    if self.size != rhs.size { return false }
+    for i in 0..<self.size {
+        if !rhs.contains(self.data[i]) { return false }
+    }
+    return true
+}
+
+@Experimental(since: "0.1")
+oper!= [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
+    return !(self == rhs)
+}
+
+@Experimental(since: "0.1")
+impl LinkedHashSet<T> {
+    prop hash[self: Self&]: ULong {
+        var result = 0 as ULong
+        for i in 0..<self.size {
+            result = result + self.data[i].hash
+        }
+        return result
     }
 }
 
 test "set starts empty" {
-    fin value = emptySet<Int>()
+    fin value: TreeSet<Int> = .()
     assert value.size == 0 && value.isEmpty { "emptySet must contain no values" }
 }
 

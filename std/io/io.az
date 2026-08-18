@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-module std.io
-
 /**
- * @file std/io/io
+ * @file std/io/io.az
  *
  * Standard I/O formatting utilities.
  *
@@ -26,6 +24,7 @@ module std.io
  *
  * @since 0.1
  */
+module std.io
 
 factory Format {
     /** A newline character. */

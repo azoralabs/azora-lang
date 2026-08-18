@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-module std.parallelism.thread
-
 /**
- * @file std/parallelism/thread
+ * @file std/parallelism/thread.az
  *
  * Thread and scheduling utilities.
  *
@@ -26,39 +24,38 @@ module std.parallelism.thread
  *
  * @since 0.1
  */
+module std.parallelism.thread
 
-realm std {
-    /**
-     * Suspends the current task for the given number of milliseconds.
-     *
-     * @param ms The delay in milliseconds.
-     */
-    @Experimental(since: "0.1")
-    async func sleep<T>(ms: T) {
-        delay ms
-    }
+/**
+ * Suspends the current task for the given number of milliseconds.
+ *
+ * @param ms The delay in milliseconds.
+ */
+@Experimental(since: "0.1")
+async func sleep<T>(ms: T) {
+    delay ms
+}
 
-    /**
-     * Spawns a new concurrent task that runs the given action.
-     *
-     * @param ms A scheduling hint in milliseconds (pass 0 for immediate).
-     * @param action The function to execute.
-     */
-    @Experimental(since: "0.1")
-    async func spawnAsync<T>(ms: T, action: () -> Unit) {
-        fin handle = async { action() }
-        delay ms
-        await(handle)
-    }
+/**
+ * Spawns a new concurrent task that runs the given action.
+ *
+ * @param ms A scheduling hint in milliseconds (pass 0 for immediate).
+ * @param action The function to execute.
+ */
+@Experimental(since: "0.1")
+async func spawnAsync<T>(ms: T, action: () -> Unit) {
+    fin handle = async { action() }
+    delay ms
+    await handle
+}
 
-    /**
-     * Suspends the current task for the given number of milliseconds.
-     * Useful for waiting on concurrent operations.
-     *
-     * @param count The delay in milliseconds.
-     */
-    @Experimental(since: "0.1")
-    async func joinAll<T>(count: T) {
-        delay count
-    }
+/**
+ * Suspends the current task for the given number of milliseconds.
+ * Useful for waiting on concurrent operations.
+ *
+ * @param count The delay in milliseconds.
+ */
+@Experimental(since: "0.1")
+async func joinAll<T>(count: T) {
+    delay count
 }

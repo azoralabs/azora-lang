@@ -16,8 +16,6 @@
 
 module std.error
 
-realm std {
-    variant error IndexError {
-        OutOfBounds(index: Int, size: Int)
-    }
+variant error IndexError {
+    OutOfBounds(index: Int, size: Int)
 }

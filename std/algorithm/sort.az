@@ -33,7 +33,7 @@
  */
 module std.algorithm.sort
 
-import std.container.array
+import std.container.array.*
 
 /**
  * Sorts an array in ascending order.

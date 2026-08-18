@@ -14,15 +14,8 @@
  * limitations under the License.
  */
 
-module std.container.tuple
-
-import std.serializer
-import std.convert
-import std.traits
-import std.reflection
-
 /**
- * @file std/container/tuple
+ * @file std/container/tuple.az
  *
  * Fixed-size heterogeneous container.
  *
@@ -31,75 +24,76 @@ import std.reflection
  *
  * @since 0.1
  */
+exposed module std.container.tuple
 
-realm std {
+import std.[
+    serializer.Serializable
+    traits.PrettyPrint
+    reflection.reflect
+]
+
+/**
+ * A fixed-size, ordered collection of heterogeneous values.
+ *
+ * Each element is accessible by its zero-based positional index.
+ * Tuples require at least two elements.
+ *
+ * @generic T Variadic type parameter pack for the element types.
+ */
+@Experimental(since: "0.1")
+@EnforceNumFields
+@Serializable
+pack Tuple<...T> where (...T).size >= 2 {
+    inline for Ty in ...T with index {
+        inline "$index: $Ty"
+    }
+}
+
+impl PrettyPrint for Tuple<...T> {
     /**
-     * A fixed-size, ordered collection of heterogeneous values.
+     * Returns the tuple's source-style representation.
      *
-     * Each element is accessible by its zero-based positional index.
-     * Tuples require at least two elements.
+     * Element order and concrete element types are preserved, including for
+     * heterogeneous and nested tuples.
      *
-     * @generic T Variadic type parameter pack for the element types.
+     * @return This tuple formatted as `(fields...)`.
      */
     @Experimental(since: "0.1")
-    @EnforceNumFields
-    @Serializable
-    pack Tuple<...T> where (...T).size >= 2 {
-        inline for Ty in ...T with index {
-            inline "$index: $Ty"
-        }
-    }
-
-    impl PrettyPrint for Tuple<...T> {
-        /**
-         * Returns the tuple's source-style representation.
-         *
-         * Element order and concrete element types are preserved, including for
-         * heterogeneous and nested tuples.
-         *
-         * @return This tuple formatted as `(fields...)`.
-         */
-        @Experimental(since: "0.1")
-        prop pretty[self: Self&]: String {
-            var res = "("
-            inline for field in reflect<Self>.fields with index {
-                if index > 0 {
-                    res += ", "
-                }
-                res += field.value as String
+    prop pretty[self: Self&]: String {
+        var res = "("
+        inline for field in reflect<Self>.fields with index {
+            if index > 0 {
+                res += ", "
             }
-            res += ")"
-            return res
+            res += field.value as String
         }
-    }
-
-    /**
-     * Creates a tuple from two or more values.
-     *
-     * The returned tuple preserves the order and static type of every argument.
-     * Each value can be read with positional access (`tuple.0`, `tuple.1`, ...).
-     *
-     * @generic T Variadic type parameter pack inferred from the provided elements.
-     * @param elements Values to store in the tuple.
-     * @return A Tuple whose element types match the provided values.
-     */
-    @Experimental(since: "0.1")
-    func tupleOf<...T>(...elements: ...T): Tuple<...T>
-    where (...T).size >= 2 {
-        return Tuple(elements)
+        res += ")"
+        return res
     }
 }
 
-realm std {
-    /**
-     * Builds a structural [Tuple].
-     *
-     * @0 `@tup(1, "two", 3.0)` expands to `tupleOf(1, "two", 3.0)`.
-     */
-    macro @tup {
-        [...$items] => tupleOf(...$items)
-    }
+/**
+ * Creates a tuple from two or more values.
+ *
+ * The returned tuple preserves the order and static type of every argument.
+ * Each value can be read with positional access (`tuple.0`, `tuple.1`, ...).
+ *
+ * @generic T Variadic type parameter pack inferred from the provided elements.
+ * @param elements Values to store in the tuple.
+ * @return A Tuple whose element types match the provided values.
+ */
+@Experimental(since: "0.1")
+func tupleOf<...T>(...elements: ...T): Tuple<...T>
+where (...T).size >= 2 {
+    return Tuple(elements)
 }
+
+/**
+ * Builds a structural [Tuple].
+ *
+ * @0 `@tup(1, "two", 3.0)` expands to `tupleOf(1, "two", 3.0)`.
+ */
+macro @tup [...$items] => tupleOf(...$items)
 
 test "tupleOf preserves heterogeneous values" {
     fin value = tupleOf(1, "two", 3.0)

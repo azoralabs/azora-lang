@@ -40,7 +40,7 @@ import org.azora.lang.frontend.TypeRef
  * ```azora
  * impl Vec2 {
  *     prop __displayString[self: Self&]: String {
- *         var formatter = std::Formatter()
+ *         var formatter = Formatter()
  *         self.display(formatter)
  *         return formatter.rendered
  *     }
@@ -80,11 +80,11 @@ object DisplayDeriver {
         val line = pack.line
         val formatter = Expr.Identifier("__formatter", line, 0, 11)
         val body = listOf(
-            // `var __formatter = std::Formatter()`
+            // `var __formatter = Formatter()`
             Stmt.VarDecl(
                 "__formatter",
                 TypeAnnotation.Explicit(TypeRef.Named("Formatter")),
-                Expr.Call("std__Formatter", emptyList(), line, 0),
+                Expr.Call("Formatter", emptyList(), line, 0),
                 line,
                 0,
             ),

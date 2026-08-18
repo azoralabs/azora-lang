@@ -1614,11 +1614,11 @@ class IrInterpreter {
             debugHost?.onLine(((args.firstOrNull() as? Long) ?: 0L).toInt(), snapshotLocals())
             return null
         }
-        if (expr.name == "__std_print" || expr.name == "__std_println") {
+        if (expr.name.isIntrinsic("print") || expr.name.isIntrinsic("println")) {
             val value = args.firstOrNull()
             val text = formatValue(value)
             azSync(output) {
-                if (expr.name == "__std_println") output.appendLine(text) else output.append(text)
+                if (expr.name.isIntrinsic("println")) output.appendLine(text) else output.append(text)
             }
             outputListener?.invoke(text)
             return null
@@ -1627,7 +1627,7 @@ class IrInterpreter {
             // Unrecoverable runtime abort.
             throw AzoraPanicException(formatValue(args.firstOrNull()))
         }
-        if (expr.name == "__std_convert_toString") {
+        if (expr.name.isIntrinsic("toString")) {
             return formatValue(args.firstOrNull())
         }
 
@@ -1725,7 +1725,7 @@ class IrInterpreter {
         }
         if (expr.name.isIntrinsic("isAlpha")) return (args[0] as Char).isLetter()
         // `Array::fill<T>(count)` - allocate `count` default (null) slots.
-        if (expr.name == "__std_Array_fill") {
+        if (expr.name.isIntrinsic("Array_fill")) {
             val count = (args[0] as Number).toInt()
             return MutableList<Any?>(count) { null }
         }
@@ -1734,7 +1734,7 @@ class IrInterpreter {
             val scope = coroutineScope ?: error("async used outside of the interpreter's structured scope")
             return TaskHandle(scope.async(context = childState()) { invokeClosure(thunk) })
         }
-        if (expr.name == "__std_concurrency_cancel") {
+        if (expr.name.isIntrinsic("concurrency_cancel")) {
             (args.firstOrNull() as? TaskHandle)?.deferred?.cancel()
             return null
         }

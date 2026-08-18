@@ -15,73 +15,73 @@ class SmallBatchTest {
     }
 
     @Test fun bitwiseAnd() {
-        assertEquals("10", run("import std.io\nfunc main() { std::println(0b1110 & 0b1010) }"))
+        assertEquals("10", run("import std.io\nfunc main() { println(0b1110 & 0b1010) }"))
     }
 
     @Test fun bitwiseOr() {
-        assertEquals("14", run("import std.io\nfunc main() { std::println(0b1000 | 0b0110) }"))
+        assertEquals("14", run("import std.io\nfunc main() { println(0b1000 | 0b0110) }"))
     }
 
     @Test fun bitwiseXor() {
-        assertEquals("6", run("import std.io\nfunc main() { std::println(0b1100 ^ 0b1010) }"))
+        assertEquals("6", run("import std.io\nfunc main() { println(0b1100 ^ 0b1010) }"))
     }
 
     @Test fun bitwiseNot() {
-        assertEquals("-11", run("import std.io\nfunc main() { std::println(~10) }"))
+        assertEquals("-11", run("import std.io\nfunc main() { println(~10) }"))
     }
 
     @Test fun shiftLeft() {
-        assertEquals("20", run("import std.io\nfunc main() { std::println(5 << 2) }"))
+        assertEquals("20", run("import std.io\nfunc main() { println(5 << 2) }"))
     }
 
     @Test fun shiftRight() {
-        assertEquals("2", run("import std.io\nfunc main() { std::println(10 >> 2) }"))
+        assertEquals("2", run("import std.io\nfunc main() { println(10 >> 2) }"))
     }
 
     @Test fun increment() {
-        assertEquals("6", run("import std.io\nfunc main() { var x = 5\n x++\n std::println(x) }"))
+        assertEquals("6", run("import std.io\nfunc main() { var x = 5\n x++\n println(x) }"))
     }
 
     @Test fun decrement() {
-        assertEquals("4", run("import std.io\nfunc main() { var x = 5\n x--\n std::println(x) }"))
+        assertEquals("4", run("import std.io\nfunc main() { var x = 5\n x--\n println(x) }"))
     }
 
     @Test fun integerPromotion() {
-        assertEquals("3.5", run("import std.io\nfunc main() { std::println(2 + 1.5) }"))
+        assertEquals("3.5", run("import std.io\nfunc main() { println(2 + 1.5) }"))
     }
 
     @Test fun integerPromotionMixed() {
-        assertEquals("10", run("import std.io\nfunc main() { std::println(5L + 5) }"))
+        assertEquals("10", run("import std.io\nfunc main() { println(5L + 5) }"))
     }
 
     @Test fun earlyReturnCondition() {
         assertEquals("ok", run("""
             import std.io
-            func check(x: std::Int): std::String {
+            func check(x: Int): String {
                 if !(x > 0) {
                     return "bad"
                 }
                 return "ok"
             }
-            func main() { std::println(check(5)) }
+            func main() { println(check(5)) }
         """.trimIndent()))
     }
 
     @Test fun earlyReturnConditionTaken() {
         assertEquals("bad", run("""
             import std.io
-            func check(x: std::Int): std::String {
+            func check(x: Int): String {
                 if !(x > 0) {
                     return "bad"
                 }
                 return "ok"
             }
-            func main() { std::println(check(-1)) }
+            func main() { println(check(-1)) }
         """.trimIndent()))
     }
 
     @Test fun bitwiseInExpression() {
         // (1 | 2) & 7 = 3 & 7 = 3
-        assertEquals("3", run("import std.io\nfunc main() { std::println((1 | 2) & 7) }"))
+        assertEquals("3", run("import std.io\nfunc main() { println((1 | 2) & 7) }"))
     }
 }

@@ -66,7 +66,7 @@ class ReadmeSnippetTest {
         ),
         "impl Arithmetic for Matrix" to Context(
             prelude = "import std.traits\nimport std.container.array\n" +
-                "pack Matrix {\n    var data: std::Array<Int, 4>\n}\n",
+                "pack Matrix {\n    var data: Array<Int, 4>\n}\n",
         ),
         "impl Display for Point" to Context(
             prelude = "pack Point {\n    var x: Int\n    var y: Int\n}\n",

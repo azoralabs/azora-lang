@@ -13,7 +13,7 @@ import kotlin.test.assertEquals
  *
  * These tests check that claim rather than asserting it. Every program here is
  * ordinary user code: it imports `std.serializer` and reaches everything it
- * needs through the `std::` qualifier, exactly as a third-party library would.
+ * needs through the `` qualifier, exactly as a third-party library would.
  * If the derive machinery were reachable only from inside `std`, dropping JSON
  * would have removed a capability instead of relocating it.
  */
@@ -39,33 +39,33 @@ class ThirdPartyFormatTest {
             import std.serializer
 
             pack Point {
-                fin x: std::Int = 0
-                fin y: std::Int = 0
+                fin x: Int = 0
+                fin y: Int = 0
             }
 
             pack PointSerializer
 
-            impl std::Serializer<Point> for PointSerializer {
-                func toSerialValue[self: std::Self&](value: Point&): std::SerialValue ?! std::SerializationError {
-                    var fields = std::ArrayList<std::SerialField>()
-                    fields.add(std::SerialField("x", try std::serialNumber(std::convert::toString(value.x))))
-                    fields.add(std::SerialField("y", try std::serialNumber(std::convert::toString(value.y))))
-                    return std::SerialValue.Object(fields)
+            impl Serializer<Point> for PointSerializer {
+                func toSerialValue[self: Self&](value: Point&): SerialValue ?! SerializationError {
+                    var fields = ArrayList<SerialField>()
+                    fields.add(SerialField("x", try serialNumber(convert::toString(value.x))))
+                    fields.add(SerialField("y", try serialNumber(convert::toString(value.y))))
+                    return SerialValue.Object(fields)
                 }
 
-                func fromSerialValue[self: std::Self&](value: std::SerialValue&): Point ?! std::SerializationError {
-                    fin x = try std::serialAsInt(try std::serialField(value, "x"))
-                    fin y = try std::serialAsInt(try std::serialField(value, "y"))
+                func fromSerialValue[self: Self&](value: SerialValue&): Point ?! SerializationError {
+                    fin x = try serialAsInt(try serialField(value, "x"))
+                    fin y = try serialAsInt(try serialField(value, "y"))
                     return Point(x, y)
                 }
             }
 
             func main() {
                 fin codec = PointSerializer()
-                fin tree = codec.toSerialValue(Point(3, 4)) catch std::SerialValue.Null
-                std::println(std::encodeSerialValue(tree, std::serializerOptions()) catch "err")
+                fin tree = codec.toSerialValue(Point(3, 4)) catch SerialValue.Null
+                println(encodeSerialValue(tree, serializerOptions()) catch "err")
                 fin back = codec.fromSerialValue(tree) catch Point(0, 0)
-                std::println(back.x + back.y)
+                println(back.x + back.y)
             }
             """.trimIndent(),
         )
@@ -84,18 +84,18 @@ class ThirdPartyFormatTest {
             import std.io
             import std.serializer
 
-            @std::Serializable
+            @Serializable
             pack Session {
-                fin user: std::String = ""
-                fin attempts: std::Int = 0
+                fin user: String = ""
+                fin attempts: Int = 0
             }
 
             pack Kv
 
             impl Kv {
-                func encode[self: std::Self&](value: std::SerialValue&): std::String ?! std::SerializationError {
+                func encode[self: Self&](value: SerialValue&): String ?! SerializationError {
                     when value {
-                        std::SerialValue.Object(fields) -> {
+                        SerialValue.Object(fields) -> {
                             var text = ""
                             for i in 0..<fields.size {
                                 fin field = fields[i]
@@ -107,25 +107,25 @@ class ThirdPartyFormatTest {
                     }
                 }
 
-                func scalar[self: std::Self&](value: std::SerialValue&): std::String ?! std::SerializationError {
+                func scalar[self: Self&](value: SerialValue&): String ?! SerializationError {
                     when value {
-                        std::SerialValue.Text(t) -> { return t }
-                        std::SerialValue.Number(n) -> { return n }
+                        SerialValue.Text(t) -> { return t }
+                        SerialValue.Number(n) -> { return n }
                         else -> { return .UnexpectedType }
                     }
                 }
 
                 /** Reads `key=value` lines back into the format-independent tree. */
-                func decode[self: std::Self&](input: std::String): std::SerialValue ?! std::SerializationError {
-                    var fields = std::ArrayList<std::SerialField>()
+                func decode[self: Self&](input: String): SerialValue ?! SerializationError {
+                    var fields = ArrayList<SerialField>()
                     var name = ""
                     var raw = ""
                     var onValue = false
-                    for i in 0..<std::stringLength(input) {
-                        fin c = std::charAt(input, i)
+                    for i in 0..<stringLength(input) {
+                        fin c = charAt(input, i)
                         if c == '\n' {
                             if !onValue { return .InvalidSyntax }
-                            fields.add(std::SerialField(name, self.node(raw)))
+                            fields.add(SerialField(name, self.node(raw)))
                             name = ""
                             raw = ""
                             onValue = false
@@ -137,16 +137,16 @@ class ThirdPartyFormatTest {
                             name = name + c
                         }
                     }
-                    return std::SerialValue.Object(fields)
+                    return SerialValue.Object(fields)
                 }
 
                 /** Digits are a number node; anything else is text. */
-                func node[self: std::Self&](raw: std::String): std::SerialValue {
-                    if std::stringLength(raw) == 0 { return std::SerialValue.Text(raw) }
-                    for i in 0..<std::stringLength(raw) {
-                        if !isDigit(std::charAt(raw, i)) { return std::SerialValue.Text(raw) }
+                func node[self: Self&](raw: String): SerialValue {
+                    if stringLength(raw) == 0 { return SerialValue.Text(raw) }
+                    for i in 0..<stringLength(raw) {
+                        if !isDigit(charAt(raw, i)) { return SerialValue.Text(raw) }
                     }
-                    return std::SerialValue.Number(raw)
+                    return SerialValue.Number(raw)
                 }
             }
 
@@ -154,14 +154,14 @@ class ThirdPartyFormatTest {
                 fin session = Session("ada", 3)
                 fin kv = Kv()
 
-                fin tree = session.toSerialValue(session) catch std::SerialValue.Null
+                fin tree = session.toSerialValue(session) catch SerialValue.Null
                 fin text = kv.encode(tree) catch "err"
-                std::print(text)
+                print(text)
 
-                fin decoded = kv.decode(text) catch std::SerialValue.Null
+                fin decoded = kv.decode(text) catch SerialValue.Null
                 fin back = session.fromSerialValue(decoded) catch Session("", 0)
-                std::println(back.user)
-                std::println(back.attempts)
+                println(back.user)
+                println(back.attempts)
             }
             """.trimIndent(),
         )
@@ -180,29 +180,29 @@ class ThirdPartyFormatTest {
             import std.io
             import std.serializer
 
-            @std::Serializable(ignoreUnknownFields: true)
+            @Serializable(ignoreUnknownFields: true)
             pack Account {
-                @std::SerialName("display_name")
-                fin name: std::String = ""
+                @SerialName("display_name")
+                fin name: String = ""
 
-                @std::SerialIgnore
-                fin token: std::String = "unset"
+                @SerialIgnore
+                fin token: String = "unset"
 
-                fin logins: std::Int = 0
+                fin logins: Int = 0
             }
 
             pack Kv
 
             impl Kv {
-                func encode[self: std::Self&](value: std::SerialValue&): std::String ?! std::SerializationError {
+                func encode[self: Self&](value: SerialValue&): String ?! SerializationError {
                     when value {
-                        std::SerialValue.Object(fields) -> {
+                        SerialValue.Object(fields) -> {
                             var text = ""
                             for i in 0..<fields.size {
                                 fin field = fields[i]
                                 when field.value {
-                                    std::SerialValue.Text(t) -> { text = text + field.name + "=" + t + ";" }
-                                    std::SerialValue.Number(n) -> { text = text + field.name + "=" + n + ";" }
+                                    SerialValue.Text(t) -> { text = text + field.name + "=" + t + ";" }
+                                    SerialValue.Number(n) -> { text = text + field.name + "=" + n + ";" }
                                     else -> { return .UnexpectedType }
                                 }
                             }
@@ -215,13 +215,13 @@ class ThirdPartyFormatTest {
 
             func main() {
                 fin account = Account("Ada", "s3cret", 7)
-                fin tree = account.toSerialValue(account) catch std::SerialValue.Null
-                std::println(Kv().encode(tree) catch "err")
+                fin tree = account.toSerialValue(account) catch SerialValue.Null
+                println(Kv().encode(tree) catch "err")
 
                 // The ignored field is absent from the tree, so reading back
                 // restores its declared default rather than the written value.
                 fin back = account.fromSerialValue(tree) catch Account("", "", 0)
-                std::println(back.token)
+                println(back.token)
             }
             """.trimIndent(),
         )

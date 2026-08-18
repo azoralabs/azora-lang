@@ -22,7 +22,7 @@ class PlaygroundExamplesTest {
 
     @Test fun hello() = assertEquals("Hello, world!", run("""module playground
 import std.io
-func main() { std::println("Hello, world!") }"""))
+func main() { println("Hello, world!") }"""))
 
     @Test fun variables() = assertEquals("Hello, Azora!" + "\n" + "count is 6", run(
         $$"""module playground
@@ -33,22 +33,22 @@ func main() {
     count += 5
     fin name = "Azora"
     let greeting = "Hello, ${name}!"
-    std::println(greeting)
-    std::println("count is ${count}")
+    println(greeting)
+    println("count is ${count}")
 }"""
     ))
 
     @Test fun functions() = assertEquals("7" + "\n" + "120", run(
         $$"""module playground
 import std.io
-func add(a: std::Int, b: std::Int): std::Int { return a + b }
-func factorial(n: std::Int): std::Int {
+func add(a: Int, b: Int): Int { return a + b }
+func factorial(n: Int): Int {
     if n <= 1 { return 1 }
     return n * factorial(n - 1)
 }
 func main() {
-    std::println("${add(3, 4)}")
-    std::println("${factorial(5)}")
+    println("${add(3, 4)}")
+    println("${factorial(5)}")
 }"""
     ))
 
@@ -58,19 +58,19 @@ import std.io
 func main() {
     var sum = 0
     for i in 1..10 { sum += i }
-    std::println("sum 1..10 = ${sum}")
+    println("sum 1..10 = ${sum}")
     var i = 0
     loop {
         i += 1
         if i == 7 { break }
     }
-    std::println("stopped at ${i}")
+    println("stopped at ${i}")
     var evens = 0
     for n in 0..<10 {
         if n % 2 != 0 { continue }
         evens += 1
     }
-    std::println("even count = ${evens}")
+    println("even count = ${evens}")
 }"""
     ))
 
@@ -78,16 +78,16 @@ func main() {
         $$"""module playground
 import std.io
 func main() {
-    var nums = @std::arr[10, 20, 30]
-    std::println(nums[0])
-    std::println(nums.size)
+    var nums = @arr[10, 20, 30]
+    println(nums[0])
+    println(nums.size)
     nums.add(40)
     nums[0] = 99
-    std::println(nums.size)
-    std::println(nums[0])
+    println(nums.size)
+    println(nums[0])
     var total = 0
     for i in 0..<nums.size { total += nums[i] }
-    std::println("total = ${total}")
+    println("total = ${total}")
 }"""
     ))
 
@@ -97,10 +97,10 @@ import std.io
 func main() {
     var name = "Azora"
     var n = 3
-    std::println("Hello, $name!")
-    std::println("${n} x ${n} = ${n * n}")
-    std::println("ab" * 3)
-    std::println("length is ${name.size}")
+    println("Hello, $name!")
+    println("${n} x ${n} = ${n * n}")
+    println("ab" * 3)
+    println("length is ${name.size}")
 }"""
     ))
 
@@ -108,17 +108,17 @@ func main() {
         $$"""module playground
 import std.io
 pack Point {
-    var x: std::Int
-    var y: std::Int
+    var x: Int
+    var y: Int
 }
 func main() {
     var p = Point(3, 4)
-    std::println("${p.x}, ${p.y}")
+    println("${p.x}, ${p.y}")
     p.x = 10
     p.y += 1
-    std::println("${p.x}, ${p.y}")
-    var points = @std::arr[Point(1, 1), Point(2, 2), Point(3, 3)]
-    std::println("last = ${points[2].x}, ${points[2].y}")
+    println("${p.x}, ${p.y}")
+    var points = @arr[Point(1, 1), Point(2, 2), Point(3, 3)]
+    println("last = ${points[2].x}, ${points[2].y}")
 }"""
     ))
 
@@ -129,12 +129,12 @@ func main() {
     var n = 10
     n += 5
     n *= 2
-    std::println(n)
-    std::println(17 / 5)
-    std::println(17 % 5)
+    println(n)
+    println(17 / 5)
+    println(17 % 5)
     var sum = 0
     for i in 1..<5 { sum += i }
-    std::println("sum 1..<5 = ${sum}")
+    println("sum 1..<5 = ${sum}")
 }"""
     ))
 
@@ -145,36 +145,36 @@ func main() {
     var x = 1
     scope {
         var x = 2
-        std::println("inner ${x}")
-        std::println("outer ${::x}")
+        println("inner ${x}")
+        println("outer ${::x}")
     }
-    std::println("after ${x}")
+    println("after ${x}")
 }"""
     ))
 
     @Test fun ctce() = assertEquals("size: 8" + "\n" + "squared: 25", run(
         $$"""module playground
 import std.io
-inline func square(x: std::Int): std::Int { return x * x }
+inline func square(x: Int): Int { return x * x }
 func main() {
     inline fin SIZE = 8
-    std::println("size: ${SIZE}")
-    std::println("squared: ${square(5)}")
+    println("size: ${SIZE}")
+    println("squared: ${square(5)}")
 }"""
     ))
 
     @Test fun testing() = assertEquals("running tests...", run("""module playground
 import std.io
-func factorial(n: std::Int): std::Int {
+func factorial(n: Int): Int {
     if n <= 1 { return 1 }
     return n * factorial(n - 1)
 }
 test "factorial of 5 is 120" { assert factorial(5) == 120 { "5! should be 120" } }
 test "factorial of 0 is 1" { assert factorial(0) == 1 { "0! should be 1" } }
-func main() { std::println("running tests...") }"""))
+func main() { println("running tests...") }"""))
 
     @Test fun codegenWorks() {
-        val r = Compiler().compile("import std.io\nfunc main() { std::println(42) }", release = false)
+        val r = Compiler().compile("import std.io\nfunc main() { println(42) }", release = false)
         assertIs<CompilationResult.Success>(r)
         assertTrue("ret" in r.llvm || "puts" in r.llvm, r.llvm)
     }
@@ -186,20 +186,20 @@ import std.io
 func main() {
     var scores = ["alice": 90, "bob": 75]
     scores["carol"] = 88
-    std::println(scores["alice"])
-    std::println(scores["bob"])
+    println(scores["alice"])
+    println(scores["bob"])
     scores["bob"] = 80
-    std::println(scores["bob"])
+    println(scores["bob"])
 }"""))
 
     @Test fun taggedUnions() = assertEquals("75\n24\n0", run("""module playground
 import std.io
 variant enum Shape {
-    Circle(std::Int)
-    Rect(std::Int, std::Int)
+    Circle(Int)
+    Rect(Int, Int)
     Empty
 }
-func area(s: Shape): std::Int {
+func area(s: Shape): Int {
     when s {
         Shape.Circle(r) -> { return r * r * 3 }
         Shape.Rect(w, h) -> { return w * h }
@@ -207,58 +207,58 @@ func area(s: Shape): std::Int {
     }
 }
 func main() {
-    std::println(area(Shape.Circle(5)))
-    std::println(area(Shape.Rect(4, 6)))
-    std::println(area(Shape.Empty))
+    println(area(Shape.Circle(5)))
+    println(area(Shape.Rect(4, 6)))
+    println(area(Shape.Empty))
 }"""))
 
     @Test fun generators() = assertEquals("30", run("""module playground
 import std.io
 import std.concurrency.generators
-func squares(n: std::Int): std::Sequence<std::Int> = std::sequence<std::Int> [s: std::SequenceScope<std::Int>!; n.&] {
+func squares(n: Int): Sequence<Int> = sequence<Int> [s: SequenceScope<Int>!; n.&] {
     for i in 0..<n { yield(i * i) }
 }
 func main() {
     var sum = 0
     squares(5).collect [; sum.!] { x -> sum += x }
-    std::println(sum)
+    println(sum)
 }"""))
 
     @Test fun dependencyInjection() = assertEquals("1\n2", run("""module playground
 import std.io
 solo pack Counter {
-    var n: std::Int = 0
+    var n: Int = 0
 }
 impl Counter {
-    func inc[self: std::Self!](): std::Int {
+    func inc[self: Self!](): Int {
         self.n = self.n + 1
         return self.n
     }
 }
 func main() {
-    std::println(inject Counter.inc())
-    std::println(inject Counter.inc())
+    println(inject Counter.inc())
+    println(inject Counter.inc())
 }"""))
 
     @Test fun pointers() = assertEquals("10\n20\n99", run("""module playground
 import std.io
 func main() {
-    var p: std::Int^ = alloc^ @std::arr[10, 20, 30]
-    std::println(*p)
-    std::println(*(p + 1))
+    var p: Int^ = alloc^ @arr[10, 20, 30]
+    println(*p)
+    println(*(p + 1))
     *(p + 2) = 99
-    std::println(*(p + 2))
+    println(*(p + 2))
 }"""))
 
     @Test fun variadic() = assertEquals("6\n100", run("""module playground
 import std.io
-func sumAll<...T>(first: std::Int, rest: ...T): std::Int {
+func sumAll<...T>(first: Int, rest: ...T): Int {
     var total = first
     for x in rest { total = total + x }
     return total
 }
 func main() {
-    std::println(sumAll(1, 2, 3))
-    std::println(sumAll(10, 20, 30, 40))
+    println(sumAll(1, 2, 3))
+    println(sumAll(10, 20, 30, 40))
 }"""))
 }

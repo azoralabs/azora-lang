@@ -10,13 +10,13 @@ import kotlin.test.assertTrue
 
 /**
  * A type declared inside a realm keeps its bare name and is reached from
- * outside as `Realm::Type`. Functions are realm-mangled, so `std::println`
+ * outside as `Realm::Type`. Functions are realm-mangled, so `println`
  * arrives as `std__println` and resolves directly; types are not, so every
  * place that reads a qualified name has to map it back to the declaration.
  *
  * These are the positions where that used to fail. Each one blocked writing a
  * `Serializer<T>` outside the standard library, and each is a general hole:
- * `std::Compare.Less` was unspellable for the same reason.
+ * `Compare.Less` was unspellable for the same reason.
  */
 class RealmQualifiedAccessTest {
 
@@ -32,13 +32,13 @@ class RealmQualifiedAccessTest {
         val result = Compiler().compile(
             """
             import std.reflection
-            inline fin visible = reflect<std::Int>.hasAnnot<std::Experimental>
+            inline fin visible = reflect<Int>.hasAnnot<Experimental>
             func main() {}
             """.trimIndent(),
         )
         assertIs<CompilationResult.Failure>(result)
         assertTrue(
-            result.errors.any { "std::reflect" in it },
+            result.errors.any { "reflect" in it },
             "Bare reflect must point to its realm-qualified spelling: ${result.errors}",
         )
     }
@@ -51,10 +51,10 @@ class RealmQualifiedAccessTest {
                 import std.io
                 import std.traits
                 func main() {
-                    fin ordering = std::Compare.Less
+                    fin ordering = Compare.Less
                     when ordering {
-                        std::Compare.Less -> { std::println("less") }
-                        else -> { std::println("other") }
+                        Compare.Less -> { println("less") }
+                        else -> { println("other") }
                     }
                 }
                 """.trimIndent(),
@@ -68,12 +68,12 @@ class RealmQualifiedAccessTest {
             run(
                 """
                 import std.io
-                realm shapes { variant enum Kind { Sized(n: std::Int) Empty } }
+                realm shapes { variant enum Kind { Sized(n: Int) Empty } }
                 func main() {
                     fin kind = shapes::Kind.Sized(3)
                     when kind {
-                        shapes::Kind.Sized(n) -> { std::println(n) }
-                        else -> { std::println("empty") }
+                        shapes::Kind.Sized(n) -> { println(n) }
+                        else -> { println("empty") }
                     }
                 }
                 """.trimIndent(),
@@ -89,8 +89,8 @@ class RealmQualifiedAccessTest {
                 import std.io
                 import std.serializer
                 func main() {
-                    fin node = std::SerialValue.Text("x")
-                    std::println(std::encodeSerialValue(node, std::serializerOptions()) catch "err")
+                    fin node = SerialValue.Text("x")
+                    println(encodeSerialValue(node, serializerOptions()) catch "err")
                 }
                 """.trimIndent(),
             ),
@@ -105,9 +105,9 @@ class RealmQualifiedAccessTest {
                 import std.io
                 import std.serializer
                 func main() {
-                    var fields = std::ArrayList<std::SerialField>()
-                    fields.add(std::SerialField("a", std::SerialValue.Null))
-                    std::println(fields.size)
+                    var fields = ArrayList<SerialField>()
+                    fields.add(SerialField("a", SerialValue.Null))
+                    println(fields.size)
                 }
                 """.trimIndent(),
             ),
@@ -117,7 +117,7 @@ class RealmQualifiedAccessTest {
     /**
      * `?!` used to take a single identifier, so a function could not declare
      * that it fails with an error set owned by another realm - which every
-     * `impl std::Serializer<T>` member has to do.
+     * `impl Serializer<T>` member has to do.
      */
     @Test fun failableTypeAcceptsAQualifiedErrorSet() {
         assertEquals(
@@ -126,10 +126,10 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
-                func seven(): std::Int ?! std::SerializationError {
+                func seven(): Int ?! SerializationError {
                     return 7
                 }
-                func main() { std::println(seven() catch 0) }
+                func main() { println(seven() catch 0) }
                 """.trimIndent(),
             ),
         )
@@ -146,12 +146,12 @@ class RealmQualifiedAccessTest {
             run(
                 """
                 import std.io
-                spec Area { func area[self: std::Self&](): std::Int }
-                realm shapes { pack Square { fin side: std::Int = 0 } }
+                spec Area { func area[self: Self&](): Int }
+                realm shapes { pack Square { fin side: Int = 0 } }
                 impl Area for shapes::Square {
-                    func area[self: std::Self&](): std::Int { return self.side * self.side }
+                    func area[self: Self&](): Int { return self.side * self.side }
                 }
-                func main() { std::println(shapes::Square(4).area()) }
+                func main() { println(shapes::Square(4).area()) }
                 """.trimIndent(),
             ),
         )
@@ -169,10 +169,10 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.traits
-                realm shapes { pack Square { fin side: std::Int = 0 } }
-                derive [std::Equal] for shapes::Square
+                realm shapes { pack Square { fin side: Int = 0 } }
+                derive [Equal] for shapes::Square
                 func main() {
-                    std::println(if shapes::Square(2) == shapes::Square(2) { "eq" } else { "ne" })
+                    println(if shapes::Square(2) == shapes::Square(2) { "eq" } else { "ne" })
                 }
                 """.trimIndent(),
             ),
@@ -187,13 +187,13 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
-                @std::Serializable
-                pack User { fin name: std::String = "" }
-                impl std::SerialName(value: "display_name") for User::name {}
+                @Serializable
+                pack User { fin name: String = "" }
+                impl SerialName(value: "display_name") for User::name {}
                 func main() {
                     fin user = User("Ada")
-                    fin tree = user.toSerialValue(user) catch std::SerialValue.Null
-                    std::println(std::encodeSerialValue(tree, std::serializerOptions()) catch "err")
+                    fin tree = user.toSerialValue(user) catch SerialValue.Null
+                    println(encodeSerialValue(tree, serializerOptions()) catch "err")
                 }
                 """.trimIndent(),
             ),
@@ -208,13 +208,13 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
-                @std::Serializable
-                pack User { fin name: std::String = "" fin token: std::String = "t" }
-                impl std::SerialIgnore for User::* {}
+                @Serializable
+                pack User { fin name: String = "" fin token: String = "t" }
+                impl SerialIgnore for User::* {}
                 func main() {
                     fin user = User("Ada", "t")
-                    fin tree = user.toSerialValue(user) catch std::SerialValue.Null
-                    std::println(std::encodeSerialValue(tree, std::serializerOptions()) catch "err")
+                    fin tree = user.toSerialValue(user) catch SerialValue.Null
+                    println(encodeSerialValue(tree, serializerOptions()) catch "err")
                 }
                 """.trimIndent(),
             ),
@@ -233,33 +233,33 @@ class RealmQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
-                pack Square { fin side: std::Int = 0 }
-                @std::Serializable
-                pack Holder { fin Square: std::Int = 0 }
-                impl std::SerialIgnore for Holder::Square {}
+                pack Square { fin side: Int = 0 }
+                @Serializable
+                pack Holder { fin Square: Int = 0 }
+                impl SerialIgnore for Holder::Square {}
                 func main() {
                     fin holder = Holder(2)
-                    fin tree = holder.toSerialValue(holder) catch std::SerialValue.Null
-                    std::println(std::encodeSerialValue(tree, std::serializerOptions()) catch "err")
+                    fin tree = holder.toSerialValue(holder) catch SerialValue.Null
+                    println(encodeSerialValue(tree, serializerOptions()) catch "err")
                 }
                 """.trimIndent(),
             ),
         )
     }
 
-    /** `impl std::Spec<T> for LocalType` - the spec is named through its realm. */
+    /** `impl Spec<T> for LocalType` - the spec is named through its realm. */
     @Test fun specIsImplementedThroughItsRealm() {
         assertEquals(
             "ok",
             run(
                 """
                 import std.io
-                realm caps { spec Named { func label[self: std::Self&](): std::String } }
+                realm caps { spec Named { func label[self: Self&](): String } }
                 pack Tag
                 impl caps::Named for Tag {
-                    func label[self: std::Self&](): std::String { return "ok" }
+                    func label[self: Self&](): String { return "ok" }
                 }
-                func main() { std::println(Tag().label()) }
+                func main() { println(Tag().label()) }
                 """.trimIndent(),
             ),
         )

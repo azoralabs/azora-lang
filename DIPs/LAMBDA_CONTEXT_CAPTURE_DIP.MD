@@ -161,10 +161,10 @@ list is optional when empty; `()` is never optional:
 fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
 
 with 5 {
-    std::println(scale(2))
+    println(scale(2))
 }
 
-std::println(5.scale(2))
+println(5.scale(2))
 ```
 
 Receiver types may be written or inferred from the expected callable type:

@@ -36,15 +36,15 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func f(): std::Int ?! E {
+            func f(): Int ?! E {
                 error E.Bad
                 return 0
             }
             func main() {
                 try {
-                    std::println(f())
+                    println(f())
                 } catch {
-                    e -> std::println(e)
+                    e -> println(e)
                 }
             }
         """.trimIndent()))
@@ -56,14 +56,14 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func g(x: std::Int): std::Int ?! E {
+            func g(x: Int): Int ?! E {
                 if x < 0 {
                     error E.Bad
                 }
                 return x * 2
             }
             func main() {
-                std::println(g(5))
+                println(g(5))
             }
         """.trimIndent()))
     }
@@ -73,11 +73,11 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func inner(): std::Int ?! E {
+            func inner(): Int ?! E {
                 error E.Bad
                 return 0
             }
-            func outer(): std::Int ?! E {
+            func outer(): Int ?! E {
                 return try inner()
             }
             func main() {}
@@ -103,18 +103,18 @@ class Tier3ErrorModelTest {
             error MathError {
                 DivByZero
             }
-            func divide(a: std::Int, b: std::Int): std::Int ?! MathError {
+            func divide(a: Int, b: Int): Int ?! MathError {
                 if b == 0 {
                     error MathError.DivByZero
                 }
                 return a / b
             }
             func main() {
-                std::println(divide(10, 0) catch -1)
+                println(divide(10, 0) catch -1)
                 try {
-                    std::println(divide(10, 2))
+                    println(divide(10, 2))
                 } catch {
-                    e -> std::println(e)
+                    e -> println(e)
                 }
             }
         """.trimIndent()))
@@ -131,7 +131,7 @@ class Tier3ErrorModelTest {
                 try {
                     error Lookup.NotFound
                 } catch {
-                    e -> std::println(e)
+                    e -> println(e)
                 }
             }
         """.trimIndent()))
@@ -143,9 +143,9 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func risky(): std::Int ?! E {
-                defer { std::println("always") }
-                error defer { std::println("only on fail") }
+            func risky(): Int ?! E {
+                defer { println("always") }
+                error defer { println("only on fail") }
                 error E.Bad
                 return 0
             }
@@ -153,7 +153,7 @@ class Tier3ErrorModelTest {
                 try {
                     risky()
                 } catch {
-                    e -> std::println(e)
+                    e -> println(e)
                 }
             }
         """.trimIndent()))
@@ -165,13 +165,13 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func ok(): std::Int ?! E {
-                defer { std::println("always") }
-                error defer { std::println("only on fail") }
+            func ok(): Int ?! E {
+                defer { println("always") }
+                error defer { println("only on fail") }
                 return 5
             }
             func main() {
-                std::println(ok())
+                println(ok())
             }
         """.trimIndent()))
     }
@@ -186,7 +186,7 @@ class Tier3ErrorModelTest {
             error Other {
                 X
             }
-            func bad(): std::Int ?! E {
+            func bad(): Int ?! E {
                 error Other.X
                 return 0
             }
@@ -204,7 +204,7 @@ class Tier3ErrorModelTest {
             error E {
                 Bad
             }
-            func good(): std::Int ?! E {
+            func good(): Int ?! E {
                 error E.Bad
                 return 0
             }
@@ -212,7 +212,7 @@ class Tier3ErrorModelTest {
                 try {
                     good()
                 } catch {
-                    e -> std::println("ok")
+                    e -> println("ok")
                 }
             }
         """.trimIndent()))
@@ -224,14 +224,14 @@ class Tier3ErrorModelTest {
             error A { Q W E }
             error B { S D F }
 
-            func choose(first: std::Bool): std::Unit ?! [A, B] {
+            func choose(first: Bool): Unit ?! [A, B] {
                 if first { error A.Q }
                 error B.S
             }
 
             func main() {
-                try { choose(true) } catch { e -> std::println(e) }
-                try { choose(false) } catch { e -> std::println(e) }
+                try { choose(true) } catch { e -> println(e) }
+                try { choose(false) } catch { e -> println(e) }
             }
         """.trimIndent()))
     }
@@ -242,7 +242,7 @@ class Tier3ErrorModelTest {
             error B { S }
             error C { Z }
 
-            func invalid(): std::Unit ?! [A, B] {
+            func invalid(): Unit ?! [A, B] {
                 error C.Z
             }
         """.trimIndent())
@@ -254,7 +254,7 @@ class Tier3ErrorModelTest {
     @Test fun duplicateErrorSetInBracketListIsRejected() {
         val result = Compiler().compile("""
             error A { Q }
-            func invalid(): std::Unit ?! [A, A] {}
+            func invalid(): Unit ?! [A, A] {}
         """.trimIndent())
 
         assertIs<CompilationResult.Failure>(result)
@@ -268,12 +268,12 @@ class Tier3ErrorModelTest {
                 Bad
             }
             func risky() {
-                rescue { std::println("rescued!") }
+                rescue { println("rescued!") }
                 error E.Bad
             }
             func main() {
                 risky()
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent()))
     }
@@ -283,23 +283,23 @@ class Tier3ErrorModelTest {
             import std.io
 
             variant error IndexError {
-                OutOfBounds(index: std::Int, size: std::Int)
+                OutOfBounds(index: Int, size: Int)
                 Empty
             }
 
-            func at(i: std::Int, n: std::Int): std::Int ?! IndexError {
+            func at(i: Int, n: Int): Int ?! IndexError {
                 if i >= n { return .OutOfBounds(i, n) }
                 return i
             }
 
             func main() {
                 fin ok = try at(1, 3)
-                std::println(ok)
+                println(ok)
                 try {
                     fin bad = try at(9, 3)
-                    std::println(bad)
+                    println(bad)
                 } catch { e ->
-                    std::println("caught")
+                    println("caught")
                 }
             }
         """.trimIndent()))
@@ -312,11 +312,11 @@ class Tier3ErrorModelTest {
         assertEquals("made", run("""
             import std.io
 
-            variant error IndexError { OutOfBounds(index: std::Int, size: std::Int) }
+            variant error IndexError { OutOfBounds(index: Int, size: Int) }
 
             func main() {
                 fin e = IndexError.OutOfBounds(9, 3)
-                std::println("made")
+                println("made")
             }
         """.trimIndent()))
     }

@@ -19,17 +19,17 @@ class ImplMethodTest {
         assertEquals("3", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Point {
-                func getX(): std::Int {
+                func getX(): Int {
                     return self.x
                 }
             }
             func main() {
                 fin p = Point(3, 4)
-                std::println(p.getX())
+                println(p.getX())
             }
         """.trimIndent()))
     }
@@ -38,17 +38,17 @@ class ImplMethodTest {
         assertEquals("25", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Point {
-                func lengthSquared(): std::Int {
+                func lengthSquared(): Int {
                     return self.x * self.x + self.y * self.y
                 }
             }
             func main() {
                 fin p = Point(3, 4)
-                std::println(p.lengthSquared())
+                println(p.lengthSquared())
             }
         """.trimIndent()))
     }
@@ -57,23 +57,23 @@ class ImplMethodTest {
         assertEquals("13\n37", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Point {
-                func moveBy(dx: std::Int, dy: std::Int) {
+                func moveBy(dx: Int, dy: Int) {
                     self.x = self.x + dx
                     self.y = self.y + dy
                 }
-                func sum(): std::Int {
+                func sum(): Int {
                     return self.x + self.y
                 }
             }
             func main() {
                 var p = Point(3, 4)
                 p.moveBy(10, 20)
-                std::println(p.x)
-                std::println(p.sum())
+                println(p.x)
+                println(p.sum())
             }
         """.trimIndent()))
     }
@@ -82,17 +82,17 @@ class ImplMethodTest {
         assertEquals("len=25", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Point {
-                func lengthSquared(): std::Int {
+                func lengthSquared(): Int {
                     return self.x * self.x + self.y * self.y
                 }
             }
             func main() {
                 fin p = Point(3, 4)
-                std::println("len=${'$'}{p.lengthSquared()}")
+                println("len=${'$'}{p.lengthSquared()}")
             }
         """.trimIndent()))
     }
@@ -101,17 +101,17 @@ class ImplMethodTest {
         assertEquals("25", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Point {
-                func lengthSquared(): std::Int {
+                func lengthSquared(): Int {
                     return self.x * self.x + self.y * self.y
                 }
             }
             func main() {
-                fin pts = @std::arr[Point(1, 1), Point(3, 4), Point(5, 5)]
-                std::println(pts[1].lengthSquared())
+                fin pts = @arr[Point(1, 1), Point(3, 4), Point(5, 5)]
+                println(pts[1].lengthSquared())
             }
         """.trimIndent()))
     }
@@ -120,17 +120,17 @@ class ImplMethodTest {
         val result = Compiler().compile("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Point {
-                func lengthSquared(): std::Int {
+                func lengthSquared(): Int {
                     return self.x * self.x + self.y * self.y
                 }
             }
             func main() {
                 fin p = Point(3, 4)
-                std::println(p.lengthSquared())
+                println(p.lengthSquared())
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

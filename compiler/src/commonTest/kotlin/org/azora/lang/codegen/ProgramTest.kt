@@ -33,7 +33,7 @@ class ProgramTest {
         val result = compile("""
             import std.io
             func main() {
-                std::println("Hello, world!")
+                println("Hello, world!")
             }
         """.trimIndent())
 
@@ -49,8 +49,8 @@ class ProgramTest {
     fun helloWorldWithReturn() {
         val result = compile("""
             import std.io
-            func main(): std::Int {
-                std::println("Hello")
+            func main(): Int {
+                println("Hello")
                 return 0
             }
         """.trimIndent())
@@ -72,10 +72,10 @@ class ProgramTest {
                 var x = 10
                 fin y = 3
                 let z = x + y
-                std::println(z)
+                println(z)
                 x = x * 2
-                std::println(x)
-                std::println(x - y)
+                println(x)
+                println(x - y)
             }
         """.trimIndent())
 
@@ -90,17 +90,17 @@ class ProgramTest {
     fun functionCalls() {
         val output = run("""
             import std.io
-            func double(n: std::Int): std::Int {
+            func double(n: Int): Int {
                 return n * 2
             }
 
-            func addOne(n: std::Int): std::Int {
+            func addOne(n: Int): Int {
                 return n + 1
             }
 
             func main() {
-                std::println(double(5))
-                std::println(addOne(double(3)))
+                println(double(5))
+                println(addOne(double(3)))
             }
         """.trimIndent())
 
@@ -115,7 +115,7 @@ class ProgramTest {
     fun ifElse() {
         val output = run("""
             import std.io
-            func abs(n: std::Int): std::Int {
+            func abs(n: Int): Int {
                 if n < 0 {
                     return 0 - n
                 } else {
@@ -124,8 +124,8 @@ class ProgramTest {
             }
 
             func main() {
-                std::println(abs(5))
-                std::println(abs(-3))
+                println(abs(5))
+                println(abs(-3))
             }
         """.trimIndent())
 
@@ -143,7 +143,7 @@ class ProgramTest {
             func main() {
                 fin greeting = "Hello"
                 fin name = "World"
-                std::println(greeting + ", " + name + "!")
+                println(greeting + ", " + name + "!")
             }
         """.trimIndent())
 
@@ -161,7 +161,7 @@ class ProgramTest {
             fin x = 9
 
             func main() {
-                std::println(x)
+                println(x)
             }
         """.trimIndent())
 
@@ -180,13 +180,13 @@ class ProgramTest {
 
             func main() {
                 var x = 2
-                std::println(x)
-                std::println(::x)
+                println(x)
+                println(::x)
                 scope {
                     var x = 5
-                    std::println(x)
-                    std::println(::x)
-                    std::println(::_::x)
+                    println(x)
+                    println(::x)
+                    println(::_::x)
                 }
             }
         """.trimIndent())
@@ -205,11 +205,11 @@ class ProgramTest {
             func main() {
                 scope {
                     var shared = 10
-                    std::println(shared)
+                    println(shared)
                 }
                 scope {
                     shared = shared + 5
-                    std::println(shared)
+                    println(shared)
                 }
             }
         """.trimIndent())
@@ -226,11 +226,11 @@ class ProgramTest {
         val source = """
             import std.io
             func unused() {
-                std::println("never called")
+                println("never called")
             }
 
             func main() {
-                std::println("hello")
+                println("hello")
             }
         """.trimIndent()
 
@@ -257,7 +257,7 @@ class ProgramTest {
             import std.io
             var x = 5
             func main() {
-                std::println(x)
+                println(x)
             }
         """.trimIndent())
         assertTrue(errors.any { "not allowed" in it && "thread-safe" in it },

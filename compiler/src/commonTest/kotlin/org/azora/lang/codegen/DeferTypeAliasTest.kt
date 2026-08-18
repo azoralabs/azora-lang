@@ -19,14 +19,14 @@ class DeferTypeAliasTest {
         assertEquals("start\nend\ncleanup1\ncleanup2", run("""
             import std.io
             func main() {
-                std::println("start")
+                println("start")
                 defer {
-                    std::println("cleanup2")
+                    println("cleanup2")
                 }
                 defer {
-                    std::println("cleanup1")
+                    println("cleanup1")
                 }
-                std::println("end")
+                println("end")
             }
         """.trimIndent()))
     }
@@ -34,15 +34,15 @@ class DeferTypeAliasTest {
     @Test fun deferRunsAfterReturn() {
         assertEquals("work\ncleanup\n42", run("""
             import std.io
-            func doWork(): std::Int {
+            func doWork(): Int {
                 defer {
-                    std::println("cleanup")
+                    println("cleanup")
                 }
-                std::println("work")
+                println("work")
                 return 42
             }
             func main() {
-                std::println(doWork())
+                println(doWork())
             }
         """.trimIndent()))
     }
@@ -50,10 +50,10 @@ class DeferTypeAliasTest {
     @Test fun typeAliasInt() {
         assertEquals("42", run("""
             import std.io
-            typealias UserId = std::Int
+            typealias UserId = Int
             func main() {
                 var id: UserId = 42
-                std::println(id)
+                println(id)
             }
         """.trimIndent()))
     }
@@ -61,10 +61,10 @@ class DeferTypeAliasTest {
     @Test fun typeAliasString() {
         assertEquals("hello", run("""
             import std.io
-            typealias Name = std::String
+            typealias Name = String
             func main() {
                 var n: Name = "hello"
-                std::println(n)
+                println(n)
             }
         """.trimIndent()))
     }

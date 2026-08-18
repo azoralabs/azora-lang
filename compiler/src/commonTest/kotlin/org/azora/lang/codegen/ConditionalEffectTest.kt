@@ -35,10 +35,10 @@ class ConditionalEffectTest {
             """
             import std.io
 
-            react func gate(step: std::Int) {
+            react func gate(step: Int) {
                 remember var open = false
                 effect open == true {
-                    std::println("fired at ${'$'}{step}")
+                    println("fired at ${'$'}{step}")
                 }
                 if step == 2 { open = true }
             }
@@ -64,10 +64,10 @@ class ConditionalEffectTest {
             """
             import std.io
 
-            react func gate(step: std::Int) {
+            react func gate(step: Int) {
                 remember var open = false
                 effect open == true {
-                    std::println("fired at ${'$'}{step}")
+                    println("fired at ${'$'}{step}")
                 }
                 if step == 1 { open = true }
                 if step == 3 { open = false }
@@ -95,13 +95,13 @@ class ConditionalEffectTest {
 
             react func gate() {
                 remember var open = false
-                effect open == true { std::println("should not appear") }
+                effect open == true { println("should not appear") }
             }
 
             react func main() {
                 gate()
                 gate()
-                std::println("done")
+                println("done")
             }
             """,
         )
@@ -118,7 +118,7 @@ class ConditionalEffectTest {
 
             react func watcher() {
                 remember var count = 0
-                effect count { std::println("count=${'$'}{count}") }
+                effect count { println("count=${'$'}{count}") }
                 count += 1
             }
 
@@ -141,9 +141,9 @@ class ConditionalEffectTest {
             """
             import std.io
 
-            react func gate(step: std::Int) {
+            react func gate(step: Int) {
                 remember var total = 0
-                effect total > 2 { std::println("crossed at ${'$'}{step}") }
+                effect total > 2 { println("crossed at ${'$'}{step}") }
                 total = total + 1
             }
 

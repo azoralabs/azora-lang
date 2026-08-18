@@ -87,34 +87,10 @@ variant enum Option<T> {
     None
 }
 
-impl Option {
-    deepinline prop Nullable<T>(b: Bool): Type {
-        return when b {
-            true => Option<T?>
-            false => Option<T>
-        }
-    }
-}
-
-/** Represents either a success or failure outcome. */
-@Since("0.1")
-variant enum Result {
-    Ok(value: Int)
-    Err(code: Int, message: String)
-}
-
-/**
- * Unwraps a Result, returning the value if Ok or a default if Err.
- *
- * @receiver result The result to unwrap.
- * @param default The fallback value.
- * @return The Ok value or the default.
- */
-@Experimental(since: "0.1")
-func unwrapOr[result: Result&](default: Int): Int {
-    return when result {
-        .Ok(value) -> value
-        else -> default
+deepinline func Nullable<T>(b: Bool): Type {
+    return when b {
+        true => Option<T?>
+        false => Option<T>
     }
 }
 
@@ -461,6 +437,9 @@ bridge annot Derive for .Annot {
     fin providerModule: String = ""
     fin conversionModule: String = ""
     fin deferGeneric: Bool = false
+
+    /** The module declaring the list type generated code builds. */
+    fin listModule: String = ""
 }
 
 /** Number of characters in `value`. */

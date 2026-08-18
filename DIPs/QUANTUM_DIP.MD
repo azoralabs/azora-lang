@@ -27,10 +27,10 @@ import std.quantum
 import std.io
 
 func main() {
-    fin bell = std::bellPair()
+    fin bell = bellPair()
     // A configured backend supplies the bridge implementation.
-    fin samples = std::execute(std::connect("simulator"), bell, 1024)
-    std::println(samples[0].count)
+    fin samples = execute(connect("simulator"), bell, 1024)
+    println(samples[0].count)
 }
 ```
 
@@ -88,12 +88,12 @@ backends.
 ```azora
 import std.quantum
 
-func makeSearchCircuit(): std::Circuit {
-    return std::groverSearch(3, 5)
+func makeSearchCircuit(): Circuit {
+    return groverSearch(3, 5)
 }
 
-func makeFourierCircuit(): std::Circuit {
-    return std::quantumFourierTransform(4)
+func makeFourierCircuit(): Circuit {
+    return quantumFourierTransform(4)
 }
 ```
 
@@ -167,7 +167,7 @@ contextual before they are reserved. For example, this must remain legal in a
 non-quantum module:
 
 ```azora
-func measure(value: std::String): std::Int { return value.size }
+func measure(value: String): Int { return value.size }
 ```
 
 The parser can recognize `measure` as quantum syntax only after a `qubit`,
@@ -190,7 +190,7 @@ circuit bellPair(qubit a, qubit b) {
 The accepted library spelling remains:
 
 ```azora
-fin bell = std::bellPair()
+fin bell = bellPair()
 ```
 
 ---

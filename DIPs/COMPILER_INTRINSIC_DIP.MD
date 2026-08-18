@@ -42,7 +42,7 @@ signature, documentation and a stability decorator like any other API:
 bridge func stringLength(value: String): Int
 ```
 
-The author calls `std::stringLength(s)`. The compiler recognises the name and
+The author calls `stringLength(s)`. The compiler recognises the name and
 supplies the body per backend.
 
 ### 2.1 The string and character primitives
@@ -91,7 +91,7 @@ them such code could only be tested by a native build.
 bridge func reflect<T>(includeInherited: Bool = false): Reflected<T>
 ```
 
-`std::reflect<T>` is a compile-time handle, not a runtime value. The parser
+`reflect<T>` is a compile-time handle, not a runtime value. The parser
 rewrites it and its members into internal intrinsics (§3.4).
 
 ---
@@ -156,7 +156,7 @@ which the standard library does not yet define.
 
 | name         | from                     |
 |--------------|--------------------------|
-| `__reflect`  | `std::reflect<T>`        |
+| `__reflect`  | `reflect<T>`        |
 | `__hasAnnot`  | `reflect<T>.hasAnnot<D>`  |
 | `__annotMeta` | `reflect<T>.annotMeta<D>` |
 | `__withAnnot` | `reflect<*>.withAnnot<D>` |

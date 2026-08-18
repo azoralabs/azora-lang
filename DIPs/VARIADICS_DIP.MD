@@ -132,7 +132,7 @@ deepinline prop promote<...T>: Type where T.length >= 2 && T is Number {
 impl<...T> PrettyPrint for Tuple { … }
 ```
 
-`std::promote` is the standard library's worked example, and it exercises the
+`promote` is the standard library's worked example, and it exercises the
 whole query surface below.
 
 ---
@@ -177,7 +177,7 @@ so the machinery exists - it is the pack declaration that skips it.
 
 - ⬜ **This is the worst defect in the document.** A constraint that is written,
   read by a maintainer, and silently ignored is worse than no constraint: it
-  states a guarantee the compiler does not provide, and `std::Tuple` is declared
+  states a guarantee the compiler does not provide, and `Tuple` is declared
   with one (`(...T).length >= 2`), so the standard library is currently making a
   promise it cannot keep
 
@@ -311,8 +311,8 @@ angle brackets rather than being inferred.
 Everything here was measured, not predicted.
 
 - ⬜ **The spread does not run** (§1.1)
-- ⬜ **A pack's `where` is not enforced** (§4), including `std::Tuple`'s
-- ⬜ **`std::Tuple` cannot be constructed.** `std::Tuple<Int, Int>(1, 2)`
+- ⬜ **A pack's `where` is not enforced** (§4), including `Tuple`'s
+- ⬜ **`Tuple` cannot be constructed.** `Tuple<Int, Int>(1, 2)`
   reports *undefined function 'std__Tuple'*, so the standard library's flagship
   variadic pack is unreachable by its own name. A program's own variadic pack
   constructs correctly, which places the fault in how the specialized

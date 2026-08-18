@@ -25,10 +25,10 @@ class Tier3MemoryTest {
         assertEquals("4\n10", run("""
             import std.io
             unsafe func main() {
-                var y: std::Int^ = alloc^ 4
-                std::println(y.^)
+                var y: Int^ = alloc^ 4
+                println(y.^)
                 y.^ = 10
-                std::println(y.^)
+                println(y.^)
                 purge y
             }
         """.trimIndent()))
@@ -41,7 +41,7 @@ class Tier3MemoryTest {
         val result = Compiler().compile("""
             import std.io
             unsafe func main() {
-                fin x: std::Int* = alloc* 4
+                fin x: Int* = alloc* 4
                 x.* = 10
             }
         """.trimIndent())
@@ -56,8 +56,8 @@ class Tier3MemoryTest {
         assertEquals("4", run("""
             import std.io
             unsafe func main() {
-                fin x: std::Int* = alloc* 4
-                std::println(x.*)
+                fin x: Int* = alloc* 4
+                println(x.*)
             }
         """.trimIndent()))
     }
@@ -67,9 +67,9 @@ class Tier3MemoryTest {
             import std.io
             func main() {
                 var p = alloc^ 5
-                std::println(*p)
+                println(*p)
                 *p = 99
-                std::println(*p)
+                println(*p)
             }
         """.trimIndent()))
     }
@@ -78,13 +78,13 @@ class Tier3MemoryTest {
         assertEquals("10\n20", run("""
             import std.io
             pack P {
-                var v: std::Int
+                var v: Int
             }
             func main() {
                 var p = alloc^ P(10)
-                std::println((*p).v)
+                println((*p).v)
                 (*p).v = 20
-                std::println((*p).v)
+                println((*p).v)
             }
         """.trimIndent()))
     }
@@ -97,7 +97,7 @@ class Tier3MemoryTest {
                 unsafe {
                     x = x + 10
                 }
-                std::println(x)
+                println(x)
             }
         """.trimIndent()))
     }
@@ -108,7 +108,7 @@ class Tier3MemoryTest {
             func main() {
                 var p = alloc^ 5
                 purge p
-                std::println(*p)
+                println(*p)
             }
         """.trimIndent()))
     }
@@ -117,8 +117,8 @@ class Tier3MemoryTest {
         assertEquals("42", run("""
             import std.io
             func main() {
-                var p: std::Int^ = alloc^ 42
-                std::println(*p)
+                var p: Int^ = alloc^ 42
+                println(*p)
             }
         """.trimIndent()))
     }
@@ -128,9 +128,9 @@ class Tier3MemoryTest {
             import std.io
             func main() {
                 var p = alloc^ 5
-                std::println(p.*)
+                println(p.*)
                 p.* = 12
-                std::println(p.*)
+                println(p.*)
             }
         """.trimIndent()))
     }
@@ -140,12 +140,12 @@ class Tier3MemoryTest {
             import std.io
             import std.memory.*
             func main() {
-                var p = std::sharedOf(41)
-                std::println(p.*)
+                var p = sharedOf(41)
+                println(p.*)
                 p.set(42)
-                std::println(p.get)
-                std::println(p.retain())
-                std::println(p.release())
+                println(p.get)
+                println(p.retain())
+                println(p.release())
             }
         """.trimIndent()))
     }
@@ -155,10 +155,10 @@ class Tier3MemoryTest {
             import std.io
             import std.memory.*
             func main() {
-                var p = std::syncSharedOf(41)
-                std::println(p.get)
-                std::println(p.retain())
-                std::println(p.release())
+                var p = syncSharedOf(41)
+                println(p.get)
+                println(p.retain())
+                println(p.release())
             }
         """.trimIndent()))
     }
@@ -168,14 +168,14 @@ class Tier3MemoryTest {
             import std.io
             import std.memory.*
             func main() {
-                var p = alloc^ std::Int[3]
+                var p = alloc^ Int[3]
                 p[0] = 7
                 p[1] = 8
                 p[2] = 9
-                var s = std::ptrSlice(p, 3)
-                std::println(s[2])
+                var s = ptrSlice(p, 3)
+                println(s[2])
                 s[2] = 4
-                std::println(p[2])
+                println(p[2])
             }
         """.trimIndent()))
     }
@@ -185,11 +185,11 @@ class Tier3MemoryTest {
         assertEquals("[1, 2, 3]\n[1, 2, 3, 99]", run("""
             import std.io
             func main() {
-                var a = @std::arr[1, 2, 3]
+                var a = @arr[1, 2, 3]
                 var b = a.clone()
                 b.add(99)
-                std::println(a)
-                std::println(b)
+                println(a)
+                println(b)
             }
         """.trimIndent()))
     }
@@ -200,11 +200,11 @@ class Tier3MemoryTest {
         assertEquals("1\n99", run("""
             import std.io
             func main() {
-                var original = @std::arr[1, 2, 3]
+                var original = @arr[1, 2, 3]
                 var copy = original.clone()
                 copy[0] = 99
-                std::println(original[0])
-                std::println(copy[0])
+                println(original[0])
+                println(copy[0])
             }
         """.trimIndent()))
     }
@@ -213,14 +213,14 @@ class Tier3MemoryTest {
         assertEquals("7\n1", run("""
             import std.io
             pack Box {
-                var v: std::Int
+                var v: Int
             }
             func main() {
                 var original = Box(1)
                 var copy = original.clone()
                 copy.v = 7
-                std::println(copy.v)
-                std::println(original.v)
+                println(copy.v)
+                println(original.v)
             }
         """.trimIndent()))
     }
@@ -231,7 +231,7 @@ class Tier3MemoryTest {
             func main() {
                 var p = alloc^ 5
                 *p = 99
-                std::println(*p)
+                println(*p)
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)
@@ -241,11 +241,11 @@ class Tier3MemoryTest {
         assertEquals("10\n20\n30", run("""
             import std.io
             func main() {
-                var p: std::Int^ = alloc^ @std::arr[10, 20, 30]
-                std::println(*p)
+                var p: Int^ = alloc^ @arr[10, 20, 30]
+                println(*p)
                 var p1 = p + 1
-                std::println(*p1)
-                std::println(*(p + 2))
+                println(*p1)
+                println(*(p + 2))
             }
         """.trimIndent()))
     }
@@ -254,11 +254,11 @@ class Tier3MemoryTest {
         assertEquals("30\n20", run("""
             import std.io
             func main() {
-                var p: std::Int^ = alloc^ @std::arr[10, 20, 30]
+                var p: Int^ = alloc^ @arr[10, 20, 30]
                 var end = p + 2
-                std::println(*end)
+                println(*end)
                 var back = end - 1
-                std::println(*back)
+                println(*back)
             }
         """.trimIndent()))
     }
@@ -267,9 +267,9 @@ class Tier3MemoryTest {
         assertEquals("99", run("""
             import std.io
             func main() {
-                var p: std::Int^ = alloc^ @std::arr[10, 20, 30]
+                var p: Int^ = alloc^ @arr[10, 20, 30]
                 *(p + 1) = 99
-                std::println(*(p + 1))
+                println(*(p + 1))
             }
         """.trimIndent()))
     }
@@ -278,9 +278,9 @@ class Tier3MemoryTest {
         assertEquals("3", run("""
             import std.io
             func main() {
-                var p: std::Int^ = alloc^ @std::arr[10, 20, 30, 40]
+                var p: Int^ = alloc^ @arr[10, 20, 30, 40]
                 var q = p + 3
-                std::println(q - p)
+                println(q - p)
             }
         """.trimIndent()))
     }

@@ -25,25 +25,25 @@ class SerializationDeriverTest {
     private fun derive(body: String): SerializationDeriver.Result {
         val prelude = """
             annot Derive for .Annot {
-                fin generator: std::String
-                fin role: std::String
-                fin provider: std::String = ""
-                fin conversionProvider: std::String = ""
-                fin providerModule: std::String = ""
-                fin conversionModule: std::String = ""
+                fin generator: String
+                fin role: String
+                fin provider: String = ""
+                fin conversionProvider: String = ""
+                fin providerModule: String = ""
+                fin conversionModule: String = ""
             }
-            @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "std::convert")
+            @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "convert")
             annot Serializable for .Pack {
-                fin ignoreUnknownFields: std::Bool = false
-                fin encodeDefaults: std::Bool = true
+                fin ignoreUnknownFields: Bool = false
+                fin encodeDefaults: Bool = true
             }
-            @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "std::convert")
+            @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "convert")
             annot AzonSerializable for .Pack {
-                fin ignoreUnknownFields: std::Bool = false
-                fin encodeDefaults: std::Bool = true
+                fin ignoreUnknownFields: Bool = false
+                fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            annot SerialName for .Field { fin value: std::String = "" }
+            annot SerialName for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
             annot SerialIgnore for .Field
             @Derive(generator: "serializer", role: "required")
@@ -55,11 +55,11 @@ class SerializationDeriverTest {
 
     @Test fun serializableGeneratesEverySerializerMethod() {
         val result = derive("""
-            @std::Serializable(ignoreUnknownFields: true, encodeDefaults: false)
+            @Serializable(ignoreUnknownFields: true, encodeDefaults: false)
             pack User {
-                fin name: std::String = ""
-                fin age: std::Int = 0
-                fin enabled: std::Bool = true
+                fin name: String = ""
+                fin age: Int = 0
+                fin enabled: Bool = true
             }
         """.trimIndent())
 
@@ -85,12 +85,12 @@ class SerializationDeriverTest {
 
     @Test fun fieldImplementationMetadataParticipatesInDerivation() {
         val result = derive("""
-            @std::Serializable pack User {
-                fin name: std::String = ""
-                fin password: std::String = ""
+            @Serializable pack User {
+                fin name: String = ""
+                fin password: String = ""
             }
-            impl std::SerialName(value: "display_name") for User::name {}
-            impl std::SerialIgnore for User::password {}
+            impl SerialName(value: "display_name") for User::name {}
+            impl SerialIgnore for User::password {}
         """.trimIndent())
 
         assertTrue(result.errors.isEmpty(), result.errors.toString())
@@ -101,8 +101,8 @@ class SerializationDeriverTest {
 
     @Test fun ignoreAndRequiredOnOneFieldAreRejected() {
         val result = derive("""
-            @std::Serializable pack User { fin password: std::String = "" }
-            impl [std::SerialIgnore, std::SerialRequired] for User::password {}
+            @Serializable pack User { fin password: String = "" }
+            impl [SerialIgnore, SerialRequired] for User::password {}
         """.trimIndent())
 
         assertTrue(result.errors.any { "both SerialIgnore and SerialRequired" in it }, result.errors.toString())
@@ -110,7 +110,7 @@ class SerializationDeriverTest {
 
     @Test fun ignoredFieldWithoutDefaultIsRejected() {
         val result = derive("""
-            @std::Serializable pack User { @std::SerialIgnore fin password: std::String }
+            @Serializable pack User { @SerialIgnore fin password: String }
         """.trimIndent())
 
         assertTrue(result.errors.any { "ignored field 'User::password' requires a default" in it }, result.errors.toString())
@@ -118,9 +118,9 @@ class SerializationDeriverTest {
 
     @Test fun duplicateWireNamesAreRejected() {
         val result = derive("""
-            @std::Serializable pack User {
-                @std::SerialName("value") fin first: std::String = ""
-                @std::SerialName("value") fin second: std::String = ""
+            @Serializable pack User {
+                @SerialName("value") fin first: String = ""
+                @SerialName("value") fin second: String = ""
             }
         """.trimIndent())
 
@@ -129,8 +129,8 @@ class SerializationDeriverTest {
 
     @Test fun nonSerializableNestedFieldIsRejected() {
         val result = derive("""
-            pack Address { fin city: std::String = "" }
-            @std::Serializable pack User { fin address: Address = Address() }
+            pack Address { fin city: String = "" }
+            @Serializable pack User { fin address: Address = Address() }
         """.trimIndent())
 
         assertTrue(result.errors.any { "non-serializable type 'Address'" in it }, result.errors.toString())
@@ -138,8 +138,8 @@ class SerializationDeriverTest {
 
     @Test fun nestedSerializablePackIsAccepted() {
         val result = derive("""
-            @std::Serializable pack Address { fin city: std::String = "" }
-            @std::Serializable pack User { fin address: Address = Address() }
+            @Serializable pack Address { fin city: String = "" }
+            @Serializable pack User { fin address: Address = Address() }
         """.trimIndent())
 
         assertTrue(result.errors.isEmpty(), result.errors.toString())
@@ -149,28 +149,28 @@ class SerializationDeriverTest {
     @Test fun deriveRolesDoNotDependOnDecoratorNames() {
         val source = """
             annot Derive for .Annot {
-                fin generator: std::String
-                fin role: std::String
-                fin provider: std::String = ""
-                fin conversionProvider: std::String = ""
-                fin providerModule: std::String = ""
-                fin conversionModule: std::String = ""
+                fin generator: String
+                fin role: String
+                fin provider: String = ""
+                fin conversionProvider: String = ""
+                fin providerModule: String = ""
+                fin conversionModule: String = ""
             }
-            @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "std::convert")
+            @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "convert")
             annot WireModel for .Pack {
-                fin ignoreUnknownFields: std::Bool = false
-                fin encodeDefaults: std::Bool = true
+                fin ignoreUnknownFields: Bool = false
+                fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            annot WireKey for .Field { fin value: std::String = "" }
+            annot WireKey for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
             annot SkipWire for .Field
             @Derive(generator: "serializer", role: "required")
             annot NeedWire for .Field
 
             @WireModel pack User {
-                @WireKey("display_name") fin name: std::String = ""
-                @SkipWire fin password: std::String = ""
+                @WireKey("display_name") fin name: String = ""
+                @SkipWire fin password: String = ""
             }
         """.trimIndent()
         val parsed = Parser(Lexer(source).tokenize()).parse()
@@ -185,25 +185,25 @@ class SerializationDeriverTest {
     @Test fun generatedPrimitiveCodecBodiesPassSemanticAnalysis() {
         val source = """
             annot Derive for .Annot {
-                fin generator: std::String
-                fin role: std::String
-                fin provider: std::String = ""
-                fin conversionProvider: std::String = ""
-                fin providerModule: std::String = ""
-                fin conversionModule: std::String = ""
+                fin generator: String
+                fin role: String
+                fin provider: String = ""
+                fin conversionProvider: String = ""
+                fin providerModule: String = ""
+                fin conversionModule: String = ""
             }
-            @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "std::convert")
+            @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "convert")
             annot Serializable for .Pack {
-                fin ignoreUnknownFields: std::Bool = false
-                fin encodeDefaults: std::Bool = true
+                fin ignoreUnknownFields: Bool = false
+                fin encodeDefaults: Bool = true
             }
-            @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "std::convert")
+            @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "convert")
             annot AzonSerializable for .Pack {
-                fin ignoreUnknownFields: std::Bool = false
-                fin encodeDefaults: std::Bool = true
+                fin ignoreUnknownFields: Bool = false
+                fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            annot SerialName for .Field { fin value: std::String = "" }
+            annot SerialName for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
             annot SerialIgnore for .Field
             @Derive(generator: "serializer", role: "required")
@@ -219,10 +219,10 @@ class SerializationDeriverTest {
             pack SerializerOptions
             pack List<T> {
                 var data: T* = alloc T[16]
-                var size: std::Int = 0
+                var size: Int = 0
             }
             impl List<T> {
-                func add[self: std::Self!](element: T): std::Unit {
+                func add[self: Self!](element: T): Unit {
                     self.data[self.size] = element
                     self.size += 1
                 }
@@ -230,10 +230,10 @@ class SerializationDeriverTest {
             impl oper[] for List<T> { self&, index -> return self.data[index] }
             pack Set<T> {
                 var data: T* = alloc T[16]
-                var size: std::Int = 0
+                var size: Int = 0
             }
             impl Set<T> {
-                func add[self: std::Self!](element: T): std::Bool {
+                func add[self: Self!](element: T): Bool {
                     self.data[self.size] = element
                     self.size += 1
                     return true
@@ -243,15 +243,15 @@ class SerializationDeriverTest {
             pack Map<K, V> {
                 var keysData: K* = alloc K[16]
                 var valuesData: V* = alloc V[16]
-                var size: std::Int = 0
+                var size: Int = 0
             }
             impl Map<K, V> {
-                func put[self: std::Self!](key: K, value: V): std::Unit {
+                func put[self: Self!](key: K, value: V): Unit {
                     self.keysData[self.size] = key
                     self.valuesData[self.size] = value
                     self.size += 1
                 }
-                func keys[self: std::Self&](): std::Array<K> {
+                func keys[self: Self&](): Array<K> {
                     var result = [].fill<K>(self.size)
                     var index = 0
                     while index < self.size {
@@ -270,62 +270,62 @@ class SerializationDeriverTest {
                 panic { "missing map key" }
             }
             pack SerialField {
-                fin name: std::String
+                fin name: String
                 fin value: SerialValue
             }
             variant enum SerialValue {
                 Null
-                std::Bool(std::Bool)
-                std::Number(std::String)
-                Text(std::String)
-                std::Array(List<SerialValue>)
+                Bool(Bool)
+                Number(String)
+                Text(String)
+                Array(List<SerialValue>)
                 Object(List<SerialField>)
             }
 
-            func std__serialFieldAt(fields: List<SerialField>&, index: std::Int): SerialField {
+            func std__serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
                 return fields[index]
             }
-            func std__serialFieldCount(fields: List<SerialField>&): std::Int { return fields.size }
-            func std__serialValueAt(values: List<SerialValue>&, index: std::Int): SerialValue { return values[index] }
-            func std__serialAsText(value: SerialValue&): std::String ?! SerializationError {
+            func std__serialFieldCount(fields: List<SerialField>&): Int { return fields.size }
+            func std__serialValueAt(values: List<SerialValue>&, index: Int): SerialValue { return values[index] }
+            func std__serialAsText(value: SerialValue&): String ?! SerializationError {
                 when value {
                     SerialValue.Text(text) -> { return text }
                     else -> { return .UnexpectedType }
                 }
             }
-            func std__serialAsBool(value: SerialValue&): std::Bool ?! SerializationError {
+            func std__serialAsBool(value: SerialValue&): Bool ?! SerializationError {
                 when value {
                     SerialValue.Bool(boolean) -> { return boolean }
                     else -> { return .UnexpectedType }
                 }
             }
-            func std__serialAsChar(value: SerialValue&): std::Char ?! SerializationError { return 'x' }
-            func std__serialAsLong(value: SerialValue&): std::Long ?! SerializationError { return 7L }
-            func std__serialAsInt(value: SerialValue&): std::Int ?! SerializationError { return 7 }
-            func std__serialAsDouble(value: SerialValue&): std::Double ?! SerializationError { return 0.0 }
-            func std__convert__toString(value: std::Any): std::String { return "" }
-            func std__encodeSerialValue(value: SerialValue&, options: SerializerOptions&): std::String ?! SerializationError { return "" }
-            func std__decodeSerialValue(input: std::String, options: SerializerOptions&): SerialValue ?! SerializationError { return SerialValue.Null }
-            func std__println(value: std::Any): std::Unit {}
+            func std__serialAsChar(value: SerialValue&): Char ?! SerializationError { return 'x' }
+            func std__serialAsLong(value: SerialValue&): Long ?! SerializationError { return 7L }
+            func std__serialAsInt(value: SerialValue&): Int ?! SerializationError { return 7 }
+            func std__serialAsDouble(value: SerialValue&): Double ?! SerializationError { return 0.0 }
+            func std__convert__toString(value: Any): String { return "" }
+            func std__encodeSerialValue(value: SerialValue&, options: SerializerOptions&): String ?! SerializationError { return "" }
+            func std__decodeSerialValue(input: String, options: SerializerOptions&): SerialValue ?! SerializationError { return SerialValue.Null }
+            func std__println(value: Any): Unit {}
 
             @Serializable
-            pack Address { fin city: std::String = "" }
+            pack Address { fin city: String = "" }
 
             @Serializable(ignoreUnknownFields: false, encodeDefaults: false)
             pack User {
-                @SerialName("display_name") fin name: std::String = ""
-                fin age: std::Int = 0
-                @SerialRequired fin enabled: std::Bool = true
-                fin tags: List<std::String> = List()
-                fin scores: Set<std::Int> = Set()
-                fin metrics: Map<std::String, std::Int> = Map()
-                fin nickname: std::String? = null
+                @SerialName("display_name") fin name: String = ""
+                fin age: Int = 0
+                @SerialRequired fin enabled: Bool = true
+                fin tags: List<String> = List()
+                fin scores: Set<Int> = Set()
+                fin metrics: Map<String, Int> = Map()
+                fin nickname: String? = null
                 fin address: Address = Address()
-                @SerialIgnore fin password: std::String = ""
+                @SerialIgnore fin password: String = ""
             }
 
             @Serializable(ignoreUnknownFields: true, encodeDefaults: true)
-            pack LenientUser { fin name: std::String = "" }
+            pack LenientUser { fin name: String = "" }
 
             func main() {
                 fin prototype = User()

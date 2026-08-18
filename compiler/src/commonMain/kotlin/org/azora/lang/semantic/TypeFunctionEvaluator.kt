@@ -59,7 +59,7 @@ internal object TypeFunctionEvaluator {
      * (`promote<T, U>`), so the two are told apart here rather than in the
      * parser: only the declaration set knows which names are type properties,
      * and a declaration can arrive from an injected stdlib module long after the
-     * use site was parsed. A realm-qualified use (`std::promote<…>`) and a bare
+     * use site was parsed. A realm-qualified use (`promote<…>`) and a bare
      * one inside the declaring realm both find the mangled declaration.
      */
     fun declarationNameFor(type: TypeRef.Named, declaredNames: Collection<String>): String? {

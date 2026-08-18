@@ -74,7 +74,7 @@ Members read and write with ordinary field syntax:
 ```azora
 unsafe {
     v.i = 7
-    std::println(v.i)
+    println(v.i)
 }
 ```
 
@@ -89,7 +89,7 @@ unsafe union Flag {
 
 unsafe {
     var f = Flag(on: true)
-    std::println(f.raw)    // 1 - the same byte, read as an Int
+    println(f.raw)    // 1 - the same byte, read as an Int
 }
 ```
 

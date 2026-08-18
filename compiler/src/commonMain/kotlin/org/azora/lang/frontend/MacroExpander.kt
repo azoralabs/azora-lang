@@ -24,7 +24,7 @@ import org.azora.lang.putIfAbsentCompat
  *
  * Runs in `Compiler.compile()` after stdlib injection and before variadic
  * monomorphization, so both user-defined and injected stdlib macros are
- * available and macro-generated variadic calls (e.g. `std::listOf(…)`)
+ * available and macro-generated variadic calls (e.g. `listOf(…)`)
  * monomorphize normally. Because every `MetaInvoke` is rewritten into concrete
  * [Expr] nodes here, downstream passes (validation, semantic analysis, IR)
  * never observe macro nodes.
@@ -1066,7 +1066,7 @@ internal object MacroExpander {
      * Capture names bound to parallel lists by the arm being expanded.
      *
      * `[...${key: value}]` binds two, and a template that spreads an expression
-     * over them - `...std::mapEntry($key, $value)` - is expanded once per index
+     * over them - `...mapEntry($key, $value)` - is expanded once per index
      * rather than once per capture.
      */
     private var zipCaptures: List<String> = emptyList()

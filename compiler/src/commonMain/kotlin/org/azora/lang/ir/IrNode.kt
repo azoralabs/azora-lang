@@ -111,7 +111,7 @@ sealed class IrType {
      *
      * [size] is the compile-time element count when known (a const-generic `N`,
      * e.g. `Array<Int, 3>` or the `[1,2,3]` literal), or `null` for an unsized
-     * array (`[T]` sugar / `std::arrayOf`). Two arrays are distinct types unless
+     * array (`[T]` sugar / `arrayOf`). Two arrays are distinct types unless
      * both [element] and [size] match.
      */
     data class Array(val element: IrType, val size: kotlin.Long? = null) : IrType() {
@@ -156,7 +156,7 @@ sealed class IrType {
     data class Tuple(val elements: List<IrType>) : IrType() { override fun toString() = "(${elements.joinToString(", ")})" }
 
     /** Variant type `Var<A, B, ...>` - a tagged union holding exactly one value whose type is one of
-     *  [elements] (like C++ `std::variant`). Runtime representation is the held value plus its type. */
+     *  [elements] (like C++ `variant`). Runtime representation is the held value plus its type. */
     data class Variant(val elements: List<IrType>) : IrType() { override fun toString() = "Var<${elements.joinToString(", ")}>" }
 
     /** Nullable type `T?`. */

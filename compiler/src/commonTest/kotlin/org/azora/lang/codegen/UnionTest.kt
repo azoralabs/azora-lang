@@ -56,9 +56,9 @@ class UnionTest {
 
     private val value = """
         unsafe union Value {
-            i: std::Int
-            d: std::Double
-            b: std::Bool
+            i: Int
+            d: Double
+            b: Bool
         }
     """.trimIndent()
 
@@ -82,7 +82,7 @@ class UnionTest {
             import std.io
             func main() {
                 fin union = 1
-                std::println(union)
+                println(union)
             }
         """)
     }
@@ -92,7 +92,7 @@ class UnionTest {
     @Test
     fun aUnionMustBeDeclaredUnsafe() = rejects("""
         union Value {
-            i: std::Int
+            i: Int
         }
     """, "declare it 'unsafe union Value'")
 
@@ -120,7 +120,7 @@ class UnionTest {
         $value
         unsafe func show() {
             var v = Value(i: 42)
-            std::println(v.i)
+            println(v.i)
         }
         func main() { unsafe { show() } }
     """))
@@ -134,9 +134,9 @@ class UnionTest {
         func main() {
             unsafe {
                 var v = Value(i: 42)
-                std::println(v.i)
+                println(v.i)
                 v.i = 7
-                std::println(v.i)
+                println(v.i)
             }
         }
     """))
@@ -149,7 +149,7 @@ class UnionTest {
             unsafe {
                 var v = Value(i: 1)
                 v.b = true
-                std::println(v.b)
+                println(v.b)
             }
         }
     """))

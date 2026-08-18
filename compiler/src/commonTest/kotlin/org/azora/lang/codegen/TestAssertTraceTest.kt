@@ -38,7 +38,7 @@ class TestAssertTraceTest {
                 assert 1 + 1 == 2 { "math is broken" }
             }
             func main() {
-                std::println("hello")
+                println("hello")
             }
         """.trimIndent())
         assertTrue(result.ir.tests.isNotEmpty(), "Should have tests in IR")
@@ -52,7 +52,7 @@ class TestAssertTraceTest {
                 trace { "inside test" }
             }
             func main() {
-                std::println("main")
+                println("main")
             }
         """.trimIndent())
         assertTrue("main" in output)
@@ -81,7 +81,7 @@ class TestAssertTraceTest {
             import std.io
             func main() {
                 assert 1 + 1 == 2 { "math broken" }
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent())
         assertEquals("ok", output)
@@ -147,7 +147,7 @@ class TestAssertTraceTest {
             import std.io
             func main() {
                 trace "hello from trace"
-                std::println("done")
+                println("done")
             }
         """.trimIndent())
         assertTrue("[DEBUG] hello from trace" in output)
@@ -159,9 +159,9 @@ class TestAssertTraceTest {
         val output = run($$"""
             func main() {
                 trace .Info { "Any bridge works" }
-                var level = std::LogLevel.Warn
+                var level = LogLevel.Warn
                 trace level { "${it}: Hello" }
-                fin finalLevel = std::LogLevel.Error
+                fin finalLevel = LogLevel.Error
                 trace finalLevel { "final" }
                 trace { "${it}: default" }
             }
@@ -176,7 +176,7 @@ class TestAssertTraceTest {
             module playground
             func main() {
                 trace .Info { "Any bridge works" }
-                var level = std::LogLevel.Warn
+                var level = LogLevel.Warn
                 trace level { "${it}: Hello" }
             }
         """.trimIndent())
@@ -190,20 +190,20 @@ class TestAssertTraceTest {
         assertEquals(IrType.Named("LogLevel"), level.type)
         assertTrue(ir.startsWith("module playground\n\nfunc __main_lambda0"), ir)
         assertTrue("""
-            func __main_lambda0(level: std::LogLevel): std::String {
+            func __main_lambda0(level: LogLevel): String {
                 return "Any bridge works"
             }
         """.trimIndent() in ir, ir)
         assertTrue($$"""
-            func __main_lambda1(level: std::LogLevel): std::String {
+            func __main_lambda1(level: LogLevel): String {
                 return "${level}: Hello"
             }
         """.trimIndent() in ir, ir)
         val mainIr = """
-            func main(): std::Unit {
-                trace std::LogLevel.Info __main_lambda0(std::LogLevel.Info)
-                var level: std::LogLevel = std::LogLevel.Warn
-                trace std::LogLevel.Warn __main_lambda1(level)
+            func main(): Unit {
+                trace LogLevel.Info __main_lambda0(LogLevel.Info)
+                var level: LogLevel = LogLevel.Warn
+                trace LogLevel.Warn __main_lambda1(level)
             }
         """.trimIndent()
         assertTrue(mainIr in ir, ir)
@@ -257,7 +257,7 @@ class TestAssertTraceTest {
     fun directTrace_acceptsQualifiedExplicitLevel() {
         val result = compile("""
             func main() {
-                trace std::LogLevel.Error "Error"
+                trace LogLevel.Error "Error"
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -273,9 +273,9 @@ class TestAssertTraceTest {
             enum Tone { Warm Cool }
             func main() {
                 fin tone = Tone.Warm
-                std::println(tone)
-                std::println("${tone}")
-                std::println(tone as std::String)
+                println(tone)
+                println("${tone}")
+                println(tone as String)
             }
         """.trimIndent())
 
@@ -315,7 +315,7 @@ class TestAssertTraceTest {
             inline fin X = 5
             inline assert X > 0 { "X must be positive" }
             func main() {
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent())
         assertNotNull(result, "Passing inline assert should compile")
@@ -339,7 +339,7 @@ class TestAssertTraceTest {
             func main() {
                 inline fin x = 5
                 inline assert x > 0 { "x must be positive" }
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent())
         assertNotNull(result)
@@ -352,7 +352,7 @@ class TestAssertTraceTest {
             inline fin X = 5
             inline assert X > 0 { "ok" }
             func main() {
-                std::println("hello")
+                println("hello")
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -364,7 +364,7 @@ class TestAssertTraceTest {
         val result = compile("""
             inline var BUILD = 1
             inline fin ANSWER = 42
-            func main(): std::Int {
+            func main(): Int {
                 return BUILD + ANSWER
             }
         """.trimIndent())
@@ -384,7 +384,7 @@ class TestAssertTraceTest {
             import std.io
             inline trace { "compiling module" }
             func main() {
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent())
         assertTrue(result.warnings.any { "DEBUG" in it && "compiling module" in it },
@@ -397,7 +397,7 @@ class TestAssertTraceTest {
             import std.io
             func main() {
                 inline trace { "in main" }
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent())
         assertTrue(result.warnings.any { "DEBUG" in it && "in main" in it },
@@ -408,8 +408,8 @@ class TestAssertTraceTest {
     fun inlineTrace_acceptsShorthandAndInlineBindings() {
         val result = compile($$"""
             func main() {
-                inline fin infoLevel = std::LogLevel.Info
-                inline var warnLevel = std::LogLevel.Warn
+                inline fin infoLevel = LogLevel.Info
+                inline var warnLevel = LogLevel.Warn
                 inline trace infoLevel { "${it}: compiling" }
                 inline trace warnLevel { "careful" }
                 inline trace .Critical { "stop" }
@@ -424,9 +424,9 @@ class TestAssertTraceTest {
     @Test
     fun inlineTrace_acceptsTopLevelInlineBindings() {
         val result = compile($$"""
-            inline fin infoLevel = std::LogLevel.Info
+            inline fin infoLevel = LogLevel.Info
             inline trace infoLevel { "${it}: module" }
-            inline var todoLevel = std::LogLevel.Todo
+            inline var todoLevel = LogLevel.Todo
             inline trace todoLevel { "later" }
             func main() {}
         """.trimIndent())
@@ -441,7 +441,7 @@ class TestAssertTraceTest {
             import std.io
             inline trace { "debug" }
             func main() {
-                std::println("hello")
+                println("hello")
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
@@ -460,7 +460,7 @@ class TestAssertTraceTest {
         val result = compile("""
             import std.io
             test "works at top level" {
-                std::println("ok")
+                println("ok")
             }
             func main() {}
         """.trimIndent())

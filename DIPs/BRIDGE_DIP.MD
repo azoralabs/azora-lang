@@ -50,7 +50,7 @@ The two never mean the same thing. A block says *link to this*; a modifier says
 
 ## 2. Targets
 
-A target names who provides the implementation. It is a member of `std::Target`,
+A target names who provides the implementation. It is a member of `Target`,
 declared in `std/core.az`:
 
 ```azora
@@ -268,7 +268,7 @@ runs under the interpreter. An extern with no entry is an error at the call.
 
 - A math extern whose signature is all-`Double` and matches a libm name by arity
   becomes a `declare double @name(…)`, and the mangled Azora symbol is defined as
-  a call to it. `std::sqrt` therefore needs no hand-written C shim.
+  a call to it. `sqrt` therefore needs no hand-written C shim.
 - The string primitives (`stringLength`, `charAt`, `substring`, …) are emitted as
   runtime helpers, so their `declare` is skipped.
 - Everything else becomes a plain `declare`, left to the linker.
@@ -317,7 +317,7 @@ without saying what it means.
 
 ## 7. Rules
 
-1. A bridge target is a `std::Target` member, written `.X`, `Target.X`, or a
+1. A bridge target is a `Target` member, written `.X`, `Target.X`, or a
    constant bound to one. A bare identifier is not a target.
 2. A bridge signature is bodyless. Its return type defaults to `Unit`.
 3. A declaration-position name macro must expand to one two-string

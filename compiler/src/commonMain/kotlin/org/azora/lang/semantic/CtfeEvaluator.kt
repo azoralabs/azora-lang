@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
@@ -1753,8 +1754,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // the call to whatever the success path happens to produce. Leave the
         // call for runtime, where the error transport observes it.
         if ((funcDecl.returnType as? TypeAnnotation.Explicit)?.ref is TypeRef.Failable) return null
-        // Runtime intrinsics now live in std (std::println, std::convert::toString,
-        // std::concurrency::async/channel/cancel). Their .az bodies are dead placeholders
+        // Runtime intrinsics now live in std (println, convert::toString,
+        // concurrency::async/channel/cancel). Their .az bodies are dead placeholders
         // (each backend/interpreter intercepts the call by mangled name); folding them at
         // compile time would either infinite-recurse (channel/async call themselves) or
         // silently substitute the placeholder result (toString -> ""). Never CTCE them.
@@ -1952,14 +1953,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
         /**
          * Legacy runtime functions whose behavior is supplied by the backends
          * even though their declarations have ordinary stdlib bodies. Proper
-         * compiler intrinsics such as `std::println` are declared `bridge func`
+         * compiler intrinsics such as `println` are declared `bridge func`
          * and therefore do not belong in this compatibility list.
          */
-        val RUNTIME_INTRINSICS = setOf(
-            "std__convert__toString",
-            "std__concurrency__async",
-            "std__concurrency__channel",
-            "std__concurrency__cancel",
-        )
+        val RUNTIME_INTRINSICS = Intrinsics.RUNTIME
     }
 }

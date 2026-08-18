@@ -50,7 +50,7 @@ Three modules. Importing any of them is fine, because injection is lazy;
 ```azora
 import std.parallelism.sync
 func main() {
-    fin s = std::SpinLock<Int>(0)   // line 123: undefined function 'Atomic'
+    fin s = SpinLock<Int>(0)   // line 123: undefined function 'Atomic'
 }
 ```
 
@@ -139,7 +139,7 @@ async func joinAll<T>(count: T) { delay count }
 
 There are two unrelated things called a channel:
 
-|          | `channel()`        | `std::Channel<T>`         |
+|          | `channel()`        | `Channel<T>`         |
 |----------|--------------------|---------------------------|
 | where    | a compiler builtin | `std.parallelism.channel` |
 | state    | ✅ works            | ⬜ does not compile        |

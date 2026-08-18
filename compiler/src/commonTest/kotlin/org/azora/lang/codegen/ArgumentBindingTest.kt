@@ -38,15 +38,15 @@ class ArgumentBindingTest {
             """
             import std.io
 
-            func f(a: std::Int = 1, b: std::Int = 2): std::Int {
+            func f(a: Int = 1, b: Int = 2): Int {
                 return a * 10 + b
             }
 
             func main() {
-                std::println(f(b: 5))
-                std::println(f(a: 9))
-                std::println(f())
-                std::println(f(7))
+                println(f(b: 5))
+                println(f(a: 9))
+                println(f())
+                println(f(7))
             }
             """,
         )
@@ -62,20 +62,20 @@ class ArgumentBindingTest {
             """
             import std.io
 
-            pack P { var n: std::Int }
+            pack P { var n: Int }
 
             impl P {
-                func f[self: Self&](a: std::Int = 1, b: std::Int = 2): std::Int {
+                func f[self: Self&](a: Int = 1, b: Int = 2): Int {
                     return a * 10 + b
                 }
             }
 
             func main() {
                 fin p = P(0)
-                std::println(p.f())
-                std::println(p.f(7))
-                std::println(p.f(b: 5))
-                std::println(p.f(a: 9))
+                println(p.f())
+                println(p.f(7))
+                println(p.f(b: 5))
+                println(p.f(a: 9))
             }
             """,
         )
@@ -89,14 +89,14 @@ class ArgumentBindingTest {
             """
             import std.io
 
-            func k(a: std::Int = 3, body: () -> std::Unit): std::Int {
+            func k(a: Int = 3, body: () -> Unit): Int {
                 body()
                 return a
             }
 
             func main() {
-                std::println(k { std::println("ran") })
-                std::println(k(7) { std::println("ran") })
+                println(k { println("ran") })
+                println(k(7) { println("ran") })
             }
             """,
         )
@@ -111,14 +111,14 @@ class ArgumentBindingTest {
             """
             import std.io
 
-            pack P { var n: std::Int }
+            pack P { var n: Int }
 
             impl P {
                 func build[self: Self&](
-                    spacing: std::Double = 0.0,
-                    padding: std::Double = 0.0,
-                    body: () -> std::Unit,
-                ): std::Double {
+                    spacing: Double = 0.0,
+                    padding: Double = 0.0,
+                    body: () -> Unit,
+                ): Double {
                     body()
                     return spacing * 100.0 + padding
                 }
@@ -126,7 +126,7 @@ class ArgumentBindingTest {
 
             func main() {
                 fin p = P(0)
-                std::println(p.build(spacing: 8.0) { std::println("inner") })
+                println(p.build(spacing: 8.0) { println("inner") })
             }
             """,
         )
@@ -143,10 +143,10 @@ class ArgumentBindingTest {
             """
             import std.io
 
-            pack P { var n: std::Int }
+            pack P { var n: Int }
 
             impl P {
-                func each<R>[self: Self&](label: std::String = "x", body: () -> R): std::String {
+                func each<R>[self: Self&](label: String = "x", body: () -> R): String {
                     body()
                     return label
                 }
@@ -154,8 +154,8 @@ class ArgumentBindingTest {
 
             func main() {
                 fin p = P(0)
-                std::println(p.each { 42 })
-                std::println(p.each(label: "named") { "any type at all" })
+                println(p.each { 42 })
+                println(p.each(label: "named") { "any type at all" })
             }
             """,
         )
@@ -170,13 +170,13 @@ class ArgumentBindingTest {
             """
             import std.io
 
-            func apply(body: () -> std::Unit, times: std::Int): std::Int {
+            func apply(body: () -> Unit, times: Int): Int {
                 body()
                 return times
             }
 
             func main() {
-                std::println(apply({ std::println("once") }, 3))
+                println(apply({ println("once") }, 3))
             }
             """,
         )

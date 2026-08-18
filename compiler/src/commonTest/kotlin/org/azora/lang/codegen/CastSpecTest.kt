@@ -46,19 +46,19 @@ class CastSpecTest {
             import std.io
             import std.convert
             pack Celsius {
-                var degrees: std::Int
+                var degrees: Int
             }
             pack Fahrenheit {
-                var degrees: std::Int
+                var degrees: Int
             }
-            impl std::Cast<Fahrenheit> for Celsius {
-                prop castValue[self: std::Self&]: Fahrenheit {
+            impl Cast<Fahrenheit> for Celsius {
+                prop castValue[self: Self&]: Fahrenheit {
                     return Fahrenheit(self.degrees * 9 / 5 + 32)
                 }
             }
             func main() {
                 fin f = Celsius(100) as Fahrenheit
-                std::println(f.degrees)
+                println(f.degrees)
             }
         """.trimIndent()))
     }
@@ -69,27 +69,27 @@ class CastSpecTest {
             import std.io
             import std.convert
             pack Celsius {
-                var degrees: std::Int
+                var degrees: Int
             }
             pack Fahrenheit {
-                var degrees: std::Int
+                var degrees: Int
             }
             pack Kelvin {
-                var degrees: std::Int
+                var degrees: Int
             }
-            impl std::Cast<Fahrenheit> for Celsius {
-                prop castValue[self: std::Self&]: Fahrenheit {
+            impl Cast<Fahrenheit> for Celsius {
+                prop castValue[self: Self&]: Fahrenheit {
                     return Fahrenheit(self.degrees * 9 / 5 + 32)
                 }
             }
-            impl std::Cast<Kelvin> for Celsius {
-                prop castValue[self: std::Self&]: Kelvin {
+            impl Cast<Kelvin> for Celsius {
+                prop castValue[self: Self&]: Kelvin {
                     return Kelvin(self.degrees + 273)
                 }
             }
             func main() {
-                std::println((Celsius(100) as Fahrenheit).degrees)
-                std::println((Celsius(100) as Kelvin).degrees)
+                println((Celsius(100) as Fahrenheit).degrees)
+                println((Celsius(100) as Kelvin).degrees)
             }
         """.trimIndent()))
     }
@@ -100,24 +100,24 @@ class CastSpecTest {
             import std.io
             import std.convert
             pack Handle {
-                var raw: std::Int
+                var raw: Int
             }
             pack Id {
-                var v: std::Int
+                var v: Int
             }
-            impl std::Cast<Id> for Handle {
-                prop castValue[self: std::Self&]: Id {
+            impl Cast<Id> for Handle {
+                prop castValue[self: Self&]: Id {
                     return Id(1)
                 }
             }
-            impl std::BitCast<Id> for Handle {
-                prop castValue[self: std::Self&]: Id {
+            impl BitCast<Id> for Handle {
+                prop castValue[self: Self&]: Id {
                     return Id(7)
                 }
             }
             func main() {
-                std::println((Handle(0) as* Id).v)
-                std::println((Handle(0) as Id).v)
+                println((Handle(0) as* Id).v)
+                println((Handle(0) as Id).v)
             }
         """.trimIndent()))
     }

@@ -43,10 +43,10 @@ class NestedCaptureTest {
 
             func run<R>(body: () -> R) { body() }
 
-            func outer(h: std::Double) {
+            func outer(h: Double) {
                 run [; &] {
                     run [; &] {
-                        std::println(h)
+                        println(h)
                     }
                 }
             }
@@ -67,12 +67,12 @@ class NestedCaptureTest {
 
             func run<R>(body: () -> R) { body() }
 
-            func outer(label: std::String, n: std::Int) {
+            func outer(label: String, n: Int) {
                 run [; &] {
                     run [; &] {
                         var i = 0
                         while i < n {
-                            std::println(label)
+                            println(label)
                             i = i + 1
                         }
                     }
@@ -95,10 +95,10 @@ class NestedCaptureTest {
 
             func run<R>(body: () -> R) { body() }
 
-            func outer(h: std::Double) {
+            func outer(h: Double) {
                 run [; &] {
-                    run [; &] { std::println("first") }
-                    run [; &] { std::println(h) }
+                    run [; &] { println("first") }
+                    run [; &] { println(h) }
                 }
             }
 
@@ -118,11 +118,11 @@ class NestedCaptureTest {
 
             func run<R>(body: () -> R) { body() }
 
-            func outer(h: std::Int) {
+            func outer(h: Int) {
                 run [; &] {
                     run [; &] {
                         var h = 99
-                        std::println(h)
+                        println(h)
                     }
                 }
             }
@@ -143,11 +143,11 @@ class NestedCaptureTest {
 
             func run<R>(body: () -> R) { body() }
 
-            func outer(h: std::Int) {
+            func outer(h: Int) {
                 run [; &] {
                     run [; &] {
                         run [; &] {
-                            std::println(h)
+                            println(h)
                         }
                     }
                 }

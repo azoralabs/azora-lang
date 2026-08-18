@@ -49,17 +49,17 @@ class OperatorFamilyTest {
             import std.io
             import std.traits
             pack Acc {
-                var total: std::Int
+                var total: Int
             }
-            impl std::Arithmetic for Acc {
-                oper+= [self: std::Self!](rhs: std::Self&) {
+            impl Arithmetic for Acc {
+                oper+= [self: Self!](rhs: Self&) {
                     self.total = self.total + rhs.total
                 }
             }
             func main() {
                 var acc = Acc(3)
                 acc += Acc(4)
-                std::println(acc.total)
+                println(acc.total)
             }
         """.trimIndent()))
     }
@@ -68,14 +68,14 @@ class OperatorFamilyTest {
     @Test fun aNamedMemberIsStillRequired() {
         val result = compile("""
             spec Sized {
-                func size[self: std::Self&](): std::Int
-                func capacity[self: std::Self&](): std::Int
+                func size[self: Self&](): Int
+                func capacity[self: Self&](): Int
             }
             pack Buffer {
-                var n: std::Int
+                var n: Int
             }
             impl Sized for Buffer {
-                func size[self: std::Self&](): std::Int { return self.n }
+                func size[self: Self&](): Int { return self.n }
             }
             func main() {}
         """.trimIndent())
@@ -92,17 +92,17 @@ class OperatorFamilyTest {
             import std.io
             import std.traits
             pack N {
-                var v: std::Int
+                var v: Int
             }
-            impl std::Arithmetic for N {
-                oper+ [self: std::Self&](rhs: std::Self&): N { return N(self.v + rhs.v) }
-                oper- [self: std::Self&](rhs: std::Self&): N { return N(self.v - rhs.v) }
-                oper* [self: std::Self&](rhs: std::Self&): N { return N(self.v * rhs.v) }
+            impl Arithmetic for N {
+                oper+ [self: Self&](rhs: Self&): N { return N(self.v + rhs.v) }
+                oper- [self: Self&](rhs: Self&): N { return N(self.v - rhs.v) }
+                oper* [self: Self&](rhs: Self&): N { return N(self.v * rhs.v) }
             }
             func main() {
-                std::println((N(3) + N(2)).v)
-                std::println((N(3) - N(2)).v)
-                std::println((N(3) * N(2)).v)
+                println((N(3) + N(2)).v)
+                println((N(3) - N(2)).v)
+                println((N(3) * N(2)).v)
             }
         """.trimIndent()))
     }
@@ -113,17 +113,17 @@ class OperatorFamilyTest {
             import std.io
             import std.traits
             pack N {
-                var v: std::Int
+                var v: Int
             }
-            impl std::Neg for N {
-                oper- [self: std::Self&]: N { return N(0 - self.v) }
+            impl Neg for N {
+                oper- [self: Self&]: N { return N(0 - self.v) }
             }
-            impl std::Arithmetic for N {
-                oper- [self: std::Self&](rhs: std::Self&): N { return N(self.v - rhs.v) }
+            impl Arithmetic for N {
+                oper- [self: Self&](rhs: Self&): N { return N(self.v - rhs.v) }
             }
             func main() {
-                std::println((-N(3)).v)
-                std::println((N(3) - N(2)).v)
+                println((-N(3)).v)
+                println((N(3) - N(2)).v)
             }
         """.trimIndent()))
     }
@@ -134,16 +134,16 @@ class OperatorFamilyTest {
             import std.io
             import std.traits
             pack N {
-                var v: std::Int
+                var v: Int
             }
-            impl std::Arithmetic for N {
-                oper+ [self: std::Self&](rhs: std::Self&): N { return N(self.v + rhs.v) }
+            impl Arithmetic for N {
+                oper+ [self: Self&](rhs: Self&): N { return N(self.v + rhs.v) }
             }
-            func total<T>(a: T, b: T): T where T: std::Arithmetic {
+            func total<T>(a: T, b: T): T where T: Arithmetic {
                 return a + b
             }
             func main() {
-                std::println(total(N(3), N(2)).v)
+                println(total(N(3), N(2)).v)
             }
         """.trimIndent()))
     }

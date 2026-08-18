@@ -126,7 +126,7 @@ Accurate as of `0.0.5`, because the rest of this document is a delta against it.
   the runtime type test.
 - **`as?` widens the result** to `T?` in the resolver (`TypeResolver.kt:2039`),
   and again at lowering when the operator did not say.
-- **`std::cast` / `dyncast` / `bitcast` are gone.** Three `bridge func`s that
+- **`cast` / `dyncast` / `bitcast` are gone.** Three `bridge func`s that
   duplicated the operators - the file's own header called them sugar for
   `as` / `as?` / `as*` - with no callers anywhere in the tree. `std/cast.az` and
   `rewriteCastIntrinsic` were deleted in `0.0.5`. `TYPE_DIP.MD:120` still says

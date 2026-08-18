@@ -12,15 +12,15 @@ It does not introduce property lambdas. A reference is created explicitly with
 fin declaration = bind User::name
 fin bound = bind user::name
 
-std::println(declaration.read(user))
-std::println(bound.read())
+println(declaration.read(user))
+println(bound.read())
 ```
 
 The design keeps three operations separate:
 
 ```azora
 user.name                         // read the value now
-std::reflect<User::name>          // compile-time declaration metadata
+reflect<User::name>          // compile-time declaration metadata
 bind User::name                   // unbound runtime property reference
 bind user::name                   // runtime property reference bound to user
 ```
@@ -111,9 +111,9 @@ fin empty = bind Collection::isEmpty
 It receives an owner when used:
 
 ```azora
-std::println(name.read(user))
+println(name.read(user))
 retries.write(config.!, 5)
-std::println(empty.read(items))
+println(empty.read(items))
 ```
 
 Creating an unbound reference does not borrow an instance. It may therefore be
@@ -127,8 +127,8 @@ A bound reference starts from a stable owner expression:
 fin name = bind user::name
 fin retries = bind config::retries
 
-std::println(name.read())
-std::println(retries.read())
+println(name.read())
+println(retries.read())
 ```
 
 The default is a shared, read-only binding even when the referenced field is a
@@ -150,7 +150,7 @@ var user = User("Mira")
 fin name = bind user::name.!
 
 name.write("Azora")
-std::println(name.read())
+println(name.read())
 ```
 
 This is legal only when:
@@ -200,8 +200,8 @@ declaration forms.
 
 ```azora
 user.name                   // String
-bind user::name             // std::BoundPropertyRef<User, String>
-bind User::name             // std::PropertyRef<User, String> or mutable counterpart
+bind user::name             // BoundPropertyRef<User, String>
+bind User::name             // PropertyRef<User, String> or mutable counterpart
 ```
 
 Neither of the following becomes legal:
@@ -241,14 +241,14 @@ may use inherent bridge methods or specs, but its observable API is normative:
 
 | type | operation | result |
 |---|---|---|
-| `std::PropertyRef<O, V>` | `read(owner: O&)` | `V` |
-| `std::MutablePropertyRef<O, V>` | `read(owner: O&)` | `V` |
-| `std::MutablePropertyRef<O, V>` | `write(owner: O!, value: V)` | `Unit` |
-| `std::BoundPropertyRef<O, V>` | `read()` | `V` |
-| `std::BoundMutablePropertyRef<O, V>` | `read()` | `V` |
-| `std::BoundMutablePropertyRef<O, V>` | `write(value: V)` | `Unit` |
-| `std::AsyncPropertyRef<O, V>` | `async read(owner: O&)` | `V` |
-| `std::BoundAsyncPropertyRef<O, V>` | `async read()` | `V` |
+| `PropertyRef<O, V>` | `read(owner: O&)` | `V` |
+| `MutablePropertyRef<O, V>` | `read(owner: O&)` | `V` |
+| `MutablePropertyRef<O, V>` | `write(owner: O!, value: V)` | `Unit` |
+| `BoundPropertyRef<O, V>` | `read()` | `V` |
+| `BoundMutablePropertyRef<O, V>` | `read()` | `V` |
+| `BoundMutablePropertyRef<O, V>` | `write(value: V)` | `Unit` |
+| `AsyncPropertyRef<O, V>` | `async read(owner: O&)` | `V` |
+| `BoundAsyncPropertyRef<O, V>` | `async read()` | `V` |
 
 These names denote compiler-provided representations through their core
 declaration identity. Backends must not discover the feature by hardcoded
@@ -273,13 +273,13 @@ impl User {
 }
 
 fin id = bind User::id
-// std::PropertyRef<User, Long>
+// PropertyRef<User, Long>
 
 fin name = bind User::name
-// std::MutablePropertyRef<User, String>
+// MutablePropertyRef<User, String>
 
 fin displayName = bind User::displayName
-// std::PropertyRef<User, String>
+// PropertyRef<User, String>
 ```
 
 A `var` produces an unbound mutable reference because write access is checked
@@ -289,15 +289,15 @@ read-only type and requires `.!` to produce the mutable type.
 Explicit annotation is allowed:
 
 ```azora
-fin name: std::MutablePropertyRef<User, String> = bind User::name
-fin bound: std::BoundPropertyRef<User, String> = bind user::name
+fin name: MutablePropertyRef<User, String> = bind User::name
+fin bound: BoundPropertyRef<User, String> = bind user::name
 ```
 
 There is an implicit capability-narrowing conversion:
 
 ```text
-std::MutablePropertyRef<O, V>      -> std::PropertyRef<O, V>
-std::BoundMutablePropertyRef<O, V> -> std::BoundPropertyRef<O, V>
+MutablePropertyRef<O, V>      -> PropertyRef<O, V>
+BoundMutablePropertyRef<O, V> -> BoundPropertyRef<O, V>
 ```
 
 No conversion adds write capability.
@@ -378,7 +378,7 @@ Its `read` and `write` calls borrow the owner only for the call.
 owner. They cannot outlive it:
 
 ```azora
-func invalid(): std::BoundPropertyRef<User, String> {
+func invalid(): BoundPropertyRef<User, String> {
     fin user = User("temporary")
     return bind user::name
     // error: the bound property reference outlives user
@@ -458,7 +458,7 @@ impl User {
 }
 
 fin display = bind User::displayName
-std::println(display.read(user))
+println(display.read(user))
 ```
 
 The reference calls the same implementation as `user.displayName`; it does not
@@ -470,7 +470,7 @@ type is generic:
 ```azora
 func render<T>(value: T&) where T is PrettyPrint {
     fin pretty = bind T::pretty
-    std::println(pretty.read(value))
+    println(pretty.read(value))
 }
 ```
 
@@ -511,7 +511,7 @@ fin p = bind TypeInfo::name // error when name is compile-time-only
 Compile-time declaration information is already provided by:
 
 ```azora
-std::reflect<TypeInfo::name>
+reflect<TypeInfo::name>
 ```
 
 An `inline fin` may hold an unbound reference only when every use is expanded
@@ -520,26 +520,26 @@ runtime borrow and cannot exist solely as reflection metadata.
 
 ## 15. Reflection remains separate
 
-Azora already has compile-time-only `std::reflect`. This DIP does not replace or
+Azora already has compile-time-only `reflect`. This DIP does not replace or
 extend it into runtime reflection.
 
 ```azora
-inline fin metadata = std::reflect<User::name>
+inline fin metadata = reflect<User::name>
 inline assert metadata.hasAnnot<SerialName> { "name must have SerialName" }
 
 fin property = bind User::name
-std::println(property.read(user))
+println(property.read(user))
 ```
 
 | operation | phase | contains owner | reads values | emitted at runtime |
 |---|---|---|---|---|
-| `std::reflect<User::name>` | compile time | no | no | no |
+| `reflect<User::name>` | compile time | no | no | no |
 | `bind User::name` | runtime-capable | no | through `read(owner)` | when retained |
 | `bind user::name` | runtime | yes, borrowed | through `read()` | yes |
 | `user.name` | runtime | immediate receiver | immediately | direct access |
 
 There is no conversion from `Reflected<T>` to a property reference and no
-`bind std::reflect<...>` form. A property reference must name its declaration
+`bind reflect<...>` form. A property reference must name its declaration
 statically in source or be received as an already typed value.
 
 ## 16. Generics
@@ -551,7 +551,7 @@ pack Box<T> {
     var value: T
 }
 
-func property<T>(): std::MutablePropertyRef<Box<T>, T> {
+func property<T>(): MutablePropertyRef<Box<T>, T> {
     return bind Box<T>::value
 }
 ```
@@ -560,7 +560,7 @@ A concrete specialization produces a concrete reference:
 
 ```azora
 fin intValue = bind Box<Int>::value
-// std::MutablePropertyRef<Box<Int>, Int>
+// MutablePropertyRef<Box<Int>, Int>
 ```
 
 An unspecialized generic member cannot escape a scope in which its type
@@ -587,7 +587,7 @@ The program must branch or unwrap explicitly:
 when possibleUser {
     is User -> {
         fin name = bind possibleUser::name
-        std::println(name.read())
+        println(name.read())
     }
     else -> { }
 }
@@ -623,7 +623,7 @@ name.read(user) // one read, no observer
 and an actual reactive source:
 
 ```azora
-fin observed = std::observe(userState, bind User::name)
+fin observed = observe(userState, bind User::name)
 ```
 
 Such an adapter belongs in the library. The compiler does not attach observers,
@@ -708,13 +708,13 @@ The common cases should have zero abstraction overhead:
 
 ```azora
 fin name = bind User::name
-std::println(name.read(user))
+println(name.read(user))
 ```
 
 When `name` does not escape, this becomes the same IR as:
 
 ```azora
-std::println(user.name)
+println(user.name)
 ```
 
 Likewise, a bound reference used locally may become a direct owner/member
@@ -740,7 +740,7 @@ cannot bind temporary owner returned by 'makeUser'; store it in a stable binding
 
 computed property 'User.displayName' is read-only
 
-compile-time property 'TypeInfo.name' has no runtime reference; use std::reflect<TypeInfo::name>
+compile-time property 'TypeInfo.name' has no runtime reference; use reflect<TypeInfo::name>
 
 'bind User::name.!' is invalid: '.!' is only for a reference bound to an owner value
 ```
@@ -763,7 +763,7 @@ reference:
 - rename updates the binding site because it is a semantic reference, not text;
 - an unavailable mutable capability is either omitted or shown with its reason.
 
-`std::reflect<User::name>` retains its existing compile-time hover and metadata
+`reflect<User::name>` retains its existing compile-time hover and metadata
 behavior. Tooling must not present `bind` as runtime reflection.
 
 ## 24. Required tests
@@ -823,10 +823,10 @@ interpreter, LLVM, and WebAssembly where runtime behavior applies.
 
 ### Reflection separation
 
-- `std::reflect<User::name>` folds away;
+- `reflect<User::name>` folds away;
 - `bind User::name` remains only when retained at runtime;
 - no conversion between `Reflected<T>` and property-reference types;
-- compile-time-only properties direct users to `std::reflect`.
+- compile-time-only properties direct users to `reflect`.
 
 ## 25. Implementation order
 
@@ -847,7 +847,7 @@ backend parity tests pass.
 
 1. `bind` names an existing field or computed property; it never creates one.
 2. Property references are not lambdas and are not callable types.
-3. `std::reflect<Declaration>` is compile-time metadata; `bind` is a typed
+3. `reflect<Declaration>` is compile-time metadata; `bind` is a typed
    runtime-capable reference.
 4. An unbound reference receives its owner explicitly on `read` or `write`.
 5. A bound reference borrows one stable owner and cannot outlive it.
@@ -865,7 +865,7 @@ backend parity tests pass.
 
 - `PACK_IMPL_DIP.MD` - fields, computed properties, receivers, and visibility
 - `OWNERSHIP_BORROWING_DIP.md` - shared/exclusive borrows and escape rules
-- `REFLECTION_DIP.MD` - compile-time-only `std::reflect`
+- `REFLECTION_DIP.MD` - compile-time-only `reflect`
 - `COMPILER_INTRINSIC_DIP.MD` - declared compiler-provided bridge types
 - `DYNAMIC_DISPATCH_DIP.MD` - spec property witness dispatch
 - `CONTRACTS_ASSERTION_DIP.MD` - contracts preserved through referenced access

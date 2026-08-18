@@ -43,10 +43,10 @@ class LlvmRegressionExecTest {
         "42",
         """
         import std.io
-        async func answer(): std::Int { return 42 }
+        async func answer(): Int { return 42 }
         async func main() {
             fin value = await answer()
-            std::println(value)
+            println(value)
         }
         """.trimIndent()
     )
@@ -55,10 +55,10 @@ class LlvmRegressionExecTest {
         "42",
         """
         import std.io
-        async func add(a: std::Int, b: std::Int): std::Int { return a + b }
+        async func add(a: Int, b: Int): Int { return a + b }
         async func main() {
             fin value = await add(19, 23)
-            std::println(value)
+            println(value)
         }
         """.trimIndent()
     )
@@ -69,7 +69,7 @@ class LlvmRegressionExecTest {
         import std.io
         async func main() {
             fin value = async { 42 }
-            std::println(await value)
+            println(await value)
         }
         """.trimIndent()
     )
@@ -81,7 +81,7 @@ class LlvmRegressionExecTest {
         async func main() {
             fin seed = 40
             fin value = async [; seed.&] { seed + 2 }
-            std::println(await value)
+            println(await value)
         }
         """.trimIndent()
     )
@@ -90,8 +90,8 @@ class LlvmRegressionExecTest {
         "42",
         """
         import std.io
-        async func child(): std::Int {
-            std::println(42)
+        async func child(): Int {
+            println(42)
             return 0
         }
         async func main() {
@@ -104,10 +104,10 @@ class LlvmRegressionExecTest {
         "42",
         """
         import std.io
-        threadlocal var numbers = @std::arr[41]
-        async func read(): std::Int { return numbers[0] + 1 }
+        threadlocal var numbers = @arr[41]
+        async func read(): Int { return numbers[0] + 1 }
         async func main() {
-            std::println(await read())
+            println(await read())
         }
         """.trimIndent()
     )
@@ -118,11 +118,11 @@ class LlvmRegressionExecTest {
         import std.io
         import std.concurrency.async
 
-        async func answer(): std::Int { return 42 }
+        async func answer(): Int { return 42 }
         async func main() {
             fin value = answer()
-            std::println(await value)
-            std::concurrency::cancel(value)
+            println(await value)
+            concurrency::cancel(value)
         }
         """.trimIndent()
     )
@@ -133,10 +133,10 @@ class LlvmRegressionExecTest {
             import std.io
             import std.concurrency.async
 
-            async func answer(): std::Int { return 42 }
+            async func answer(): Int { return 42 }
             async func main() {
                 fin value = answer()
-                std::concurrency::cancel(value)
+                concurrency::cancel(value)
             }
             """.trimIndent()
         )
@@ -151,9 +151,9 @@ class LlvmRegressionExecTest {
             """
             let s = "he" + "llo"
             when s {
-                "world" -> { std::println("W") }
-                "hello" -> { std::println("H") }
-                else -> { std::println("?") }
+                "world" -> { println("W") }
+                "hello" -> { println("H") }
+                else -> { println("?") }
             }
             """.trimIndent()
         )
@@ -166,9 +166,9 @@ class LlvmRegressionExecTest {
             var x = 1
             if true {
                 var x = 2
-                std::println(x)
+                println(x)
             }
-            std::println(x)
+            println(x)
             """.trimIndent()
         )
     )
@@ -181,11 +181,11 @@ class LlvmRegressionExecTest {
             when x {
                 1 -> {
                     var x = 5
-                    std::println(x)
+                    println(x)
                 }
-                else -> { std::println(0) }
+                else -> { println(0) }
             }
-            std::println(x)
+            println(x)
             """.trimIndent()
         )
     )
@@ -208,13 +208,13 @@ class LlvmRegressionExecTest {
     @Test fun threadLocalAggregatesUseTlsAndRuntimeInitialization() {
         val source = """
             import std.io
-            threadlocal var numbers = @std::arr[1, 2, 3]
+            threadlocal var numbers = @arr[1, 2, 3]
             threadlocal var names = ["first": 10, "second": 20]
             threadlocal var unique = ![1, 2, 2, 3]
             func main() {
-                std::println(numbers[1])
-                std::println(names["second"])
-                std::println(unique.size)
+                println(numbers[1])
+                println(names["second"])
+                println(unique.size)
             }
         """.trimIndent()
         for (optimized in listOf(false, true)) {
@@ -235,13 +235,13 @@ class LlvmRegressionExecTest {
         "3\n2\n3",
         """
         import std.io
-        threadlocal var numbers: std::List<std::Int> = @std::arr[1, 2, 3]
-        threadlocal var names: std::Map<std::String, std::Int> = ["first": 10, "second": 20]
-        threadlocal var unique: std::Set<std::Int> = ![1, 2, 2, 3]
+        threadlocal var numbers: List<Int> = @arr[1, 2, 3]
+        threadlocal var names: Map<String, Int> = ["first": 10, "second": 20]
+        threadlocal var unique: Set<Int> = ![1, 2, 2, 3]
         func main() {
-            std::println(numbers.size)
-            std::println(names.size)
-            std::println(unique.size)
+            println(numbers.size)
+            println(names.size)
+            println(unique.size)
         }
         """.trimIndent()
     )
@@ -252,9 +252,9 @@ class LlvmRegressionExecTest {
             import std.io
             import std.container.core
             func main() {
-                var array = @std::arr[1.5D, 2.5D]
-                var map = @std::map["value": 3.5D]
-                var set = @std::set[1.5D, 2.5D]
+                var array = @arr[1.5D, 2.5D]
+                var map = @map["value": 3.5D]
+                var set = @set[1.5D, 2.5D]
             }
             """.trimIndent()
         )
@@ -265,7 +265,7 @@ class LlvmRegressionExecTest {
         "vowel\nother",
         """
         import std.io
-        func kind(s: std::String): std::String {
+        func kind(s: String): String {
             when s {
                 "a", "e" -> { return "vowel" }
                 else -> { return "other" }
@@ -273,8 +273,8 @@ class LlvmRegressionExecTest {
             return "unreachable"
         }
         func main() {
-            std::println(kind("e" + ""))
-            std::println(kind("z" + ""))
+            println(kind("e" + ""))
+            println(kind("z" + ""))
         }
         """.trimIndent()
     )
@@ -285,8 +285,8 @@ class LlvmRegressionExecTest {
             """
             let s = "x" + "y"
             when s {
-                "ab" -> { std::println("AB") }
-                else -> { std::println("?") }
+                "ab" -> { println("AB") }
+                else -> { println("?") }
             }
             """.trimIndent()
         )
@@ -297,9 +297,9 @@ class LlvmRegressionExecTest {
         "4294967295",
         main(
             """
-            var x: std::UInt = 5u
+            var x: UInt = 5u
             x = x - 6u
-            std::println(x)
+            println(x)
             """.trimIndent()
         )
     )
@@ -309,9 +309,9 @@ class LlvmRegressionExecTest {
         "18446744073709551615",
         main(
             """
-            var y: std::ULong = 0uL
+            var y: ULong = 0uL
             y = y - 1uL
-            std::println(y)
+            println(y)
             """.trimIndent()
         )
     )
@@ -321,9 +321,9 @@ class LlvmRegressionExecTest {
         "v = 4294967295",
         main(
             $$"""
-            var x: std::UInt = 0u
+            var x: UInt = 0u
             x = x - 1u
-            std::println("v = $x")
+            println("v = $x")
             """.trimIndent()
         )
     )
@@ -335,7 +335,7 @@ class LlvmRegressionExecTest {
             """
             var x = 0
             x = x - 6
-            std::println(x)
+            println(x)
             """.trimIndent()
         )
     )

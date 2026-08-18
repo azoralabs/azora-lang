@@ -16,6 +16,7 @@
 
 package org.azora.lang.backend
 
+import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.ir.IrBinaryOp
 import org.azora.lang.ir.IrExpr
 import org.azora.lang.ir.IrField
@@ -782,9 +783,9 @@ class WasmCodegen {
                 "(local.set $closure ${emitExpr(expr.receiver)}) " +
                 "(call_indirect (type \$$typeName) $operands))"
         }
-        if ((expr.name == "__std_println" || expr.name == "__std_print") && expr.args.size == 1) {
+        if ((symbolDenotes(expr.name, "println") || symbolDenotes(expr.name, "print")) && expr.args.size == 1) {
             val arg = expr.args.single()
-            val operation = if (expr.name == "__std_print") "write" else "print"
+            val operation = if (symbolDenotes(expr.name, "print")) "write" else "print"
             // A float is rendered by the compiler, not the host: printing one
             // directly and interpolating it must produce the same digits, and only
             // `__double_to_str` implements the language's convention.
@@ -804,7 +805,7 @@ class WasmCodegen {
         }
         if (expr.name == "__isCheck") usesIsCheck = true
         // `Array::fill<T>(count)` → `[ len, T×count ]` (all cells i32 in Wasm).
-        if (expr.name == "__std_Array_fill") {
+        if (symbolDenotes(expr.name, "Array_fill")) {
             usesAlloc = true
             val t = newTemp("i32")
             val count = emitExpr(expr.args[0])
@@ -1267,7 +1268,7 @@ class WasmCodegen {
      * still comes from the host until its approximation is written.
      */
     private fun wasmSoftwareMathFor(extern: IrTopLevel.Extern): String? {
-        // `realm std::vha` mangles to `__std_vha_sin`; the extra accuracy is what the
+        // `realm vha` mangles to `__std_vha_sin`; the extra accuracy is what the
         // realm exists for, so it maps to the longer series where one is implemented.
         val vha = "_vha_" in extern.name
         val name = when (extern.name.substringAfterLast('_')) {
@@ -1847,12 +1848,12 @@ class WasmCodegen {
 
 
     /**
-     * The `std::vha` trigonometry: the same reduction as [RT_TRIG] with the series
+     * The `vha` trigonometry: the same reduction as [RT_TRIG] with the series
      * carried two terms further, to where an `f64` can no longer tell the
      * difference over the reduced interval.
      *
-     * `std::sin` stops earlier because the terms it drops are invisible at float
-     * precision and cost real time in a loop; `std::vha::sin` pays for them.
+     * `sin` stops earlier because the terms it drops are invisible at float
+     * precision and cost real time in a loop; `vha::sin` pays for them.
      */
     private val RT_VHA_TRIG = """
   (func ${'$'}__vha_sin_poly (param ${'$'}r f64) (result f64)

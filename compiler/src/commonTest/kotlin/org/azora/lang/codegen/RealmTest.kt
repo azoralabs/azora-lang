@@ -27,17 +27,17 @@ class RealmTest {
             func main() {
                 var x = 2
                 var y = 3
-                std::println(x)
-                std::println(::x)
+                println(x)
+                println(::x)
                 scope {
                     var x = 5
-                    std::println(x)
-                    std::println(::x)
-                    std::println(::_::x)
+                    println(x)
+                    println(::x)
+                    println(::_::x)
                 }
-                std::println("----")
+                println("----")
                 scope {
-                    std::println(x)
+                    println(x)
                 }
             }
         """.trimIndent())
@@ -55,8 +55,8 @@ class RealmTest {
                     var b = 20
                 }
                 scope {
-                    std::println(a)
-                    std::println(b)
+                    println(a)
+                    println(b)
                 }
             }
         """.trimIndent())
@@ -71,11 +71,11 @@ class RealmTest {
             func main() {
                 scope {
                     var x = 1
-                    std::println(x)
+                    println(x)
                 }
                 scope {
                     x = 99
-                    std::println(x)
+                    println(x)
                 }
             }
         """.trimIndent())
@@ -92,7 +92,7 @@ class RealmTest {
                 scope {
                     var x = 7
                 }
-                std::println(x)
+                println(x)
             }
         """.trimIndent())
 
@@ -108,10 +108,10 @@ class RealmTest {
                 var x = 1
                 scope {
                     var x = 2
-                    std::println(x)
+                    println(x)
                 }
                 scope {
-                    std::println(x)
+                    println(x)
                 }
             }
         """.trimIndent())
@@ -130,9 +130,9 @@ class RealmTest {
                 var x = 1
                 scope {
                     var inner = 9
-                    std::println(inner)
+                    println(inner)
                 }
-                std::println(x)
+                println(x)
             }
         """.trimIndent())
 
@@ -148,15 +148,15 @@ class RealmTest {
 
             func main() {
                 var x = 2
-                std::println(x)
-                std::println(::x)
+                println(x)
+                println(::x)
                 scope {
                     var x = 5
-                    std::println(x)
-                    std::println(::x)
-                    std::println(::_::x)
+                    println(x)
+                    println(::x)
+                    println(::_::x)
                 }
-                std::println("----")
+                println("----")
             }
         """.trimIndent())
 

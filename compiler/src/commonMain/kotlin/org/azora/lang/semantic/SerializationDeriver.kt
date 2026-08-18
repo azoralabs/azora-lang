@@ -39,6 +39,8 @@ object SerializationDeriver {
         val conversionProvider: String,
         val providerModule: String,
         val conversionModule: String,
+        /** The module declaring the list type generated code builds. */
+        val listModule: String,
     )
     private data class Roles(
         val all: Set<String>,
@@ -50,6 +52,8 @@ object SerializationDeriver {
         val conversionProvider: String,
         val providerModule: String,
         val conversionModule: String,
+        /** The module declaring the list type generated code builds. */
+        val listModule: String,
         val deferGeneric: Boolean,
     ) {
         val roots: Set<String> get() = all + azon
@@ -76,6 +80,7 @@ object SerializationDeriver {
             roles.conversionProvider,
             roles.providerModule,
             roles.conversionModule,
+            roles.listModule,
         )
         val generated = mutableListOf<TopLevel>()
         val packs = program.items.filterIsInstance<TopLevel.Pack>()
@@ -142,13 +147,13 @@ object SerializationDeriver {
 
         if (errors.isNotEmpty()) return Result(program, errors.distinct())
         // The generated bodies build their field and element collections with
-        // `std::List`, so the module that declares it has to travel with them -
+        // `List`, so the module that declares it has to travel with them -
         // a derived pack's own file has no reason to have imported it.
         val dependencyImports = if (generated.isEmpty()) emptyList() else
-            listOf(helpers.providerModule, helpers.conversionModule, "std.container.list")
+            listOf(helpers.providerModule, helpers.conversionModule, helpers.listModule)
                 .filter { it.isNotEmpty() }
                 .distinct()
-                .map { module -> TopLevel.UseImport(listOf(module to null), line = 0) }
+                .map { module -> TopLevel.UseImport.of(listOf(module to null), line = 0) }
         return Result(program.copy(items = program.items + dependencyImports + generated), emptyList())
     }
 
@@ -187,6 +192,7 @@ object SerializationDeriver {
         var conversionProvider = ""
         var providerModule = ""
         var conversionModule = ""
+        var listModule = ""
         var deferGeneric = false
         program.items.filterIsInstance<TopLevel.Deco>().forEach { declaration ->
             declaration.annotations.filter { it.name == "Derive" }.forEach { annotation ->
@@ -201,6 +207,7 @@ object SerializationDeriver {
                     stringArgument("conversionProvider", 3)?.takeIf { it.isNotEmpty() }?.let { conversionProvider = it }
                     stringArgument("providerModule", 4)?.takeIf { it.isNotEmpty() }?.let { providerModule = it }
                     stringArgument("conversionModule", 5)?.takeIf { it.isNotEmpty() }?.let { conversionModule = it }
+                    stringArgument("listModule", 7)?.takeIf { it.isNotEmpty() }?.let { listModule = it }
                     val genericArgument = annotation.namedArgs.firstOrNull { it.first == "deferGeneric" }?.second
                         ?: annotation.args.getOrNull(6)
                     (genericArgument as? Expr.BoolLiteral)?.let { deferGeneric = it.value }
@@ -217,6 +224,7 @@ object SerializationDeriver {
             conversionProvider = conversionProvider,
             providerModule = providerModule,
             conversionModule = conversionModule,
+            listModule = listModule,
             deferGeneric = deferGeneric,
         )
     }
@@ -299,7 +307,7 @@ object SerializationDeriver {
     ): String = buildString {
         appendLine("impl ${pack.name} {")
         appendLine("    func toSerialValue[self: Self&](value: ${pack.name}&): SerialValue ?! SerializationError {")
-        appendLine("        var __serialFields = std::ArrayList<SerialField>()")
+        appendLine("        var __serialFields = ArrayList<SerialField>()")
         fields.filterNot { it.ignored }.forEach { plan ->
             val encoded = appendEncodedField(plan, helpers)
             if (!encodeDefaults && plan.defaultSource != null && !plan.required) {
@@ -374,7 +382,7 @@ object SerializationDeriver {
             val fieldsName = "__encoded_${plan.field.name}"
             val keysName = "__keys_${plan.field.name}"
             val indexName = "__encode_${plan.field.name}_index"
-            appendLine("        var $fieldsName = std::ArrayList<SerialField>()")
+            appendLine("        var $fieldsName = ArrayList<SerialField>()")
             appendLine("        fin $keysName = value.${plan.field.name}.keys()")
             appendLine("        var $indexName = 0")
             appendLine("        while $indexName < $keysName.length {")
@@ -392,7 +400,7 @@ object SerializationDeriver {
         val element = type.args.single()
         val valuesName = "__encoded_${plan.field.name}"
         val indexName = "__encode_${plan.field.name}_index"
-        appendLine("        var $valuesName = std::ArrayList<SerialValue>()")
+        appendLine("        var $valuesName = ArrayList<SerialValue>()")
         appendLine("        var $indexName = 0")
         appendLine("        while $indexName < value.${plan.field.name}.size {")
         val elementValue = "value.${plan.field.name}[$indexName] as ${renderType(element)}"

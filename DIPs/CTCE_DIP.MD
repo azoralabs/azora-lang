@@ -36,7 +36,7 @@ and at run time (`fin d = DEBUG`).
 
 ```azora
 inline func square(x: Int): Int { return x * x }
-std::println(square(5))            // folded to 25 at the call site
+println(square(5))            // folded to 25 at the call site
 ```
 
 ## 3. Conditional compilation

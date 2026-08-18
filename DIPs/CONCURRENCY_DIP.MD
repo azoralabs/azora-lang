@@ -16,7 +16,7 @@ async func fetch(id: Int): Int {
 
 async func main() {
     fin handle = fetch(21)
-    std::println(await handle)     // 42
+    println(await handle)     // 42
 }
 ```
 
@@ -29,7 +29,7 @@ everywhere else it is an ordinary identifier:
 
 ```azora
 var async = 5              // still a usable name
-std::println(async)        // 5
+println(async)        // 5
 ```
 
 That is deliberate and tested: adding a concurrency vocabulary should not take
@@ -88,14 +88,14 @@ specified (§7).
 Structured competition is a standard-library API, not language syntax:
 
 ```azora
-fin winner = await std::race<Result> {
-    std::branch { return await localResult() }
-    std::branch { return await remoteResult() }
+fin winner = await race<Result> {
+    branch { return await localResult() }
+    branch { return await remoteResult() }
 }
 ```
 
-`std::race`, `std::sync`, and `std::rush` are functions. Every child is declared
-with the fully qualified `std::branch`; `race`, `branch`, `sync`, and `rush` are
+`race`, `sync`, and `rush` are functions. Every child is declared
+with the fully qualified `branch`; `race`, `branch`, `sync`, and `rush` are
 not keywords.
 
 The conceptual contracts are:
@@ -112,21 +112,21 @@ func branch<T>[builder: RaceBuilder<T>!](
 )
 ```
 
-The expected async callable type permits the concise `std::branch { ... }`
-trailing lambda. `std::branch` requires the contextual builder supplied by
-`std::race`, `std::sync`, or `std::rush`; calling it elsewhere is a type error,
+The expected async callable type permits the concise `branch { ... }`
+trailing lambda. `branch` requires the contextual builder supplied by
+`race`, `sync`, or `rush`; calling it elsewhere is a type error,
 not an ambient registration side effect.
 
-`std::race` starts every branch, returns the first completion, cancels losers,
+`race` starts every branch, returns the first completion, cancels losers,
 and joins their cleanup. Source order breaks simultaneous completion ties.
 Parent cancellation cancels and joins every branch.
 
-`std::sync` waits for every branch and returns `std::Tuple<...T>` in source
+`sync` waits for every branch and returns `Tuple<...T>` in source
 order. A failing branch cancels and joins its siblings before propagation.
-`std::rush` returns the first completion but leaves the other branches attached
+`rush` returns the first completion but leaves the other branches attached
 to the surrounding async owner.
 
-No `scope` or `std::block` wrapper is needed: each `std::branch` body is already
+No `scope` or `block` wrapper is needed: each `branch` body is already
 the sequential lexical block, and the parent combinator owns its lifetime.
 
 ---
@@ -148,7 +148,7 @@ run while it is pending.
 ```azora
 fin c = channel()
 c.send(1)
-std::println(c.receive())
+println(c.receive())
 c.close()
 ```
 
@@ -173,11 +173,11 @@ standard library does not define.
 `func` whose return type says which it is:
 
 ```azora
-fin values = std::sequence([s: std::SequenceScope<Int>!]{
-    std::yield(1)
-    std::yield(2)
+fin values = sequence([s: SequenceScope<Int>!]{
+    yield(1)
+    yield(2)
 })
-values.collect({ n -> std::println(n) })
+values.collect({ n -> println(n) })
 ```
 
 The builder takes a lambda with a **bracketed contextual receiver**, and `yield`
@@ -237,7 +237,7 @@ providing.
 - ⬜ **No cancellation and no structured concurrency.** A task cannot be
   cancelled, a parent cannot cancel its children, and there is no scope that
   guarantees its children finish
-- ⬜ **No timeout primitive.** `std::timeout` exists but starts a task, sleeps,
+- ⬜ **No timeout primitive.** `timeout` exists but starts a task, sleeps,
   and reports whether a flag was set - it does not cancel anything
 - ⬜ **Awaiting twice is unspecified**, as is awaiting from more than one task
 - ⬜ **Failure propagation is undefined.** What happens when a task throws, and

@@ -39,15 +39,15 @@ class BridgeForeignNameMacroTest {
             import std.io
 
             bridge .C {
-                fin @foreignName("API_VERSION"): std::String = "1.2.3"
+                fin @foreignName("API_VERSION"): String = "1.2.3"
             }
 
-            func version(): std::String {
+            func version(): String {
                 return apiVersion
             }
 
             func main() {
-                std::println(version())
+                println(version())
             }
             """,
             release = true,
@@ -70,10 +70,10 @@ class BridgeForeignNameMacroTest {
         val result = compile(
             """
             bridge .C {
-                func @foreignName("clock_gettime")(): std::Long
+                func @foreignName("clock_gettime")(): Long
             }
 
-            func readClock(): std::Long {
+            func readClock(): Long {
                 return clockGettime()
             }
             """,
@@ -97,10 +97,10 @@ class BridgeForeignNameMacroTest {
             }
 
             bridge .C {
-                fin @abiName("LIBRARY_REVISION"): std::Int = 7
+                fin @abiName("LIBRARY_REVISION"): Int = 7
             }
 
-            func revision(): std::Int {
+            func revision(): Int {
                 return libraryRevision
             }
             """,
@@ -115,12 +115,12 @@ class BridgeForeignNameMacroTest {
         val result = compile(
             """
             bridge .C {
-                fin "API_VERSION" apiVersion: std::String = "1.2.3"
-                func "host_clock" hostClock(): std::Long
+                fin "API_VERSION" apiVersion: String = "1.2.3"
+                func "host_clock" hostClock(): Long
             }
 
-            func version(): std::String { return apiVersion }
-            func clock(): std::Long { return hostClock() }
+            func version(): String { return apiVersion }
+            func clock(): Long { return hostClock() }
             """,
         )
 
@@ -139,7 +139,7 @@ class BridgeForeignNameMacroTest {
             }
 
             bridge .C {
-                func @badName("ignored")(): std::Int
+                func @badName("ignored")(): Int
             }
             """.trimIndent(),
             release = false,
@@ -162,7 +162,7 @@ class BridgeForeignNameMacroTest {
 
     @Test fun typedForeignNameCaptureRejectsNonStringArguments() {
         val result = Compiler().compile(
-            "bridge .C { func @foreignName(42)(): std::Int }",
+            "bridge .C { func @foreignName(42)(): Int }",
             release = false,
         )
         val failure = assertIs<CompilationResult.Failure>(result)
@@ -171,7 +171,7 @@ class BridgeForeignNameMacroTest {
 
     @Test fun derivedLocalNameCannotBeAReservedKeyword() {
         val result = Compiler().compile(
-            "bridge .C { func @foreignName(\"FUNC\")(): std::Int }",
+            "bridge .C { func @foreignName(\"FUNC\")(): Int }",
             release = false,
         )
         val failure = assertIs<CompilationResult.Failure>(result)
@@ -180,7 +180,7 @@ class BridgeForeignNameMacroTest {
 
     @Test fun bridgeUseAsIsRemovedFromTheGrammar() {
         val result = Compiler().compile(
-            "bridge .C { func clock use as hostClock(): std::Long }",
+            "bridge .C { func clock use as hostClock(): Long }",
             release = false,
         )
         val failure = assertIs<CompilationResult.Failure>(result)

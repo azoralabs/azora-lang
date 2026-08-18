@@ -33,8 +33,8 @@ class TimeStdlibTest {
             import std.*
 
             func main() {
-                fin value = std::parseIsoInstant("1970-01-01T00:00:00Z") catch std::Instant(-1L)
-                std::println(value.epochSecond)
+                fin value = parseIsoInstant("1970-01-01T00:00:00Z") catch Instant(-1L)
+                println(value.epochSecond)
             }
         """.trimIndent())
 
@@ -49,15 +49,15 @@ class TimeStdlibTest {
             import std.*
 
             func main() {
-                fin source = std::DateTime(std::LocalDate(2026, 7, 16), std::LocalTime(9, 5, 7, 123000000), std::UtcOffset(10800))
-                fin encoded = std::formatIsoDateTime(source)
-                std::println(encoded)
+                fin source = DateTime(LocalDate(2026, 7, 16), LocalTime(9, 5, 7, 123000000), UtcOffset(10800))
+                fin encoded = formatIsoDateTime(source)
+                println(encoded)
                 try {
-                    fin decoded = std::parseIsoDateTime(encoded)
-                    std::println(decoded.date.year)
-                    std::println(decoded.offset.totalSeconds)
+                    fin decoded = parseIsoDateTime(encoded)
+                    println(decoded.date.year)
+                    println(decoded.offset.totalSeconds)
                 } catch { e ->
-                    std::println("error:" + e)
+                    println("error:" + e)
                 }
             }
         """.trimIndent())
@@ -75,9 +75,9 @@ class TimeStdlibTest {
             import std.*
 
             func main() {
-                fin fallback = std::DateTime(std::LocalDate(-1, 1, 1), std::LocalTime(0, 0, 0), std::UtcOffset(0))
-                fin value = std::parseIsoDateTime("2026-07-16T09:05:07+01:99") catch fallback
-                std::println(value.date.year)
+                fin fallback = DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
+                fin value = parseIsoDateTime("2026-07-16T09:05:07+01:99") catch fallback
+                println(value.date.year)
             }
         """.trimIndent())
 

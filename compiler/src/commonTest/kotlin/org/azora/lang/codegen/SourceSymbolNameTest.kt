@@ -41,13 +41,13 @@ class SourceSymbolNameTest {
         assertNameFailure("func helper_value() {}", "'_' is allowed only once")
         assertNameFailure("func main() { fin local_value = 1 }", "'_' is allowed only once")
         assertNameFailure("pack Value_Name", "'_' is allowed only once")
-        assertNameFailure("bridge .C { func clock_get_time(): std::Long }", "'_' is allowed only once")
+        assertNameFailure("bridge .C { func clock_get_time(): Long }", "'_' is allowed only once")
     }
 
     @Test fun leadingUnderscoreIsRejectedWherePrivacyDoesNotApply() {
         assertNameFailure("module _private\nfunc main() {}", "cannot be private")
         assertNameFailure("realm _private { func value() {} }\nfunc main() {}", "cannot be private")
-        assertNameFailure("func read(_value: std::Int) {}", "cannot be private")
+        assertNameFailure("func read(_value: Int) {}", "cannot be private")
         assertNameFailure("func main() { fin _value = 1 }", "cannot be private")
         assertNameFailure("func main<T_value>() {}", "'_' is allowed only once")
     }
@@ -57,22 +57,22 @@ class SourceSymbolNameTest {
             fin _answer = 42
 
             pack _Counter {
-                var _value: std::Int
+                var _value: Int
             }
 
             impl pack _Counter {
-                prop _valuePlusAnswer[self: std::Self&]: std::Int = self._value + _answer
+                prop _valuePlusAnswer[self: Self&]: Int = self._value + _answer
 
-                func _readValue[self: std::Self&](): std::Int {
+                func _readValue[self: Self&](): Int {
                     return self._value + _answer
                 }
 
-                func readValue[self: std::Self&](): std::Int {
+                func readValue[self: Self&](): Int {
                     return self._readValue()
                 }
             }
 
-            func main(): std::Int {
+            func main(): Int {
                 return _Counter(1).readValue()
             }
         """.trimIndent())
@@ -82,10 +82,10 @@ class SourceSymbolNameTest {
     @Test fun realmManglingDoesNotLookLikeAUserUnderscore() {
         val result = compile("""
             realm tools {
-                func answer(): std::Int { return 42 }
+                func answer(): Int { return 42 }
             }
 
-            func main(): std::Int { return tools::answer() }
+            func main(): Int { return tools::answer() }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
     }
@@ -93,11 +93,11 @@ class SourceSymbolNameTest {
     @Test fun privateModuleStorageCannotBeNamedByAnImporter() {
         val library = LibrarySource(
             "lib/state.az",
-            "module lib.state\nfin _secret = 42\nfunc answer(): std::Int { return _secret }",
+            "module lib.state\nfin _secret = 42\nfunc answer(): Int { return _secret }",
         )
         val result = Compiler(listOf(library)).compile("""
             import lib.state
-            func main(): std::Int { return _secret }
+            func main(): Int { return _secret }
         """.trimIndent())
         val failure = assertIs<CompilationResult.Failure>(result)
         assertTrue(failure.errors.any { "'_secret' is private to module 'lib.state'" in it }, failure.errors.toString())
@@ -106,10 +106,10 @@ class SourceSymbolNameTest {
     @Test fun compilerGeneratedDoubleUnderscoreNamesStillReachIr() {
         val result = compile("""
             realm tools {
-                func generated(): std::Int { return 1 }
+                func generated(): Int { return 1 }
             }
 
-            func main(): std::Int { return tools::generated() }
+            func main(): Int { return tools::generated() }
         """.trimIndent())
         val success = assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
         assertTrue(success.ir.functions.any { it.name.startsWith("__") })

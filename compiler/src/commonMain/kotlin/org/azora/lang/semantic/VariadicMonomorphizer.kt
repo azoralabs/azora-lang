@@ -784,7 +784,7 @@ private class MonoContext(
      * Every specialization's impls, including those discovered while expanding.
      *
      * Expanding a member can specialize something new - a body calling
-     * `std::tupleOf` brings a `Tuple` specialization into being - which adds to
+     * `tupleOf` brings a `Tuple` specialization into being - which adds to
      * the very table being walked. So a snapshot is expanded at a time, and the
      * ones that appear are expanded on the next round, until nothing new shows
      * up. Walking the live table instead raised a concurrent modification.
@@ -1187,7 +1187,7 @@ private class MonoContext(
         bindings.clear()
         for (p in decl.params) bindings[p.name] = p.type
         // The receiver, so `self.field` can be typed. A variadic call taking one
-        // - `std::tupleOf(self.n, 2)` - is only specialized when every argument
+        // - `tupleOf(self.n, 2)` - is only specialized when every argument
         // has a type here; without this it was left naming the template, which
         // no longer exists by the time anything looks it up.
         owner?.let { bindings[decl.receiverName] = TypeRef.Named(it) }

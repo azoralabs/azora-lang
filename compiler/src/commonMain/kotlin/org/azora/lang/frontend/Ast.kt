@@ -200,7 +200,7 @@ sealed class Expr {
      * `1: "one"` written as an argument of a macro invocation.
      *
      * Only a macro whose arm is a [MacroPattern.MapEntryCapture] can receive one:
-     * `@std::map[1: "one"]` binds the keys and the values as two lists the
+     * `@map[1: "one"]` binds the keys and the values as two lists the
      * template splices together. The expander consumes these before any later
      * pass runs, so an entry reaching one is a macro that did not match.
      */
@@ -358,8 +358,8 @@ sealed class Expr {
      * belongs to the case rather than to the field:
      *
      *     annot Log for .Func {
-     *         fin level: std::LogLevel = .Info
-     *         fin prefix: std::String = when level {
+     *         fin level: LogLevel = .Info
+     *         fin prefix: String = when level {
      *             .Error -> seal "!! "
      *             else -> ""
      *         }
@@ -438,9 +438,9 @@ sealed class Expr {
     data class SafeMember(val target: Expr, val name: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
-     * A type cast. Surface sugar: `x as T` ([CastKind.STATIC], = `std::cast<T>(x)`),
-     * `x as? T` ([CastKind.DYNAMIC], = `std::dyncast<T>(x)`, result `T?`), and
-     * `x as* T` ([CastKind.REINTERPRET], = `std::bitcast<T>(x)`).
+     * A type cast. Surface sugar: `x as T` ([CastKind.STATIC], = `cast<T>(x)`),
+     * `x as? T` ([CastKind.DYNAMIC], = `dyncast<T>(x)`, result `T?`), and
+     * `x as* T` ([CastKind.REINTERPRET], = `bitcast<T>(x)`).
      */
     data class Cast(val expr: Expr, val targetType: TypeRef, val kind: CastKind = CastKind.STATIC, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
@@ -1271,7 +1271,7 @@ sealed class TypeRef {
      * A named type, optionally generic.
      *
      * [qualifier] preserves the source-level realm path (`std` in
-     * `std::Tuple<Int, String>`). Semantic passes still use [name] as the
+     * `Tuple<Int, String>`). Semantic passes still use [name] as the
      * canonical declaration name, while visibility checks can distinguish a
      * qualified type reference from a bare one.
      */
@@ -1309,7 +1309,7 @@ sealed class TypeRef {
 
         /*
          * A qualifier is source-level access metadata, not part of type
-         * identity. `std::Tuple<Int, Int>` must resolve to the same semantic
+         * identity. `Tuple<Int, Int>` must resolve to the same semantic
          * type as the Tuple declaration's own `Tuple<Int, Int>` references.
          */
         override fun equals(other: Any?): Boolean =
@@ -1728,11 +1728,11 @@ data class RealmMeta(val label: String?, val isInline: Boolean, val parent: Real
  * Kind of a type cast ([Expr.Cast]).
  *
  * - [STATIC]: converting cast (`static_cast`) - numeric conversions, stringify to
- *   `String`, unchecked up/down casts. Spelled `x as T` / `std::cast<T>(x)`.
+ *   `String`, unchecked up/down casts. Spelled `x as T` / `cast<T>(x)`.
  * - [DYNAMIC]: runtime-checked downcast (`dynamic_cast`) yielding `T?` (null on a
- *   type mismatch). Spelled `x as? T` / `std::dyncast<T>(x)`.
+ *   type mismatch). Spelled `x as? T` / `dyncast<T>(x)`.
  * - [REINTERPRET]: bit reinterpretation (`reinterpret_cast`), representation-
- *   preserving. Spelled `x as* T` / `std::bitcast<T>(x)`.
+ *   preserving. Spelled `x as* T` / `bitcast<T>(x)`.
  */
 enum class CastKind { STATIC, DYNAMIC, REINTERPRET }
 
@@ -2040,6 +2040,14 @@ data class FuncDecl(
      * receiver lambda the call sits in. Zero for everything else.
      */
     val contextualParams: Int = 0,
+    /**
+     * `ctor[self: Self!](…) * count` - the ctor a repeated construction selects.
+     *
+     * The repetition arrives as a trailing `count` parameter, so without this a
+     * repeated ctor is indistinguishable from an ordinary one of the same arity
+     * and the two collide on one symbol.
+     */
+    val isRepeated: Boolean = false,
     /** How this declaration may be invoked when registered as an impl member. */
     val memberCallStyle: MemberCallStyle = MemberCallStyle.NORMAL,
     /**
@@ -2116,7 +2124,7 @@ sealed class MacroPattern {
     /**
      * `[...${key: value}]` - matches ≥1 `k: v` argument pair (each passed as an
      * [Expr.MapEntryArg]), binding the key exprs to [keyName] and the value exprs
-     * to [valueName] so a template can splice them (e.g. `...std::mapEntry($key, $value)`).
+     * to [valueName] so a template can splice them (e.g. `...mapEntry($key, $value)`).
      */
     data class MapEntryCapture(val keyName: String, val valueName: String) : MacroPattern()
 }
@@ -2206,7 +2214,7 @@ data class Annotation(
     val column: Int = 0,
     /** Named arguments `@name(key = value)` / `@name(key: value)`, in source order. */
     val namedArgs: List<Pair<String, Expr>> = emptyList(),
-    /** Source realm path (`std` in `@std::Serializable`), if explicitly qualified. */
+    /** Source realm path (`std` in `@Serializable`), if explicitly qualified. */
     val qualifier: String? = null,
 )
 
@@ -2252,6 +2260,73 @@ data class SpecCallback(
     val useAsTemplate: String? = null,
     val typeParams: List<String> = emptyList(),
 )
+
+// ---------------------------------------------------------------------------
+// Imports
+// ---------------------------------------------------------------------------
+
+/**
+ * One clause of an `import` statement.
+ *
+ * ```
+ * import std.io.*                             All
+ * import std.math.abs                         Path
+ * import std.container.[list.*, map.*]        Group
+ * import std.x.* without [Y, Z]               All + without
+ * import std.container.[list.*, map.*] as std alias
+ * ```
+ *
+ * A [Selector.Group] member carries its own fully-joined [path], so a group nests
+ * to any depth without the reader having to track a base path down the tree.
+ *
+ * @property path the dotted module path this clause selects from
+ * @property selector what is taken from [path]
+ * @property without symbols removed from a wildcard; only meaningful with
+ *   [Selector.All], which the validator enforces
+ * @property alias the `as Name` view this clause contributes to, or null. An alias
+ *   names an import view rather than a module: several clauses may share one, and
+ *   their symbols merge into it.
+ */
+data class ImportSpec(
+    val path: String,
+    val selector: Selector,
+    val without: List<String> = emptyList(),
+    val alias: String? = null,
+    val line: Int = 0,
+    val column: Int = 0,
+) {
+    /** What an [ImportSpec] takes from its [ImportSpec.path]. */
+    sealed class Selector {
+        /** `path.*` - every symbol below the path. */
+        object All : Selector()
+
+        /**
+         * `path` - a dotted path naming either a module or a single symbol
+         * inside one; which it is only the module graph knows, so the choice
+         * belongs to the semantic passes rather than the parser.
+         */
+        object Path : Selector()
+
+        /** `path.[a, b.*]` - a group; each member carries its own full path. */
+        data class Group(val members: List<ImportSpec>) : Selector()
+    }
+
+    /**
+     * The flat `(path, selector)` pairs the import machinery consumes, where the
+     * second element is `"*"` for a wildcard and null for a dotted path.
+     */
+    fun flatten(): List<Pair<String, String?>> = when (selector) {
+        is Selector.All -> listOf(path to "*")
+        is Selector.Path -> listOf(path to null)
+        is Selector.Group -> selector.members.flatMap { it.flatten() }
+    }
+
+    companion object {
+        /** Rebuilds a spec from one flattened pair. */
+        fun of(path: String, selector: String?): ImportSpec =
+            ImportSpec(path, if (selector == "*") Selector.All else Selector.Path)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Top-level items (can be functions or compile-time constructs)
@@ -2534,7 +2609,14 @@ sealed class TopLevel {
     enum class ProviderLifetime(val spelling: String) {
         SOLO("solo"),
         FACTORY("factory"),
-        SCOPE("scope"),
+
+        /**
+         * One value per active scope.
+         *
+         * Spelled `scoped`, not `scope`: a `scope` is a namespace, and a lifetime
+         * that borrowed the same word would put two unrelated meanings on it.
+         */
+        SCOPED("scoped"),
     }
 
     /**
@@ -2568,22 +2650,41 @@ sealed class TopLevel {
     ) : TopLevel()
 
     /**
-     * `import RealmName` or `import RealmName.Item` - imports items from a named realm so they're
-     * accessible without the `RealmName::` prefix. [imports] is a list of (realmName, itemName)
-     * pairs where itemName is null for "import all".
+     * `import path` - one import statement, holding one [ImportSpec] per
+     * comma-separated clause.
+     *
+     * [imports] is the flattened `(path, selector)` view every semantic pass reads
+     * today; [specs] is the structure the import grammar is written against.
      *
      * When [exported] is true (written `exposed use …`), the import is re-exported:
      * any module that imports this module also transitively imports [imports]. This lets
      * a library forward its dependencies (e.g. `std.char` re-exporting `std.char.core`).
      */
     data class UseImport(
-        val imports: List<Pair<String, String?>>,
+        val specs: List<ImportSpec>,
         val line: Int,
         val column: Int = 0,
         val exported: Boolean = false,
         /** Comptime condition on `export if COND \n import …`; null = unconditional. */
         val condition: Expr? = null,
-    ) : TopLevel()
+    ) : TopLevel() {
+        /**
+         * The flat `(path, selector)` pairs the import machinery consumes, where the
+         * second element is `"*"` for a wildcard and null for a dotted path.
+         */
+        val imports: List<Pair<String, String?>> get() = specs.flatMap { it.flatten() }
+
+        companion object {
+            /** Builds an import statement from already-flattened pairs. */
+            fun of(
+                imports: List<Pair<String, String?>>,
+                line: Int,
+                column: Int = 0,
+                exported: Boolean = false,
+                condition: Expr? = null,
+            ): UseImport = UseImport(imports.map { ImportSpec.of(it.first, it.second) }, line, column, exported, condition)
+        }
+    }
 
     /**
      * A simple `enum` declaration: `enum Color { Red; Green; Blue }`.
@@ -2599,6 +2700,8 @@ sealed class TopLevel {
         val annotations: List<Annotation> = emptyList(),
         /** Per-variant annotations, parallel to [variants] (e.g. `Red @Deprecated(...)`). */
         val variantAnnotations: List<List<Annotation>> = emptyList(),
+        /** `enum Name<T>` - the parameters the declaration is generic over. */
+        val typeParams: List<String> = emptyList(),
     ) : TopLevel()
 
     /** `fail ErrSet { V1, V2 }` - an error set (a named set of error variants). */
@@ -2618,6 +2721,8 @@ sealed class TopLevel {
          * still the common case.
          */
         val variantPayloads: List<List<TypeRef>> = emptyList(),
+        /** `error Name<T>` - the parameters the declaration is generic over. */
+        val typeParams: List<String> = emptyList(),
     ) : TopLevel()
 
     /**
@@ -2692,6 +2797,16 @@ sealed class TopLevel {
          */
         val isBridge: Boolean = false,
         /**
+         * `direct spec` - the members belong to the type, not to its values.
+         *
+         * `direct spec Number { prop rank: Int }` asks each implementor for a
+         * `rank` that is a property *of the type*: `Int::rank` answers for every
+         * `Int` at once, so there is nothing for an instance to carry and nothing
+         * to dispatch on at run time. The answer is reached directly, without a
+         * value to reach it through.
+         */
+        val isDirect: Boolean = false,
+        /**
          * Specs an implementor must *also* implement (`spec Copy requires [Clone]`).
          *
          * Unlike inheritance, this adds nothing to the spec and implies nothing
@@ -2740,6 +2855,8 @@ sealed class TopLevel {
         val column: Int = 0,
         val annotations: List<Annotation> = emptyList(),
         val isError: Boolean = false,
+        /** `variant enum Name<T>` - the parameters the declaration is generic over. */
+        val typeParams: List<String> = emptyList(),
     ) : TopLevel()
 
     /**
@@ -2747,7 +2864,7 @@ sealed class TopLevel {
      *
      * Macros are top-level declarations. A local macro is called as `@name(…)`;
      * an imported realm macro keeps its realm before the sigil, such as
-     * `@std::vec(…)`. [MacroExpander] collects every `Meta`
+     * `@vec(…)`. [MacroExpander] collects every `Meta`
      * declaration, rewrites all matching [Expr.MetaInvoke] invocations into
      * their arm templates, and removes the `Meta` node itself - so it never
      * reaches semantic analysis or IR generation.
@@ -2870,7 +2987,7 @@ data class Program(
 
 /**
  * The name given to a contextual receiver that a lambda inherits rather than
- * declares - `std::sequence { std::yield(1) }` names no receiver, but the
+ * declares - `sequence { yield(1) }` names no receiver, but the
  * closure still has to carry one.
  *
  * The frontend and the IR generator both synthesize these bindings and must

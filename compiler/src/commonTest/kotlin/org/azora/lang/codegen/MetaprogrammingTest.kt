@@ -21,11 +21,11 @@ class MetaprogrammingTest {
 
             import std.io
             inline func a() {
-                std::println("Hello from A")
+                println("Hello from A")
             }
 
             func b() {
-                std::println("Hello from B")
+                println("Hello from B")
             }
 
             func main() {
@@ -37,11 +37,11 @@ class MetaprogrammingTest {
         val expectedIr = """
             module playground
 
-            func b(): std::Unit {
+            func b(): Unit {
                 std__println("Hello from B")
             }
 
-            func main(): std::Unit {
+            func main(): Unit {
                 scope {
                     std__println("Hello from A")
                 }
@@ -52,11 +52,11 @@ class MetaprogrammingTest {
         val expectedOptimizedIr = """
             module playground
 
-            func b(): std::Unit {
+            func b(): Unit {
                 std__println("Hello from B")
             }
 
-            func main(): std::Unit {
+            func main(): Unit {
                 scope {
                     std__println("Hello from A")
                 }
@@ -84,7 +84,7 @@ class MetaprogrammingTest {
               ret i32 0
             }
 
-            ; std::String constants
+            ; String constants
             @.str.0 = private unnamed_addr constant [13 x i8] c"Hello from B\00"
             @.str.1 = private unnamed_addr constant [13 x i8] c"Hello from A\00"
         """.trimIndent()
@@ -106,7 +106,7 @@ class MetaprogrammingTest {
                 fin a1 = 0
 
                 func a() {
-                    std::println("Hello from A")
+                    println("Hello from A")
                 }
             }
 
@@ -114,25 +114,25 @@ class MetaprogrammingTest {
                 fin b1 = 0
 
                 func b() {
-                    std::println("Hello from B")
+                    println("Hello from B")
                 }
             }
 
             inline if x == 2 {
                 func c() {
-                    std::println("Hello from C")
+                    println("Hello from C")
                 }
             }
 
             deepinline if x == 2 {
                 func d() {
-                    std::println("Hello from D")
+                    println("Hello from D")
                 }
             }
 
             deepinline if x == 2 {
                 noinline func e() {
-                    std::println("Hello from E")
+                    println("Hello from E")
                 }
             }
 
@@ -178,7 +178,7 @@ class MetaprogrammingTest {
                 fin c1 = 0
 
                 func c() {
-                    std::println("Hello from C")
+                    println("Hello from C")
                 }
             }
 
@@ -186,7 +186,7 @@ class MetaprogrammingTest {
                 noinline fin e1 = 0
 
                 noinline func e() {
-                    std::println("Hello from E")
+                    println("Hello from E")
                 }
             }
 
@@ -226,7 +226,7 @@ class MetaprogrammingTest {
                 fin a1 = 0
 
                 func a() {
-                    std::println("Hello from A")
+                    println("Hello from A")
                 }
             }
 
@@ -234,7 +234,7 @@ class MetaprogrammingTest {
                 fin b1 = 0
 
                 func b() {
-                    std::println("Hello from B")
+                    println("Hello from B")
                 }
             }
 
@@ -242,7 +242,7 @@ class MetaprogrammingTest {
                 fin c1 = 0
 
                 func c() {
-                    std::println("Hello from C")
+                    println("Hello from C")
                 }
             }
 
@@ -250,7 +250,7 @@ class MetaprogrammingTest {
                 fin d1 = 0
 
                 func d() {
-                    std::println("Hello from D")
+                    println("Hello from D")
                 }
             }
 
@@ -258,7 +258,7 @@ class MetaprogrammingTest {
                 noinline fin e1 = 0
 
                 noinline func e() {
-                    std::println("Hello from E")
+                    println("Hello from E")
                 }
             }
 
@@ -274,20 +274,20 @@ class MetaprogrammingTest {
         val expectedIr = """
             module playground
 
-            fin aa: std::Int = 2
-            fin c1: std::Int = 0
+            fin aa: Int = 2
+            fin c1: Int = 0
 
-            func c(): std::Unit {
+            func c(): Unit {
                 std__println("Hello from C")
             }
 
-            fin e1: std::Int = 0
+            fin e1: Int = 0
 
-            func e(): std::Unit {
+            func e(): Unit {
                 std__println("Hello from E")
             }
 
-            func main(): std::Unit {
+            func main(): Unit {
                 scope {
                     std__println("Hello from A")
                 }
@@ -334,7 +334,7 @@ class MetaprogrammingTest {
               ret i32 0
             }
 
-            ; std::String constants
+            ; String constants
             @.str.0 = private unnamed_addr constant [13 x i8] c"Hello from C\00"
             @.str.1 = private unnamed_addr constant [13 x i8] c"Hello from E\00"
             @.str.2 = private unnamed_addr constant [13 x i8] c"Hello from A\00"
@@ -345,15 +345,15 @@ class MetaprogrammingTest {
         val expectedOptimizedIr = """
             module playground
 
-            func c(): std::Unit {
+            func c(): Unit {
                 std__println("Hello from C")
             }
 
-            func e(): std::Unit {
+            func e(): Unit {
                 std__println("Hello from E")
             }
 
-            func main(): std::Unit {
+            func main(): Unit {
                 scope {
                     std__println("Hello from A")
                 }

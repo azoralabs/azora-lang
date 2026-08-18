@@ -258,7 +258,7 @@ Used:
 ```azora
 var data = @arr[1, 2, 3, 4]
 
-std::withThreads { s ->
+withThreads { s ->
     fin left  = s.spawn { sum(data.&[0..2]) }
     fin right = s.spawn { sum(data.&[2..4]) }
     trace left.join() + right.join()
@@ -293,20 +293,20 @@ that part is implemented. Threading adds one rule:
 var config = Config.production()
 
 // rejected - `spawn` outlives `config`, and the capture is a borrow
-fin h = std::spawn { validate(config.&) }
+fin h = spawn { validate(config.&) }
 
 // take: the thread owns it, and `config` is unusable here afterwards
-fin h = std::spawn { validate(take config) }
+fin h = spawn { validate(take config) }
 
 // clone: both sides have one
-fin h = std::spawn {
+fin h = spawn {
     fin mine = config.clone()
     validate(mine.&)
 }
 
 // Copy: `Int` is copied into the closure, and `attempts` stays usable
 var attempts = 3
-fin h = std::spawn { retry(attempts) }
+fin h = spawn { retry(attempts) }
 ```
 
 Which mirrors §15's async rules on purpose. A borrow held across an `await` and
@@ -548,7 +548,7 @@ line 12: cannot send 'config' to another thread - 'Config' is not Send because
 ```
 line 8: closure passed to 'spawn' borrows 'data', which may not outlive the
         thread; transfer ownership with 'take data', create an independent value
-        with 'data.clone()', or spawn inside 'std::withThreads { }' so the
+        with 'data.clone()', or spawn inside 'withThreads { }' so the
         thread is joined before the borrow ends
 ```
 

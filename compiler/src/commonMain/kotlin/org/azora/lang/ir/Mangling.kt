@@ -41,7 +41,35 @@ package org.azora.lang.ir
  * itself.
  */
 fun symbolDenotes(symbol: String, local: String): Boolean =
-    symbol == local || (symbol.startsWith("__") && symbol.endsWith("_$local"))
+    symbol == local ||
+        // Frontend spelling: namespace segments joined with `__`.
+        symbol.endsWith("__$local") ||
+        // IR spelling: one `__` prefix, then segments joined with `_`.
+        (symbol.startsWith("__") && symbol.endsWith("_$local"))
+
+/**
+ * The declarations the compiler provides rather than finds.
+ *
+ * A pass that must recognise one asks for it by its *local* name and matches
+ * with [symbolDenotes], never by a qualified spelling. Which namespace the
+ * standard library happens to declare it in is the library's business and has
+ * changed before; a literal like `"std__println"` silently stops matching when
+ * it does, and nothing fails until run time.
+ */
+object Intrinsics {
+    const val PRINT = "print"
+    const val PRINTLN = "println"
+    const val TO_STRING = "toString"
+    const val ARRAY_FILL = "Array_fill"
+    const val CANCEL = "concurrency_cancel"
+
+    /**
+     * Runtime functions whose behaviour the backends supply even though their
+     * declarations have ordinary library bodies. A `bridge func` such as
+     * `println` is a proper intrinsic and does not belong here.
+     */
+    val RUNTIME = setOf(TO_STRING, CANCEL)
+}
 
 /**
  * [symbol] written the way the source writes it, for diagnostics.
@@ -49,7 +77,7 @@ fun symbolDenotes(symbol: String, local: String): Boolean =
  * The frontend joins a realm path to a declaration with `__` (`std__println`);
  * that is an internal spelling, not one anyone typed, so it does not belong in a
  * message pointed at the author - `undefined function 'std__println'` names
- * something the language has no syntax for. It renders back as `std::println`.
+ * something the language has no syntax for. It renders back as `println`.
  *
  * A leading `__` marks a compiler-generated symbol (`__dbg`, the canonical
  * `__std_println`, a specialization like `__Vec_Double_3`). Those have no source
@@ -113,3 +141,24 @@ private fun operatorToken(c: Char): String = when (c) {
     '@' -> "_at"
     else -> "_u${c.code}"
 }
+
+/**
+ * The symbol a `ctor` is emitted under.
+ *
+ * A type declaring one `ctor` keeps the plain `Type_ctor`, so nothing about the
+ * common case changes. Overloads need telling apart, and what tells them apart
+ * is how they are *called*: by how many arguments, and by whether the call
+ * repeats (`.(fill) * count`). A repeated ctor takes its repetition as a
+ * trailing parameter, so arity alone would make it collide with an ordinary
+ * ctor one argument wider.
+ */
+fun ctorSymbol(typeName: String, arity: Int, repeated: Boolean, overloaded: Boolean): String =
+    if (!overloaded) "${typeName}_ctor"
+    else "${typeName}_ctor_$arity" + if (repeated) "r" else ""
+
+/** The factory a construction call resolves to; see [ctorSymbol] for the key. */
+fun ctorFactorySymbol(typeName: String, arity: Int, repeated: Boolean = false): String =
+    "__ctor_${typeName}_$arity" + if (repeated) "r" else ""
+
+/** How many `ctor` members [methods] declares, which decides whether they are overloads. */
+fun ctorCount(names: List<String>): Int = names.count { it == "ctor" }

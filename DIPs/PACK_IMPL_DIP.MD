@@ -48,7 +48,7 @@ Construction and access:
 ```azora
 var p = Point(3, 4)
 p.x = 10
-std::println("${p.x}, ${p.y}")
+println("${p.x}, ${p.y}")
 ```
 
 ### 1.1 Generic packs

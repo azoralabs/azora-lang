@@ -22,7 +22,7 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * `@std::SignatureOnly` may not be reached from a `@std::DeclaresAccess` body.
+ * `@SignatureOnly` may not be reached from a `@DeclaresAccess` body.
  *
  * The pair states one rule from two sides: a decorator marks the functions whose
  * access is declared in their signature, and a marker names what cannot be
@@ -38,13 +38,13 @@ class SignatureAccessCheckerTest {
         (Compiler().compile(source) as? CompilationResult.Failure)?.errors ?: emptyList()
 
     private val declarations = """
-        @std::DeclaresAccess
+        @DeclaresAccess
         annot Task for .Func
 
-        pack Bag { var value: std::Int }
+        pack Bag { var value: Int }
 
-        @std::SignatureOnly
-        func fetch(bag: Bag&): std::Int {
+        @SignatureOnly
+        func fetch(bag: Bag&): Int {
             return bag.value
         }
     """.trimIndent()
@@ -78,7 +78,7 @@ class SignatureAccessCheckerTest {
         val errors = errorsOf("""
             $declarations
 
-            func grab(bag: Bag&): std::Int {
+            func grab(bag: Bag&): Int {
                 return fetch(bag)
             }
 
@@ -104,7 +104,7 @@ class SignatureAccessCheckerTest {
             $declarations
 
             @Task func run(bag: Bag&) {
-                fin values = @std::arr[1, 2]
+                fin values = @arr[1, 2]
                 for value in values {
                     if value > 0 {
                         fin taken = fetch(bag)
@@ -129,7 +129,7 @@ class SignatureAccessCheckerTest {
         val errors = errorsOf("""
             $declarations
 
-            func plain(bag: Bag&): std::Int {
+            func plain(bag: Bag&): Int {
                 return fetch(bag)
             }
 
@@ -150,7 +150,7 @@ class SignatureAccessCheckerTest {
         val errors = errorsOf("""
             $declarations
 
-            @Task func run(taken: std::Int) {
+            @Task func run(taken: Int) {
                 if taken > 0 {
                     return
                 }

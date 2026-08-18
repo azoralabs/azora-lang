@@ -36,10 +36,10 @@ class OsStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::hasEnvVar("PATH"))
-                std::println(std::hasEnvVar("AZORA_DEFINITELY_UNSET_VARIABLE"))
-                std::println(std::envVar("AZORA_DEFINITELY_UNSET_VARIABLE"))
-                std::println(std::envOr("AZORA_DEFINITELY_UNSET_VARIABLE", "fallback"))
+                println(hasEnvVar("PATH"))
+                println(hasEnvVar("AZORA_DEFINITELY_UNSET_VARIABLE"))
+                println(envVar("AZORA_DEFINITELY_UNSET_VARIABLE"))
+                println(envOr("AZORA_DEFINITELY_UNSET_VARIABLE", "fallback"))
             }
             """,
         )
@@ -62,10 +62,10 @@ class OsStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::setEnvVar("AZORAOSTESTVAR", "seen"))
-                std::println(std::envVar("AZORAOSTESTVAR"))
-                fin echoed = std::runCommand("printenv AZORAOSTESTVAR")
-                std::println(std::trim(echoed.output))
+                println(setEnvVar("AZORAOSTESTVAR", "seen"))
+                println(envVar("AZORAOSTESTVAR"))
+                fin echoed = runCommand("printenv AZORAOSTESTVAR")
+                println(trim(echoed.output))
             }
             """,
         )
@@ -81,15 +81,15 @@ class OsStdlibTest {
             import std.io
 
             func main() {
-                fin ok = std::runCommand("echo hello && echo world")
-                std::println(ok.succeeded)
-                std::println(ok.exitCode)
-                std::println(std::trim(ok.output))
+                fin ok = runCommand("echo hello && echo world")
+                println(ok.succeeded)
+                println(ok.exitCode)
+                println(trim(ok.output))
 
-                fin bad = std::runCommand("exit 3")
-                std::println(bad.started)
-                std::println(bad.exitCode)
-                std::println(bad.succeeded)
+                fin bad = runCommand("exit 3")
+                println(bad.started)
+                println(bad.exitCode)
+                println(bad.succeeded)
             }
             """,
         )
@@ -106,9 +106,9 @@ class OsStdlibTest {
             import std.io
 
             func main() {
-                fin result = std::runCommand("echo first && echo second 1>&2")
-                std::println(std::contains(result.output, "first"))
-                std::println(std::contains(result.output, "second"))
+                fin result = runCommand("echo first && echo second 1>&2")
+                println(contains(result.output, "first"))
+                println(contains(result.output, "second"))
             }
             """,
         )
@@ -124,10 +124,10 @@ class OsStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::changeDirectory("/"))
-                std::println(std::currentDirectory())
-                std::println(std::changeDirectory("/azora/definitely/not/here"))
-                std::println(std::currentDirectory())
+                println(changeDirectory("/"))
+                println(currentDirectory())
+                println(changeDirectory("/azora/definitely/not/here"))
+                println(currentDirectory())
             }
             """,
         )
@@ -143,7 +143,7 @@ class OsStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::processId() > 0)
+                println(processId() > 0)
             }
             """,
         )
@@ -163,9 +163,9 @@ class OsStdlibTest {
             import std.io
 
             func main() {
-                fin missing = std::runCommand("azora-no-such-program-anywhere")
-                std::println(missing.succeeded)
-                std::println(missing.exitCode != 0)
+                fin missing = runCommand("azora-no-such-program-anywhere")
+                println(missing.succeeded)
+                println(missing.exitCode != 0)
             }
             """,
         )

@@ -31,14 +31,14 @@ class AiMlStdlibTest {
                 import std.io
 
                 func main() {
-                    var chat = std::conversation()
+                    var chat = conversation()
                     chat.system("be concise")
                     chat.user("hello")
-                    std::println(chat.size)
-                    fin probabilities = std::softmax(@std::arr[-1.0, 0.0, 2.0])
-                    std::println(std::argmax(probabilities))
-                    std::println(std::meanSquaredError(@std::arr[1.0, 2.0], @std::arr[1.0, 4.0]))
-                    std::println(std::accuracy(@std::arr[1, 0], @std::arr[1, 2]))
+                    println(chat.size)
+                    fin probabilities = softmax(@arr[-1.0, 0.0, 2.0])
+                    println(argmax(probabilities))
+                    println(meanSquaredError(@arr[1.0, 2.0], @arr[1.0, 4.0]))
+                    println(accuracy(@arr[1, 0], @arr[1, 2]))
                 }
                 """,
             ),

@@ -18,8 +18,8 @@ class OperatorOverloadingTest {
         assertEquals("4\n6", run("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Vec2 {
                 func plus(other: Vec2): Vec2 {
@@ -30,8 +30,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(1, 2)
                 var b = Vec2(3, 4)
                 var c = a + b
-                std::println(c.x)
-                std::println(c.y)
+                println(c.x)
+                println(c.y)
             }
         """.trimIndent()))
     }
@@ -40,8 +40,8 @@ class OperatorOverloadingTest {
         assertEquals("2\n2", run("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Vec2 {
                 func minus(other: Vec2): Vec2 {
@@ -52,8 +52,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(5, 6)
                 var b = Vec2(3, 4)
                 var c = a - b
-                std::println(c.x)
-                std::println(c.y)
+                println(c.x)
+                println(c.y)
             }
         """.trimIndent()))
     }
@@ -62,8 +62,8 @@ class OperatorOverloadingTest {
         assertEquals("3\n6", run("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Vec2 {
                 func times(other: Vec2): Vec2 {
@@ -74,8 +74,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(1, 2)
                 var b = Vec2(3, 3)
                 var c = a * b
-                std::println(c.x)
-                std::println(c.y)
+                println(c.x)
+                println(c.y)
             }
         """.trimIndent()))
     }
@@ -84,11 +84,11 @@ class OperatorOverloadingTest {
         assertEquals("true\nfalse", run("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Vec2 {
-                func equals(other: Vec2): std::Bool {
+                func equals(other: Vec2): Bool {
                     return self.x == other.x && self.y == other.y
                 }
             }
@@ -96,8 +96,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(1, 2)
                 var b = Vec2(1, 2)
                 var c = Vec2(3, 4)
-                std::println(a == b)
-                std::println(a == c)
+                println(a == b)
+                println(a == c)
             }
         """.trimIndent()))
     }
@@ -106,11 +106,11 @@ class OperatorOverloadingTest {
         assertEquals("false\ntrue", run("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Vec2 {
-                func equals(other: Vec2): std::Bool {
+                func equals(other: Vec2): Bool {
                     return self.x == other.x && self.y == other.y
                 }
             }
@@ -118,8 +118,8 @@ class OperatorOverloadingTest {
                 var a = Vec2(1, 2)
                 var b = Vec2(1, 2)
                 var c = Vec2(3, 4)
-                std::println(a != b)
-                std::println(a != c)
+                println(a != b)
+                println(a != c)
             }
         """.trimIndent()))
     }
@@ -128,8 +128,8 @@ class OperatorOverloadingTest {
         assertEquals("6", run("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Vec2 {
                 func plus(other: Vec2): Vec2 {
@@ -141,7 +141,7 @@ class OperatorOverloadingTest {
                 var b = Vec2(2, 2)
                 var c = Vec2(3, 3)
                 var d = a + b + c
-                std::println(d.x)
+                println(d.x)
             }
         """.trimIndent()))
     }

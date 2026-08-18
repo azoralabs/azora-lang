@@ -66,7 +66,7 @@ class LlvmTypeOperationMatrixExecTest(
         private fun program(body: String): String = "import std.io\nfunc main() {\n$body\n}"
 
         private fun expressionCase(name: String, expected: String, expression: String): Case =
-            Case(name, expected, program("std::println($expression)"))
+            Case(name, expected, program("println($expression)"))
 
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")
@@ -151,38 +151,38 @@ class LlvmTypeOperationMatrixExecTest(
             }
 
             val casts = listOf(
-                Triple("Byte_to_Int", "42b as std::Int", "42"),
-                Triple("UByte_to_Int", "200ub as std::Int", "200"),
-                Triple("Short_to_Long", "32000s as std::Long", "32000"),
-                Triple("UShort_to_Long", "60000us as std::Long", "60000"),
-                Triple("Int_to_Long", "123 as std::Long", "123"),
-                Triple("UInt_to_ULong", "123u as std::ULong", "123"),
-                Triple("Long_to_Int", "123L as std::Int", "123"),
-                Triple("ULong_to_UInt", "123uL as std::UInt", "123"),
-                Triple("Int_to_Byte", "127 as std::Byte", "127"),
-                Triple("Int_to_UByte", "255 as std::UByte", "255"),
-                Triple("Int_to_Short", "32000 as std::Short", "32000"),
-                Triple("Int_to_UShort", "60000 as std::UShort", "60000"),
-                Triple("Int_to_UInt", "123 as std::UInt", "123"),
-                Triple("Long_to_ULong", "123L as std::ULong", "123"),
-                Triple("Int_to_Cent", "123 as std::Cent", "123"),
-                Triple("UInt_to_UCent", "123u as std::UCent", "123"),
-                Triple("Cent_to_Int", "123c as std::Int", "123"),
-                Triple("UCent_to_UInt", "123uc as std::UInt", "123"),
-                Triple("Int_to_Real", "42 as std::Double", "42.0"),
-                Triple("UInt_to_Real", "42u as std::Double", "42.0"),
-                Triple("Int_to_Float", "42 as std::Float", "42.0"),
-                Triple("Int_to_Decimal", "42 as std::Decimal", "42.0"),
-                Triple("Real_to_Int", "3.75 as std::Int", "3"),
-                Triple("Real_to_UInt", "3.75 as std::UInt", "3"),
-                Triple("Float_to_Int", "3.75f as std::Int", "3"),
-                Triple("Decimal_to_Int", "3.75D as std::Int", "3"),
-                Triple("Float_to_Real", "3.5f as std::Double", "3.5"),
-                Triple("Real_to_Float", "3.5 as std::Float", "3.5"),
-                Triple("Real_to_Decimal", "3.5 as std::Decimal", "3.5"),
-                Triple("Decimal_to_Real", "3.5D as std::Double", "3.5"),
-                Triple("Int_to_Char", "65 as std::Char", "A"),
-                Triple("Char_to_Int", "'A' as std::Int", "65"),
+                Triple("Byte_to_Int", "42b as Int", "42"),
+                Triple("UByte_to_Int", "200ub as Int", "200"),
+                Triple("Short_to_Long", "32000s as Long", "32000"),
+                Triple("UShort_to_Long", "60000us as Long", "60000"),
+                Triple("Int_to_Long", "123 as Long", "123"),
+                Triple("UInt_to_ULong", "123u as ULong", "123"),
+                Triple("Long_to_Int", "123L as Int", "123"),
+                Triple("ULong_to_UInt", "123uL as UInt", "123"),
+                Triple("Int_to_Byte", "127 as Byte", "127"),
+                Triple("Int_to_UByte", "255 as UByte", "255"),
+                Triple("Int_to_Short", "32000 as Short", "32000"),
+                Triple("Int_to_UShort", "60000 as UShort", "60000"),
+                Triple("Int_to_UInt", "123 as UInt", "123"),
+                Triple("Long_to_ULong", "123L as ULong", "123"),
+                Triple("Int_to_Cent", "123 as Cent", "123"),
+                Triple("UInt_to_UCent", "123u as UCent", "123"),
+                Triple("Cent_to_Int", "123c as Int", "123"),
+                Triple("UCent_to_UInt", "123uc as UInt", "123"),
+                Triple("Int_to_Real", "42 as Double", "42.0"),
+                Triple("UInt_to_Real", "42u as Double", "42.0"),
+                Triple("Int_to_Float", "42 as Float", "42.0"),
+                Triple("Int_to_Decimal", "42 as Decimal", "42.0"),
+                Triple("Real_to_Int", "3.75 as Int", "3"),
+                Triple("Real_to_UInt", "3.75 as UInt", "3"),
+                Triple("Float_to_Int", "3.75f as Int", "3"),
+                Triple("Decimal_to_Int", "3.75D as Int", "3"),
+                Triple("Float_to_Real", "3.5f as Double", "3.5"),
+                Triple("Real_to_Float", "3.5 as Float", "3.5"),
+                Triple("Real_to_Decimal", "3.5 as Decimal", "3.5"),
+                Triple("Decimal_to_Real", "3.5D as Double", "3.5"),
+                Triple("Int_to_Char", "65 as Char", "A"),
+                Triple("Char_to_Int", "'A' as Int", "65"),
             )
             for ((name, expression, expected) in casts) {
                 cases += expressionCase("cast_$name", expected, expression)
@@ -193,21 +193,21 @@ class LlvmTypeOperationMatrixExecTest(
                 cases += Case(
                     "interpolate_${type.name}",
                     "value=42",
-                    program("let value: std::${type.name} = $value\nstd::println(\"value=${'$'}value\")"),
+                    program("let value: ${type.name} = $value\nprintln(\"value=${'$'}value\")"),
                 )
             }
             for (type in floatTypes) {
                 cases += Case(
                     "interpolate_${type.name}",
                     "value=3.5",
-                    program("let value: std::${type.name} = 3.5${type.suffix}\nstd::println(\"value=${'$'}value\")"),
+                    program("let value: ${type.name} = 3.5${type.suffix}\nprintln(\"value=${'$'}value\")"),
                 )
             }
 
-            cases += Case("interpolate_Bool", "value=true", program("let value = true\nstd::println(\"value=${'$'}value\")"))
-            cases += Case("interpolate_Char", "value=Z", program("let value = 'Z'\nstd::println(\"value=${'$'}value\")"))
-            cases += Case("interpolate_expression", "sum=42", program("std::println(\"sum=${'$'}{20 + 22}\")"))
-            cases += Case("interpolate_multiple", "a=7,b=6,p=42", program("let a = 7\nlet b = 6\nstd::println(\"a=${'$'}a,b=${'$'}b,p=${'$'}{a * b}\")"))
+            cases += Case("interpolate_Bool", "value=true", program("let value = true\nprintln(\"value=${'$'}value\")"))
+            cases += Case("interpolate_Char", "value=Z", program("let value = 'Z'\nprintln(\"value=${'$'}value\")"))
+            cases += Case("interpolate_expression", "sum=42", program("println(\"sum=${'$'}{20 + 22}\")"))
+            cases += Case("interpolate_multiple", "a=7,b=6,p=42", program("let a = 7\nlet b = 6\nprintln(\"a=${'$'}a,b=${'$'}b,p=${'$'}{a * b}\")"))
 
             cases += expressionCase("string_concat_literals", "hello world", "\"hello \" + \"world\"")
             cases += expressionCase("string_concat_variables", "azora", "\"azo\" + \"ra\"")
@@ -215,7 +215,7 @@ class LlvmTypeOperationMatrixExecTest(
             cases += expressionCase("string_repeat_left", "hahaha", "3 * \"ha\"")
             cases += expressionCase("string_equal", "true", "\"same\" == \"same\"")
             cases += expressionCase("string_not_equal", "true", "\"left\" != \"right\"")
-            cases += Case("string_variable_concat", "ab", program("let prefix = \"a\"\nstd::println(prefix + \"b\")"))
+            cases += Case("string_variable_concat", "ab", program("let prefix = \"a\"\nprintln(prefix + \"b\")"))
             cases += expressionCase("string_concat_number_interpolation", "n=42!", "\"n=${'$'}{40 + 2}\" + \"!\"")
             cases += expressionCase("bool_short_circuit_and", "false", "false && (1 / 0 == 0)")
             cases += expressionCase("bool_short_circuit_or", "true", "true || (1 / 0 == 0)")

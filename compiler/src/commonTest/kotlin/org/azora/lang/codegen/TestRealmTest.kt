@@ -26,7 +26,7 @@ class TestRealmTest {
     @Test fun aTestMayUseWhatATestRealmDeclares() {
         assertEquals("", run("""
             realm test {
-                func fixture(): std::Int { return 7 }
+                func fixture(): Int { return 7 }
             }
 
             test "the fixture is reachable from a test" {
@@ -40,7 +40,7 @@ class TestRealmTest {
     @Test fun theProgramMayNotUseWhatATestRealmDeclares() {
         val found = errors("""
             realm test {
-                func fixture(): std::Int { return 7 }
+                func fixture(): Int { return 7 }
             }
 
             func main() { fin unused = fixture() }
@@ -54,8 +54,8 @@ class TestRealmTest {
     @Test fun aTestRealmMemberMayUseItsSiblings() {
         assertEquals("", run("""
             realm test {
-                func base(): std::Int { return 6 }
-                func fixture(): std::Int { return base() + 1 }
+                func base(): Int { return 6 }
+                func fixture(): Int { return base() + 1 }
             }
 
             test "siblings compose" {
@@ -77,7 +77,7 @@ class TestRealmTest {
         for ((header, expected) in cases) {
             val found = errors("""
                 $header {
-                    func fixture(): std::Int { return 7 }
+                    func fixture(): Int { return 7 }
                 }
 
                 func main() { fin unused = fixture() }
@@ -90,7 +90,7 @@ class TestRealmTest {
         val found = errors("""
             realm test {
                 realm test {
-                    func fixture(): std::Int { return 7 }
+                    func fixture(): Int { return 7 }
                 }
             }
 
@@ -107,15 +107,15 @@ class TestRealmTest {
     @Test fun exposeCombinesWithProtectAndConfine() {
         assertEquals("ok", run("""
             import std.io
-            exposed func api(): std::Int { return 1 }
-            protected func folderWide(): std::Int { return 2 }
-            confined func unitLocal(): std::Int { return 3 }
-            exposed protected func exposedInFolder(): std::Int { return 4 }
-            exposed confined func exposedInUnit(): std::Int { return 5 }
+            exposed func api(): Int { return 1 }
+            protected func folderWide(): Int { return 2 }
+            confined func unitLocal(): Int { return 3 }
+            exposed protected func exposedInFolder(): Int { return 4 }
+            exposed confined func exposedInUnit(): Int { return 5 }
 
             func main() {
                 fin sum = api() + folderWide() + unitLocal() + exposedInFolder() + exposedInUnit()
-                if sum == 15 { std::println("ok") } else { std::println("bad") }
+                if sum == 15 { println("ok") } else { println("bad") }
             }
         """.trimIndent()))
     }

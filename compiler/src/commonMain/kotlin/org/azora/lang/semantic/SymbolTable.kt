@@ -284,7 +284,7 @@ class SymbolTable {
         structs[struct.name] = struct
     }
 
-    /** Looks up a struct by name. Accepts a realm-qualified name (`std::Deque`
+    /** Looks up a struct by name. Accepts a realm-qualified name (`Deque`
      *  lowers to `std__Deque`); types are not realm-mangled, so fall back to the
      *  final segment when the mangled form is not found. */
     fun lookupStruct(name: String): StructType? =
@@ -324,7 +324,7 @@ class SymbolTable {
      * The declared name a possibly realm-qualified type reference denotes.
      *
      * `Realm::Type` reaches the semantic layer as `Realm__Type`, because `::`
-     * is the same namespace operator that mangles `std::println` into
+     * is the same namespace operator that mangles `println` into
      * `std__println`. Types are not realm-mangled, so the qualified spelling
      * has to be mapped back before the name is used as a type identity.
      * A name that is already declared is returned untouched, which leaves

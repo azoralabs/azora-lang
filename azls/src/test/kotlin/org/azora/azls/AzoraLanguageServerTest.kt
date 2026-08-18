@@ -171,7 +171,7 @@ class AzoraLanguageServerTest {
             }
             annot Routed binds Serializable
             spec Worker requires Send
-            fin callback: escaping (std::Int) -> std::Int
+            fin callback: escaping (Int) -> Int
             fin borrowed = lend value
             fin selected = when value { true => seal Result }
 
@@ -240,7 +240,7 @@ class AzoraLanguageServerTest {
         val source = """
             import std.io
             func main() {
-                std::println("known")
+                println("known")
                 notDeclared("unknown")
             }
         """.trimIndent()
@@ -280,13 +280,13 @@ fin array = @collect_all(tuple)"""
     @Test
     fun highlightsRealmQualifiedSigilsInCompilerOrder() {
         val source = """
-            @std::Serializable pack User
-            fin values = @std::arr[1, 2, 3]
+            @Serializable pack User
+            fin values = @arr[1, 2, 3]
         """.trimIndent()
         val all = spans(source)
 
-        assertTrue(all.any { it.type == "annotation" && source.substring(it.start, it.end) == "@std::Serializable" })
-        assertTrue(all.any { it.type == "macro" && source.substring(it.start, it.end) == "@std::arr" })
+        assertTrue(all.any { it.type == "annotation" && source.substring(it.start, it.end) == "@Serializable" })
+        assertTrue(all.any { it.type == "macro" && source.substring(it.start, it.end) == "@arr" })
     }
 
     @Test
@@ -295,8 +295,8 @@ fin array = @collect_all(tuple)"""
             import std.primitive
             import std.reflection
             fin invalid: Int = 1
-            fin valid: std::Int = 1
-            inline fin metadata = std::reflect<std::Int>
+            fin valid: Int = 1
+            inline fin metadata = reflect<Int>
         """.trimIndent()
         val all = spans(source)
         fun kinds(text: String) = all.filter { source.substring(it.start, it.end) == text }.map { it.type }
@@ -319,7 +319,7 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun cleanProgramHasNoDiagnostics() {
-        val list = diags("import std.io\nfunc main() {\n    std::println(\"ok\")\n}")
+        val list = diags("import std.io\nfunc main() {\n    println(\"ok\")\n}")
         assertEquals(emptyList(), list)
     }
 
@@ -340,7 +340,7 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun preludeShiftsLinesBack() {
-        val prelude = "func helper(): std::Int {\n    return 1\n}"
+        val prelude = "func helper(): Int {\n    return 1\n}"
         val list = diags("func main() {\n    fin result = brokenRef\n}", prelude)
         assertTrue(list.isNotEmpty())
         assertEquals(2, list[0].line, "line must be mapped back to the document: $list")
@@ -348,8 +348,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun preludeSymbolsResolve() {
-        val prelude = "func helper(): std::Int {\n    return 1\n}"
-        val list = diags("func main(): std::Int {\n    return helper()\n}", prelude)
+        val prelude = "func helper(): Int {\n    return 1\n}"
+        val list = diags("func main(): Int {\n    return helper()\n}", prelude)
         assertEquals(emptyList(), list)
     }
 
@@ -395,8 +395,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun completesStdlibFunctions() {
-        val source = "import std.math\nfunc main() {\n    std::ab\n}"
-        val offset = source.indexOf("std::ab") + "std::ab".length
+        val source = "import std.math\nfunc main() {\n    ab\n}"
+        val offset = source.indexOf("ab") + "ab".length
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" }, "stdlib abs should complete: $list")
         assertTrue(list.any { it.label == "abs" && "func abs" in it.detail && "std.math" in it.detail },
@@ -405,8 +405,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun completesGroupedStdlibImports() {
-        val source = "import std.{math, container}\nfunc main() {\n    std::ab\n}"
-        val offset = source.indexOf("std::ab") + "std::ab".length
+        val source = "import std.{math, container}\nfunc main() {\n    ab\n}"
+        val offset = source.indexOf("ab") + "ab".length
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
             "grouped std import should expose std.math completions: $list")
@@ -414,8 +414,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun completesSelectiveStdlibImportFromContainingModule() {
-        val source = "import std.math.abs\nfunc main() {\n    std::ab\n}"
-        val offset = source.indexOf("std::ab") + "std::ab".length
+        val source = "import std.math.abs\nfunc main() {\n    ab\n}"
+        val offset = source.indexOf("ab") + "ab".length
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
             "selective std import should expose its containing module for completion: $list")
@@ -423,8 +423,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun stdlibConstantsComplete() {
-        val source = "import std.math\nfunc main() {\n    std::P\n}"
-        val offset = source.indexOf("std::P") + "std::P".length
+        val source = "import std.math\nfunc main() {\n    P\n}"
+        val offset = source.indexOf("P") + "P".length
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "PI" && it.kind == "variable" }, "PI should complete: $list")
     }
@@ -521,8 +521,8 @@ fin array = @collect_all(tuple)"""
 
     @Test
     fun hoverIncludesBlockDocumentationFromPreludeAndStdlib() {
-        val prelude = "/** External helper docs. */\nfunc helper(): std::Int { return 1 }"
-        val source = "import std.math\nfunc main() {\n    helper()\n    std::abs(-1)\n}"
+        val prelude = "/** External helper docs. */\nfunc helper(): Int { return 1 }"
+        val source = "import std.math\nfunc main() {\n    helper()\n    abs(-1)\n}"
 
         val helper = hover(source, source.indexOf("helper()"), prelude)!!
         val abs = hover(source, source.indexOf("abs(-1)"))!!
@@ -552,7 +552,7 @@ fin array = @collect_all(tuple)"""
     @Test
     fun definitionUsesLexicalIdentityInsteadOfSameSpelledSiblingBinding() {
         val source = """
-            func value(): std::Int { return 7 }
+            func value(): Int { return 7 }
             func main() {
                 if true {
                     fin value = 1
@@ -572,7 +572,7 @@ fin array = @collect_all(tuple)"""
     fun definitionSelectsSameSpelledTopLevelSymbolsByUseRole() {
         val source = """
             fin state = 1
-            func state(): std::Int { return 2 }
+            func state(): Int { return 2 }
             func main() {
                 println(state)
                 println(state())
@@ -591,7 +591,7 @@ fin array = @collect_all(tuple)"""
     fun definitionAndHoverResolveContextualReceiverParameter() {
         val source = """
             impl Text {
-                react ctor[self: Self&, anchor: Anchor&](value: std::String): Entity {
+                react ctor[self: Self&, anchor: Anchor&](value: String): Entity {
                     return anchor.pass.text(value)
                 }
             }
@@ -608,7 +608,7 @@ fin array = @collect_all(tuple)"""
     @Test
     fun definitionReportsExternalSymbolByName() {
         // abs lives in the stdlib, not this file → not in current file, named for search.
-        val source = "import std.math\nfunc main() {\n    std::abs(3)\n}"
+        val source = "import std.math\nfunc main() {\n    abs(3)\n}"
         val offset = source.indexOf("abs") + 1
         val def = definition(source, offset)!!
         assertFalse(def.inCurrentFile)

@@ -37,13 +37,13 @@ macro @vec { … }        //  declares
 
 ```azora
 macro @vec {
-    [] => std::emptyList()
-    [...$items] => std::listOf(...$items)
+    [] => emptyList()
+    [...$items] => listOf(...$items)
 }
 
 macro @vec! {
-    [] => std::emptyMutableList()
-    [...$items] => std::mutableListOf(...$items)
+    [] => emptyMutableList()
+    [...$items] => mutableListOf(...$items)
 }
 ```
 
@@ -93,9 +93,9 @@ The operand holes surround the name, so the declaration reads like the call it
 enables:
 
 ```azora
-macro $a @to $b => std::mapEntry($a, $b)
+macro $a @to $b => mapEntry($a, $b)
 
-fin entry = "key" @to 42          // std::mapEntry("key", 42)
+fin entry = "key" @to 42          // mapEntry("key", 42)
 ```
 
 An infix macro is a single line: there is one pattern, so a block would hold
@@ -175,9 +175,9 @@ A specific implementation is reached by naming it, which is clearer than a
 sigil anyway:
 
 ```azora
-std::hashSetOf(1, 2, 3)
-std::treeMapOf("a" @to 1)
-std::linkedHashSetOf(1, 2)
+hashSetOf(1, 2, 3)
+treeMapOf("a" @to 1)
+linkedHashSetOf(1, 2)
 ```
 
 ### 3.4 The trailing `@`
@@ -211,9 +211,9 @@ inline "code string"              // splice a string as source
 | `macro .Type { … }`                 | removed; write the type   |
 | `vec@[…]`                           | `@vec[…]`                 |
 | `vec!@[…]`                          | `@vec![…]`                |
-| `# set@[…]`                         | `std::hashSetOf(…)`       |
-| `!# set@[…]`                        | `std::linkedHashSetOf(…)` |
-| `^ map@[…]`                         | `std::treeMapOf(…)`       |
+| `# set@[…]`                         | `hashSetOf(…)`       |
+| `!# set@[…]`                        | `linkedHashSetOf(…)` |
+| `^ map@[…]`                         | `treeMapOf(…)`       |
 | `a to b`                            | `a @to b`                 |
 
 The `infx` keyword is **removed**. It declared an extension method callable

@@ -25,9 +25,9 @@ private data, or perform network I/O.
 ```azora
 import std.ai
 
-func answer(model: std::AiModel, question: std::String): std::Message {
-    fin options = std::generationOptions()
-    return std::ask(model, "You are a concise assistant.", question, options)
+func answer(model: AiModel, question: String): Message {
+    fin options = generationOptions()
+    return ask(model, "You are a concise assistant.", question, options)
 }
 ```
 
@@ -78,10 +78,10 @@ The first AI module is [`std/ai.az`](../std/ai.az). It provides:
 ```azora
 import std.ai
 
-func summarize(model: std::AiModel, text: std::String): std::Message {
-    fin options = std::generationOptions()
+func summarize(model: AiModel, text: String): Message {
+    fin options = generationOptions()
     options.maxTokens = 256
-    return std::ask(model, "Summarize faithfully.", text, options)
+    return ask(model, "Summarize faithfully.", text, options)
 }
 ```
 
@@ -161,7 +161,7 @@ import std.ml
 import std.container.array
 
 func classify(scores: Array<Double>): Int {
-    return std::argmax(std::softmax(scores))
+    return argmax(softmax(scores))
 }
 ```
 
@@ -279,8 +279,8 @@ agent supportBot(model assistant) {
 The accepted spelling remains explicit library calls:
 
 ```azora
-fin model = std::connect("provider", "model")
-fin reply = std::complete(model, conversation, options)
+fin model = connect("provider", "model")
+fin reply = complete(model, conversation, options)
 ```
 
 ---

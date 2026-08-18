@@ -50,7 +50,7 @@ filesystem follows it, and shares the same `expect`/`actual` platform layer.
 ## 2. Paths are values, not strings
 
 ```azora
-fin root = std::path("/usr/local")
+fin root = path("/usr/local")
 fin bin  = root / "bin" / "azora"
 
 bin.text            // "/usr/local/bin/azora"
@@ -102,11 +102,11 @@ disk, gives a different answer, and belongs to §5's `canonical`.
 ## 3. Reading and writing
 
 ```azora
-fin source = try std::readText(path)                 // String ?! FileError
-fin bytes  = try std::readBytes(path)                // Array<Byte> ?! FileError
-try std::writeText(path, source)                     // Unit ?! FileError
-try std::writeBytes(path, bytes)
-try std::appendText(path, line)
+fin source = try readText(path)                 // String ?! FileError
+fin bytes  = try readBytes(path)                // Array<Byte> ?! FileError
+try writeText(path, source)                     // Unit ?! FileError
+try writeBytes(path, bytes)
+try appendText(path, line)
 ```
 
 Every one of these is failable. There is no variant that returns an empty string
@@ -127,13 +127,13 @@ the call site rather than hidden in a mode flag.
 ## 4. Directories
 
 ```azora
-fin entries = try std::listDirectory(path)           // Array<Path> ?! FileError
-try std::createDirectory(path)                       // one level
-try std::createDirectories(path)                     // and its parents
-try std::remove(path)                                // a file, or an empty directory
-try std::removeAll(path)                             // a directory and its contents
-try std::copyFile(from, to)
-try std::rename(from, to)
+fin entries = try listDirectory(path)           // Array<Path> ?! FileError
+try createDirectory(path)                       // one level
+try createDirectories(path)                     // and its parents
+try remove(path)                                // a file, or an empty directory
+try removeAll(path)                             // a directory and its contents
+try copyFile(from, to)
+try rename(from, to)
 ```
 
 `listDirectory` returns full paths, not bare names. A bare name is only useful
@@ -153,26 +153,26 @@ true)` does not.
 ## 5. Metadata
 
 ```azora
-fin info = try std::fileInfo(path)                   // FileInfo ?! FileError
+fin info = try fileInfo(path)                   // FileInfo ?! FileError
 
 info.kind            // FileKind.File | .Directory | .Symlink | .Other
 info.size            // Long, bytes; 0 for a directory
-info.modified        // std::Instant
+info.modified        // Instant
 
-std::exists(path)    // Bool - not failable
-std::isFile(path)
-std::isDirectory(path)
+exists(path)    // Bool - not failable
+isFile(path)
+isDirectory(path)
 
-fin real = try std::canonical(path)   // resolves symlinks; needs the disk
+fin real = try canonical(path)   // resolves symlinks; needs the disk
 ```
 
 `exists`, `isFile` and `isDirectory` return `Bool` rather than `Bool ?! E`. The
 question "is there a file here" has a defensible answer when the path is
 unreadable - no - and forcing `try` on a predicate makes the common shape
-(`if std::exists(p)`) worse for no gain in precision. Anything that needs the
+(`if exists(p)`) worse for no gain in precision. Anything that needs the
 distinction calls `fileInfo` and reads the error.
 
-`modified` is a `std::Instant`, not an integer, so it composes with `std.time`.
+`modified` is a `Instant`, not an integer, so it composes with `std.time`.
 
 ---
 
@@ -208,8 +208,8 @@ asks for one should be told so.
 ## 7. Temporary files
 
 ```azora
-fin dir  = try std::temporaryDirectory()             // the system temp root
-fin work = try std::createTemporaryDirectory("azora") // a fresh, unique one
+fin dir  = try temporaryDirectory()             // the system temp root
+fin work = try createTemporaryDirectory("azora") // a fresh, unique one
 ```
 
 `createTemporaryDirectory` creates and returns a directory that did not exist a
@@ -270,16 +270,16 @@ site is **inside** the same realm, and does not when it is outside:
 
 ```azora
 realm demo {
-    pack Money { var cents: std::Int = 0 }
+    pack Money { var cents: Int = 0 }
     impl Money {
         oper + [self: Self&](rhs: Self&): Self { return Money(self.cents + rhs.cents) }
     }
-    func addInside(): std::Int { return (Money(500) + Money(250)).cents }   // 750
+    func addInside(): Int { return (Money(500) + Money(250)).cents }   // 750
 }
 
 func main() {
-    std::println(demo::addInside())                    // 750
-    std::println((demo::Money(500) + demo::Money(250)).cents)
+    println(demo::addInside())                    // 750
+    println((demo::Money(500) + demo::Money(250)).cents)
 }
 ```
 

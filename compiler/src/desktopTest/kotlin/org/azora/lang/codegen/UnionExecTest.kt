@@ -38,13 +38,13 @@ class UnionExecTest {
     @Test fun aMemberSurvivesARoundTrip() = check("42", """
         import std.io
         unsafe union Value {
-            i: std::Int
-            d: std::Double
+            i: Int
+            d: Double
         }
         func main() {
             unsafe {
                 var v = Value(i: 42)
-                std::println(v.i)
+                println(v.i)
             }
         }
     """.trimIndent())
@@ -52,15 +52,15 @@ class UnionExecTest {
     @Test fun writingThenReadingTheSameMemberIsStable() = check("7\n9", """
         import std.io
         unsafe union Value {
-            i: std::Int
-            d: std::Double
+            i: Int
+            d: Double
         }
         func main() {
             unsafe {
                 var v = Value(i: 7)
-                std::println(v.i)
+                println(v.i)
                 v.i = 9
-                std::println(v.i)
+                println(v.i)
             }
         }
     """.trimIndent())
@@ -68,13 +68,13 @@ class UnionExecTest {
     @Test fun theMembersShareOneStorageSlot() = check("1", """
         import std.io
         unsafe union Flag {
-            raw: std::Int
-            on: std::Bool
+            raw: Int
+            on: Bool
         }
         func main() {
             unsafe {
                 var f = Flag(on: true)
-                std::println(f.raw)
+                println(f.raw)
             }
         }
     """.trimIndent())
@@ -82,15 +82,15 @@ class UnionExecTest {
     @Test fun aUnionIsAsWideAsItsWidestMember() = check("1.5", """
         import std.io
         unsafe union Scalar {
-            small: std::Byte
-            wide: std::Double
+            small: Byte
+            wide: Double
         }
         func main() {
             unsafe {
                 // `wide` is the widest member, so the storage is 8 bytes and the
                 // double survives intact even though `small` is declared first.
                 var n = Scalar(wide: 1.5)
-                std::println(n.wide)
+                println(n.wide)
             }
         }
     """.trimIndent())

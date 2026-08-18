@@ -9,7 +9,7 @@ a block, and `assert` is the language's own statement.
 
 ```azora
 test "duration normalizes overflow" {
-    fin value = std::duration(2L, 1500000000L)
+    fin value = duration(2L, 1500000000L)
     assert value.seconds == 3L { "overflow must carry into seconds" }
 }
 ```
@@ -193,7 +193,7 @@ trace .Warn "falling back"           // [WARN] falling back
 trace { "computed: ${value}" }       // [DEBUG] computed: 42
 ```
 
-A diagnostic print carrying a level. The level is a `std::LogLevel` - `Debug`
+A diagnostic print carrying a level. The level is a `LogLevel` - `Debug`
 (the default), `Info`, `Warn`, `Error` - written as a leading `.Variant`.
 
 Output is `[LEVEL] message`, always. There is no sink, no filter and no way to

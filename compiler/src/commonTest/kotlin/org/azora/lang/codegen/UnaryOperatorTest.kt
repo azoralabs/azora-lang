@@ -46,16 +46,16 @@ class UnaryOperatorTest {
         assertEquals("-3\n-4", run("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             oper- [self: Vec2&]: Vec2 {
                 return Vec2(0 - self.x, 0 - self.y)
             }
             func main() {
                 fin negated = -Vec2(3, 4)
-                std::println(negated.x)
-                std::println(negated.y)
+                println(negated.x)
+                println(negated.y)
             }
         """.trimIndent()))
     }
@@ -65,14 +65,14 @@ class UnaryOperatorTest {
         assertEquals("true\nfalse", run("""
             import std.io
             pack Flag {
-                var on: std::Bool
+                var on: Bool
             }
             oper! [self: Flag&]: Flag {
                 return Flag(!self.on)
             }
             func main() {
-                std::println((!Flag(false)).on)
-                std::println((!Flag(true)).on)
+                println((!Flag(false)).on)
+                println((!Flag(true)).on)
             }
         """.trimIndent()))
     }
@@ -81,13 +81,13 @@ class UnaryOperatorTest {
         assertEquals("5", run("""
             import std.io
             pack Mask {
-                var bits: std::Int
+                var bits: Int
             }
             oper~ [self: Mask&]: Mask {
                 return Mask(5)
             }
             func main() {
-                std::println((~Mask(0)).bits)
+                println((~Mask(0)).bits)
             }
         """.trimIndent()))
     }
@@ -100,7 +100,7 @@ class UnaryOperatorTest {
         assertEquals("-2\n5", run("""
             import std.io
             pack Num {
-                var v: std::Int
+                var v: Int
             }
             oper- [self: Num&]: Num {
                 return Num(0 - self.v)
@@ -109,8 +109,8 @@ class UnaryOperatorTest {
                 return Num(self.v - rhs.v)
             }
             func main() {
-                std::println((-Num(2)).v)
-                std::println((Num(7) - Num(2)).v)
+                println((-Num(2)).v)
+                println((Num(7) - Num(2)).v)
             }
         """.trimIndent()))
     }
@@ -120,9 +120,9 @@ class UnaryOperatorTest {
         assertEquals("-5\nfalse\n-1", run("""
             import std.io
             func main() {
-                std::println(-5)
-                std::println(!true)
-                std::println(~0)
+                println(-5)
+                println(!true)
+                println(~0)
             }
         """.trimIndent()))
     }

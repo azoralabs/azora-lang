@@ -152,9 +152,9 @@ a @to b                                       // universal infix pair
 ```azora
 fin name = "Azora"
 fin n = 3
-std::println("Hello, ${name}!")        // braces
-std::println("Hello, $name!")          // bare identifier
-std::println("${n} x ${n} = ${n * n}") // expression
+println("Hello, ${name}!")        // braces
+println("Hello, $name!")          // bare identifier
+println("${n} x ${n} = ${n * n}") // expression
 ```
 
 ## 6. Ranges
@@ -177,8 +177,8 @@ for i in 0..<10 { … }     // half-open 0..9
 ```azora
 scope {
     var x = 2            // shadows outer x
-    std::println(x)
-    std::println(::x)    // ::name reaches the enclosing scope
+    println(x)
+    println(::x)    // ::name reaches the enclosing scope
 }
 ```
 

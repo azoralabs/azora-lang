@@ -574,7 +574,7 @@ object AzHighlighter {
         }
         .toSet()
 
-    /** `Int` at the end of `std::Int` becomes the compiler's `std__Int` key. */
+    /** `Int` at the end of `Int` becomes the compiler's `std__Int` key. */
     private fun qualifiedNameAt(source: String, name: String, offset: Int): String {
         val parts = mutableListOf(name)
         var cursor = offset

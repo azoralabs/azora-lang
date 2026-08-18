@@ -101,8 +101,8 @@ impl SerialIgnore for Account::*        // wildcard
 Query decorators at compile time:
 
 ```azora
-std::reflect<P>.hasAnnot<Serializable>          // Bool
-std::reflect<P>.annotMeta<SerialName>.value      // a decorator field
+reflect<P>.hasAnnot<Serializable>          // Bool
+reflect<P>.annotMeta<SerialName>.value      // a decorator field
 ```
 
 See the Reflection DIP.

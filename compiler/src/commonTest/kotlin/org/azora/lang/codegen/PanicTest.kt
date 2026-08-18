@@ -15,7 +15,7 @@ class PanicTest {
             import std.io
             func main() {
                 if false { panic "should not happen" }
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent(), release = false)
         assertIs<CompilationResult.Success>(r)
@@ -26,7 +26,7 @@ class PanicTest {
         val r = Compiler().compile("""
             import std.io
             func main() {
-                std::println("before")
+                println("before")
                 panic "boom"
             }
         """.trimIndent(), release = false)

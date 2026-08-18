@@ -27,16 +27,16 @@ class ContainerStdlibTest {
             import std.container.*
             import std.*
 
-            func verify(): std::Int {
-                inline assert std::reflect<std::List>.hasAnnot<std::Serializable> { "List metadata missing" }
-                inline assert std::reflect<std::MutableList>.hasAnnot<std::Serializable> { "MutableList metadata missing" }
-                inline assert std::reflect<std::Set>.hasAnnot<std::Serializable> { "Set metadata missing" }
-                inline assert std::reflect<std::MutableSet>.hasAnnot<std::Serializable> { "MutableSet metadata missing" }
-                inline assert std::reflect<std::Map>.hasAnnot<std::Serializable> { "Map metadata missing" }
-                inline assert std::reflect<std::MutableMap>.hasAnnot<std::Serializable> { "MutableMap metadata missing" }
-                inline assert std::reflect<std::Deque>.hasAnnot<std::Serializable> { "Deque metadata missing" }
-                inline assert std::reflect<std::Queue>.hasAnnot<std::Serializable> { "Queue metadata missing" }
-                inline assert std::reflect<std::Stack>.hasAnnot<std::Serializable> { "Stack metadata missing" }
+            func verify(): Int {
+                inline assert reflect<List>.hasAnnot<Serializable> { "List metadata missing" }
+                inline assert reflect<MutableList>.hasAnnot<Serializable> { "MutableList metadata missing" }
+                inline assert reflect<Set>.hasAnnot<Serializable> { "Set metadata missing" }
+                inline assert reflect<MutableSet>.hasAnnot<Serializable> { "MutableSet metadata missing" }
+                inline assert reflect<Map>.hasAnnot<Serializable> { "Map metadata missing" }
+                inline assert reflect<MutableMap>.hasAnnot<Serializable> { "MutableMap metadata missing" }
+                inline assert reflect<Deque>.hasAnnot<Serializable> { "Deque metadata missing" }
+                inline assert reflect<Queue>.hasAnnot<Serializable> { "Queue metadata missing" }
+                inline assert reflect<Stack>.hasAnnot<Serializable> { "Stack metadata missing" }
                 return 1
             }
 
@@ -52,37 +52,37 @@ class ContainerStdlibTest {
             import std.*
 
             func main() {
-                var list = std::listOf(1, 2)
+                var list = listOf(1, 2)
                 list.add(3)
-                std::println(list[0] + list[2])
+                println(list[0] + list[2])
 
-                var set = std::setOf(1, 1, 2)
-                std::set.add(3)
-                std::println(std::set.size)
+                var set = setOf(1, 1, 2)
+                set.add(3)
+                println(set.size)
 
-                var map = std::HashMap<std::String, std::Int>()
-                std::map.put("a", 1)
-                std::map.put("a", 2)
-                std::println(std::map["a"])
+                var map = HashMap<String, Int>()
+                map.put("a", 1)
+                map.put("a", 2)
+                println(map["a"])
 
-                var queue = std::Queue<std::Int>()
+                var queue = Queue<Int>()
                 queue.enqueue(4)
                 queue.enqueue(5)
-                std::println(queue.dequeue())
+                println(queue.dequeue())
 
-                var stack = std::Stack<std::Int>()
+                var stack = Stack<Int>()
                 stack.push(6)
                 stack.push(7)
-                std::println(stack.pop())
+                println(stack.pop())
 
-                var deque = std::Deque<std::Int>()
+                var deque = Deque<Int>()
                 deque.pushFront(8)
                 deque.pushBack(9)
-                std::println(deque.popFront() + deque.popBack())
+                println(deque.popFront() + deque.popBack())
 
-                fin tuple = std::tupleOf("ok", 10)
-                std::println(tuple.0)
-                std::println(tuple.1)
+                fin tuple = tupleOf("ok", 10)
+                println(tuple.0)
+                println(tuple.1)
             }
         """.trimIndent())
 

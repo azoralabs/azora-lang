@@ -54,7 +54,7 @@ class MultiOperImplTest {
         // Int ranges compile because std/traits/core.az registers oper.. for Int.
         val result = Compiler().compile(
             """
-            func main(): std::Int {
+            func main(): Int {
                 var sum = 0
                 for i in 0..<5 { sum = sum + i }
                 return sum

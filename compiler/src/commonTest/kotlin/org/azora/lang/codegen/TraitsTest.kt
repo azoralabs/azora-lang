@@ -25,20 +25,20 @@ class TraitsTest {
         assertEquals("Point(3, 4)", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             spec Describable {
-                func describe[self: std::Self&](): std::String
+                func describe[self: Self&](): String
             }
             impl Describable for Point {
-                func describe(): std::String {
+                func describe(): String {
                     return "Point(" + self.x + ", " + self.y + ")"
                 }
             }
             func main() {
                 var p = Point(3, 4)
-                std::println(p.describe())
+                println(p.describe())
             }
         """.trimIndent()))
     }
@@ -47,25 +47,25 @@ class TraitsTest {
         assertEquals("green\n0", run("""
             import std.io
             pack Light {
-                var color: std::String
-                var brightness: std::Int
+                var color: String
+                var brightness: Int
             }
             spec Device {
-                func status[self: std::Self&](): std::String
-                func level[self: std::Self&](): std::Int
+                func status[self: Self&](): String
+                func level[self: Self&](): Int
             }
             impl Device for Light {
-                func status(): std::String {
+                func status(): String {
                     return self.color
                 }
-                func level(): std::Int {
+                func level(): Int {
                     return self.brightness
                 }
             }
             func main() {
                 var l = Light("green", 0)
-                std::println(l.status())
-                std::println(l.level())
+                println(l.status())
+                println(l.level())
             }
         """.trimIndent()))
     }
@@ -74,18 +74,18 @@ class TraitsTest {
         val errors = expectFailure("""
             import std.io
             spec Describable {
-                func describe[self: std::Self&](): std::String
-                func detail[self: std::Self&](): std::String
+                func describe[self: Self&](): String
+                func detail[self: Self&](): String
             }
             pack P {
-                var x: std::Int
+                var x: Int
             }
             impl Describable for P {
-                func describe(): std::String {
+                func describe(): String {
                     return "P"
                 }
             }
-            func main() { std::println("hi") }
+            func main() { println("hi") }
         """.trimIndent())
         assertTrue(errors.any { it.contains("detail") }, "Expected missing 'detail' error, got: $errors")
     }
@@ -94,14 +94,14 @@ class TraitsTest {
         val errors = expectFailure("""
             import std.io
             pack P {
-                var x: std::Int
+                var x: Int
             }
             impl NonExistent for P {
-                func foo(): std::Int {
+                func foo(): Int {
                     return 42
                 }
             }
-            func main() { std::println("hi") }
+            func main() { println("hi") }
         """.trimIndent())
         assertTrue(errors.any { it.contains("NonExistent") }, "Expected unknown spec error, got: $errors")
     }
@@ -110,16 +110,16 @@ class TraitsTest {
         assertEquals("42", run("""
             import std.io
             pack P {
-                var x: std::Int
+                var x: Int
             }
             impl P {
-                func getX(): std::Int {
+                func getX(): Int {
                     return self.x
                 }
             }
             func main() {
                 var p = P(42)
-                std::println(p.getX())
+                println(p.getX())
             }
         """.trimIndent()))
     }
@@ -128,7 +128,7 @@ class TraitsTest {
         assertEquals("", run("""
             annot Serializable {}
             pack UserId {
-                fin value: std::Long
+                fin value: Long
             }
             impl Serializable for UserId {}
             func main() {}
@@ -138,7 +138,7 @@ class TraitsTest {
     @Test fun decoratorImplementationRequiresAnExplicitBody() {
         val errors = expectFailure("""
             annot Serializable {}
-            pack UserId { fin value: std::Long }
+            pack UserId { fin value: Long }
             impl Serializable for UserId
             func main() {}
         """.trimIndent())
@@ -149,10 +149,10 @@ class TraitsTest {
         val errors = expectFailure("""
             annot Serializable {}
             pack UserId {
-                fin value: std::Long
+                fin value: Long
             }
             impl Serializable for UserId {
-                func generated[self: std::Self&](): std::Unit {
+                func generated[self: Self&](): Unit {
                     return
                 }
             }
@@ -165,7 +165,7 @@ class TraitsTest {
         val errors = expectFailure("""
             annot Serializable {}
             pack UserId {
-                fin value: std::Long
+                fin value: Long
             }
             impl Serializable for UserId {}
             impl Serializable for UserId {}

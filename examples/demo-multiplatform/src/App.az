@@ -39,7 +39,7 @@ react func App() {
             verticalArrangement: "spacedBy(8)"
         ) {
             Text(
-                std::convert::toString(count),
+                convert::toString(count),
                 modifier: Modifier()
                     .fontSize(64)
                     .bold()

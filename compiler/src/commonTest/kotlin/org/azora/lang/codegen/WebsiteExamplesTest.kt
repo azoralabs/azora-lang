@@ -23,17 +23,17 @@ class WebsiteExamplesTest {
     private fun run(source: String): String = IrInterpreter().interpret(compile(source).ir).trim()
 
     @Test fun ch1_hello() = assertEquals("Hello, Azora!", run("""import std.io
-func main() { std::println("Hello, Azora!") }"""))
+func main() { println("Hello, Azora!") }"""))
 
     @Test fun ch2_program() = assertEquals("Hello, Azora!\nversion 1.0.0", run("""
         import std.io
         fin VERSION = "1.0.0"
-        func greet(name: std::String): std::String {
+        func greet(name: String): String {
             return "Hello, " + name + "!"
         }
         func main() {
-            std::println(greet("Azora"))
-            std::println("version " + VERSION)
+            println(greet("Azora"))
+            println("version " + VERSION)
         }
     """.trimIndent()))
 
@@ -43,23 +43,23 @@ func main() { std::println("Hello, Azora!") }"""))
             var count = 0
             count = 10
             count = count + 5
-            std::println(count)
+            println(count)
             let limit = 100
-            std::println(limit)
+            println(limit)
             fin pi = 3
-            std::println(pi)
+            println(pi)
         }
     """.trimIndent()))
 
     @Test fun ch4_literals() = assertEquals("255\n63\n10\n1000000\n3.14\n1500.0", run("""
         import std.io
         func main() {
-            std::println(0xFF)
-            std::println(0o77)
-            std::println(0b1010)
-            std::println(1_000_000)
-            std::println(3.14)
-            std::println(1.5e3)
+            println(0xFF)
+            println(0o77)
+            println(0b1010)
+            println(1_000_000)
+            println(3.14)
+            println(1.5e3)
         }
     """.trimIndent()))
 
@@ -67,28 +67,28 @@ func main() { std::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             fin grade = 'A'
-            std::println(grade == 'A')
-            std::println('a' < 'z')
+            println(grade == 'A')
+            println('a' < 'z')
         }
     """.trimIndent()))
 
     @Test fun ch5_arithmetic() = assertEquals("5\n6\n20\n3\n2\n-7", run("""
         import std.io
         func main() {
-            std::println(2 + 3)
-            std::println(10 - 4)
-            std::println(4 * 5)
-            std::println(17 / 5)
-            std::println(17 % 5)
-            std::println(-7)
+            println(2 + 3)
+            println(10 - 4)
+            println(4 * 5)
+            println(17 / 5)
+            println(17 % 5)
+            println(-7)
         }
     """.trimIndent()))
 
     @Test fun ch5_string_ops() = assertEquals("hello world\nababab", run("""
         import std.io
         func main() {
-            std::println("hello " + "world")
-            std::println("ab" * 3)
+            println("hello " + "world")
+            println("ab" * 3)
         }
     """.trimIndent()))
 
@@ -101,7 +101,7 @@ func main() { std::println("Hello, Azora!") }"""))
             n *= 3
             n /= 3
             n %= 5
-            std::println(n)
+            println(n)
         }
     """.trimIndent()))
 
@@ -110,10 +110,10 @@ func main() { std::println("Hello, Azora!") }"""))
         func main() {
             var sum = 0
             for i in 1..5 { sum += i }
-            std::println(sum)
+            println(sum)
             var count = 0
             for i in 0..<5 { count += 1 }
-            std::println(count)
+            println(count)
         }
     """.trimIndent()))
 
@@ -121,13 +121,13 @@ func main() { std::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             var name = "Azora"
-            std::println("Hello, ${'$'}name!")
+            println("Hello, ${'$'}name!")
             var x = 3
             var y = 4
-            std::println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
-            var items = @std::arr[10, 20, 30]
-            std::println("first is ${'$'}{items[0]}")
-            std::println("count is ${'$'}{items.size}")
+            println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
+            var items = @arr[10, 20, 30]
+            println("first is ${'$'}{items[0]}")
+            println("count is ${'$'}{items.size}")
         }
     """.trimIndent()))
 
@@ -137,46 +137,46 @@ func main() { std::println("Hello, Azora!") }"""))
             var first = "Hello"
             var second = "World"
             var combined = first + ", " + second + "!"
-            std::println(combined)
-            std::println(combined.size)
+            println(combined)
+            println(combined.size)
         }
     """.trimIndent()))
 
     @Test fun ch7_arrays() = assertEquals("5\n5", run("""
         import std.io
         func main() {
-            var a = @std::arr[1, 2, 3]
+            var a = @arr[1, 2, 3]
             a.add(4)
             a.add(5)
-            std::println(a.size)
-            std::println(a[4])
+            println(a.size)
+            println(a[4])
         }
     """.trimIndent()))
 
     @Test fun ch7_iteration() = assertEquals("apple\nbanana\ncherry\nate 3 fruits", run("""
         import std.io
         func main() {
-            var fruits = @std::arr["apple", "banana", "cherry"]
+            var fruits = @arr["apple", "banana", "cherry"]
             var total = 0
             for i in 0..<fruits.size {
-                std::println(fruits[i])
+                println(fruits[i])
                 total += 1
             }
-            std::println("ate ${'$'}{total} fruits")
+            println("ate ${'$'}{total} fruits")
         }
     """.trimIndent()))
 
     @Test fun ch8_classify() = assertEquals("B\nF", run("""
         import std.io
-        func classify(score: std::Int): std::String {
+        func classify(score: Int): String {
             if score >= 90 { return "A" }
             else if score >= 80 { return "B" }
             else if score >= 70 { return "C" }
             else { return "F" }
         }
         func main() {
-            std::println(classify(85))
-            std::println(classify(60))
+            println(classify(85))
+            println(classify(60))
         }
     """.trimIndent()))
 
@@ -193,63 +193,63 @@ func main() { std::println("Hello, Azora!") }"""))
                 }
                 i += 1
             }
-            std::println(found)
+            println(found)
             var sum = 0
             for n in 0..<10 {
                 if n == 3 { continue }
                 sum += n
             }
-            std::println(sum)
+            println(sum)
         }
     """.trimIndent()))
 
     @Test fun ch9_functions() = assertEquals("25\n42", run("""
         import std.io
-        func square(n: std::Int) { std::println(n * n) }
-        func double(n: std::Int): std::Int { return n * 2 }
+        func square(n: Int) { println(n * n) }
+        func double(n: Int): Int { return n * 2 }
         func main() {
             square(5)
-            std::println(double(21))
+            println(double(21))
         }
     """.trimIndent()))
 
     @Test fun ch9_recursion() = assertEquals("120", run("""
         import std.io
-        func factorial(n: std::Int): std::Int {
+        func factorial(n: Int): Int {
             if n <= 1 { return 1 }
             return n * factorial(n - 1)
         }
-        func main() { std::println(factorial(5)) }
+        func main() { println(factorial(5)) }
     """.trimIndent()))
 
     @Test fun ch10_structs() = assertEquals("0\n15", run("""
         import std.io
         pack Counter {
-            var count: std::Int
-            fin label: std::String
+            var count: Int
+            fin label: String
         }
         func main() {
             var c = Counter(0, "hits")
-            std::println(c.count)
+            println(c.count)
             c.count = 10
             c.count += 5
-            std::println(c.count)
+            println(c.count)
         }
     """.trimIndent()))
 
     @Test fun ch10_structs_in_array() = assertEquals("3\n0", run("""
         import std.io
         pack Point {
-            var x: std::Int
-            var y: std::Int
+            var x: Int
+            var y: Int
         }
         func origin(): Point {
             return Point(0, 0)
         }
         func main() {
-            var points = @std::arr[Point(1, 2), Point(3, 4), origin()]
-            std::println(points[1].x)
-            std::println(points[2].y)
+            var points = @arr[Point(1, 2), Point(3, 4), origin()]
+            println(points[1].x)
+            println(points[2].y)
         }
     """.trimIndent()))
 
@@ -259,9 +259,9 @@ func main() { std::println("Hello, Azora!") }"""))
             var x = 1
             scope {
                 var y = 2
-                std::println(x + y)
+                println(x + y)
             }
-            std::println(x)
+            println(x)
         }
     """.trimIndent()))
 
@@ -271,10 +271,10 @@ func main() { std::println("Hello, Azora!") }"""))
             var x = 1
             scope {
                 var x = 2
-                std::println(x)
-                std::println(::x)
+                println(x)
+                println(::x)
             }
-            std::println(x)
+            println(x)
         }
     """.trimIndent()))
 
@@ -287,7 +287,7 @@ func main() { std::println("Hello, Azora!") }"""))
             }
             scope {
                 total += 5
-                std::println(total)
+                println(total)
             }
         }
     """.trimIndent()))
@@ -296,7 +296,7 @@ func main() { std::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             inline fin SIZE = 8
-            std::println(SIZE)
+            println(SIZE)
         }
     """.trimIndent()))
 
@@ -304,7 +304,7 @@ func main() { std::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             inline fin AREA = 8 * 8
-            std::println(AREA)
+            println(AREA)
         }
     """.trimIndent()))
 
@@ -314,7 +314,7 @@ func main() { std::println("Hello, Azora!") }"""))
 
         deepinline if DEBUG {
             func debugBanner() {
-                std::println("== debug mode ==")
+                println("== debug mode ==")
             }
         }
 
@@ -328,17 +328,17 @@ func main() { std::println("Hello, Azora!") }"""))
         func main() {
             inline {
                 fin GREETING = "hello"
-                std::println(GREETING)
+                println(GREETING)
             }
         }
     """.trimIndent()))
 
     @Test fun ch12_inline_func() = assertEquals("42", run("""
         import std.io
-        inline func double(x: std::Int): std::Int {
+        inline func double(x: Int): Int {
             return x * 2
         }
-        func main() { std::println(double(21)) }
+        func main() { println(double(21)) }
     """.trimIndent()))
 
     @Test fun ch12_deepinline_noinline() = assertEquals("limit exceeded", run("""
@@ -347,7 +347,7 @@ func main() { std::println("Hello, Azora!") }"""))
             deepinline {
                 fin LIMIT = 10
                 if LIMIT > 5 {
-                    noinline std::println("limit exceeded")
+                    noinline println("limit exceeded")
                 }
             }
         }
@@ -357,31 +357,31 @@ func main() { std::println("Hello, Azora!") }"""))
         // Tests run after main; assert must pass. Output is "running".
         assertEquals("running", run("""
             import std.io
-            func add(a: std::Int, b: std::Int): std::Int { return a + b }
+            func add(a: Int, b: Int): Int { return a + b }
             test "addition works" {
                 fin result = add(2, 3)
                 assert result == 5 { "2 + 3 should be 5" }
             }
-            func main() { std::println("running") }
+            func main() { println("running") }
         """.trimIndent()))
     }
 
     @Test fun ch13_divide_assert() = assertEquals("5", run("""
         import std.io
-        func divide(a: std::Int, b: std::Int): std::Int {
+        func divide(a: Int, b: Int): Int {
             assert b != 0 { "division by zero" }
             return a / b
         }
-        func main() { std::println(divide(10, 2)) }
+        func main() { println(divide(10, 2)) }
     """.trimIndent()))
 
     @Test fun ch13_trace() = assertEquals("[DEBUG] processing value\n10", run("""
         import std.io
-        func process(x: std::Int): std::Int {
+        func process(x: Int): Int {
             trace { "processing value" }
             return x * 2
         }
-        func main() { std::println(process(5)) }
+        func main() { println(process(5)) }
     """.trimIndent()))
 
     @Test fun ch13_inline_assert() = assertEquals("16", run("""
@@ -389,18 +389,18 @@ func main() { std::println("Hello, Azora!") }"""))
         func main() {
             inline fin SIZE = 16
             inline assert SIZE > 0 { "SIZE must be positive" }
-            std::println(SIZE)
+            println(SIZE)
         }
     """.trimIndent()))
 
     @Test fun ch14_targets() {
         val r = compile("""
             import std.io
-            func add(a: std::Int, b: std::Int): std::Int {
+            func add(a: Int, b: Int): Int {
                 return a + b
             }
             func main() {
-                std::println(add(2, 3))
+                println(add(2, 3))
             }
         """.trimIndent())
         // The other backends are produced too.
@@ -414,8 +414,8 @@ func main() { std::println("Hello, Azora!") }"""))
         import std.io
         func main() {
             var m = ["a": 1, "b": 2, "c": 3]
-            std::println(m["a"])
-            std::println(m["c"])
+            println(m["a"])
+            println(m["c"])
         }
     """.trimIndent()))
 
@@ -424,31 +424,31 @@ func main() { std::println("Hello, Azora!") }"""))
         func main() {
             var m = ["a": 1, "b": 2, "c": 3]
             m["b"] = 99
-            std::println(m["b"])
+            println(m["b"])
         }
     """.trimIndent()))
 
     @Test fun ch26_maps_int_keys() = assertEquals("30\n40", run("""
         import std.io
         func main() {
-            var scores = @std::map[10: 10, 20: 20, 30: 30]
+            var scores = @map[10: 10, 20: 20, 30: 30]
             scores[40] = 40
-            std::println(scores[30])
-            std::println(scores[40])
+            println(scores[30])
+            println(scores[40])
         }
     """.trimIndent()))
 
     @Test fun ch27_slot_destructure() = assertEquals("42", run("""
         import std.io
         variant enum Option {
-            Some(std::Int)
+            Some(Int)
             None
         }
         func main() {
             var o = Option.Some(42)
             when o {
-                Option.Some(v) -> { std::println(v) }
-                Option.None    -> { std::println("nothing") }
+                Option.Some(v) -> { println(v) }
+                Option.None    -> { println("nothing") }
             }
         }
     """.trimIndent()))
@@ -456,16 +456,16 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch27_slot_multi_payload() = assertEquals("7", run("""
         import std.io
         variant enum Shape {
-            Circle(std::Int)
-            Rect(std::Int, std::Int)
+            Circle(Int)
+            Rect(Int, Int)
             Point
         }
         func main() {
             var s = Shape.Rect(3, 4)
             when s {
-                Shape.Circle(r)   -> { std::println(r) }
-                Shape.Rect(w, h)  -> { std::println(w + h) }
-                Shape.Point       -> { std::println("0") }
+                Shape.Circle(r)   -> { println(r) }
+                Shape.Rect(w, h)  -> { println(w + h) }
+                Shape.Point       -> { println("0") }
             }
         }
     """.trimIndent()))
@@ -473,48 +473,48 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch29_alloc_scalar() = assertEquals("42\n99", run("""
         import std.io
         func main() {
-            var p: std::Int^ = alloc^ 42
-            std::println(*p)
+            var p: Int^ = alloc^ 42
+            println(*p)
             *p = 99
-            std::println(*p)
+            println(*p)
         }
     """.trimIndent()))
 
     @Test fun ch29_pointer_arithmetic() = assertEquals("10\n20\n99\n3", run("""
         import std.io
         func main() {
-            var p: std::Int^ = alloc^ @std::arr[10, 20, 30]
-            std::println(*p)
-            std::println(*(p + 1))
+            var p: Int^ = alloc^ @arr[10, 20, 30]
+            println(*p)
+            println(*(p + 1))
             *(p + 2) = 99
-            std::println(*(p + 2))
+            println(*(p + 2))
             var q = p + 3
-            std::println(q - p)
+            println(q - p)
         }
     """.trimIndent()))
 
     @Test fun ch29_clone() = assertEquals("1", run("""
         import std.io
         func main() {
-            var original = @std::arr[1, 2, 3]
+            var original = @arr[1, 2, 3]
             var copy = original.clone()
             copy[0] = 99
-            std::println(original[0])
+            println(original[0])
         }
     """.trimIndent()))
 
     @Test fun ch30_error_set() = assertEquals("Bad", run("""
         import std.io
         error E { Bad }
-        func f(): std::Int ?! E {
+        func f(): Int ?! E {
             error E.Bad
             return 0
         }
         func main() {
             try {
-                std::println(f())
+                println(f())
             } catch {
-                e -> std::println(e)
+                e -> println(e)
             }
         }
     """.trimIndent()))
@@ -522,17 +522,17 @@ func main() { std::println("Hello, Azora!") }"""))
     @Test fun ch31_flow() = assertEquals("0\n1\n4\n9", run("""
         import std.io
         import std.concurrency.generators
-        func squares(n: std::Int): std::Sequence<std::Int> = std::sequence<std::Int> [s: std::SequenceScope<std::Int>!; n.&] {
+        func squares(n: Int): Sequence<Int> = sequence<Int> [s: SequenceScope<Int>!; n.&] {
             for i in 0..<n { yield(i * i) }
         }
         func main() {
-            squares(4).collect { x -> std::println(x) }
+            squares(4).collect { x -> println(x) }
         }
     """.trimIndent()))
 
     @Test fun ch31_channel() = assertEquals("10\n20", run("""
         import std.io
-        func produce(ch: std::Channel): std::Int {
+        func produce(ch: Channel): Int {
             ch.send(10)
             ch.send(20)
             ch.close()
@@ -542,91 +542,91 @@ func main() { std::println("Hello, Azora!") }"""))
             var ch = channel()
             var p = async { produce(ch) }
             await p
-            std::println(ch.receive())
-            std::println(ch.receive())
+            println(ch.receive())
+            println(ch.receive())
         }
     """.trimIndent()))
 
     @Test fun ch32_solo_get() = assertEquals("42", run("""
         import std.io
         solo pack Config {
-            var value: std::Int = 42
+            var value: Int = 42
         }
         impl Config {
-            func get[self: std::Self!](): std::Int { return self.value }
+            func get[self: Self!](): Int { return self.value }
         }
         func main() {
-            std::println(inject Config.get())
+            println(inject Config.get())
         }
     """.trimIndent()))
 
     @Test fun ch32_solo_shared_instance() = assertEquals("1\n2\n3", run("""
         import std.io
         solo pack Counter {
-            var n: std::Int = 0
+            var n: Int = 0
         }
         impl Counter {
-            func inc[self: std::Self!](): std::Int {
+            func inc[self: Self!](): Int {
                 self.n = self.n + 1
                 return self.n
             }
         }
         func main() {
             var c1 = inject Counter
-            std::println(c1.inc())
-            std::println(c1.inc())
+            println(c1.inc())
+            println(c1.inc())
             var c2 = inject Counter
-            std::println(c2.inc())
+            println(c2.inc())
         }
     """.trimIndent()))
 
     @Test fun ch33_bridge_math() = assertEquals("4.0\n0.0", run("""
         import std.io
         bridge .C {
-            func sqrt(x: std::Double): std::Double
-            func sin(x: std::Double): std::Double
+            func sqrt(x: Double): Double
+            func sin(x: Double): Double
         }
         func main() {
-            std::println(sqrt(16.0))
-            std::println(sin(0.0))
+            println(sqrt(16.0))
+            println(sin(0.0))
         }
     """.trimIndent()))
 
     @Test fun ch33_bridge_pow() = assertEquals("1024.0", run("""
         import std.io
         bridge .C {
-            func pow(base: std::Double, exp: std::Double): std::Double
+            func pow(base: Double, exp: Double): Double
         }
         func main() {
-            std::println(pow(2.0, 10.0))
+            println(pow(2.0, 10.0))
         }
     """.trimIndent()))
 
     @Test fun ch34_rem() = assertEquals("0\n42", run("""
         import std.io
                 react func main() {
-            remember var count: std::Int = 0
-            std::println(count)
+            remember var count: Int = 0
+            println(count)
             count = 42
-            std::println(count)
+            println(count)
         }
     """.trimIndent()))
 
     @Test fun ch34_effect() = assertEquals("hello\ndone", run("""
         import std.io
                 react func main() {
-            remember var msg: std::String = "hello"
+            remember var msg: String = "hello"
             effect {
-                std::println(msg)
+                println(msg)
             }
-            std::println("done")
+            println("done")
         }
     """.trimIndent()))
 
     @Test fun ch34_reactiveFunction() = assertEquals("Hello, World!", run("""
         import std.io
-                react func greet(name: std::String) {
-            std::println("Hello, " + name + "!")
+                react func greet(name: String) {
+            println("Hello, " + name + "!")
         }
                 react func main() {
             greet("World")
@@ -635,34 +635,34 @@ func main() { std::println("Hello, Azora!") }"""))
 
     @Test fun ch35_variadic() = assertEquals("3\n10", run("""
         import std.io
-        func variadicSum<...T>(first: std::Int, rest: ...T): std::Int {
+        func variadicSum<...T>(first: Int, rest: ...T): Int {
             var total = first
             for x in rest { total = total + x }
             return total
         }
         func main() {
-            std::println(variadicSum(1, 2))
-            std::println(variadicSum(1, 2, 3, 4))
+            println(variadicSum(1, 2))
+            println(variadicSum(1, 2, 3, 4))
         }
     """.trimIndent()))
 
     @Test fun ch35_deco() = assertEquals("hi", run("""
         import std.io
-        annot Log { fin msg: std::String }
+        annot Log { fin msg: String }
         @Log("entry")
-        func greet(): std::String { return "hi" }
+        func greet(): String { return "hi" }
         func main() {
-            std::println(greet())
+            println(greet())
         }
     """.trimIndent()))
 
     @Test fun ch35_visibility() = assertEquals("ok\nprivate", run("""
         import std.io
-        func helper(): std::String { return "ok" }
-        confined func secret(): std::String { return "private" }
+        func helper(): String { return "ok" }
+        confined func secret(): String { return "private" }
         func main() {
-            std::println(helper())
-            std::println(secret())
+            println(helper())
+            println(secret())
         }
     """.trimIndent()))
 
@@ -670,7 +670,7 @@ func main() { std::println("Hello, Azora!") }"""))
         import std.io
         threadlocal fin answer = 42
         func main() {
-            std::println(answer)
+            println(answer)
         }
     """.trimIndent()))
 }

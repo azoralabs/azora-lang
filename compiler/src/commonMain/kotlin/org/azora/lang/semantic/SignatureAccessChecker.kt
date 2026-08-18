@@ -24,10 +24,10 @@ import org.azora.lang.frontend.TopLevel
 import org.azora.lang.ir.sourceSymbol
 
 /**
- * Keeps `@std::SignatureOnly` out of the bodies that must declare their access.
+ * Keeps `@SignatureOnly` out of the bodies that must declare their access.
  *
- * A decorator marked `@std::DeclaresAccess` promises that everything a function
- * carrying it touches is written in its parameters. A `@std::SignatureOnly`
+ * A decorator marked `@DeclaresAccess` promises that everything a function
+ * carrying it touches is written in its parameters. A `@SignatureOnly`
  * function breaks that promise: it hands back something the signature never
  * mentioned. So one may not be reached from the other, and what it returns is
  * asked for as a parameter instead.

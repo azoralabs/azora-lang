@@ -42,15 +42,15 @@ class ComparisonOperatorTest {
         import std.io
         import std.traits
         pack Version {
-            var major: std::Int
-            var minor: std::Int
+            var major: Int
+            var minor: Int
         }
-        oper<=> [self: Version&](rhs: Version&): std::Compare {
-            if self.major < rhs.major { return std::Compare.Less }
-            if self.major > rhs.major { return std::Compare.Greater }
-            if self.minor < rhs.minor { return std::Compare.Less }
-            if self.minor > rhs.minor { return std::Compare.Greater }
-            return std::Compare.Equal
+        oper<=> [self: Version&](rhs: Version&): Compare {
+            if self.major < rhs.major { return Compare.Less }
+            if self.major > rhs.major { return Compare.Greater }
+            if self.minor < rhs.minor { return Compare.Less }
+            if self.minor > rhs.minor { return Compare.Greater }
+            return Compare.Equal
         }
     """.trimIndent()
 
@@ -58,9 +58,9 @@ class ComparisonOperatorTest {
         assertEquals("Compare.Less\nCompare.Equal\nCompare.Greater", run("""
             $version
             func main() {
-                std::println("${'$'}{Version(1, 0) <=> Version(2, 0)}")
-                std::println("${'$'}{Version(1, 5) <=> Version(1, 5)}")
-                std::println("${'$'}{Version(2, 0) <=> Version(1, 9)}")
+                println("${'$'}{Version(1, 0) <=> Version(2, 0)}")
+                println("${'$'}{Version(1, 5) <=> Version(1, 5)}")
+                println("${'$'}{Version(2, 0) <=> Version(1, 9)}")
             }
         """.trimIndent()))
     }
@@ -70,10 +70,10 @@ class ComparisonOperatorTest {
         assertEquals("true\nfalse\ntrue\nfalse", run("""
             $version
             func main() {
-                std::println(Version(1, 0) < Version(1, 1))
-                std::println(Version(1, 0) > Version(1, 1))
-                std::println(Version(1, 0) <= Version(1, 0))
-                std::println(Version(2, 0) <= Version(1, 0))
+                println(Version(1, 0) < Version(1, 1))
+                println(Version(1, 0) > Version(1, 1))
+                println(Version(1, 0) <= Version(1, 0))
+                println(Version(2, 0) <= Version(1, 0))
             }
         """.trimIndent()))
     }
@@ -82,9 +82,9 @@ class ComparisonOperatorTest {
         assertEquals("true\ntrue\nfalse", run("""
             $version
             func main() {
-                std::println(Version(2, 0) >= Version(1, 0))
-                std::println(Version(2, 0) >= Version(2, 0))
-                std::println(Version(1, 0) >= Version(2, 0))
+                println(Version(2, 0) >= Version(1, 0))
+                println(Version(2, 0) >= Version(2, 0))
+                println(Version(1, 0) >= Version(2, 0))
             }
         """.trimIndent()))
     }
@@ -95,17 +95,17 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
-            oper== [self: Point&](rhs: Point&): std::Bool {
+            oper== [self: Point&](rhs: Point&): Bool {
                 return self.x == rhs.x && self.y == rhs.y
             }
             func main() {
-                std::println(Point(1, 2) == Point(1, 2))
-                std::println(Point(1, 2) == Point(1, 3))
-                std::println(Point(1, 2) != Point(1, 2))
-                std::println(Point(1, 2) != Point(1, 3))
+                println(Point(1, 2) == Point(1, 2))
+                println(Point(1, 2) == Point(1, 3))
+                println(Point(1, 2) != Point(1, 2))
+                println(Point(1, 2) != Point(1, 3))
             }
         """.trimIndent()))
     }
@@ -116,16 +116,16 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Odd {
-                var v: std::Int
+                var v: Int
             }
-            oper<=> [self: Odd&](rhs: Odd&): std::Compare {
-                return std::Compare.Equal
+            oper<=> [self: Odd&](rhs: Odd&): Compare {
+                return Compare.Equal
             }
-            oper< [self: Odd&](rhs: Odd&): std::Bool {
+            oper< [self: Odd&](rhs: Odd&): Bool {
                 return true
             }
             func main() {
-                if Odd(1) < Odd(1) { std::println("always") } else { std::println("rewritten") }
+                if Odd(1) < Odd(1) { println("always") } else { println("rewritten") }
             }
         """.trimIndent()))
     }
@@ -139,22 +139,22 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Maybe {
-                var v: std::Int
-                var known: std::Bool
+                var v: Int
+                var known: Bool
             }
-            oper<=> [self: Maybe&](rhs: Maybe&): std::PartialCompare {
-                if !self.known || !rhs.known { return std::PartialCompare.Unordered }
-                if self.v < rhs.v { return std::PartialCompare.Less }
-                if self.v > rhs.v { return std::PartialCompare.Greater }
-                return std::PartialCompare.Equal
+            oper<=> [self: Maybe&](rhs: Maybe&): PartialCompare {
+                if !self.known || !rhs.known { return PartialCompare.Unordered }
+                if self.v < rhs.v { return PartialCompare.Less }
+                if self.v > rhs.v { return PartialCompare.Greater }
+                return PartialCompare.Equal
             }
             func main() {
                 fin a = Maybe(1, true)
                 fin unknown = Maybe(0, false)
-                std::println(a < unknown)
-                std::println(a <= unknown)
-                std::println(a > unknown)
-                std::println(a >= unknown)
+                println(a < unknown)
+                println(a <= unknown)
+                println(a > unknown)
+                println(a >= unknown)
             }
         """.trimIndent()))
     }
@@ -164,19 +164,19 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Maybe {
-                var v: std::Int
-                var known: std::Bool
+                var v: Int
+                var known: Bool
             }
-            oper<=> [self: Maybe&](rhs: Maybe&): std::PartialCompare {
-                if !self.known || !rhs.known { return std::PartialCompare.Unordered }
-                if self.v < rhs.v { return std::PartialCompare.Less }
-                if self.v > rhs.v { return std::PartialCompare.Greater }
-                return std::PartialCompare.Equal
+            oper<=> [self: Maybe&](rhs: Maybe&): PartialCompare {
+                if !self.known || !rhs.known { return PartialCompare.Unordered }
+                if self.v < rhs.v { return PartialCompare.Less }
+                if self.v > rhs.v { return PartialCompare.Greater }
+                return PartialCompare.Equal
             }
             func main() {
-                std::println(Maybe(1, true) < Maybe(2, true))
-                std::println(Maybe(2, true) <= Maybe(2, true))
-                std::println(Maybe(3, true) < Maybe(2, true))
+                println(Maybe(1, true) < Maybe(2, true))
+                println(Maybe(2, true) <= Maybe(2, true))
+                println(Maybe(3, true) < Maybe(2, true))
             }
         """.trimIndent()))
     }
@@ -193,16 +193,16 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Counted {
-                var v: std::Int
+                var v: Int
             }
-            oper<=> [self: Counted&](rhs: Counted&): std::PartialCompare {
-                std::println("cmp")
-                if self.v < rhs.v { return std::PartialCompare.Less }
-                if self.v > rhs.v { return std::PartialCompare.Greater }
-                return std::PartialCompare.Equal
+            oper<=> [self: Counted&](rhs: Counted&): PartialCompare {
+                println("cmp")
+                if self.v < rhs.v { return PartialCompare.Less }
+                if self.v > rhs.v { return PartialCompare.Greater }
+                return PartialCompare.Equal
             }
             func main() {
-                std::println(Counted(1) <= Counted(2))
+                println(Counted(1) <= Counted(2))
             }
         """.trimIndent()))
     }
@@ -214,9 +214,9 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             func main() {
-                std::println("${'$'}{Compare.Less.reversed}")
-                std::println("${'$'}{Compare.Greater.reversed}")
-                std::println("${'$'}{Compare.Equal.reversed}")
+                println("${'$'}{Compare.Less.reversed}")
+                println("${'$'}{Compare.Greater.reversed}")
+                println("${'$'}{Compare.Equal.reversed}")
             }
         """.trimIndent()))
     }
@@ -226,8 +226,8 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             func main() {
-                std::println("${'$'}{Compare.Equal.then(Compare.Less)}")
-                std::println("${'$'}{Compare.Greater.then(Compare.Less)}")
+                println("${'$'}{Compare.Equal.then(Compare.Less)}")
+                println("${'$'}{Compare.Greater.then(Compare.Less)}")
             }
         """.trimIndent()))
     }
@@ -237,7 +237,7 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             func main() {
-                std::println("${'$'}{PartialCompare.Unordered.then(PartialCompare.Less)}")
+                println("${'$'}{PartialCompare.Unordered.then(PartialCompare.Less)}")
             }
         """.trimIndent()))
     }
@@ -249,9 +249,9 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             func main() {
-                std::println("${'$'}{1 <=> 2}")
-                std::println("${'$'}{2 <=> 2}")
-                std::println("${'$'}{3 <=> 2}")
+                println("${'$'}{1 <=> 2}")
+                println("${'$'}{2 <=> 2}")
+                println("${'$'}{3 <=> 2}")
             }
         """.trimIndent()))
     }
@@ -261,8 +261,8 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             func main() {
-                std::println("${'$'}{"a" <=> "b"}")
-                std::println("${'$'}{"a" <=> "a"}")
+                println("${'$'}{"a" <=> "b"}")
+                println("${'$'}{"a" <=> "a"}")
             }
         """.trimIndent()))
     }
@@ -273,9 +273,9 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             func main() {
-                std::println("${'$'}{1.0 <=> 2.0}")
-                std::println("${'$'}{2.0 <=> 2.0}")
-                std::println("${'$'}{3.0 <=> 2.0}")
+                println("${'$'}{1.0 <=> 2.0}")
+                println("${'$'}{2.0 <=> 2.0}")
+                println("${'$'}{3.0 <=> 2.0}")
             }
         """.trimIndent()))
     }
@@ -287,15 +287,15 @@ class ComparisonOperatorTest {
         assertEquals("true\nfalse\nfalse\ntrue", run("""
             import std.io
             import std.traits
-            pack Point derives std::Equal {
-                var x: std::Int
-                var y: std::Int
+            pack Point derives Equal {
+                var x: Int
+                var y: Int
             }
             func main() {
-                std::println(Point(1, 2) == Point(1, 2))
-                std::println(Point(1, 2) == Point(9, 2))
-                std::println(Point(1, 2) != Point(1, 2))
-                std::println(Point(1, 2) != Point(1, 9))
+                println(Point(1, 2) == Point(1, 2))
+                println(Point(1, 2) == Point(9, 2))
+                println(Point(1, 2) != Point(1, 2))
+                println(Point(1, 2) != Point(1, 9))
             }
         """.trimIndent()))
     }
@@ -306,15 +306,15 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Version {
-                var major: std::Int
-                var minor: std::Int
+                var major: Int
+                var minor: Int
             }
-            derive [std::Order] for Version
+            derive [Order] for Version
             func main() {
-                std::println("${'$'}{Version(1, 2) <=> Version(1, 9)}")
-                std::println(Version(1, 2) < Version(1, 9))
-                std::println(Version(2, 0) < Version(1, 9))
-                std::println(Version(2, 0) >= Version(2, 0))
+                println("${'$'}{Version(1, 2) <=> Version(1, 9)}")
+                println(Version(1, 2) < Version(1, 9))
+                println(Version(2, 0) < Version(1, 9))
+                println(Version(2, 0) >= Version(2, 0))
             }
         """.trimIndent()))
     }
@@ -325,13 +325,13 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Version {
-                var major: std::Int
-                var minor: std::Int
+                var major: Int
+                var minor: Int
             }
-            derive [std::Order] for Version
+            derive [Order] for Version
             func main() {
-                std::println("${'$'}{Version(2, 0) <=> Version(1, 99)}")
-                std::println("${'$'}{Version(1, 1) <=> Version(1, 2)}")
+                println("${'$'}{Version(2, 0) <=> Version(1, 99)}")
+                println("${'$'}{Version(1, 1) <=> Version(1, 2)}")
             }
         """.trimIndent()))
     }
@@ -342,13 +342,13 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Key {
-                var a: std::Int
-                var b: std::Int
+                var a: Int
+                var b: Int
             }
-            derive [std::Equal] for Key
+            derive [Equal] for Key
             func main() {
-                std::println(Key(1, 2).hash == Key(1, 2).hash)
-                std::println(Key(1, 2).hash == Key(2, 1).hash)
+                println(Key(1, 2).hash == Key(1, 2).hash)
+                println(Key(1, 2).hash == Key(2, 1).hash)
             }
         """.trimIndent()))
     }
@@ -359,17 +359,17 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Loose {
-                var a: std::Int
-                var b: std::Int
+                var a: Int
+                var b: Int
             }
-            derive [std::Equal] for Loose
-            impl std::Equal for Loose {
-                oper== [self: std::Self&](rhs: std::Self&): std::Bool {
+            derive [Equal] for Loose
+            impl Equal for Loose {
+                oper== [self: Self&](rhs: Self&): Bool {
                     return self.a == rhs.a
                 }
             }
             func main() {
-                std::println(Loose(1, 2) == Loose(1, 999))
+                println(Loose(1, 2) == Loose(1, 999))
             }
         """.trimIndent()))
     }
@@ -385,11 +385,11 @@ class ComparisonOperatorTest {
         val result = Compiler().compile("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
-                std::println(Vec2(1, 2) == Vec2(1, 2))
+                println(Vec2(1, 2) == Vec2(1, 2))
             }
         """.trimIndent(), release = false)
         assertIs<CompilationResult.Failure>(result, "a pack with no equality must not compare")
@@ -404,12 +404,12 @@ class ComparisonOperatorTest {
             import std.io
             import std.traits
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
-            derive [std::Equal] for Vec2
+            derive [Equal] for Vec2
             func main() {
-                std::println(Vec2(1, 2) == Vec2(1, 2))
+                println(Vec2(1, 2) == Vec2(1, 2))
             }
         """.trimIndent()))
     }
@@ -423,13 +423,13 @@ class ComparisonOperatorTest {
                 Green
             }
             pack Boxed {
-                var v: std::Int
+                var v: Int
             }
             func main() {
-                std::println(Colour.Red == Colour.Red)
-                std::println(1 == 1)
+                println(Colour.Red == Colour.Red)
+                println(1 == 1)
                 fin maybe: Boxed? = null
-                std::println(maybe == null)
+                println(maybe == null)
             }
         """.trimIndent()))
     }
@@ -445,16 +445,16 @@ class ComparisonOperatorTest {
         assertEquals("7", run("""
             import std.io
             import std.traits
-            pack Box { var v: std::Int = 0 }
-            impl std::Deref<std::Int> for Box {
-                oper.* [self: std::Self&]: std::Int { return self.v }
+            pack Box { var v: Int = 0 }
+            impl Deref<Int> for Box {
+                oper.* [self: Self&]: Int { return self.v }
             }
-            impl std::DerefMut<std::Int> for Box {
-                oper.^ [self: std::Self!]: std::Int { return self.v }
+            impl DerefMut<Int> for Box {
+                oper.^ [self: Self!]: Int { return self.v }
             }
             func main() {
                 var b = Box(7)
-                std::println(b.*)
+                println(b.*)
             }
         """.trimIndent()))
     }
@@ -462,9 +462,9 @@ class ComparisonOperatorTest {
     @Test fun derefMutRequiresDeref() {
         val result = Compiler().compile("""
             import std.traits
-            pack Box { var v: std::Int = 0 }
-            impl std::DerefMut<std::Int> for Box {
-                oper.^ [self: std::Self!]: std::Int { return self.v }
+            pack Box { var v: Int = 0 }
+            impl DerefMut<Int> for Box {
+                oper.^ [self: Self!]: Int { return self.v }
             }
             func main() {}
         """.trimIndent())

@@ -19,8 +19,8 @@ class PolishTest {
     @Test fun defaultParamValue() {
         assertEquals("Hello, World!\nHi, World!", run("""
             import std.io
-            func greet(name: std::String, greeting: std::String = "Hello") {
-                std::println(greeting + ", " + name + "!")
+            func greet(name: String, greeting: String = "Hello") {
+                println(greeting + ", " + name + "!")
             }
             func main() {
                 greet("World")
@@ -32,13 +32,13 @@ class PolishTest {
     @Test fun defaultParamInt() {
         assertEquals("1\n42", run("""
             import std.io
-            func power(base: std::Int, exp: std::Int = 0): std::Int {
+            func power(base: Int, exp: Int = 0): Int {
                 if exp == 0 { return 1 }
                 return base
             }
             func main() {
-                std::println(power(0))
-                std::println(power(42, 1))
+                println(power(0))
+                println(power(42, 1))
             }
         """.trimIndent()))
     }
@@ -47,11 +47,11 @@ class PolishTest {
     @Test fun namedFunctionArgs() {
         assertEquals("A:30", run("""
             import std.io
-            func create(label: std::String, value: std::Int): std::String {
+            func create(label: String, value: Int): String {
                 return label + ":" + value
             }
             func main() {
-                std::println(create(value: 30, label: "A"))
+                println(create(value: 30, label: "A"))
             }
         """.trimIndent()))
     }
@@ -68,9 +68,9 @@ class PolishTest {
             func main() {
                 fin c = Color.Red
                 when c {
-                    Color.Red -> { std::println("red") }
-                    Color.Green -> { std::println("green") }
-                    Color.Blue -> { std::println("blue") }
+                    Color.Red -> { println("red") }
+                    Color.Green -> { println("green") }
+                    Color.Blue -> { println("blue") }
                 }
             }
         """.trimIndent()))
@@ -80,13 +80,13 @@ class PolishTest {
         val result = Compiler().compile("""
             import std.io
             variant enum Opt {
-                Some(std::Int)
+                Some(Int)
                 None
             }
             func main() {
                 fin c = Opt.Some(1)
                 when c {
-                    Opt.Some(v) -> { std::println(v) }
+                    Opt.Some(v) -> { println(v) }
                 }
             }
         """.trimIndent())

@@ -60,8 +60,8 @@ class WhenExpressionTypingTest {
                 return w
             }
             func main() {
-                std::println(pick(Color.Red))
-                std::println(pick(Color.Blue))
+                println(pick(Color.Red))
+                println(pick(Color.Blue))
             }
         """.trimIndent()))
     }
@@ -78,7 +78,7 @@ class WhenExpressionTypingTest {
         assertEquals("Width.Thin\nWidth.Thick", run("""
             $enums
             func show(w: Width) {
-                std::println(w)
+                println(w)
             }
             func report(c: Color) {
                 show(when c {
@@ -101,8 +101,8 @@ class WhenExpressionTypingTest {
                 return w
             }
             func main() {
-                std::println(pick(Color.Red))
-                std::println(pick(Color.Blue))
+                println(pick(Color.Red))
+                println(pick(Color.Blue))
             }
         """.trimIndent()))
     }
@@ -112,8 +112,8 @@ class WhenExpressionTypingTest {
             $enums
             func main() {
                 fin c = Color.Red
-                std::println(c == .Red)
-                std::println(c == .Blue)
+                println(c == .Red)
+                println(c == .Blue)
             }
         """.trimIndent()))
     }
@@ -123,8 +123,8 @@ class WhenExpressionTypingTest {
             $enums
             func report(c: Color) {
                 when c {
-                    .Red -> { std::println("red") }
-                    .Blue -> { std::println("blue") }
+                    .Red -> { println("red") }
+                    .Blue -> { println("blue") }
                 }
             }
             func main() {
@@ -145,8 +145,8 @@ class WhenExpressionTypingTest {
             func main() {
                 fin c = Color.Blue
                 when c {
-                    .Red -> { std::println("red") }
-                    .Blue -> { std::println("blue") }
+                    .Red -> { println("red") }
+                    .Blue -> { println("blue") }
                 }
             }
         """.trimIndent()))
@@ -167,8 +167,8 @@ class WhenExpressionTypingTest {
                 }
             }
             func main() {
-                std::println(Pen(Color.Red).width)
-                std::println(Pen(Color.Blue).width)
+                println(Pen(Color.Red).width)
+                println(Pen(Color.Blue).width)
             }
         """.trimIndent()))
     }

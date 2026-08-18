@@ -23,12 +23,12 @@ class Tier3FfiTest {
         assertEquals("4.0\n0.0", run("""
             import std.io
             bridge .C {
-                func sqrt(x: std::Double): std::Double
-                func sin(x: std::Double): std::Double
+                func sqrt(x: Double): Double
+                func sin(x: Double): Double
             }
             func main() {
-                std::println(sqrt(16.0))
-                std::println(sin(0.0))
+                println(sqrt(16.0))
+                println(sin(0.0))
             }
         """.trimIndent()))
     }
@@ -37,10 +37,10 @@ class Tier3FfiTest {
         assertEquals("1024.0", run("""
             import std.io
             bridge .C {
-                func pow(base: std::Double, exp: std::Double): std::Double
+                func pow(base: Double, exp: Double): Double
             }
             func main() {
-                std::println(pow(2.0, 10.0))
+                println(pow(2.0, 10.0))
             }
         """.trimIndent()))
     }
@@ -49,10 +49,10 @@ class Tier3FfiTest {
         val result = Compiler().compile("""
             import std.io
             bridge .C {
-                func sqrt(x: std::Double): std::Double
+                func sqrt(x: Double): Double
             }
             func main() {
-                std::println(sqrt(16.0))
+                println(sqrt(16.0))
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

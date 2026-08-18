@@ -25,7 +25,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * `inline for X in std::reflect<*>.withAnnot<D>` over decorated declarations.
+ * `inline for X in reflect<*>.withAnnot<D>` over decorated declarations.
  *
  * The point of the loop is that a library can find what a program declared
  * without the program registering anything. That only works if the loop can
@@ -54,8 +54,8 @@ class ReflectDecoExpanderTest {
 
     private val marked = """
         annot Marked for [.Pack, .Func] {
-            fin order: std::Int = 0
-            fin tag: std::String = "none"
+            fin order: Int = 0
+            fin tag: String = "none"
         }
     """.trimIndent()
 
@@ -65,13 +65,13 @@ class ReflectDecoExpanderTest {
             $marked
 
             @Marked
-            func alpha() { std::println("alpha") }
+            func alpha() { println("alpha") }
 
             @Marked
-            func beta() { std::println("beta") }
+            func beta() { println("beta") }
 
             func main() {
-                inline for S in std::reflect<*>.withAnnot<Marked> {
+                inline for S in reflect<*>.withAnnot<Marked> {
                     S()
                 }
             }
@@ -84,14 +84,14 @@ class ReflectDecoExpanderTest {
             $marked
 
             @Marked
-            pack Alpha { var v: std::Int }
+            pack Alpha { var v: Int }
 
             @Marked
-            pack Beta { var v: std::Int }
+            pack Beta { var v: Int }
 
             func main() {
-                inline for T in std::reflect<*>.withAnnot<Marked> {
-                    std::println(T(7).v)
+                inline for T in reflect<*>.withAnnot<Marked> {
+                    println(T(7).v)
                 }
             }
         """.trimIndent()))
@@ -109,8 +109,8 @@ class ReflectDecoExpanderTest {
             func beta() {}
 
             func main() {
-                inline for S in std::reflect<*>.withAnnot<Marked> {
-                    std::println(std::reflect<S>.declName)
+                inline for S in reflect<*>.withAnnot<Marked> {
+                    println(reflect<S>.declName)
                 }
             }
         """.trimIndent()))
@@ -131,8 +131,8 @@ class ReflectDecoExpanderTest {
             func beta() {}
 
             func main() {
-                inline for S in std::reflect<*>.withAnnot<Marked> {
-                    std::println("${'$'}{std::reflect<S>.declName} ${'$'}{std::reflect<S>.annotMeta<Marked>.order} ${'$'}{std::reflect<S>.annotMeta<Marked>.tag}")
+                inline for S in reflect<*>.withAnnot<Marked> {
+                    println("${'$'}{reflect<S>.declName} ${'$'}{reflect<S>.annotMeta<Marked>.order} ${'$'}{reflect<S>.annotMeta<Marked>.tag}")
                 }
             }
         """.trimIndent()))
@@ -156,8 +156,8 @@ class ReflectDecoExpanderTest {
             func tick() {}
 
             func main() {
-                inline for S in std::reflect<*>.withAnnot<Staged> {
-                    std::println("${'$'}{std::reflect<S>.declName} ${'$'}{std::reflect<S>.annotMeta<Staged>.phase == Phase.Render}")
+                inline for S in reflect<*>.withAnnot<Staged> {
+                    println("${'$'}{reflect<S>.declName} ${'$'}{reflect<S>.annotMeta<Staged>.phase == Phase.Render}")
                 }
             }
         """.trimIndent()))
@@ -174,8 +174,8 @@ class ReflectDecoExpanderTest {
             func both() {}
 
             func main() {
-                inline for S in std::reflect<*>.withAnnot<Marked> {
-                    std::println("${'$'}{std::reflect<S>.hasAnnot<Other>} ${'$'}{std::reflect<S>.hasAnnot<Marked> == false}")
+                inline for S in reflect<*>.withAnnot<Marked> {
+                    println("${'$'}{reflect<S>.hasAnnot<Other>} ${'$'}{reflect<S>.hasAnnot<Marked> == false}")
                 }
             }
         """.trimIndent()))
@@ -189,24 +189,24 @@ class ReflectDecoExpanderTest {
             $marked
 
             @Marked
-            func alpha() { std::println("picked alpha") }
+            func alpha() { println("picked alpha") }
 
             @Marked
-            func beta() { std::println("picked beta") }
+            func beta() { println("picked beta") }
 
             @Marked
-            func gamma() { std::println("picked gamma") }
+            func gamma() { println("picked gamma") }
 
             func main() {
                 var index = 0
-                inline for S in std::reflect<*>.withAnnot<Marked> {
-                    std::println("${'$'}index ${'$'}{std::reflect<S>.declName}")
+                inline for S in reflect<*>.withAnnot<Marked> {
+                    println("${'$'}index ${'$'}{reflect<S>.declName}")
                     index = index + 1
                 }
 
                 fin wanted = 1
                 var cursor = 0
-                inline for S in std::reflect<*>.withAnnot<Marked> {
+                inline for S in reflect<*>.withAnnot<Marked> {
                     if cursor == wanted {
                         S()
                     }
@@ -223,13 +223,13 @@ class ReflectDecoExpanderTest {
             $marked
 
             @Marked
-            func alpha(n: std::Int) { std::println("alpha ${'$'}n") }
+            func alpha(n: Int) { println("alpha ${'$'}n") }
 
             @Marked
-            func beta(n: std::Int) { std::println("beta ${'$'}n") }
+            func beta(n: Int) { println("beta ${'$'}n") }
 
-            func runAll(n: std::Int) {
-                inline for S in std::reflect<*>.withAnnot<Marked> {
+            func runAll(n: Int) {
+                inline for S in reflect<*>.withAnnot<Marked> {
                     S(n)
                 }
             }
@@ -246,10 +246,10 @@ class ReflectDecoExpanderTest {
             annot Unused for .Func
 
             func main() {
-                inline for S in std::reflect<*>.withAnnot<Unused> {
+                inline for S in reflect<*>.withAnnot<Unused> {
                     S()
                 }
-                std::println("done")
+                println("done")
             }
         """.trimIndent()))
     }
@@ -262,10 +262,10 @@ class ReflectDecoExpanderTest {
             $marked
 
             @Marked(order: 3)
-            pack Alpha { var v: std::Int }
+            pack Alpha { var v: Int }
 
             func main() {
-                std::println(std::reflect<Alpha>.annotMeta<Marked>.order)
+                println(reflect<Alpha>.annotMeta<Marked>.order)
             }
         """.trimIndent())
         assertTrue(

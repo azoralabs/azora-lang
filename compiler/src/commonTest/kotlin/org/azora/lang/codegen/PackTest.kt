@@ -28,12 +28,12 @@ class PackTest {
         assertEquals("3", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
                 var p = Point(3, 4)
-                std::println(p.x)
+                println(p.x)
             }
         """.trimIndent()))
     }
@@ -43,12 +43,12 @@ class PackTest {
         assertEquals("7", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
                 var p = Point(3, 4)
-                std::println(p.x + p.y)
+                println(p.x + p.y)
             }
         """.trimIndent()))
     }
@@ -58,13 +58,13 @@ class PackTest {
         assertEquals("10", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
                 var p = Point(3, 4)
                 p.x = 10
-                std::println(p.x)
+                println(p.x)
             }
         """.trimIndent()))
     }
@@ -75,8 +75,8 @@ class PackTest {
         val errors = expectFailure("""
             import std.io
             pack Point {
-                fin x: std::Int
-                var y: std::Int
+                fin x: Int
+                var y: Int
             }
             func main() {
                 var p = Point(3, 4)
@@ -91,15 +91,15 @@ class PackTest {
         assertEquals("9", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func origin(): Point {
                 return Point(4, 5)
             }
             func main() {
                 var p = origin()
-                std::println(p.x + p.y)
+                println(p.x + p.y)
             }
         """.trimIndent()))
     }
@@ -110,13 +110,13 @@ class PackTest {
         assertEquals("104", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
                 var p = Point(3, 4)
                 p.y += 100
-                std::println(p.y)
+                println(p.y)
             }
         """.trimIndent()))
     }
@@ -127,12 +127,12 @@ class PackTest {
         assertEquals("40", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
-                var points = @std::arr[Point(10, 20), Point(30, 40)]
-                std::println(points[0].x + points[1].x)
+                var points = @arr[Point(10, 20), Point(30, 40)]
+                println(points[0].x + points[1].x)
             }
         """.trimIndent()))
     }
@@ -142,12 +142,12 @@ class PackTest {
         assertEquals("7", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
                 var p = Point(3, 4)
-                std::println(p.x + p.y)
+                println(p.x + p.y)
             }
         """.trimIndent(), release = true))
     }
@@ -157,12 +157,12 @@ class PackTest {
         val result = Compiler().compile("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
                 var p = Point(1, 2)
-                std::println(p.x)
+                println(p.x)
             }
         """.trimIndent())
         assertIs<CompilationResult.Success>(result)

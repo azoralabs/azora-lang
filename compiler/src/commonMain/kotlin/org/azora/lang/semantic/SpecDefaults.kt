@@ -104,7 +104,7 @@ object SpecDefaults {
             .filter { spec -> spec.methods.any { it.body.isNotEmpty() } }
         if (declared.isEmpty()) return program
         // Keyed by the plain name as well as the mangled one: an implementation
-        // names the spec as its source wrote it (`std::Iterator`), and injection
+        // names the spec as its source wrote it (`Iterator`), and injection
         // may have given the declaration a realm-qualified name.
         val specs = mutableMapOf<String, TopLevel.Spec>()
         for (spec in declared) {

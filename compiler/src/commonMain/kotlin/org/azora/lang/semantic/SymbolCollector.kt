@@ -16,6 +16,9 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.ir.ctorCount
+import org.azora.lang.ir.ctorFactorySymbol
+import org.azora.lang.ir.ctorSymbol
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
@@ -104,12 +107,12 @@ class SymbolCollector {
     }
 
     private fun registerBuiltins(table: SymbolTable) {
-        // `toString` lives in std as `std::convert::toString`, and `println` as
-        // `std::println`; neither is a free builtin, so neither is registered
+        // `toString` lives in std as `convert::toString`, and `println` as
+        // `println`; neither is a free builtin, so neither is registered
         // here.
         if (table.lookupFunction("channel") == null) {
             // `channel()` - creates a buffered channel for task-to-task communication.
-            // NOTE: still a builtin - relocation to std::concurrency::channel is blocked
+            // NOTE: still a builtin - relocation to concurrency::channel is blocked
             // until Channel.az's Mutex/Queue dependencies are restored (Mutex is currently
             // undefined in the stdlib).
             table.defineFunction(FunctionSymbol("channel", emptyList(), IrType.Named("Channel")))
@@ -132,7 +135,7 @@ class SymbolCollector {
         if (table.lookupFunction("async") == null) {
             table.defineFunction(FunctionSymbol("async", listOf("thunk" to IrType.Any), IrType.Task(IrType.Any)))
         }
-        // `cancel` lives in std as `std::concurrency::cancel`; it is not a free
+        // `cancel` lives in std as `concurrency::cancel`; it is not a free
         // builtin, so it is not registered here.
     }
 
@@ -431,7 +434,18 @@ class SymbolCollector {
                     // parameters were in scope here, so `R` resolved as an
                     // unknown named type and every use of it failed to match.
                     val tpSet = implTypeParams + method.typeParams
-                    val mangled = mangleMethodSymbol("${item.typeName}_${method.name}")
+                    // A ctor overload is told apart by how it is called; every
+                    // other member by its name alone.
+                    val mangled = if (method.name == "ctor") {
+                        ctorSymbol(
+                            item.typeName,
+                            method.params.size - method.contextualParams,
+                            method.isRepeated,
+                            overloaded = ctorCount(item.methods.map { it.name }) > 1,
+                        )
+                    } else {
+                        mangleMethodSymbol("${item.typeName}_${method.name}")
+                    }
                     try {
                         if (item.isExtension && struct != null && struct.fields.none { it.visibility == Visibility.PUBLIC && !it.name.startsWith("_") } && method.receiverModifier == ParamModifier.EXCLUSIVE) {
                             errors.add("line ${method.line}: pack '${item.typeName}' has no exposed fields, so extension '${method.name}' cannot use mut ref self")
@@ -562,7 +576,7 @@ class SymbolCollector {
                             run {
                                 val arity = written.size
                                 table.defineFunction(FunctionSymbol(
-                                    "__ctor_${item.typeName}_$arity",
+                                    ctorFactorySymbol(item.typeName, arity, method.isRepeated),
                                     params.drop(1),
                                     yields,
                                     false,

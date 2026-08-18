@@ -23,7 +23,7 @@ class StringIndexTest {
             import std.io
             func main() {
                 let s = "hello"
-                std::println("${'$'}{s[1]}")
+                println("${'$'}{s[1]}")
             }
         """.trimIndent()))
     }
@@ -32,7 +32,7 @@ class StringIndexTest {
     fun indexScansStringInLoop() {
         assertEquals("digits=3", run("""
             import std.io
-            func isDigit(c: std::Char): std::Bool {
+            func isDigit(c: Char): Bool {
                 return c >= '0' && c <= '9'
             }
             func main() {
@@ -43,7 +43,7 @@ class StringIndexTest {
                     if isDigit(s[i]) { n = n + 1 }
                     i = i + 1
                 }
-                std::println("digits=${'$'}n")
+                println("digits=${'$'}n")
             }
         """.trimIndent()))
     }
@@ -62,7 +62,7 @@ class StringIndexTest {
                     if i + 1 < s.size && s[i + 1] == 'b' { hits = hits + 1 }
                     i = i + 1
                 }
-                std::println("hits=${'$'}hits")
+                println("hits=${'$'}hits")
             }
         """.trimIndent()))
     }
@@ -74,7 +74,7 @@ class StringIndexTest {
             import std.io
             func main() {
                 let s = "hi"
-                std::println("${'$'}{s[0]}")
+                println("${'$'}{s[0]}")
             }
             """.trimIndent(),
             release = true,

@@ -38,7 +38,7 @@ import org.azora.lang.frontend.TypeRef
  * Physics::run(w)`, or `X(world, time)` → `movement(world, time)`), so it lowers
  * to every backend with no function values.
  *
- * Inside the unrolled body, `std::reflect<X>` queries resolve against the bound
+ * Inside the unrolled body, `reflect<X>` queries resolve against the bound
  * declaration: `.annotMeta<D>.field` becomes the value that declaration passed for
  * `field` (or the decorator's default), `.hasAnnot<D>` a boolean, and `.declName`
  * the declaration's own name as a string. Those are the only compile-time
@@ -121,7 +121,7 @@ object ReflectDecoExpander {
 
     /**
      * One unrolled iteration: rewrites the loop variable [from] to the bound
-     * declaration [to], and resolves the `std::reflect<[from]>` queries that only
+     * declaration [to], and resolves the `reflect<[from]>` queries that only
      * this binding can answer.
      */
     private class Substitution(val from: String, val to: String, val program: Program) {
@@ -216,7 +216,7 @@ object ReflectDecoExpander {
         /**
          * One argument, or one per parameter when it is an `inline for` over them.
          *
-         * `F(inline for P in std::reflect<F>.params { P::provide(world) })` is how a
+         * `F(inline for P in reflect<F>.params { P::provide(world) })` is how a
          * caller supplies a declaration whose signature it does not know: the loop
          * unrolls to one argument per parameter, with `P` standing for that
          * parameter's type. Nothing here decides what an argument *is* - the body
@@ -228,7 +228,7 @@ object ReflectDecoExpander {
             return params().map { param -> expr(ParamSub(e.name, param, program).expr(e.body)) }
         }
 
-        /** Whether [e] is `std::reflect<X>.params` for the bound declaration. */
+        /** Whether [e] is `reflect<X>.params` for the bound declaration. */
         private fun boundParams(e: Expr): Boolean =
             e is Expr.Member && e.name == "params" && boundReflect((e.target as? Expr.Grouping)?.expr ?: e.target)
 
@@ -294,18 +294,18 @@ object ReflectDecoExpander {
             DecoratorMetadata.findSite(Expr.Identifier(to, 0, 0, to.length), emptyMap(), program)
 
         /**
-         * Folds `std::reflect<X>.declName`, `.hasAnnot<D>` and `.annotMeta<D>.field`
+         * Folds `reflect<X>.declName`, `.hasAnnot<D>` and `.annotMeta<D>.field`
          * against the bound declaration; null when [e] is not such a query.
          *
          * An unresolvable query is left alone rather than guessed at, so the
          * existing "compile-time-only" diagnostic still reports it.
          */
         private fun reflectQuery(e: Expr): Expr? = when {
-            // `std::reflect<X>.declName` - the declaration's own name.
+            // `reflect<X>.declName` - the declaration's own name.
             e is Expr.Member && e.name == "declName" && boundReflect(e.target) ->
                 Expr.StringLiteral(to, e.line, e.column)
 
-            // `std::reflect<X>.hasAnnot<D>`
+            // `reflect<X>.hasAnnot<D>`
             e is Expr.Call && e.callee == "__hasAnnot" &&
                 (e.args.singleOrNull() as? Expr.Identifier)?.name == from -> {
                 val deco = e.typeArgs.singleOrNull()?.displayName()
@@ -313,7 +313,7 @@ object ReflectDecoExpander {
                 Expr.BoolLiteral(applied != null, e.line, e.column)
             }
 
-            // `std::reflect<X>.annotMeta<D>.field`
+            // `reflect<X>.annotMeta<D>.field`
             e is Expr.Member && (e.target as? Expr.Call)?.callee == "__annotMeta" &&
                 ((e.target as Expr.Call).args.singleOrNull() as? Expr.Identifier)?.name == from -> {
                 val query = e.target as Expr.Call
@@ -462,7 +462,7 @@ object ReflectDecoExpander {
             "defaultValue" -> param.defaultValue ?: Expr.NullLiteral
             "isVararg" -> Expr.BoolLiteral(param.variadic, e.line, e.column)
             "mutability" -> Expr.Member(
-                Expr.Identifier("std__ParamMutability", e.line, e.column, 18),
+                Expr.Identifier("ParamMutability", e.line, e.column, "ParamMutability".length),
                 when (param.modifier) {
                     ParamModifier.SHARED -> "Shared"
                     ParamModifier.EXCLUSIVE -> "Exclusive"

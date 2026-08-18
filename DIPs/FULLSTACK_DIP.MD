@@ -138,7 +138,7 @@ variant error CreateUserFailure {
     EmailAlreadyUsed
 }
 
-fin createUser = std::endpoint<CreateUser, User, CreateUserFailure>(
+fin createUser = endpoint<CreateUser, User, CreateUserFailure>(
     method: .Post,
     path: "/users"
 )
@@ -287,7 +287,7 @@ fin user = try response.azon<User>()
 fin created = try client.post("https://example.org/users") {
     azon(CreateUser("Ada", "ada@example.org"))
     header("If-None-Match", revision)
-    timeout(std::seconds(10))
+    timeout(seconds(10))
 }
 ```
 
@@ -461,7 +461,7 @@ enum Isolation {
 pack TransactionOptions {
     fin isolation: Isolation = .Serializable
     fin readOnly: Bool = false
-    fin timeout: Duration = std::seconds(30)
+    fin timeout: Duration = seconds(30)
     fin maxAttempts: Int = 1
 }
 
@@ -515,7 +515,7 @@ pack User {
     fin createdAt: Instant
 }
 
-fin Users = std::table<User>("users") {
+fin Users = table<User>("users") {
     column(User::id) { primaryKey(); generated() }
     column(User::email) { unique(); length(320) }
     column(User::displayName) { length(120) }
@@ -560,7 +560,7 @@ impl<Row, T> Column {
 Illustrative query syntax using that library surface:
 
 ```azora
-fin predicate = std::all([
+fin predicate = all([
     Users[User::age].greaterOrEqual(18),
     Users[User::active].equal(true)
 ])
@@ -627,7 +627,7 @@ entity cache has closed.
 Foreign keys are schema values:
 
 ```azora
-fin Posts = std::table<Post>("posts") {
+fin Posts = table<Post>("posts") {
     column(Post::id) { primaryKey(); generated() }
     column(Post::authorId) {
         references(Users, User::id) { onDelete(.Cascade) }
@@ -647,8 +647,8 @@ and keeps I/O visible.
 `std.db` provides the standard implementation:
 
 ```azora
-fin volatile = std::memoryDatabase()
-fin local = try std::openDatabase("app.azdb")
+fin volatile = memoryDatabase()
+fin local = try openDatabase("app.azdb")
 ```
 
 It is intentionally small but not disposable. Required properties:
@@ -760,11 +760,11 @@ Creating an unbounded connection for every task is never the default.
 Migrations are data, and their canonical persisted form is AZON.
 
 ```azora
-fin migration = std::migration("2026-08-09-create-users") {
+fin migration = migration("2026-08-09-create-users") {
     create(Users)
 }
 
-fin rename = std::migration("2026-08-10-user-name") {
+fin rename = migration("2026-08-10-user-name") {
     renameColumn(Users, from: "name", to: User::displayName)
 }
 ```
@@ -829,7 +829,7 @@ impl UserRepository {
             }
             return try tx.insertReturning(
                 Users,
-                User(0, input.name, input.email, std::now())
+                User(0, input.name, input.email, now())
             )
         }
     }
@@ -904,7 +904,7 @@ pool. There is no process-global mutable interceptor registry.
 `std.http` provides an in-memory transport:
 
 ```azora
-fin client = std::testClient(router)
+fin client = testClient(router)
 fin response = try await client.call(createUser, sample)
 assert response.name == "Ada"
 ```
@@ -914,8 +914,8 @@ planner, constraints, transactions, and migrations as persistent mode:
 
 ```azora
 test "duplicate email is rejected" {
-    fin db = std::memoryDatabase()
-    try await std::migrate(db, schema)
+    fin db = memoryDatabase()
+    try await migrate(db, schema)
 
     try await db.write { tx ->
         try tx.insert(Users, first)

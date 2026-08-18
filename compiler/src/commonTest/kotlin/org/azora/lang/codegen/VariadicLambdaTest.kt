@@ -20,9 +20,9 @@ class VariadicLambdaTest {
             import std.io
             func main() {
                 fin len = <...T> { values: ...T -> values.size }
-                std::println(len())
-                std::println(len(1))
-                std::println(len(1, 2, 3))
+                println(len())
+                println(len(1))
+                println(len(1, 2, 3))
             }
         """.trimIndent()))
     }
@@ -32,8 +32,8 @@ class VariadicLambdaTest {
             import std.io
             func main() {
                 fin first = <...T> { values: ...T -> values[0] }
-                std::println(first(42))
-                std::println(first(10, 20, 30))
+                println(first(42))
+                println(first(10, 20, 30))
             }
         """.trimIndent()))
     }
@@ -48,8 +48,8 @@ class VariadicLambdaTest {
                     for x in values { total = total + x }
                     total
                 }
-                std::println(sum(1, 2, 3))
-                std::println(sum(10, 20, 30, 40))
+                println(sum(1, 2, 3))
+                println(sum(10, 20, 30, 40))
             }
         """.trimIndent()))
     }
@@ -60,12 +60,12 @@ class VariadicLambdaTest {
             import std.io
             import std.container.array
             func main() {
-                fin f = { xs: std::Array<std::Int> ->
+                fin f = { xs: Array<Int> ->
                     var total = 0
                     for x in xs { total = total + x }
                     total
                 }
-                std::println(f(@std::arr[1, 2, 3]))
+                println(f(@arr[1, 2, 3]))
             }
         """.trimIndent()))
     }

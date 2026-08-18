@@ -54,37 +54,37 @@ class ReturnTypeDeclarationTest {
     @Test fun anOmittedReturnTypeMeansUnit() = assertEquals("Hello!", run("""
         import std.io
         func hello() {
-            std::println("Hello!")
+            println("Hello!")
         }
         func main() { hello() }
     """))
 
     @Test fun returningAValueWithoutDeclaringOneIsRejected() = rejects("""
-        func add(a: std::Int, b: std::Int) {
+        func add(a: Int, b: Int) {
             return a + b
         }
     """, "'add' returns Int but declares no return type")
 
     @Test fun theDiagnosticNamesTheFix() = rejects("""
-        func add(a: std::Int, b: std::Int) {
+        func add(a: Int, b: Int) {
             return a + b
         }
     """, "declare it as ': Int'")
 
     @Test fun declaringTheReturnTypeAcceptsIt() = assertEquals("7", run("""
         import std.io
-        func add(a: std::Int, b: std::Int): std::Int {
+        func add(a: Int, b: Int): Int {
             return a + b
         }
-        func main() { std::println(add(3, 4)) }
+        func main() { println(add(3, 4)) }
     """))
 
     @Test fun aBareReturnIsStillFineInAUnitFunction() = assertEquals("early", run("""
         import std.io
-        func report(quiet: std::Bool) {
-            std::println("early")
+        func report(quiet: Bool) {
+            println("early")
             if quiet { return }
-            std::println("loud")
+            println("loud")
         }
         func main() { report(true) }
     """))
@@ -94,18 +94,18 @@ class ReturnTypeDeclarationTest {
     @Test fun aFailableFunctionMayOmitTheOkTypeAndIsUnit() = assertEquals("3", run("""
         import std.io
         error MathError { DivisionByZero }
-        func div(x: std::Int, y: std::Int) ?! MathError {
+        func div(x: Int, y: Int) ?! MathError {
             if y == 0 { return .DivisionByZero }
-            std::println(x / y)
+            println(x / y)
         }
         func main() {
-            try { div(9, 3) } catch { e -> std::println("failed") }
+            try { div(9, 3) } catch { e -> println("failed") }
         }
     """))
 
     @Test fun aFailableFunctionThatYieldsAValueMustDeclareIt() = rejects("""
         error MathError { DivisionByZero }
-        func div(x: std::Int, y: std::Int) ?! MathError {
+        func div(x: Int, y: Int) ?! MathError {
             return x / y
         }
     """, "declares no return type")
@@ -113,12 +113,12 @@ class ReturnTypeDeclarationTest {
     @Test fun aDeclaredFailableReturnTypeIsAccepted() = assertEquals("3", run("""
         import std.io
         error MathError { DivisionByZero }
-        func div(x: std::Int, y: std::Int): std::Int ?! MathError {
+        func div(x: Int, y: Int): Int ?! MathError {
             if y == 0 { return .DivisionByZero }
             return x / y
         }
         func main() {
-            try { std::println(div(9, 3)) } catch { e -> std::println("failed") }
+            try { println(div(9, 3)) } catch { e -> println("failed") }
         }
     """))
 
@@ -132,64 +132,64 @@ class ReturnTypeDeclarationTest {
     @Test fun aReturnIfBranchTakesTheErrorShorthand() = assertEquals("4\ncaught", run("""
         import std.io
         error MathError { DivisionByZero }
-        func div(x: std::Int, y: std::Int): std::Int ?! MathError {
+        func div(x: Int, y: Int): Int ?! MathError {
             return if y == 0 { .DivisionByZero } else { x / y }
         }
         func main() {
-            try { std::println(div(8, 2)) } catch { e -> std::println("caught") }
-            try { std::println(div(8, 0)) } catch { e -> std::println("caught") }
+            try { println(div(8, 2)) } catch { e -> println("caught") }
+            try { println(div(8, 0)) } catch { e -> println("caught") }
         }
     """))
 
     @Test fun aReturnWhenArmTakesTheErrorShorthand() = assertEquals("8\ncaught", run("""
         import std.io
         error MathError { Bad }
-        func twice(n: std::Int): std::Int ?! MathError {
+        func twice(n: Int): Int ?! MathError {
             return when n { 0 -> .Bad
                 else -> n * 2 }
         }
         func main() {
-            try { std::println(twice(4)) } catch { e -> std::println("caught") }
-            try { std::println(twice(0)) } catch { e -> std::println("caught") }
+            try { println(twice(4)) } catch { e -> println("caught") }
+            try { println(twice(0)) } catch { e -> println("caught") }
         }
     """))
 
     @Test fun aReturnIfStillCarriesPlainValues() = assertEquals("1\n2", run("""
         import std.io
-        func pick(c: std::Bool): std::Int {
+        func pick(c: Bool): Int {
             return if c { 1 } else { 2 }
         }
         func main() {
-            std::println(pick(true))
-            std::println(pick(false))
+            println(pick(true))
+            println(pick(false))
         }
     """))
 
     @Test fun aReturnIfChainsThroughElseIf() = assertEquals("0\n1\n2", run("""
         import std.io
-        func sign(n: std::Int): std::Int {
+        func sign(n: Int): Int {
             return if n < 0 { 0 } else if n == 0 { 1 } else { 2 }
         }
         func main() {
-            std::println(sign(-4))
-            std::println(sign(0))
-            std::println(sign(9))
+            println(sign(-4))
+            println(sign(0))
+            println(sign(9))
         }
     """))
 
     @Test fun aReturnIfBranchMayComputeWithLocals() = assertEquals("7", run("""
         import std.io
-        func f(y: std::Int): std::Int {
+        func f(y: Int): Int {
             return if y == 0 { 0 } else {
                 fin doubled = y * 2
                 doubled + 1
             }
         }
-        func main() { std::println(f(3)) }
+        func main() { println(f(3)) }
     """))
 
     @Test fun aReturnIfNeedsBothBranches() = rejects("""
-        func pick(c: std::Bool): std::Int {
+        func pick(c: Bool): Int {
             return if c { 1 }
         }
     """, "needs an 'else'")
@@ -197,9 +197,9 @@ class ReturnTypeDeclarationTest {
     // -- prop ----------------------------------------------------------------
 
     @Test fun aPropFollowsTheSameRule() = rejects("""
-        pack Counter { var n: std::Int }
+        pack Counter { var n: Int }
         impl Counter {
-            prop doubled[self: std::Self&] {
+            prop doubled[self: Self&] {
                 return self.n * 2
             }
         }
@@ -207,13 +207,13 @@ class ReturnTypeDeclarationTest {
 
     @Test fun aDeclaredPropIsAccepted() = assertEquals("10", run("""
         import std.io
-        pack Counter { var n: std::Int }
+        pack Counter { var n: Int }
         impl Counter {
-            prop doubled[self: std::Self&]: std::Int {
+            prop doubled[self: Self&]: Int {
                 return self.n * 2
             }
         }
-        func main() { std::println(Counter(5).doubled) }
+        func main() { println(Counter(5).doubled) }
     """))
 
     // -- the two exceptions --------------------------------------------------
@@ -221,19 +221,19 @@ class ReturnTypeDeclarationTest {
     @Test fun aLambdaStillInfersItsResult() = assertEquals("8", run("""
         import std.io
         func main() {
-            fin twice = { n: std::Int -> n * 2 }
-            std::println(twice(4))
+            fin twice = { n: Int -> n * 2 }
+            println(twice(4))
         }
     """))
 
     @Test fun anOperatorStillInfersItsResult() = assertEquals("5", run("""
         import std.io
-        pack Box { var value: std::Int }
+        pack Box { var value: Int }
         impl Box {
-            oper.* [self: std::Self&] {
+            oper.* [self: Self&] {
                 return self.value
             }
         }
-        func main() { std::println(*Box(5)) }
+        func main() { println(*Box(5)) }
     """))
 }

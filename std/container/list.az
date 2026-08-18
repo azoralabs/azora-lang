@@ -150,7 +150,7 @@ spec MutableList<T> : List<T> {
  * @generic T The element type.
  */
 @Experimental(since: "0.1")
-pack ArrayList<T> derives Clone {
+pack ArrayList<T> {
     var _data: T* = null
     var _size: Int = 0
     var _capacity: Int = 0

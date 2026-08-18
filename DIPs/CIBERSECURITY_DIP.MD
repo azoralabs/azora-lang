@@ -32,15 +32,15 @@ checks, redaction markers, and audit events.
 import std.security
 
 func recordAccess() {
-    fin event = std::auditEvent(
+    fin event = auditEvent(
         "read-secret",
         "service:payments",
-        std::SecurityLevel.Restricted,
-        std::AuditOutcome.Allowed,
-        std::redacted("secret-value"),
+        SecurityLevel.Restricted,
+        AuditOutcome.Allowed,
+        redacted("secret-value"),
     )
-    fin sink = std::auditSink("security-events")
-    std::emit(sink, event)
+    fin sink = auditSink("security-events")
+    emit(sink, event)
 }
 ```
 
@@ -172,7 +172,7 @@ The language should later support contextual annotations:
 
 ```azora
 @Sensitive(level: Restricted)
-fin accessToken = std::loadSecret<String>("payments/access-token")
+fin accessToken = loadSecret<String>("payments/access-token")
 
 @Untrusted(source: "http-request")
 fin input = request.body
@@ -272,9 +272,9 @@ in application code.
 Azora should use capability-oriented authority for new APIs:
 
 ```azora
-fin canRead = std::grant("report-worker", "read", "reports:monthly")
-fin limited = std::attenuate(canRead, "read", "reports:monthly:2026-08")
-if std::authorize(limited, "read", "reports:monthly:2026-08") {
+fin canRead = grant("report-worker", "read", "reports:monthly")
+fin limited = attenuate(canRead, "read", "reports:monthly:2026-08")
+if authorize(limited, "read", "reports:monthly:2026-08") {
     readReport(limited)
 }
 ```

@@ -16,11 +16,11 @@ class CastIsLambdaTest {
 
     // as casts
     @Test fun asCastInt() {
-        assertEquals("42", run("import std.io\nfunc main() { var x: Any = 42\n std::println(x as Int) }"))
+        assertEquals("42", run("import std.io\nfunc main() { var x: Any = 42\n println(x as Int) }"))
     }
 
     @Test fun asCastString() {
-        assertEquals("hello", run("import std.io\nfunc main() { var x: Any = \"hello\"\n std::println(x as String) }"))
+        assertEquals("hello", run("import std.io\nfunc main() { var x: Any = \"hello\"\n println(x as String) }"))
     }
 
     // is checks
@@ -28,9 +28,9 @@ class CastIsLambdaTest {
         assertEquals("true\nfalse", run("""
             import std.io
             func main() {
-                var x: std::Any = 42
-                std::println(x is std::Int)
-                std::println(x is std::String)
+                var x: Any = 42
+                println(x is Int)
+                println(x is String)
             }
         """.trimIndent()))
     }
@@ -39,8 +39,8 @@ class CastIsLambdaTest {
         assertEquals("true", run("""
             import std.io
             func main() {
-                var x: std::Any = "hello"
-                std::println(x is std::String)
+                var x: Any = "hello"
+                println(x is String)
             }
         """.trimIndent()))
     }
@@ -48,11 +48,11 @@ class CastIsLambdaTest {
     @Test fun isCheckWithIf() {
         assertEquals("number", run("""
             import std.io
-            func describe(x: std::Any): std::String {
-                if x is std::Int { return "number" }
+            func describe(x: Any): String {
+                if x is Int { return "number" }
                 return "other"
             }
-            func main() { std::println(describe(42)) }
+            func main() { println(describe(42)) }
         """.trimIndent()))
     }
 
@@ -60,11 +60,11 @@ class CastIsLambdaTest {
     @Test fun typedLambda() {
         assertEquals("6", run("""
             import std.io
-            func apply(f: (std::Int) -> std::Int, x: std::Int): std::Int {
+            func apply(f: (Int) -> Int, x: Int): Int {
                 return f(x)
             }
             func main() {
-                std::println(apply({ x: std::Int -> x * 2 }, 3))
+                println(apply({ x: Int -> x * 2 }, 3))
             }
         """.trimIndent()))
     }
@@ -73,11 +73,11 @@ class CastIsLambdaTest {
     @Test fun implicitIt() {
         assertEquals("3", run("""
             import std.io
-            func apply(f: (std::Any) -> std::Any, x: std::Any): std::Any {
+            func apply(f: (Any) -> Any, x: Any): Any {
                 return f(x)
             }
             func main() {
-                std::println(apply({ it }, 3))
+                println(apply({ it }, 3))
             }
         """.trimIndent()))
     }

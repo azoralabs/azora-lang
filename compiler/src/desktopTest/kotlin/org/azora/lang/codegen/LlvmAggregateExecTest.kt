@@ -46,13 +46,13 @@ class LlvmAggregateExecTest {
         """
         import std.io
         pack Vec2 {
-            var x: std::Double
-            var y: std::Double
+            var x: Double
+            var y: Double
         }
         func main() {
             fin v = Vec2(1.5, 2.5)
-            std::println(v.x)
-            std::println(v.y)
+            println(v.x)
+            println(v.y)
         }
         """.trimIndent()
     )
@@ -62,13 +62,13 @@ class LlvmAggregateExecTest {
         """
         import std.io
         pack Point {
-            var x: std::Int
-            var y: std::Int
+            var x: Int
+            var y: Int
         }
         func main() {
             var p = Point(1, 2)
             p.x = 7
-            std::println(p.x)
+            println(p.x)
         }
         """.trimIndent()
     )
@@ -78,20 +78,20 @@ class LlvmAggregateExecTest {
         """
         import std.io
         pack Vec3 {
-            var x: std::Double
-            var y: std::Double
-            var z: std::Double
+            var x: Double
+            var y: Double
+            var z: Double
         }
         pack Camera {
             var pos: Vec3
-            var yaw: std::Double
+            var yaw: Double
         }
         func main() {
             var cam = Camera(Vec3(0.0, 1.0, 5.0), 0.0)
             cam.pos.y = cam.pos.y + 0.5
             cam.yaw = 90.0
-            std::println(cam.pos.y)
-            std::println(cam.yaw)
+            println(cam.pos.y)
+            println(cam.yaw)
         }
         """.trimIndent()
     )
@@ -101,15 +101,15 @@ class LlvmAggregateExecTest {
         """
         import std.io
         pack Point {
-            var x: std::Int
-            var y: std::Int
+            var x: Int
+            var y: Int
         }
         func make(): Point {
             return Point(5, 6)
         }
         func main() {
             fin p = make()
-            std::println(p.x)
+            println(p.x)
         }
         """.trimIndent()
     )
@@ -119,18 +119,18 @@ class LlvmAggregateExecTest {
         """
         import std.io
         pack Vec3 {
-            var x: std::Double
-            var y: std::Double
-            var z: std::Double
+            var x: Double
+            var y: Double
+            var z: Double
         }
         impl Vec3 {
-            func lengthSq(): std::Double {
+            func lengthSq(): Double {
                 return self.x * self.x + self.y * self.y + self.z * self.z
             }
         }
         func main() {
             fin v = Vec3(5.0, 2.0, 3.0)
-            std::println(v.lengthSq())
+            println(v.lengthSq())
         }
         """.trimIndent()
     )
@@ -140,8 +140,8 @@ class LlvmAggregateExecTest {
         """
         import std.io
         pack Vec2 {
-            var x: std::Double
-            var y: std::Double
+            var x: Double
+            var y: Double
         }
         impl Vec2 {
             func plus(o: Vec2): Vec2 {
@@ -150,7 +150,7 @@ class LlvmAggregateExecTest {
         }
         func main() {
             fin c = Vec2(1.0, 2.0) + Vec2(10.0, 20.0)
-            std::println(c.y)
+            println(c.y)
         }
         """.trimIndent()
     )
@@ -164,9 +164,9 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            fin x = @std::arr[1, 2, 3, 4]
-            std::println(x[2])
-            std::println(x.size)
+            fin x = @arr[1, 2, 3, 4]
+            println(x[2])
+            println(x.size)
         }
         """.trimIndent()
     )
@@ -176,9 +176,9 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var x = @std::arr[1, 2, 3]
+            var x = @arr[1, 2, 3]
             x[1] = 9
-            std::println(x[1])
+            println(x[1])
         }
         """.trimIndent()
     )
@@ -188,14 +188,14 @@ class LlvmAggregateExecTest {
         """
         import std.io
         import std.container.list
-        func pick(xs: std::List<std::Int>&, i: std::Int): std::Int {
+        func pick(xs: List<Int>&, i: Int): Int {
             return xs[i]
         }
         func main() {
-            var xs = std::arrayListOf<std::Int>()
+            var xs = arrayListOf<Int>()
             xs.add(10)
             xs.add(20)
-            std::println(pick(xs, 1))
+            println(pick(xs, 1))
         }
         """.trimIndent()
     )
@@ -205,12 +205,12 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var nums = @std::arr[1, 2, 3, 4]
+            var nums = @arr[1, 2, 3, 4]
             var sum = 0
             for n in nums {
                 sum = sum + n
             }
-            std::println(sum)
+            println(sum)
         }
         """.trimIndent()
     )
@@ -220,9 +220,9 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var names = @std::arr["red", "green", "blue"]
+            var names = @arr["red", "green", "blue"]
             for name in names {
-                std::println(name)
+                println(name)
             }
         }
         """.trimIndent()
@@ -233,10 +233,10 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var x = @std::arr[10, 20, 30]
+            var x = @arr[10, 20, 30]
             x.add(40)
-            std::println(x.size)
-            std::println(x[3])
+            println(x.size)
+            println(x[3])
         }
         """.trimIndent()
     )
@@ -246,9 +246,9 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var x = @std::arr[10, 20, 30]
+            var x = @arr[10, 20, 30]
             x.add(x.size)
-            std::println(x[3])
+            println(x[3])
         }
         """.trimIndent()
     )
@@ -258,13 +258,13 @@ class LlvmAggregateExecTest {
         """
         import std.io
         pack Bucket {
-            var values: std::Array<std::Int>
+            var values: Array<Int>
         }
         func main() {
-            var bucket = Bucket(@std::arr[10, 20])
+            var bucket = Bucket(@arr[10, 20])
             bucket.values.add(30)
-            std::println(bucket.values.size)
-            std::println(bucket.values[2])
+            println(bucket.values.size)
+            println(bucket.values[2])
         }
         """.trimIndent()
     )
@@ -275,9 +275,9 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var x = @std::arr[1]
-            std::println(x.isEmpty)
-            std::println(x.isNotEmpty)
+            var x = @arr[1]
+            println(x.isEmpty)
+            println(x.isNotEmpty)
         }
         """.trimIndent()
     )
@@ -287,12 +287,12 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var nums = @std::arr[1, 2, 3]
+            var nums = @arr[1, 2, 3]
             var words = ["one", "two"]
-            std::println(nums.contains(2))
-            std::println(nums.contains(9))
-            std::println(words.contains("two" + ""))
-            std::println(words.contains("three"))
+            println(nums.contains(2))
+            println(nums.contains(9))
+            println(words.contains("two" + ""))
+            println(words.contains("three"))
         }
         """.trimIndent()
     )
@@ -307,16 +307,16 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var xs = @std::arr[10, 20, 30, 40]
+            var xs = @arr[10, 20, 30, 40]
             xs.remove(1)
             var i = 0
             while i < xs.size {
-                std::println(xs[i])
+                println(xs[i])
                 i = i + 1
             }
-            std::println(xs.size)
+            println(xs.size)
             xs.remove(99)
-            std::println(xs.size)
+            println(xs.size)
         }
         """.trimIndent()
     )
@@ -331,9 +331,9 @@ class LlvmAggregateExecTest {
         import std.io
         import std.container.tuple
         func main() {
-            fin rows = @std::arr[std::tupleOf(1, "a"), std::tupleOf(2, "b")]
+            fin rows = @arr[tupleOf(1, "a"), tupleOf(2, "b")]
             for [n, s] in rows {
-                std::println("${'$'}{n} ${'$'}{s}")
+                println("${'$'}{n} ${'$'}{s}")
             }
         }
         """.trimIndent()
@@ -345,8 +345,8 @@ class LlvmAggregateExecTest {
         import std.io
         func main() {
             var values = ["a": 1, "b": 2, "c": 3]
-            std::println(values["a"])
-            std::println(values["c"])
+            println(values["a"])
+            println(values["c"])
         }
         """.trimIndent()
     )
@@ -358,7 +358,7 @@ class LlvmAggregateExecTest {
         func main() {
             var values = ["ab": 2, "cd": 4]
             let key = "a" + "b"
-            std::println(values[key])
+            println(values[key])
         }
         """.trimIndent()
     )
@@ -368,9 +368,9 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var values = @std::map[1: "one", 2: "two"]
-            std::println(values[1])
-            std::println(values[2])
+            var values = @map[1: "one", 2: "two"]
+            println(values[1])
+            println(values[2])
         }
         """.trimIndent()
     )
@@ -382,7 +382,7 @@ class LlvmAggregateExecTest {
         func main() {
             var values = ["a": 1, "b": 2]
             values["b"] = 99
-            std::println(values["b"])
+            println(values["b"])
         }
         """.trimIndent()
     )
@@ -392,10 +392,10 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var values = @std::map[1: 10, 2: 20]
+            var values = @map[1: 10, 2: 20]
             values[3] = 30
-            std::println(values[3] / 10)
-            std::println(values[3])
+            println(values[3] / 10)
+            println(values[3])
         }
         """.trimIndent()
     )
@@ -407,7 +407,7 @@ class LlvmAggregateExecTest {
         func main() {
             var values = ["pi": 3.14, "half": 0.5]
             values["half"] = 2.5
-            std::println(values["half"])
+            println(values["half"])
         }
         """.trimIndent()
     )
@@ -418,12 +418,12 @@ class LlvmAggregateExecTest {
         import std.io
         import std.container.map
         func main() {
-            var values = @std::map!["a": 1, "b": 2]
-            std::println(values.size)
-            std::println(values.isEmpty)
+            var values = @map!["a": 1, "b": 2]
+            println(values.size)
+            println(values.isEmpty)
             values.clear()
-            std::println(values.isEmpty)
-            std::println(values.size)
+            println(values.isEmpty)
+            println(values.size)
         }
         """.trimIndent()
     )
@@ -434,13 +434,13 @@ class LlvmAggregateExecTest {
         import std.io
         func main() {
             var values = ["a": 10, "b": 20]
-            std::println(values.containsKey("a"))
-            std::println(values.containsKey("z"))
-            std::println(values.get("b"))
+            println(values.containsKey("a"))
+            println(values.containsKey("z"))
+            println(values.get("b"))
             values.put("c", 30)
-            std::println(values.containsKey("c"))
-            std::println(values.get("c"))
-            std::println(values.size)
+            println(values.containsKey("c"))
+            println(values.get("c"))
+            println(values.size)
         }
         """.trimIndent()
     )
@@ -449,9 +449,9 @@ class LlvmAggregateExecTest {
         "6",
         """
         import std.io
-        fin values = @std::arr[1, 2, 3]
+        fin values = @arr[1, 2, 3]
         func main() {
-            std::println(values[0] + values[1] + values[2])
+            println(values[0] + values[1] + values[2])
         }
         """.trimIndent()
     )
@@ -462,7 +462,7 @@ class LlvmAggregateExecTest {
         import std.io
         fin values = ["answer": 42]
         func main() {
-            std::println(values["answer"])
+            println(values["answer"])
         }
         """.trimIndent()
     )
@@ -473,9 +473,9 @@ class LlvmAggregateExecTest {
         import std.io
         func main() {
             var values = ![1, 2, 2, 3, 1]
-            std::println(values.size)
-            std::println(values.contains(2))
-            std::println(values.contains(9))
+            println(values.size)
+            println(values.contains(2))
+            println(values.contains(9))
         }
         """.trimIndent()
     )
@@ -485,8 +485,8 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var values: std::Set<std::Int> = ![10, 20]
-            std::println(values.size)
+            var values: Set<Int> = ![10, 20]
+            println(values.size)
         }
         """.trimIndent()
     )
@@ -496,12 +496,12 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var numbers: std::List<std::Int> = @std::arr[10, 20, 30]
-            var unique: std::Set<std::Int> = ![1, 2, 2]
-            var names: std::Map<std::String, std::Int> = ["a": 1, "b": 2]
-            std::println(numbers.size)
-            std::println(unique.size)
-            std::println(names.size)
+            var numbers: List<Int> = @arr[10, 20, 30]
+            var unique: Set<Int> = ![1, 2, 2]
+            var names: Map<String, Int> = ["a": 1, "b": 2]
+            println(numbers.size)
+            println(unique.size)
+            println(names.size)
         }
         """.trimIndent()
     )
@@ -512,9 +512,9 @@ class LlvmAggregateExecTest {
         import std.io
         func main() {
             var values = ![1, 2]
-            std::println(values.add(3))
-            std::println(values.add(2))
-            std::println(values.size)
+            println(values.add(3))
+            println(values.add(2))
+            println(values.size)
         }
         """.trimIndent()
     )
@@ -525,11 +525,11 @@ class LlvmAggregateExecTest {
         import std.io
         func main() {
             var values = ![1, 2, 3]
-            std::println(values.remove(2))
-            std::println(values.remove(9))
-            std::println(values.size)
+            println(values.remove(2))
+            println(values.remove(9))
+            println(values.size)
             for value in values {
-                std::println(value)
+                println(value)
             }
         }
         """.trimIndent()
@@ -541,11 +541,11 @@ class LlvmAggregateExecTest {
         import std.io
         import std.container.set
         func main() {
-            var values = @std::set![1, 2]
-            std::println(values.isEmpty)
+            var values = @set![1, 2]
+            println(values.isEmpty)
             values.clear()
-            std::println(values.isEmpty)
-            std::println(values.size)
+            println(values.isEmpty)
+            println(values.size)
         }
         """.trimIndent()
     )
@@ -557,9 +557,9 @@ class LlvmAggregateExecTest {
         func main() {
             var values = !["ab", "cd"]
             let dynamic = "a" + "b"
-            std::println(values.size)
-            std::println(values.add(dynamic))
-            std::println(values.contains("c" + "d"))
+            println(values.size)
+            println(values.add(dynamic))
+            println(values.contains("c" + "d"))
         }
         """.trimIndent()
     )
@@ -574,7 +574,7 @@ class LlvmAggregateExecTest {
             for value in values {
                 total = total + value
             }
-            std::println(total)
+            println(total)
         }
         """.trimIndent()
     )
@@ -584,14 +584,14 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var array = @std::arr[1c, 2c]
+            var array = @arr[1c, 2c]
             array.add(3c)
-            std::println(array[2])
+            println(array[2])
             var map = ["value": 4c]
-            std::println(std::map["value"])
+            println(map["value"])
             var set = ![1c, 1c, 2c]
-            std::println(std::set.size)
-            std::println(std::set.contains(2c))
+            println(set.size)
+            println(set.contains(2c))
         }
         """.trimIndent()
     )
@@ -602,8 +602,8 @@ class LlvmAggregateExecTest {
         import std.io
         fin values = ![1, 2, 2, 3]
         func main() {
-            std::println(values.size)
-            std::println(values.contains(3))
+            println(values.size)
+            println(values.contains(3))
         }
         """.trimIndent()
     )
@@ -613,14 +613,14 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            fin arr = @std::arr[0.5, 1.5, 2.5]
+            fin arr = @arr[0.5, 1.5, 2.5]
             var sum = 0.0
             var i = 0
-            while i < std::arr.size {
-                sum = sum + std::arr[i]
+            while i < arr.size {
+                sum = sum + arr[i]
                 i = i + 1
             }
-            std::println(sum)
+            println(sum)
         }
         """.trimIndent()
     )
@@ -631,7 +631,7 @@ class LlvmAggregateExecTest {
         import std.io
         func main() {
             fin s = "hello"
-            std::println(s.size)
+            println(s.size)
         }
         """.trimIndent()
     )
@@ -644,13 +644,13 @@ class LlvmAggregateExecTest {
         "called\ndone",
         """
         import std.io
-        func sideEffect(): std::Int {
-            std::println("called")
+        func sideEffect(): Int {
+            println("called")
             return 1
         }
         func main() {
             fin unused = sideEffect()
-            std::println("done")
+            println("done")
         }
         """.trimIndent()
     )
@@ -674,7 +674,7 @@ class LlvmAggregateExecTest {
                 last = nested
                 i = i + 1
             }
-            std::println(last)
+            println(last)
         }
         """.trimIndent()
     )
@@ -690,7 +690,7 @@ class LlvmAggregateExecTest {
                     fin x = i * 2
                     if x > 2 {
                         fin y = x + 1
-                        std::println(y)
+                        println(y)
                     }
                     i = i + 1
                 }

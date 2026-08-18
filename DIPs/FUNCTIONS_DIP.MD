@@ -140,7 +140,7 @@ return type is not a gap to be filled - it **is** the annotation, and it says
 
 ```azora
 func hello() {                        // : Unit
-    std::println("Hello!")
+    println("Hello!")
 }
 ```
 
@@ -170,7 +170,7 @@ parameter list means `Unit ?! E`: the function yields nothing but may fail.
 ```azora
 func div(x: Int, y: Int) ?! MathError {          // Unit ?! MathError
     if y == 0 { return .DivisionByZero }
-    std::println(x / y)
+    println(x / y)
 }
 
 func div(x: Int, y: Int): Int ?! MathError {     // yields a value → declare it
@@ -460,7 +460,7 @@ The old `func Type.method()` extension form is **removed**.
 
 ```azora
 var double = { x: Int -> x * 2 }
-std::println(double(5))                    // 10
+println(double(5))                    // 10
 ```
 
 - Syntax: `{ param: Type[, …] -> body }`. The body's last expression (or a

@@ -29,6 +29,7 @@ module azora.lang.frontend.token
  * **Special** - synthetic tokens
  */
 enum TokenType {
+    // Literals
     IntLiteral              /** 1 */
     RealLiteral             /** 1.0 */
     StringLiteral           /** "" */
@@ -38,8 +39,10 @@ enum TokenType {
     InterpolatedString      /** "${}" */
     Null                    /** null */
 
+    // Identifier
     Identifier              /** Identifier */
 
+    // Keywords
     Var                     /** Keyword var */
     Fin                     /** Keyword fin */
     Let                     /** Keyword let */
@@ -129,6 +132,7 @@ enum TokenType {
     Deco                    /** Keyword deco */
     Bind                    /** Keyword bind */
 
+    // Operators
     Plus                    /** Operator + */
     Minus                   /** Operator - */
     Star                    /** Operator * */
@@ -173,6 +177,7 @@ enum TokenType {
     Ellipsis                /** ... */
     Hash                    /** # */
 
+    // Delimiters
     At                      /** Delimiter @ */
     Dot                     /** Delimiter . */
     LParen                  /** Delimiter ( */
@@ -188,6 +193,7 @@ enum TokenType {
     Arrow                   /** Delimiter -> */
     FatArrow                /** Delimiter => */
 
+    // Special
     Eol
     Eof
 }
@@ -199,7 +205,7 @@ enum TokenType {
  * literals and `Double` for floating-point literals.
  */
 enum NumericSuffix {
-    None            /** maps to `Int` or `Double` */
+    None        /** maps to `Int` or `Double` */
 
     Byte        /** b */
     Short       /** s */
@@ -239,20 +245,20 @@ variant enum StringPart {
     Expr(source: String)
 }
 
- /**
-  * A single lexical token produced by the [Lexer].
-  *
-  * Tokens carry enough source-location information to produce accurate
-  * error messages in later compiler phases.
-  *
-  * @field type the [TokenType] that classifies this token
-  * @field lexeme the raw source text that was matched (e.g. `"42"`, `"func"`)
-  * @field line the 1-based line number where the token starts
-  * @field column the 1-based column number where the token starts
-  * @field literal the parsed literal value for literal tokens (e.g. [Long] for
-  *   [TokenType.IntLiteral], [Double] for [TokenType.RealLiteral], [String] for
-  *   [TokenType.StringLiteral]), or `null` for non-literal tokens
-  */
+/**
+ * A single lexical token produced by the [Lexer].
+ *
+ * Tokens carry enough source-location information to produce accurate
+ * error messages in later compiler phases.
+ *
+ * @field type the [TokenType] that classifies this token
+ * @field lexeme the raw source text that was matched (e.g. `"42"`, `"func"`)
+ * @field line the 1-based line number where the token starts
+ * @field column the 1-based column number where the token starts
+ * @field literal the parsed literal value for literal tokens (e.g. [Long] for
+ *   [TokenType.IntLiteral], [Double] for [TokenType.RealLiteral], [String] for
+ *   [TokenType.StringLiteral]), or `null` for non-literal tokens
+ */
 pack Token {
     fin ty: TokenType
     fin lexeme: String

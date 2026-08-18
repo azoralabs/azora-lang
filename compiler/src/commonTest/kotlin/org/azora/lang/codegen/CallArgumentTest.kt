@@ -40,8 +40,8 @@ class CallArgumentTest {
 
     private val decls = """
         import std.io
-        pack Size { var width: std::Int  var height: std::Int }
-        func area(width: std::Int, height: std::Int): std::Int { return width * height }
+        pack Size { var width: Int  var height: Int }
+        func area(width: Int, height: Int): Int { return width * height }
     """.trimIndent()
 
     private fun sized(arguments: String) = run(
@@ -49,9 +49,9 @@ class CallArgumentTest {
         $decls
         func main() {
             fin s = Size($arguments)
-            std::println(s.width)
-            std::println(s.height)
-            std::println(area($arguments))
+            println(s.width)
+            println(s.height)
+            println(area($arguments))
         }
         """.trimIndent()
     )
@@ -72,8 +72,8 @@ class CallArgumentTest {
                     2
                     3
                 )
-                std::println(s.width)
-                std::println(s.height)
+                println(s.width)
+                println(s.height)
             }
         """.trimIndent()))
     }
@@ -86,8 +86,8 @@ class CallArgumentTest {
                     height: 3
                     width: 2
                 )
-                std::println(s.width)
-                std::println(s.height)
+                println(s.width)
+                println(s.height)
             }
         """.trimIndent()))
     }
@@ -104,10 +104,10 @@ class CallArgumentTest {
                     2
                     height: 3
                 )
-                std::println(a.width)
-                std::println(a.height)
-                std::println(b.width)
-                std::println(b.height)
+                println(a.width)
+                println(a.height)
+                println(b.width)
+                println(b.height)
             }
         """.trimIndent()))
     }

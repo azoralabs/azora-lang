@@ -2926,7 +2926,7 @@ class LlvmCodegen {
         )
 
         return when {
-            // getenv, with "" for unset - `std::envVar` documents that shape, and
+            // getenv, with "" for unset - `envVar` documents that shape, and
             // `hasEnvVar` is what tells unset from empty.
             local == "envVar" && item.params.size == 1 -> {
                 usesGetenv = true
@@ -2960,7 +2960,7 @@ class LlvmCodegen {
                 )
             }
 
-            // Error name, newline, contents - the encoding `std::readText` reads.
+            // Error name, newline, contents - the encoding `readText` reads.
             local == "fsRead" && item.params.size == 1 -> {
                 usesStdio = true
                 usesMalloc = true
@@ -4377,7 +4377,7 @@ class LlvmCodegen {
         // `Array::fill<T>(count)` allocates `[ i64 length, T×count ]` (the array
         // layout used by `emitArrayLiteral`); handled inline since element size
         // varies per instantiation.
-        if (expr.name == "__std_Array_fill") {
+        if (symbolDenotes(expr.name, "Array_fill")) {
             val elemType = (expr.type as? IrType.Array)?.element ?: IrType.Any
             val elemSize = sizeOfScalar(elemType)
             val count = emitExpr(expr.args[0])
@@ -4389,8 +4389,8 @@ class LlvmCodegen {
             emit("  store i64 $count64, i64* $lenPtr")
             return raw
         }
-        if (expr.name == "__std_println") return emitPrintln(expr)
-        if (expr.name == "__std_print") return emitPrintln(expr, newline = false)
+        if (symbolDenotes(expr.name, "println")) return emitPrintln(expr)
+        if (symbolDenotes(expr.name, "print")) return emitPrintln(expr, newline = false)
         if (expr.name == "async") {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
                 ?: error("LLVM async lowering requires a task block")
@@ -4450,7 +4450,7 @@ class LlvmCodegen {
             emit("  ; drop - advisory for raw pointers; task scopes own native cleanup")
             return "void"
         }
-        if (expr.name == "__std_concurrency_cancel") {
+        if (symbolDenotes(expr.name, "concurrency_cancel")) {
             usesTaskRuntime = true
             val handle = emitExpr(expr.args.single())
             emit("  call void @__azora_task_cancel(%azora.task* $handle)")
@@ -4460,7 +4460,7 @@ class LlvmCodegen {
         // Coerce arguments to the callee's declared parameter types (numeric
         // widening such as an Int literal passed to a Double/Long parameter).
         val declared = funcParamTypes[expr.name]
-        if (expr.name == "__std_convert_toString" && expr.args.size == 1) {
+        if (symbolDenotes(expr.name, "toString") && expr.args.size == 1) {
             emitExpr(expr.args.single())
             emit("  ; erased generic toString - no native generic stringification ABI yet")
             return gepString(addStringConstant(""))

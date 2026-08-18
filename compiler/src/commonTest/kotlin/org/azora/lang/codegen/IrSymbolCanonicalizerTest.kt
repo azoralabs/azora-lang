@@ -16,7 +16,7 @@ class IrSymbolCanonicalizerTest {
 
             realm acme::math {
                 pack Point {
-                    fin x: std::Int
+                    fin x: Int
                 }
 
                 enum Axis { X Y }
@@ -27,7 +27,7 @@ class IrSymbolCanonicalizerTest {
                     return value
                 }
 
-                bridge func draw(value: acme::math::Point): std::Unit
+                bridge func draw(value: acme::math::Point): Unit
             }
 
             func main() {
@@ -58,7 +58,7 @@ class IrSymbolCanonicalizerTest {
         val result = Compiler().compile(
             """
             realm acme::ops {
-                func choose<...T>(...values: ...T): std::Int {
+                func choose<...T>(...values: ...T): Int {
                     return 7
                 }
             }
@@ -89,7 +89,7 @@ class IrSymbolCanonicalizerTest {
             """
             realm acme::config {
                 solo pack Settings {
-                    fin value: std::Int = 9
+                    fin value: Int = 9
                 }
             }
 

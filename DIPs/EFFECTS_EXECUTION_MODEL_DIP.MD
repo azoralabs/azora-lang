@@ -103,7 +103,7 @@ A long-running domain process is different again:
 
 ```azora
 async func roundTimer(clock: Clock&, events: EventWriter<RoundEnded>!) {
-    await clock.sleep(std::seconds(90))
+    await clock.sleep(seconds(90))
     events.emit(RoundEnded())
 }
 ```
@@ -183,8 +183,8 @@ func captureSystem(world: World!) {
 There is no registration call. The engine builds `SystemPlan` once with:
 
 ```azora
-inline for S in std::reflect<*>.withAnnot<System> {
-    // Read std::reflect<S>.decoMeta<System> and record S.
+inline for S in reflect<*>.withAnnot<System> {
+    // Read reflect<S>.decoMeta<System> and record S.
 }
 ```
 
@@ -519,7 +519,7 @@ engine's existing reflection loop consumes:
 - latent effects of child tasks
 - ownership, borrow, phase, and determinism metadata
 
-`std::reflect<S>.decoMeta<System>` supplies the real scheduling fields. Resolved
+`reflect<S>.decoMeta<System>` supplies the real scheduling fields. Resolved
 callable effects and query access must also be available through general
 reflection metadata, allowing `systemPlan()` to extend `ScheduledSystem` and
 validate phase rules. The compiler never calls engine code or recognizes the
@@ -561,7 +561,7 @@ async func immediate(): Int {
 
 ```azora
 async func delayed(): Int {
-    await std::sleep(std::seconds(1))
+    await sleep(seconds(1))
     return 7
 }
 ```
@@ -583,8 +583,8 @@ resolved effects as a latent effect set in Azora IR. Awaiting the task adds
 `Suspend` to the awaiting callable, while schedulers and owner validation can
 still inspect the task's latent reads, writes, IO, and suspension.
 
-`std::branch` retains its async callback's latent effects. `std::race`,
-`std::sync`, and `std::rush` combine the branch sets. A frame system cannot hide
+`branch` retains its async callback's latent effects. `race`,
+`sync`, and `rush` combine the branch sets. A frame system cannot hide
 a suspension by moving it into a child task: `@System` validates escaping task
 ownership, borrowed captures, and latent branch effects.
 
@@ -616,7 +616,7 @@ cannot lie to unlock parallelism because they are validated against inference.
 - `react` is an ownership and invalidation model, not shorthand for any static
   effect set.
 
-`std::attempt` rejects `Suspend`, external `Io`, or any other effect for which
+`attempt` rejects `Suspend`, external `Io`, or any other effect for which
 its source has no rollback adapter.
 
 ---
@@ -660,7 +660,7 @@ func advanceCapture(point: CapturePoint!, dt: Duration): CaptureResult ?! Captur
 The call site chooses the state source whose writes must be journaled:
 
 ```azora
-fin result = std::attempt<CaptureResult, CaptureRejected>(world) { attempt ->
+fin result = attempt<CaptureResult, CaptureRejected>(world) { attempt ->
     fin point = attempt.get<CapturePoint!>(pointEntity)
     return advanceCapture(point, dt)
 } catch {
@@ -671,9 +671,9 @@ fin result = std::attempt<CaptureResult, CaptureRejected>(world) { attempt ->
 No silent branch failure, no optional ambiguity, and diagnostics can name
 `CaptureRejected`.
 
-### 7.2 `std::attempt`
+### 7.2 `attempt`
 
-`std::attempt` is the standard transactional operation from `std.reactive`,
+`attempt` is the standard transactional operation from `std.reactive`,
 re-exported through realm `std`. It is not an ECS keyword and does not replace
 language `try`.
 
@@ -696,7 +696,7 @@ forms, and future database packages can implement the same `AttemptSource`
 contract without compiler hardcoding.
 
 ```azora
-fin result = std::attempt(world) { attempt ->
+fin result = attempt(world) { attempt ->
     fin point = attempt.get<CapturePoint!>(entity)
 
     if !anyAttackerOn(point) { return .NoAttacker }
@@ -712,8 +712,8 @@ The three nearby constructs have distinct jobs:
 | construct | job |
 |---|---|
 | `try value` | propagate or handle an existing typed failure |
-| `std::attempt(source) { ... }` | journal writes, commit success, roll back typed failure |
-| `std::batch(source) { ... }` | always commit and publish once after the body |
+| `attempt(source) { ... }` | journal writes, commit success, roll back typed failure |
+| `batch(source) { ... }` | always commit and publish once after the body |
 
 Rules:
 
@@ -760,26 +760,26 @@ runtime support, but their names do not need to be reserved by the lexer.
 Canonical form:
 
 ```azora
-fin outcome = await std::race<CaptureOutcome> {
-    std::branch {
+fin outcome = await race<CaptureOutcome> {
+    branch {
         return await captureLocally(point)
     }
 
-    std::branch {
+    branch {
         return await capturedEvents
             .first { event -> event.point == point }
             .map { event -> CaptureOutcome.Captured(event.team) }
     }
 
-    std::branch {
+    branch {
         await clock.sleep(timeout)
         return .TimedOut
     }
 }
 ```
 
-Every branch is introduced with the fully qualified `std::branch`; unqualified
-`branch` is never magic syntax. Within the `std::race` configuration lambda it
+Every branch is introduced with the fully qualified `branch`; unqualified
+`branch` is never magic syntax. Within the `race` configuration lambda it
 registers one async child body and returns its typed descriptor.
 
 The result is handled normally:
@@ -815,20 +815,20 @@ branches serially without warning.
 ### 8.3 `sync` and `rush`
 
 ```azora
-fin loaded = await std::sync {
-    std::branch { return await loadMap() }
-    std::branch { return await loadAudio() }
-    std::branch { return await loadShaders() }
+fin loaded = await sync {
+    branch { return await loadMap() }
+    branch { return await loadAudio() }
+    branch { return await loadShaders() }
 }
 ```
 
-`sync` waits for all branches and returns `std::Tuple<...T>` in source order.
+`sync` waits for all branches and returns `Tuple<...T>` in source order.
 If one fails, siblings are cancelled and joined before failure propagates.
 
 ```azora
-fin first = await std::rush<Result> {
-    std::branch { return await teamOne.finish() }
-    std::branch { return await teamTwo.finish() }
+fin first = await rush<Result> {
+    branch { return await teamOne.finish() }
+    branch { return await teamTwo.finish() }
 }
 ```
 
@@ -837,11 +837,11 @@ children of the surrounding async owner. Because its lifetime is less local,
 `rush` should be uncommon and produce a lint when a surrounding owner is not
 obvious.
 
-### 8.4 No `scope` or `std::block`
+### 8.4 No `scope` or `block`
 
-The original nested `scope {}` blocks are unnecessary. A `std::branch` body is
-already a lexical child-task lifetime, and its parent `std::race`, `std::sync`,
-or `std::rush` owns cancellation. A `std::block` wrapper would add no lifetime
+The original nested `scope {}` blocks are unnecessary. A `branch` body is
+already a lexical child-task lifetime, and its parent `race`, `sync`,
+or `rush` owns cancellation. A `block` wrapper would add no lifetime
 or ordering semantics.
 
 ---
@@ -930,20 +930,20 @@ async func captureProcess(
     removed: EventReader<EntityRemoved>&,
     captured: EventReader<PointCaptured>&
 ): CaptureOutcome {
-    return await std::race<CaptureOutcome> {
-        std::branch {
+    return await race<CaptureOutcome> {
+        branch {
             loop {
                 if !anyAttackerOn(point) { return .Abandoned }
-                await std::nextFrame()
+                await nextFrame()
             }
         }
 
-        std::branch {
+        branch {
             fin event = await captured.first { it.point == point }
             return .Captured(event.team)
         }
 
-        std::branch {
+        branch {
             await removed.first { entity -> entity == point }
             return .Removed
         }
@@ -989,7 +989,7 @@ audio, debug tooling, and domain observers may read that same state without
 retaining component borrows. Publication is batched once per configured phase,
 not performed after every internal component write.
 
-The reverse direction uses `std::attempt(world)`: reactive commands enter a
+The reverse direction uses `attempt(world)`: reactive commands enter a
 journaled world view, and observers see the resulting state only after commit.
 Rollback publishes nothing. This is the unification point between reactive
 application state and transactional simulation state.
@@ -1111,7 +1111,7 @@ postfix '?' does not create a domain failure context
 ```
 
 ```text
-std::branch captured 'point' by exclusive borrow
+branch captured 'point' by exclusive borrow
   race branches may outlive this borrow; capture an owned Entity instead
 ```
 
@@ -1130,7 +1130,7 @@ point from a latent suspension captured by a child task.
 - `await` lowers to a suspension node carrying the intrinsic effect identity
 - tasks retain their body's latent effect set
 - queries borrow engine storage for one call
-- race/sync functions create structured child tasks through std::branch
+- race/sync functions create structured child tasks through branch
 - cancellation runs branch cleanup before parent continuation
 - attempt journals record component and structural writes
 
@@ -1222,7 +1222,7 @@ declaration's spelling.
 ### Phase D: structured concurrency
 
 - finish cancellation parity on all targets
-- implement `std::branch`, `std::sync`, `std::race`, and `std::rush`
+- implement `branch`, `sync`, `race`, and `rush`
 - guarantee loser cleanup and deterministic ties
 - test entity/scene/application task ownership
 

@@ -510,6 +510,10 @@ class IrGenerator(private val table: SymbolTable) {
     private val constantLiterals = mutableMapOf<String, IrExpr>()
 
     fun generate(program: Program): IrProgram {
+        ctorOverloadedTypes.clear()
+        program.items.filterIsInstance<TopLevel.Impl>()
+            .filter { ctorCount(it.methods.map { m -> m.name }) > 1 }
+            .forEach { ctorOverloadedTypes.add(it.typeName) }
         typeFunctions = program.typeFunctions
         functionDecls = program.functions.associateBy { it.name }
         generatedTraceFunctions.clear()
@@ -671,6 +675,7 @@ class IrGenerator(private val table: SymbolTable) {
         // every backend gets the behaviour without knowing about constructors.
         program.items.filterIsInstance<TopLevel.Impl>().flatMap { item ->
             val struct = table.lookupStruct(item.typeName)
+            val ctorOverloaded = ctorCount(item.methods.map { it.name }) > 1
             item.methods.filter { it.name == "ctor" && it.params.isNotEmpty() }.flatMap { ctor ->
                 if (struct == null) return@flatMap emptyList()
                 val type = IrType.Named(item.typeName)
@@ -689,7 +694,7 @@ class IrGenerator(private val table: SymbolTable) {
                     // that declared none has filled `__self`, which is the value.
                     val declared = (ctor.returnType as? TypeAnnotation.Explicit)?.let { resolveType(it.ref) }
                     val call = IrExpr.Call(
-                        "${item.typeName}_ctor",
+                        ctorSymbol(item.typeName, arity, ctor.isRepeated, ctorOverloaded),
                         listOf(IrExpr.Var("__self", type)) + filled,
                         declared ?: IrType.Unit,
                     )
@@ -699,7 +704,7 @@ class IrGenerator(private val table: SymbolTable) {
                         IrExpr.StructCtor(item.typeName, struct.fields.map { it.name }, fieldDefaults, type),
                     )
                     IrTopLevel.Func(IrFunction(
-                        ctorFactoryName(item.typeName, arity),
+                        ctorFactorySymbol(item.typeName, arity, ctor.isRepeated),
                         taken,
                         declared ?: type,
                         if (declared != null) {
@@ -890,6 +895,12 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /** The current node type being lowered (for `base` resolution). Null outside a node method. */
+    /**
+     * Types whose impls declare more than one `ctor`, so their ctors are
+     * overloads and must be emitted under distinct symbols. See [ctorSymbol].
+     */
+    private val ctorOverloadedTypes = mutableSetOf<String>()
+
     private var currentNodeType: String? = null
     /** The current impl receiver type (for implicit-self field access: bare `size` → `self.size`). */
     private var currentReceiverType: String? = null
@@ -913,7 +924,16 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun lowerMethodInternal(typeName: String, method: FuncDecl): IrFunction {
-        val mangled = mangleMethodSymbol("${typeName}_${method.name}")
+        val mangled = if (method.name == "ctor") {
+            ctorSymbol(
+                typeName,
+                method.params.size - method.contextualParams,
+                method.isRepeated,
+                overloaded = ctorOverloadedTypes.contains(typeName),
+            )
+        } else {
+            mangleMethodSymbol("${typeName}_${method.name}")
+        }
         val symbol = table.lookupFunction(mangled)!!
         val previousOwner = currentTraceOwner
         currentTraceOwner = mangled
@@ -1482,7 +1502,7 @@ class IrGenerator(private val table: SymbolTable) {
      *
      * A pack says how it prints by implementing `Display`, and this is where
      * that implementation is reached - not the backend's own idea of what the
-     * value looks like: `std::format` builds the
+     * value looks like: `format` builds the
      * `Formatter`, hands it to `display`, and returns what was written.
      *
      * Everything else formats as it always did.
@@ -1649,7 +1669,7 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /** The factory that runs a declared `ctor` of the given arity. */
-    private fun ctorFactoryName(typeName: String, arity: Int): String = "__ctor_${typeName}_$arity"
+    private fun ctorFactoryName(typeName: String, arity: Int): String = ctorFactorySymbol(typeName, arity)
 
     /**
      * The symbol of a member declared in an `impl` on an aggregate builtin, or
@@ -1699,7 +1719,7 @@ class IrGenerator(private val table: SymbolTable) {
      * The call `expr` reads as a member of a value a `with` block opened, or null.
      *
      * `with c { bump() }` is `c.bump()`, and a realm-qualified call reaches its
-     * contextual receiver the same way: `std::yield(1)` names the member `yield`,
+     * contextual receiver the same way: `yield(1)` names the member `yield`,
      * and the realm only says where it was declared, not what it is called on.
      *
      * This is tried before construction, so a member and a pack may share a name:
@@ -1816,7 +1836,7 @@ class IrGenerator(private val table: SymbolTable) {
                     return IrExpr.Call(userCast, listOf(inner), result)
                 }
                 when {
-                    // `x as? T` / `std::dyncast<T>(x)` - runtime-checked downcast to `T?`:
+                    // `x as? T` / `dyncast<T>(x)` - runtime-checked downcast to `T?`:
                     // the value if it is a `T`, otherwise null.
                     expr.kind == CastKind.DYNAMIC ->
                         IrExpr.Call(
@@ -1834,7 +1854,7 @@ class IrGenerator(private val table: SymbolTable) {
                     expr.kind == CastKind.STATIC && target == IrType.String &&
                         innerType is IrType.Named && table.lookupEnum(innerType.name) != null ->
                         stringifyEnum(inner)
-                    // `x as String` / `std::cast<String>(x)` - converting cast: stringify
+                    // `x as String` / `cast<String>(x)` - converting cast: stringify
                     // the value via the single-part string-template machinery (equivalent
                     // to "${x}"), which every backend already supports. `as*` (reinterpret)
                     // never stringifies.
@@ -1858,7 +1878,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.IsCheck -> {
                 val inner = lowerExpr(expr.expr)
-                // `x is std::Int` carries the realm-qualified name; the runtime
+                // `x is Int` carries the realm-qualified name; the runtime
                 // compares against the type's own name, which is what a
                 // declaration is registered under.
                 val typeName = table.canonicalTypeName(expr.typeName)
@@ -2308,7 +2328,7 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                         else -> func.returnType
                     }
-                    val displayArgs = if (func.name == "std__println" || func.name == "std__print") {
+                    val displayArgs = if (symbolDenotes(func.name, Intrinsics.PRINTLN) || symbolDenotes(func.name, Intrinsics.PRINT)) {
                         effectiveArgs.map(::stringifyEnum)
                     } else {
                         // An integer literal passed where a float is declared becomes
@@ -2343,11 +2363,13 @@ class IrGenerator(private val table: SymbolTable) {
                         receiver = IrExpr.Var(resolveName(expr.callee), v.type),
                     )
                 }
-                // Compiler builtin: `std::convert::toString(x)` stringifies any
+                // Compiler builtin: `convert::toString(x)` stringifies any
                 // value (implemented natively by CTCE and every backend).
-                if (expr.callee == "std__convert__toString") {
+                if (symbolDenotes(expr.callee, Intrinsics.TO_STRING)) {
                     val args = expr.args.map { stringifyEnum(lowerExpr(it)) }
-                    return IrExpr.Call("std__convert__toString", args, IrType.String)
+                    // Keep the name the source used; only the behaviour is the
+                    // compiler's, not the spelling.
+                    return IrExpr.Call(expr.callee, args, IrType.String)
                 }
                 error("undefined function or variable '${expr.callee}'")
             }
@@ -2807,7 +2829,7 @@ class IrGenerator(private val table: SymbolTable) {
                     table.defineVariable(VariableSymbol(p.name, t))
                     m to t
                 }
-                // A lambda that inherits its receivers (`std::sequence { std::yield(1) }`)
+                // A lambda that inherits its receivers (`sequence { yield(1) }`)
                 // declares none, so the bindings are synthesized here under the name the
                 // resolver already used, and made available to calls in the body exactly
                 // as a `with` block would.
@@ -3087,7 +3109,7 @@ class IrGenerator(private val table: SymbolTable) {
     private fun resolveTypeAnnotation(ann: TypeAnnotation, init: IrExpr): IrType = when (ann) {
         is TypeAnnotation.Explicit -> {
             val declared = resolveType(ann.ref)
-            // `var xs: std::List<Int> = @std::arr[1, 2, 3]` - the checker accepts
+            // `var xs: List<Int> = @arr[1, 2, 3]` - the checker accepts
             // a collection literal against the matching std pack name, but the
             // value is still the literal's own representation. Taking the
             // declared name here would leave the *type* saying `List` while the

@@ -48,8 +48,8 @@ class BindingMutabilityTest {
 
     private val point = """
         pack Point {
-            var x: std::Int
-            var y: std::Int
+            var x: Int
+            var y: Int
         }
     """.trimIndent()
 
@@ -100,7 +100,7 @@ class BindingMutabilityTest {
     """, "cannot assign to member 'x' through 'p'")
 
     @Test fun immutabilityReachesThroughAWholeAccessChain() = rejects("""
-        pack Inner { var v: std::Int }
+        pack Inner { var v: Int }
         pack Outer { var inner: Inner }
         func main() {
             fin o = Outer(Inner(1))
@@ -110,7 +110,7 @@ class BindingMutabilityTest {
 
     @Test fun indexAssignmentFollowsTheValueAxis() = rejects("""
         func main() {
-            val xs = @std::arr[1, 2, 3]
+            val xs = @arr[1, 2, 3]
             xs[0] = 9
         }
     """, "cannot assign by index through 'xs'")
@@ -118,8 +118,8 @@ class BindingMutabilityTest {
     // -- borrows -------------------------------------------------------------
 
     private val borrowers = """
-        func read(n: std::Int&): std::Int { return n }
-        func bump(n: std::Int!) { n = n + 1 }
+        func read(n: Int&): Int { return n }
+        func bump(n: Int!) { n = n + 1 }
     """.trimIndent()
 
     @Test fun everyBindingSupportsASharedBorrow() = accepts("""
@@ -175,7 +175,7 @@ class BindingMutabilityTest {
         inline let second = 2
         inline val third = 3
         inline fin fourth = 4
-        func total(): std::Int {
+        func total(): Int {
             return first + second + third + fourth
         }
     """)
@@ -183,7 +183,7 @@ class BindingMutabilityTest {
     // A global is shared, and what makes sharing unsafe is that the name can be
     // rebound - so `val` is excluded from top level for the same reason as `var`.
     @Test fun aTopLevelValIsRejectedLikeATopLevelVar() = rejects("""
-        val counter: std::Int = 0
+        val counter: Int = 0
         func main() {
             counter = 1
         }

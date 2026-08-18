@@ -25,16 +25,16 @@ class Tier4ConcurrencyTest {
         assertEquals("5\n21\n20", run("""
             import std.io
 
-            async func compute(n: std::Int): std::Int {
+            async func compute(n: Int): Int {
                 return n * 2
             }
 
             func main() {
                 var async = 5
-                std::println(async)
+                println(async)
                 fin handle = async { 21 }
-                std::println(await handle)
-                std::println(await compute(10))
+                println(await handle)
+                println(await compute(10))
             }
         """.trimIndent()))
     }
@@ -46,7 +46,7 @@ class Tier4ConcurrencyTest {
                 var t = async {
                     42
                 }
-                std::println(await t)
+                println(await t)
             }
         """.trimIndent()))
     }
@@ -54,14 +54,14 @@ class Tier4ConcurrencyTest {
     @Test fun taskAwaitComputedResult() {
         assertEquals("30", run("""
             import std.io
-            func compute(a: std::Int, b: std::Int): std::Int {
+            func compute(a: Int, b: Int): Int {
                 return a * b
             }
             func main() {
                 var t = async {
                     compute(5, 6)
                 }
-                std::println(await t)
+                println(await t)
             }
         """.trimIndent()))
     }
@@ -72,8 +72,8 @@ class Tier4ConcurrencyTest {
             func main() {
                 var t1 = async { 10 }
                 var t2 = async { 20 }
-                std::println(await t1)
-                std::println(await t2)
+                println(await t1)
+                println(await t2)
             }
         """.trimIndent()))
     }
@@ -85,8 +85,8 @@ class Tier4ConcurrencyTest {
                 var ch = channel()
                 ch.send(1)
                 ch.send(2)
-                std::println(ch.receive())
-                std::println(ch.receive())
+                println(ch.receive())
+                println(ch.receive())
             }
         """.trimIndent()))
     }
@@ -95,7 +95,7 @@ class Tier4ConcurrencyTest {
         // A producer task sends values; the consumer receives them via await ordering.
         assertEquals("10\n20", run("""
             import std.io
-            func produce(ch: std::Channel): std::Int {
+            func produce(ch: Channel): Int {
                 ch.send(10)
                 ch.send(20)
                 ch.close()
@@ -107,8 +107,8 @@ class Tier4ConcurrencyTest {
                     produce(ch)
                 }
                 await p
-                std::println(ch.receive())
-                std::println(ch.receive())
+                println(ch.receive())
+                println(ch.receive())
             }
         """.trimIndent()))
     }
@@ -121,7 +121,7 @@ class Tier4ConcurrencyTest {
             func main() {
                 var t1 = async { 100 }
                 var t2 = async { 200 }
-                std::println(await t1 + await t2)
+                println(await t1 + await t2)
             }
         """.trimIndent()))
     }

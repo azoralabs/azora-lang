@@ -5,7 +5,7 @@
 > whole `ReflectedField` type beside it - is unreachable (§5).
 
 Reflection in Azora answers questions at compile time and leaves nothing
-behind. `std::reflect<T>` is not a value: it is a handle the evaluator resolves
+behind. `reflect<T>` is not a value: it is a handle the evaluator resolves
 and deletes, so a program that reflects heavily emits exactly the same code as
 one that wrote the answers out by hand.
 
@@ -16,7 +16,7 @@ annot System
 @System func physics()  { … }
 
 func main() {
-    inline for S in std::reflect<*>.withAnnot<System> {
+    inline for S in reflect<*>.withAnnot<System> {
         S()                    // becomes: movement(); physics()
     }
 }
@@ -30,7 +30,7 @@ program registering anything**.
 ## 1. `reflect` is compile-time only
 
 ```azora
-fin r = std::reflect<P>()
+fin r = reflect<P>()
 // reflect is compile-time-only and must be followed by .hasAnnot<D> or .annotMeta<D>
 ```
 
@@ -53,8 +53,8 @@ compiler bug rather than a runtime call.
 ### 2.1 `hasAnnot<D>` - does it carry this decorator?
 
 ```azora
-inline assert std::reflect<P>.hasAnnot<Marked> { "P is marked" }
-inline assert !std::reflect<Q>.hasAnnot<Marked> { "Q is not" }
+inline assert reflect<P>.hasAnnot<Marked> { "P is marked" }
+inline assert !reflect<Q>.hasAnnot<Marked> { "Q is not" }
 ```
 
 Folds to a boolean.
@@ -67,7 +67,7 @@ annot Tagged { fin label: String = "none" }
 @Tagged(label: "alpha")
 pack P { … }
 
-inline fin l = std::reflect<P>.annotMeta<Tagged>.label     // "alpha"
+inline fin l = reflect<P>.annotMeta<Tagged>.label     // "alpha"
 ```
 
 Reads back the argument that declaration passed, or the decorator's default
@@ -78,7 +78,7 @@ to repeat it in a registration call.
 ### 2.3 `enclosingRealm`
 
 ```azora
-inline fin r = std::reflect<P>.enclosingRealm
+inline fin r = reflect<P>.enclosingRealm
 ```
 
 The realm a declaration sits in, or null.
@@ -88,18 +88,18 @@ The realm a declaration sits in, or null.
 ## 3. Asking about the program
 
 ```azora
-inline for S in std::reflect<*>.withAnnot<System> { … }
+inline for S in reflect<*>.withAnnot<System> { … }
 ```
 
 `reflect<*>` is a **whole-program** handle, and `withAnnot<D>` enumerates every
 declaration carrying `D` - packs, enums and free functions alike. The loop
 unrolls once per declaration with the loop variable bound to its name.
 
-Inside the body, `std::reflect<S>` resolves against the bound declaration:
+Inside the body, `reflect<S>` resolves against the bound declaration:
 
 ```azora
-inline for S in std::reflect<*>.withAnnot<System> {
-    std::println(std::reflect<S>.declName)      // "movement", then "physics"
+inline for S in reflect<*>.withAnnot<System> {
+    println(reflect<S>.declName)      // "movement", then "physics"
 }
 ```
 
@@ -117,7 +117,7 @@ visible.
 The loop works **inside a function body**. At top level it does not:
 
 ```azora
-inline for S in std::reflect<*>.withAnnot<System> {
+inline for S in reflect<*>.withAnnot<System> {
     func run$S() { S() }        // Unknown compile-time list 'std'
 }
 ```
@@ -158,10 +158,10 @@ used, and it is the one a reader is most likely to reach for.
 | `fields`         | ⬜ **unreachable**                  |
 
 ```azora
-inline for f in std::reflect<P>.fields { … }
+inline for f in reflect<P>.fields { … }
 // inline for requires a literal range, got Member
 
-std::println(std::reflect<p>.fields.length)
+println(reflect<p>.fields.length)
 // reflect is compile-time-only and must be followed by .hasAnnot<D> or .annotMeta<D>
 ```
 
@@ -197,7 +197,7 @@ equally unreachable, since nothing can produce one.
 ## 7. Rules
 
 1. `reflect` is compile-time only. A query that reaches run time is an error.
-2. `std::reflect<T>` asks about one declaration; `std::reflect<*>` about the
+2. `reflect<T>` asks about one declaration; `reflect<*>` about the
    program.
 3. `withAnnot<D>` enumerates every declaration carrying `D`, in declaration
    order, and is the only enumeration there is.

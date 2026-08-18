@@ -26,7 +26,7 @@
  */
 module std.io
 
-factory Format {
+scope fmt {
     /** A newline character. */
     @Since("0.1")
     fin newline = "\n"

@@ -26,19 +26,12 @@ macro @arr[...$items] => std.container.array::Array(...$items) // generic will i
 /**
  * Builds an immutable [List].
  *
- * @1 `@vec[1, 2, 3]` expands to `std.container.list::List<Int>(1, 2, 3)`.
+ * @1 `@vec[1, 2, 3]` expands to `std.container.list::ArrayList<Int>(1, 2, 3)`.
+ * @2 `@vec![1, 2, 3]` expands to `std.container.list::MutableArrayList<Int>(1, 2, 3)`.
  */
-macro @vec [...$items] => std.container.list::List(...$items) // generic will infer from first item type
-
-/**
- * Builds a mutable [List].
- *
- * @0 `@vec![]` expands to `emptyMutableList()`.
- * @1 `@vec![1, 2, 3]` expands to `mutableListOf(1, 2, 3)`.
- */
-macro @vec! {
-    [] => emptyMutableList()
-    [...$items] => mutableListOf(...$items)
+macro @vec {
+    [...$items] => std.container.list::ArrayList(...$items) // generic will infer from first item type
+    ![...$items] => std.container.list::MutableArrayList(...$items) // generic will infer from first item type
 }
 
 /**
@@ -88,9 +81,8 @@ macro @map! {
 /**
  * Builds a [Deque].
  *
- * @1 `@deq![1, 2, 3]` expands to `Deque<T>(1, 2, 3)`.
+ * @1 `@deq[1, 2, 3]` expands to `Deque<T>(1, 2, 3)`.
  */
-macro @deq! {
+macro @deq {
     [] => std.container.deque::Deque()
-    [...${key: value}] => mutableMapOf(...mapEntry($key, $value))
 }

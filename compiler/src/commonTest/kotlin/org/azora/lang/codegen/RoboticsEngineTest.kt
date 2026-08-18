@@ -36,33 +36,33 @@ class RoboticsEngineTest {
                 import std.io
 
                 func main() {
-                    fin rotation = std::quaternion(0.0, 0.0, 0.0, 2.0)
-                    fin moved = std::pose(std::vector3(1.0, 2.0, 3.0), rotation)
-                    fin point = std::transformPoint(moved, std::vector3(1.0, 0.0, 0.0))
-                    std::println(point.x)
-                    std::println(point.y)
-                    std::println(point.z)
+                    fin rotation = quaternion(0.0, 0.0, 0.0, 2.0)
+                    fin moved = pose(vector3(1.0, 2.0, 3.0), rotation)
+                    fin point = transformPoint(moved, vector3(1.0, 0.0, 0.0))
+                    println(point.x)
+                    println(point.y)
+                    println(point.z)
 
-                    fin limit = std::JointLimit("arm", -1.0, 1.0, 2.0, 4.0)
-                    std::println(std::withinLimit(0.5, limit))
-                    fin command = std::boundedPositionCommand("arm", 5.0, 100L, limit)
-                    std::println(command.value)
+                    fin limit = JointLimit("arm", -1.0, 1.0, 2.0, 4.0)
+                    println(withinLimit(0.5, limit))
+                    fin command = boundedPositionCommand("arm", 5.0, 100L, limit)
+                    println(command.value)
 
-                    fin names: std::Array<std::String> = @std::arr["arm"]
-                    fin positions: std::Array<std::Double> = @std::arr[0.0]
-                    fin velocities: std::Array<std::Double> = @std::arr[0.0]
-                    fin point0 = std::TrajectoryPoint(0.0, positions, velocities)
-      fin points: std::Array<std::TrajectoryPoint> = @std::arr[take point0]
-                    fin trajectory = std::Trajectory(names, points)
-                    std::println(std::validTrajectory(trajectory))
+                    fin names: Array<String> = @arr["arm"]
+                    fin positions: Array<Double> = @arr[0.0]
+                    fin velocities: Array<Double> = @arr[0.0]
+                    fin point0 = TrajectoryPoint(0.0, positions, velocities)
+      fin points: Array<TrajectoryPoint> = @arr[take point0]
+                    fin trajectory = Trajectory(names, points)
+                    println(validTrajectory(trajectory))
 
-      fin badNames: std::Array<std::String> = @std::arr["arm"]
-      fin badPositions: std::Array<std::Double> = @std::arr[0.0]
-      fin badVelocities: std::Array<std::Double> = @std::arr[0.0]
-      fin badPoint = std::TrajectoryPoint(-1.0, badPositions, badVelocities)
-      fin badPoints: std::Array<std::TrajectoryPoint> = @std::arr[take badPoint]
-      fin badTrajectory = std::Trajectory(badNames, badPoints)
-                    std::println(std::validTrajectory(badTrajectory))
+      fin badNames: Array<String> = @arr["arm"]
+      fin badPositions: Array<Double> = @arr[0.0]
+      fin badVelocities: Array<Double> = @arr[0.0]
+      fin badPoint = TrajectoryPoint(-1.0, badPositions, badVelocities)
+      fin badPoints: Array<TrajectoryPoint> = @arr[take badPoint]
+      fin badTrajectory = Trajectory(badNames, badPoints)
+                    println(validTrajectory(badTrajectory))
                 }
                 """,
             ),

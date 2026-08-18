@@ -46,7 +46,7 @@ class DebugSessionTest {
             for i in 1..3 {
                 total = total + i
             }
-            std::println(total)
+            println(total)
         }
     """.trimIndent()
 
@@ -95,7 +95,7 @@ class DebugSessionTest {
 
     @Test
     fun runWithoutBreakpointsJustFinishes() {
-        azls.debugStart("import std.io\nfunc main() {\n    std::println(\"done\")\n}", "", "[]")
+        azls.debugStart("import std.io\nfunc main() {\n    println(\"done\")\n}", "", "[]")
         val out = StringBuilder()
         awaitStatus("terminated", out)
         assertEquals("done", out.toString().trim())
@@ -109,8 +109,8 @@ class DebugSessionTest {
 
     @Test
     fun preludeLinesNeverPause() {
-        val prelude = "import std.io\nfunc helper(): std::Int {\n    return 41\n}"
-        azls.debugStart("func main() {\n    std::println(helper() + 1)\n}", prelude, "[2]")
+        val prelude = "import std.io\nfunc helper(): Int {\n    return 41\n}"
+        azls.debugStart("func main() {\n    println(helper() + 1)\n}", prelude, "[2]")
         val paused = awaitPause(0)
         assertEquals(2, paused.line, "pause maps back to the document line")
         azls.debugResume()

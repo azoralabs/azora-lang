@@ -29,22 +29,22 @@ class SecurityStdlibTest {
                 import std.io
 
                 func main() {
-                    fin policy = std::defaultPasswordPolicy()
-                    std::println(std::passwordMeetsPolicy("AzoraSecure1!", policy))
-                    std::println(std::passwordMeetsPolicy("short", policy))
-                    std::println(std::validPasswordHashOptions(std::PasswordHashOptions()))
-                    fin weak = std::PasswordHashOptions(std::PasswordAlgorithm.Argon2id, 1024, 1, 0)
-                    std::println(std::validPasswordHashOptions(weak))
-                    std::println(std::redacted("token"))
-                    fin event = std::auditEvent(
+                    fin policy = defaultPasswordPolicy()
+                    println(passwordMeetsPolicy("AzoraSecure1!", policy))
+                    println(passwordMeetsPolicy("short", policy))
+                    println(validPasswordHashOptions(PasswordHashOptions()))
+                    fin weak = PasswordHashOptions(PasswordAlgorithm.Argon2id, 1024, 1, 0)
+                    println(validPasswordHashOptions(weak))
+                    println(redacted("token"))
+                    fin event = auditEvent(
                         "read",
                         "service:payments",
-                        std::SecurityLevel.Restricted,
-                        std::AuditOutcome.Allowed,
-                        std::redacted("detail"),
+                        SecurityLevel.Restricted,
+                        AuditOutcome.Allowed,
+                        redacted("detail"),
                     )
-                    std::println(event.level == std::SecurityLevel.Restricted)
-                    std::println(event.outcome == std::AuditOutcome.Allowed)
+                    println(event.level == SecurityLevel.Restricted)
+                    println(event.outcome == AuditOutcome.Allowed)
                 }
                 """,
             ),

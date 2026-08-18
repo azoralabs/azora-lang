@@ -53,7 +53,7 @@ class LambdaCaptureTest {
         assertEquals("hi", run("""
             import std.io
             func main() {
-                fin cb = { std::println("hi") }
+                fin cb = { println("hi") }
                 cb()
             }
         """.trimIndent()))
@@ -65,7 +65,7 @@ class LambdaCaptureTest {
             import std.io
             fin G = 5
             func main() {
-                fin cb = { std::println(G) }
+                fin cb = { println(G) }
                 cb()
             }
         """.trimIndent()))
@@ -75,8 +75,8 @@ class LambdaCaptureTest {
         assertEquals("6", run("""
             import std.io
             func main() {
-                fin double: (std::Int) -> std::Int = { it * 2 }
-                std::println(double(3))
+                fin double: (Int) -> Int = { it * 2 }
+                println(double(3))
             }
         """.trimIndent()))
     }
@@ -86,17 +86,17 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var a = 7
-                fin shared = [; &] { std::println(a) }
+                fin shared = [; &] { println(a) }
                 shared()
 
                 var b = 3
-                fin copied = [; =] { std::println(b) }
+                fin copied = [; =] { println(b) }
                 copied()
 
                 var c = 1
                 fin bumped = [; !] { c = c + 1 }
                 bumped()
-                std::println(c)
+                println(c)
             }
         """.trimIndent()))
     }
@@ -106,13 +106,13 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var read = 9
-                fin show = [; read.&] { std::println(read) }
+                fin show = [; read.&] { println(read) }
                 show()
 
                 var count = 1
                 fin bump = [; count.!] { count = count + 4 }
                 bump()
-                std::println(count)
+                println(count)
             }
         """.trimIndent()))
     }
@@ -124,7 +124,7 @@ class LambdaCaptureTest {
             func main() {
                 var a = 1
                 var b = 2
-                fin cb = [; a.&] { std::println(b) }
+                fin cb = [; a.&] { println(b) }
                 cb()
             }
         """.trimIndent())
@@ -138,7 +138,7 @@ class LambdaCaptureTest {
             func main() {
                 var n = 1
                 fin outer = [; n.&] {
-                    fin inner = { std::println(n) }
+                    fin inner = { println(n) }
                     inner()
                 }
                 outer()
@@ -175,8 +175,8 @@ class LambdaCaptureTest {
             import std.io
             import std.traits
             func main() {
-                var xs = std::listOf<std::Int>()
-                fin cb = [; xs] { std::println(xs.size) }
+                var xs = listOf<Int>()
+                fin cb = [; xs] { println(xs.size) }
                 cb()
             }
         """.trimIndent())
@@ -190,8 +190,8 @@ class LambdaCaptureTest {
         assertEquals("0", run("""
             import std.io
             func main() {
-                var xs = std::listOf<std::Int>()
-                fin cb = [; xs.&] { std::println(xs.size) }
+                var xs = listOf<Int>()
+                fin cb = [; xs.&] { println(xs.size) }
                 cb()
             }
         """.trimIndent()))
@@ -202,9 +202,9 @@ class LambdaCaptureTest {
         val found = errors("""
             import std.io
             func main() {
-                var s: std::String = "hi"
-                fin cb = [; take s] { std::println(s) }
-                std::println(s)
+                var s: String = "hi"
+                fin cb = [; take s] { println(s) }
+                println(s)
             }
         """.trimIndent())
         assertTrue(found.any { "use of taken value 's'" in it }, found.toString())
@@ -215,8 +215,8 @@ class LambdaCaptureTest {
         assertEquals("hi", run("""
             import std.io
             func main() {
-                var s: std::String = "hi"
-                fin cb = [; take s] { std::println(s) }
+                var s: String = "hi"
+                fin cb = [; take s] { println(s) }
                 cb()
             }
         """.trimIndent()))
@@ -229,7 +229,7 @@ class LambdaCaptureTest {
      */
     @Test fun aReturnedClosureMayNotBorrow() {
         val found = errors("""
-            func make(): () -> std::Int {
+            func make(): () -> Int {
                 var n = 5
                 return [; n.&] { n }
             }
@@ -244,17 +244,17 @@ class LambdaCaptureTest {
     @Test fun aReturnedClosureMayOwnWhatItCaptures() {
         assertEquals("5", run("""
             import std.io
-            func make(): () -> std::Int {
+            func make(): () -> Int {
                 var n = 5
                 return [; n] { n }
             }
-            func main() { std::println(make()()) }
+            func main() { println(make()()) }
         """.trimIndent()))
     }
 
     @Test fun anEscapingDefaultRejectsTheBindingsItActuallyBorrows() {
         val found = errors("""
-            func make(): () -> std::Int {
+            func make(): () -> Int {
                 var n = 5
                 return [; &] { n }
             }
@@ -266,21 +266,21 @@ class LambdaCaptureTest {
     @Test fun anUnusedBorrowDefaultDoesNotCaptureTheSurroundingScope() {
         assertEquals("5", run("""
             import std.io
-            func make(): () -> std::Int {
+            func make(): () -> Int {
                 var untouched = 9
                 return [; &] { 5 }
             }
-            func main() { std::println(make()()) }
+            func main() { println(make()()) }
         """.trimIndent()))
     }
 
     /** `escaping` marks a parameter that keeps the callable past the call. */
     @Test fun anEscapingParameterRequiresOwnedCaptures() {
         val found = errors("""
-            func onEvent(handler: escaping (std::Int) -> std::Unit) { }
+            func onEvent(handler: escaping (Int) -> Unit) { }
             func main() {
                 var n = 1
-                onEvent([; n.&] { std::println(n) })
+                onEvent([; n.&] { println(n) })
             }
         """.trimIndent())
         assertTrue(
@@ -296,14 +296,14 @@ class LambdaCaptureTest {
     @Test fun escapingBelongsToTheTypeNotTheValue() {
         assertEquals("ok", run("""
             import std.io
-            pack Button { var onClick: escaping (std::Int) -> std::Unit = { } }
-            func onEvent(handler: escaping (std::Int) -> std::Unit) { }
-            func twice(f: (std::Int) -> std::Unit) { }
+            pack Button { var onClick: escaping (Int) -> Unit = { } }
+            func onEvent(handler: escaping (Int) -> Unit) { }
+            func twice(f: (Int) -> Unit) { }
             func main() {
                 fin b = Button({ })
                 onEvent({ })
                 twice({ })
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent()))
     }
@@ -312,14 +312,14 @@ class LambdaCaptureTest {
     @Test fun receiversAndCapturesShareTheBracketList() {
         assertEquals("4", run("""
             import std.io
-            pack Sink { var total: std::Int = 0 }
-            impl Sink { func push[self: std::Self!](n: std::Int) { self.total = self.total + n } }
+            pack Sink { var total: Int = 0 }
+            impl Sink { func push[self: Self!](n: Int) { self.total = self.total + n } }
             func main() {
                 var step = 4
                 fin fill = [sink: Sink!; step.&] { sink.push(step) }
                 var sink = Sink(0)
                 with sink { fill() }
-                std::println(sink.total)
+                println(sink.total)
             }
         """.trimIndent()))
     }
@@ -343,11 +343,11 @@ class LambdaCaptureTest {
                 var copied = 7
                 fin update = [; =, changed.!] {
                     changed = changed + 5
-                    std::println(copied)
+                    println(copied)
                 }
                 copied = 9
                 update()
-                std::println(changed)
+                println(changed)
             }
         """.trimIndent()))
     }
@@ -358,9 +358,9 @@ class LambdaCaptureTest {
             func main() {
                 fin used = "used"
                 fin untouched = "kept"
-                fin consume = [; take] { std::println(used) }
+                fin consume = [; take] { println(used) }
                 consume()
-                std::println(untouched)
+                println(untouched)
             }
         """.trimIndent()))
     }
@@ -370,8 +370,8 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 fin used = "used"
-                fin consume = [; take] { std::println(used) }
-                std::println(used)
+                fin consume = [; take] { println(used) }
+                println(used)
             }
         """.trimIndent())
         assertTrue(found.any { "use of taken value 'used'" in it }, found.toString())
@@ -387,10 +387,10 @@ class LambdaCaptureTest {
                 fin moved = "move"
                 fin consumeAll = [; target = n.!, a = copied, b = cloned.clone(), c = take moved] {
                     target = target + 1
-                    std::println(target)
-                    std::println(a)
-                    std::println(b)
-                    std::println(c)
+                    println(target)
+                    println(a)
+                    println(b)
+                    println(c)
                 }
                 consumeAll()
             }
@@ -440,7 +440,7 @@ class LambdaCaptureTest {
         val found = errors("""
             func main() {
                 var outer = 1
-                fin invalid = [value: std::Int; value = outer] { value }
+                fin invalid = [value: Int; value = outer] { value }
             }
         """.trimIndent())
         assertTrue(found.any { "cannot be both a receiver and a capture" in it }, found.toString())
@@ -453,9 +453,9 @@ class LambdaCaptureTest {
                 fin identity = <T> { value: T -> value }
                 fin homogeneous = <T> { ...values: T -> values.size }
                 fin heterogeneous = <...T> { values: ...T -> values.size }
-                std::println(identity(7))
-                std::println(homogeneous(1, 2, 3))
-                std::println(heterogeneous(1, "two", true))
+                println(identity(7))
+                println(homogeneous(1, 2, 3))
+                println(heterogeneous(1, "two", true))
             }
         """.trimIndent()))
     }
@@ -465,8 +465,8 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var offset = 2
-                fin add = <T>[context: T&; offset.&] { value: std::Int -> value + offset }
-                with 10 { std::println(add(10)) }
+                fin add = <T>[context: T&; offset.&] { value: Int -> value + offset }
+                with 10 { println(add(10)) }
             }
         """.trimIndent()))
     }
@@ -486,7 +486,7 @@ class LambdaCaptureTest {
             func main() {
                 fin message = "ready"
                 fin worker = async [; take] { message }
-                std::println(await worker)
+                println(await worker)
             }
         """.trimIndent()))
     }
@@ -525,7 +525,7 @@ class LambdaCaptureTest {
 
     @Test fun contextualCallableTypesAlwaysRequireParentheses() {
         val found = errors("""
-            fin invalid: [std::Int, std::Int] -> std::Int = [left, right] { left + right }
+            fin invalid: [Int, Int] -> Int = [left, right] { left + right }
             func main() { }
         """.trimIndent())
         assertTrue(found.any { "write '()'" in it }, found.toString())
@@ -534,9 +534,9 @@ class LambdaCaptureTest {
     @Test fun contextualCallableTypeWithEmptyParameterListIsAccepted() {
         assertEquals("3", run("""
             import std.io
-            fin add: [std::Int, std::Int]() -> std::Int = [left, right] { left + right }
+            fin add: [Int, Int]() -> Int = [left, right] { left + right }
             func main() {
-                with [1, 2] { std::println(add()) }
+                with [1, 2] { println(add()) }
             }
         """.trimIndent()))
     }

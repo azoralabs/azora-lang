@@ -49,11 +49,11 @@ class DisplaySpecTest {
         val result = compile("""
             import std.io
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
-                std::println("${'$'}{Vec2(1, 2)}")
+                println("${'$'}{Vec2(1, 2)}")
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result, "a pack with no Display must not interpolate")
@@ -68,11 +68,11 @@ class DisplaySpecTest {
             import std.io
             import std.format
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
-            impl std::Display for Vec2 {
-                func display[self: std::Self&](formatter: std::Formatter!) {
+            impl Display for Vec2 {
+                func display[self: Self&](formatter: Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")
@@ -81,7 +81,7 @@ class DisplaySpecTest {
                 }
             }
             func main() {
-                std::println("${'$'}{Vec2(1, 2)}")
+                println("${'$'}{Vec2(1, 2)}")
             }
         """.trimIndent()))
     }
@@ -92,14 +92,14 @@ class DisplaySpecTest {
             import std.io
             import std.format
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             pack Wrapper {
                 var inner: Vec2
             }
-            impl std::Display for Vec2 {
-                func display[self: std::Self&](formatter: std::Formatter!) {
+            impl Display for Vec2 {
+                func display[self: Self&](formatter: Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")
@@ -107,15 +107,15 @@ class DisplaySpecTest {
                     formatter.write(")")
                 }
             }
-            impl std::Display for Wrapper {
-                func display[self: std::Self&](formatter: std::Formatter!) {
+            impl Display for Wrapper {
+                func display[self: Self&](formatter: Formatter!) {
                     formatter.write("[")
                     self.inner.display(formatter)
                     formatter.write("]")
                 }
             }
             func main() {
-                std::println("${'$'}{Wrapper(Vec2(1, 2))}")
+                println("${'$'}{Wrapper(Vec2(1, 2))}")
             }
         """.trimIndent()))
     }
@@ -129,25 +129,25 @@ class DisplaySpecTest {
                 Green
             }
             func main() {
-                std::println("${'$'}{1}")
-                std::println("${'$'}{true}")
-                std::println("${'$'}{"x"}")
-                std::println("${'$'}{Colour.Red}")
+                println("${'$'}{1}")
+                println("${'$'}{true}")
+                println("${'$'}{"x"}")
+                println("${'$'}{Colour.Red}")
             }
         """.trimIndent()))
     }
 
-    /** `std::format` is the one-shot form of the same thing. */
+    /** `format` is the one-shot form of the same thing. */
     @Test fun formatRendersThroughDisplay() {
         assertEquals("Vec2(3, 4)", run("""
             import std.io
             import std.format
             pack Vec2 {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
-            impl std::Display for Vec2 {
-                func display[self: std::Self&](formatter: std::Formatter!) {
+            impl Display for Vec2 {
+                func display[self: Self&](formatter: Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")
@@ -156,7 +156,7 @@ class DisplaySpecTest {
                 }
             }
             func main() {
-                std::println(std::format(Vec2(3, 4)))
+                println(format(Vec2(3, 4)))
             }
         """.trimIndent()))
     }

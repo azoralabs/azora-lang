@@ -20,9 +20,9 @@ class TupleVariadicWasmExecTest {
             import std.io
             import std.container.*
             func main() {
-                fin x = std::tupleOf(1, 2)
-                std::println(x.0)
-                std::println(x.1)
+                fin x = tupleOf(1, 2)
+                println(x.0)
+                println(x.1)
             }
         """.trimIndent()))
     }
@@ -33,10 +33,10 @@ class TupleVariadicWasmExecTest {
             import std.io
             import std.container.*
             func main() {
-                fin t = std::tupleOf(1, 2, 3)
-                std::println(t.0)
-                std::println(t.1)
-                std::println(t.2)
+                fin t = tupleOf(1, 2, 3)
+                println(t.0)
+                println(t.1)
+                println(t.2)
             }
         """.trimIndent()))
     }

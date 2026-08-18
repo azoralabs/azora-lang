@@ -130,7 +130,7 @@ class Compiler(
      */
     /** Points unknown symbols at their imported realm path or providing module. */
     private fun withLibraryHint(message: String, program: Program, libraries: StdlibInjector): String {
-        // The message already carries the source spelling (`std::println`), while
+        // The message already carries the source spelling (`println`), while
         // the tables are keyed by the frontend's internal one - so the name is read
         // in source form, looked up in internal form, and reported in source form.
         val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)'")
@@ -258,7 +258,7 @@ class Compiler(
         // matched arm's template (splice-substituting `$captures`) and remove
         // the `TopLevel.Meta` declarations. Runs after stdlib injection so both
         // user-defined and library macros are available, and before variadic
-        // monomorphization so macro-generated variadic calls (e.g. std::listOf)
+        // monomorphization so macro-generated variadic calls (e.g. listOf)
         // monomorphize normally. The result is plain expressions - no IR/backend
         // awareness of macros is needed.
         val macroExpanded = try {
@@ -299,7 +299,7 @@ class Compiler(
             val typeExpanded = VariadicMonomorphizer.monomorphize(macroReInjected)
             // What this injection pulls in has never been through macro
             // expansion: a module reached for the first time here still spells
-            // `@std::arr[…]`, and nothing downstream expands one.
+            // `@arr[…]`, and nothing downstream expands one.
             val typeReInjected = SpecDefaults.apply(
                 MacroExpander.expand(
                     CallbackImplNormalizer.normalize(libraries.inject(typeExpanded)),

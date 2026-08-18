@@ -16,6 +16,8 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.ir.Intrinsics
+import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.OPTIONAL_UNWRAP
 import org.azora.lang.frontend.OwnershipOp
@@ -2121,9 +2123,9 @@ class TypeResolver(private val table: SymbolTable) {
                         expr.typeArgs.map { IrType.resolve(it) },
                     )
                 }
-                // `std::convert::toString(x)` is a compiler builtin (special-cased in
+                // `convert::toString(x)` is a compiler builtin (special-cased in
                 // CTCE and every backend); it stringifies any value.
-                if (expr.callee == "std__convert__toString") {
+                if (symbolDenotes(expr.callee, Intrinsics.TO_STRING)) {
                     expr.args.forEach { resolveExpr(it) ?: return null }
                     return IrType.String
                 }
@@ -2144,7 +2146,7 @@ class TypeResolver(private val table: SymbolTable) {
                     // Inside `with value { … }`, a bare call may be an extension method
                     // on one of the contextual values: `with c { bump() }` == `c.bump()`.
                     // A realm-qualified call reaches its contextual receiver too:
-                    // `std::yield(1)` names the member `yield`, and the realm only
+                    // `yield(1)` names the member `yield`, and the realm only
                     // says where it was declared, not what it is called on.
                     val contextualName = expr.callee.substringAfterLast("__")
                     for ((ctxExpr, ctxType) in contextualValues.asReversed().flatMap { it.values }) {
@@ -2855,7 +2857,7 @@ class TypeResolver(private val table: SymbolTable) {
                                 "line ${expr.line}: cannot interpolate a '${named.name}' - " +
                                     "${named.name} does not implement Display; add " +
                                     "'impl Display for ${named.name} { " +
-                                    "func display[self: Self&](formatter: std::Formatter!) { … } }'",
+                                    "func display[self: Self&](formatter: Formatter!) { … } }'",
                             )
                         }
                     }
@@ -3044,7 +3046,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (p.type == TypeRef.Named("Any") && expected != null) expected
                     else resolveDeclaredType(p.type)
                 }
-                // `std::sequence { std::yield(1) }` - a lambda passed where contextual
+                // `sequence { yield(1) }` - a lambda passed where contextual
                 // receivers are expected inherits them even though it names none. The
                 // body cannot refer to them by name, but a call inside it can take them
                 // as its own contextual receivers, which is what the builder APIs rely on.

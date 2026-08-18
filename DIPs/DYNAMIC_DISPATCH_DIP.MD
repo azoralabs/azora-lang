@@ -168,7 +168,7 @@ fin all = @arr[Square(2), Circle(1)]
 // variadic arguments for 'std__arrayOf' must share a type, got Square and Circle
 ```
 
-An explicit annotation does not help - `std::Array<Shape, 2>` still fails,
+An explicit annotation does not help - `Array<Shape, 2>` still fails,
 because the elements are not upcast to `Shape` before the shared-type check
 runs. So:
 
@@ -181,7 +181,7 @@ Every "a list of things that share a capability" program is unwritable, which is
 most of what people reach for dispatch to do.
 
 - ⬜ Upcast a literal's elements to the annotated element type before checking
-  that they agree, so `std::Array<Shape, 2> = @arr[Square(2), Circle(1)]`
+  that they agree, so `Array<Shape, 2> = @arr[Square(2), Circle(1)]`
   compiles
 
 ### 6.2 The default case answers wrongly and silently

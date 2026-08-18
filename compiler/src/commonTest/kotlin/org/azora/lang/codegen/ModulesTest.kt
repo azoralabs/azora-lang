@@ -28,10 +28,10 @@ class ModulesTest {
         assertEquals("7", run("""
             import std.io
             pack Body {
-                var mass: std::Int
+                var mass: Int
             }
             func main() {
-                std::println(Body(7).mass)
+                println(Body(7).mass)
             }
         """.trimIndent()))
     }
@@ -40,10 +40,10 @@ class ModulesTest {
         val result = Compiler().compile("""
             import std.io
             pack Body {
-                var _cache: std::Int
+                var _cache: Int
             }
             func main() {
-                std::println(Body(7)._cache)
+                println(Body(7)._cache)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -59,15 +59,15 @@ class ModulesTest {
         assertEquals("8", run("""
             import std.io
             pack Body {
-                var _cache: std::Int
+                var _cache: Int
             }
             impl Body {
-                func bumped(): std::Int {
+                func bumped(): Int {
                     return self._cache + 1
                 }
             }
             func main() {
-                std::println(Body(7).bumped())
+                println(Body(7).bumped())
             }
         """.trimIndent()))
     }
@@ -83,18 +83,18 @@ class ModulesTest {
             import std.io
 
             pack Wheel {
-                var mod: std::Int
+                var mod: Int
             }
 
-            func mod(a: std::Int, b: std::Int): std::Int {
+            func mod(a: Int, b: Int): Int {
                 return a % b
             }
 
             func main() {
                 var mod = 7
-                std::println(mod)
-                std::println(mod(17, 5))
-                std::println(Wheel(3).mod)
+                println(mod)
+                println(mod(17, 5))
+                println(Wheel(3).mod)
             }
         """.trimIndent()))
     }
@@ -105,7 +105,7 @@ class ModulesTest {
             import std.io
 
             func main() {
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent()))
     }
@@ -117,13 +117,13 @@ class ModulesTest {
             import std.io
             realm Math {
                 fin PI = 14159
-                func triple(x: std::Int): std::Int {
+                func triple(x: Int): Int {
                     return x * 3
                 }
             }
             func main() {
-                std::println(Math::triple(1))
-                std::println(Math::PI)
+                println(Math::triple(1))
+                println(Math::PI)
             }
         """.trimIndent()))
     }
@@ -132,14 +132,14 @@ class ModulesTest {
         assertEquals("hello\n42", run("""
             import std.io
             realm Utils {
-                func greet(): std::String {
+                func greet(): String {
                     return "hello"
                 }
                 fin answer = 42
             }
             func main() {
-                std::println(Utils::greet())
-                std::println(Utils::answer)
+                println(Utils::greet())
+                println(Utils::answer)
             }
         """.trimIndent()))
     }
@@ -151,7 +151,7 @@ class ModulesTest {
                 fin five = 5
             }
             func main() {
-                std::println(five)
+                println(five)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -167,7 +167,7 @@ class ModulesTest {
             }
             import Const
             func main() {
-                std::println(five)
+                println(five)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -178,7 +178,7 @@ class ModulesTest {
         assertEquals("3\n42", run("""
             import std.io
             realm std {
-                func triple(x: std::Int): std::Int {
+                func triple(x: Int): Int {
                     return x * 3
                 }
             }
@@ -186,8 +186,8 @@ class ModulesTest {
                 fin answer = 42
             }
             func main() {
-                std::println(std::triple(1))
-                std::println(std::answer)
+                println(triple(1))
+                println(answer)
             }
         """.trimIndent()))
     }
@@ -198,14 +198,14 @@ class ModulesTest {
         assertEquals("1\n2", run("""
             import std.io
             realm x {
-                func a(): std::Int { return 1 }
+                func a(): Int { return 1 }
             }
             realm x {
-                func b(): std::Int { return 2 }
+                func b(): Int { return 2 }
             }
             func main() {
-                std::println(x::a())
-                std::println(x::b())
+                println(x::a())
+                println(x::b())
             }
         """.trimIndent()))
     }
@@ -215,7 +215,7 @@ class ModulesTest {
             import std.io
             func main() {
                 var scope = 7
-                std::println(scope)
+                println(scope)
             }
         """.trimIndent()))
 
@@ -223,7 +223,7 @@ class ModulesTest {
             Compiler().compile("""
                 import std.io
                 scope Old {
-                    func nope(): std::Int {
+                    func nope(): Int {
                         return 1
                     }
                 }
@@ -236,11 +236,11 @@ class ModulesTest {
     @Test fun exposeFuncWorks() {
         assertEquals("ok", run("""
             import std.io
-            func helper(): std::String {
+            func helper(): String {
                 return "ok"
             }
             func main() {
-                std::println(helper())
+                println(helper())
             }
         """.trimIndent()))
     }
@@ -248,11 +248,11 @@ class ModulesTest {
     @Test fun confineFuncWorksInSameFile() {
         assertEquals("private", run("""
             import std.io
-            confined func secret(): std::String {
+            confined func secret(): String {
                 return "private"
             }
             func main() {
-                std::println(secret())
+                println(secret())
             }
         """.trimIndent()))
     }
@@ -261,11 +261,11 @@ class ModulesTest {
         val result = Compiler().compile("""
             import std.io
             pack Secret {
-                confined var value: std::Int
+                confined var value: Int
             }
             func main() {
                 var s = Secret(7)
-                std::println(s.value)
+                println(s.value)
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
@@ -277,7 +277,7 @@ class ModulesTest {
             module myapp
             import std.io
             func main() {
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent()))
     }
@@ -286,11 +286,11 @@ class ModulesTest {
         assertEquals("42", run("""
             import std.io
             pack Container {
-                var v: std::Int
+                var v: Int
             }
             func main() {
                 var c = Container(42)
-                std::println(c.v)
+                println(c.v)
             }
         """.trimIndent()))
     }

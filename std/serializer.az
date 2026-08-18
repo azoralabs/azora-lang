@@ -74,6 +74,7 @@ error SerializationError {
     conversionProvider: "convert",
     providerModule: "std.serializer",
     conversionModule: "std.convert",
+    listModule: "std.container.list",
     deferGeneric: true
 )
 annot Serializable for .Pack binds [Serializer, AzonSerializer] {
@@ -93,6 +94,7 @@ annot Serializable for .Pack binds [Serializer, AzonSerializer] {
     conversionProvider: "convert",
     providerModule: "std.serializer",
     conversionModule: "std.convert",
+    listModule: "std.container.list",
     deferGeneric: true
 )
 annot AzonSerializable for .Pack binds AzonSerializer {

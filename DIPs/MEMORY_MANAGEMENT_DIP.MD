@@ -20,17 +20,17 @@ func main() {
         // cannot use here anymore
  }
 
-    // c++ std::unique_ptr, std::make_unique / rust Box::new
-    fin user3: std::Unique<User> = std::uniqueOf("Fred", 41)
-    // or fin user3 = std::uniqueOf<User>("Fred", 41)
+    // c++ unique_ptr, make_unique / rust Box::new
+    fin user3: Unique<User> = uniqueOf("Fred", 41)
+    // or fin user3 = uniqueOf<User>("Fred", 41)
 
-    // c++ std::shared_ptr, std::make_shared / rust Rc::new
-    fin user4: std::Shared<User> = std::sharedOf("Fred", 41)
-    // or fin user4 = std::sharedOf<User>("Fred", 41)
+    // c++ shared_ptr, make_shared / rust Rc::new
+    fin user4: Shared<User> = sharedOf("Fred", 41)
+    // or fin user4 = sharedOf<User>("Fred", 41)
 
-    // c++ std::shared_ptr, std::make_shared / rust Arc::new
-    fin user5: std::SyncShared<User> = std::syncSharedOf("Fred", 41)
-    // or fin user5 = std::syncSharedOf<User>("Fred", 41)
+    // c++ shared_ptr, make_shared / rust Arc::new
+    fin user5: SyncShared<User> = syncSharedOf("Fred", 41)
+    // or fin user5 = syncSharedOf<User>("Fred", 41)
 }
 ```
 

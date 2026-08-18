@@ -177,7 +177,7 @@ panic "unrecoverable"
 inline panic "unreachable at compile time"
 ```
 
-`trace` prints `[LEVEL] message`. The level is a `std::LogLevel` - `Debug`
+`trace` prints `[LEVEL] message`. The level is a `LogLevel` - `Debug`
 (the default), `Info`, `Warn`, `Error` - and `inline trace` emits at compile
 time, which is how a metaprogram reports what it is generating.
 
@@ -189,7 +189,7 @@ time, which is how a metaprogram reports what it is generating.
 
 ```azora
 test "duration normalizes overflow" {
-    fin value = std::duration(2L, 1500000000L)
+    fin value = duration(2L, 1500000000L)
     assert value.seconds == 3L { "overflow must carry into seconds" }
 }
 

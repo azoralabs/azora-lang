@@ -37,15 +37,15 @@ class SortStdlibTest {
             import std.io
 
             func main() {
-                fin values: std::Array<std::Int> = @std::arr[5, 3, 9, 1, 5, 8, 2]
-                fin sorted: std::Array<std::Int> = std::sort<std::Int>(values)
+                fin values: Array<Int> = @arr[5, 3, 9, 1, 5, 8, 2]
+                fin sorted: Array<Int> = sort<Int>(values)
                 var line = ""
                 for i in 0..<sorted.size {
                     line = line + "${'$'}{sorted[i]} "
                 }
-                std::println(line)
-                std::println(values[0])
-                std::println(std::isSorted<std::Int>(sorted))
+                println(line)
+                println(values[0])
+                println(isSorted<Int>(sorted))
             }
             """,
         )
@@ -62,14 +62,14 @@ class SortStdlibTest {
             import std.io
 
             func main() {
-                fin values: std::Array<std::Int> = @std::arr[4, 1, 7, 1, 9]
-                fin down: std::Array<std::Int> = std::sortDescending<std::Int>(values)
+                fin values: Array<Int> = @arr[4, 1, 7, 1, 9]
+                fin down: Array<Int> = sortDescending<Int>(values)
                 var line = ""
                 for i in 0..<down.size {
                     line = line + "${'$'}{down[i]} "
                 }
-                std::println(line)
-                std::println(std::isSortedDescending<std::Int>(down))
+                println(line)
+                println(isSortedDescending<Int>(down))
             }
             """,
         )
@@ -92,15 +92,15 @@ class SortStdlibTest {
 
             func main() {
                 fin count = 50
-                var values: std::Array<std::Int> = std::Array::fill<std::Int>(count)
+                var values: Array<Int> = Array::fill<Int>(count)
                 for i in 0..<count {
                     values[i] = (count - i) * 7 % 31
                 }
-                fin sorted: std::Array<std::Int> = std::sort<std::Int>(values)
-                std::println(sorted.size)
-                std::println(std::isSorted<std::Int>(sorted))
-                std::println(sorted[0])
-                std::println(sorted[count - 1])
+                fin sorted: Array<Int> = sort<Int>(values)
+                println(sorted.size)
+                println(isSorted<Int>(sorted))
+                println(sorted[0])
+                println(sorted[count - 1])
             }
             """,
         )
@@ -117,12 +117,12 @@ class SortStdlibTest {
             import std.io
 
             func main() {
-                fin empty: std::Array<std::Int> = std::Array::fill<std::Int>(0)
-                std::println(std::sort<std::Int>(empty).size)
-                fin one: std::Array<std::Int> = @std::arr[42]
-                fin sorted: std::Array<std::Int> = std::sort<std::Int>(one)
-                std::println(sorted.size)
-                std::println(sorted[0])
+                fin empty: Array<Int> = Array::fill<Int>(0)
+                println(sort<Int>(empty).size)
+                fin one: Array<Int> = @arr[42]
+                fin sorted: Array<Int> = sort<Int>(one)
+                println(sorted.size)
+                println(sorted[0])
             }
             """,
         )
@@ -139,26 +139,26 @@ class SortStdlibTest {
             import std.io
 
             pack Entry {
-                var tag: std::String = ""
-                var rank: std::Int = 0
+                var tag: String = ""
+                var rank: Int = 0
             }
 
             func main() {
-                var entries: std::Array<Entry> = std::Array::fill<Entry>(5)
+                var entries: Array<Entry> = Array::fill<Entry>(5)
                 entries[0] = Entry("a", 2)
                 entries[1] = Entry("b", 1)
                 entries[2] = Entry("c", 2)
                 entries[3] = Entry("d", 1)
                 entries[4] = Entry("e", 2)
 
-                fin byRank: std::Array<Entry> = std::sortBy<Entry, std::Int>(
+                fin byRank: Array<Entry> = sortBy<Entry, Int>(
                     entries, { e: Entry -> e.rank }
                 )
                 var line = ""
                 for i in 0..<byRank.size {
                     line = line + byRank[i].tag
                 }
-                std::println(line)
+                println(line)
             }
             """,
         )
@@ -178,33 +178,33 @@ class SortStdlibTest {
             import std.io
 
             pack Person {
-                var name: std::String = ""
-                var age: std::Int = 0
+                var name: String = ""
+                var age: Int = 0
             }
 
             func main() {
-                var people: std::Array<Person> = std::Array::fill<Person>(3)
+                var people: Array<Person> = Array::fill<Person>(3)
                 people[0] = Person("ann", 30)
                 people[1] = Person("bob", 20)
                 people[2] = Person("cy", 25)
 
-                fin byAge: std::Array<Person> = std::sortBy<Person, std::Int>(
+                fin byAge: Array<Person> = sortBy<Person, Int>(
                     people, { p: Person -> p.age }
                 )
                 var ages = ""
                 for i in 0..<byAge.size {
                     ages = ages + "${'$'}{byAge[i].name} "
                 }
-                std::println(ages)
+                println(ages)
 
-                fin byName: std::Array<Person> = std::sortBy<Person, std::String>(
+                fin byName: Array<Person> = sortBy<Person, String>(
                     people, { p: Person -> p.name }
                 )
                 var names = ""
                 for i in 0..<byName.size {
                     names = names + byName[i].name + " "
                 }
-                std::println(names)
+                println(names)
             }
             """,
         )

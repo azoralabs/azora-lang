@@ -44,7 +44,7 @@ class CompoundAssignOperatorTest {
         assertEquals("7", run("""
             import std.io
             pack Money {
-                var cents: std::Int
+                var cents: Int
             }
             oper+ [self: Money&](rhs: Money&): Money {
                 return Money(self.cents + rhs.cents)
@@ -52,7 +52,7 @@ class CompoundAssignOperatorTest {
             func main() {
                 var total = Money(3)
                 total += Money(4)
-                std::println(total.cents)
+                println(total.cents)
             }
         """.trimIndent()))
     }
@@ -65,16 +65,16 @@ class CompoundAssignOperatorTest {
         assertEquals("in place\n7", run("""
             import std.io
             pack Acc {
-                var total: std::Int
+                var total: Int
             }
             oper+= [self: Acc!](rhs: Acc&) {
-                std::println("in place")
+                println("in place")
                 self.total = self.total + rhs.total
             }
             func main() {
                 var acc = Acc(3)
                 acc += Acc(4)
-                std::println(acc.total)
+                println(acc.total)
             }
         """.trimIndent()))
     }
@@ -84,20 +84,20 @@ class CompoundAssignOperatorTest {
         assertEquals("in place\n7", run("""
             import std.io
             pack Acc {
-                var total: std::Int
+                var total: Int
             }
             oper+ [self: Acc&](rhs: Acc&): Acc {
-                std::println("built a new one")
+                println("built a new one")
                 return Acc(self.total + rhs.total)
             }
             oper+= [self: Acc!](rhs: Acc&) {
-                std::println("in place")
+                println("in place")
                 self.total = self.total + rhs.total
             }
             func main() {
                 var acc = Acc(3)
                 acc += Acc(4)
-                std::println(acc.total)
+                println(acc.total)
             }
         """.trimIndent()))
     }
@@ -107,7 +107,7 @@ class CompoundAssignOperatorTest {
         assertEquals("2", run("""
             import std.io
             pack Acc {
-                var total: std::Int
+                var total: Int
             }
             oper-= [self: Acc!](rhs: Acc&) {
                 self.total = self.total - rhs.total
@@ -115,7 +115,7 @@ class CompoundAssignOperatorTest {
             func main() {
                 var acc = Acc(5)
                 acc -= Acc(3)
-                std::println(acc.total)
+                println(acc.total)
             }
         """.trimIndent()))
     }
@@ -127,11 +127,11 @@ class CompoundAssignOperatorTest {
             func main() {
                 var a = 3
                 a += 4
-                std::println(a)
+                println(a)
                 a -= 3
-                std::println(a)
+                println(a)
                 a *= 3
-                std::println(a)
+                println(a)
             }
         """.trimIndent()))
     }

@@ -201,8 +201,8 @@ The standard module exposes lower-case operations and small, typed contracts:
 ```azora
 import std.reactive
 
-var count = std::state(0)
-var subscription = std::observe(count, { value: Int ->
+var count = state(0)
+var subscription = observe(count, { value: Int ->
     trace { "count = ${value}" }
 })
 
@@ -271,13 +271,13 @@ func attempt<T, E, S>(
 where S: AttemptSource
 ```
 
-`std::attempt(source) { attempt -> ... }` opens a journal through the source's
+`attempt(source) { attempt -> ... }` opens a journal through the source's
 implementation. A successful body commits. A typed failure rolls back before
 it propagates. `defer` always runs. The transaction view is the only mutable
 view passed to the body, preventing accidental writes around the journal.
 
 ```azora
-fin updated = std::attempt(store) { attempt ->
+fin updated = attempt(store) { attempt ->
     fin count = attempt.write(counter)
     count.set(count.value + 1)
     return count.value
@@ -293,8 +293,8 @@ otherwise fail before running the inner body.
 
 | operation | rollback | publication |
 |---|---:|---|
-| `std::batch(source) { ... }` | no | once after the body |
-| `std::attempt(source) { ... }` | on typed failure | once after commit only |
+| `batch(source) { ... }` | no | once after the body |
+| `attempt(source) { ... }` | on typed failure | once after commit only |
 
 Language `try` remains typed-error propagation. It neither creates a journal
 nor changes reactive publication. This avoids making error handling depend on
@@ -310,15 +310,15 @@ overload with an explicit capability, not a silent relaxation of these rules.
 Structured concurrency remains in `std.concurrency`:
 
 ```azora
-fin winner = await std::race<Value> {
-    std::branch { return await localValue() }
-    std::branch { return await remoteValue() }
+fin winner = await race<Value> {
+    branch { return await localValue() }
+    branch { return await remoteValue() }
 }
 ```
 
-Reactive owners dispose subscriptions when cancelled, but `std::race` is not a
-reactive primitive. `std::branch` is the required namespaced branch constructor;
-it is not a keyword. No `scope` or `std::block` wrapper is needed because each
+Reactive owners dispose subscriptions when cancelled, but `race` is not a
+reactive primitive. `branch` is the required namespaced branch constructor;
+it is not a keyword. No `scope` or `block` wrapper is needed because each
 branch lambda already supplies the sequential task body.
 
 ## 6. Lowering and memory
@@ -380,7 +380,7 @@ These are explicit implementation limits, not implied guarantees:
 7. `effect defer` runs at owner exit.
 8. `lazy` accepts `fin` and `let`, evaluates on first read, and is cached.
 9. Inside a reactive owner, a lazy binding is invalidated by reactive inputs.
-10. `std::attempt` publishes reactive changes only after commit and publishes
+10. `attempt` publishes reactive changes only after commit and publishes
     nothing after rollback.
 11. ECS and other domain adapters publish owned values at explicit deterministic
     boundaries; reactive code never retains domain-internal borrows.

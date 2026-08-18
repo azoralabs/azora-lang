@@ -46,29 +46,29 @@ impl Allocator for ArenaAllocator {
 ```
 
 ```azora
-unsafe func allocWith<T>(allocator: std::Allocator!, value: T): T^ ?! AllocError {
+unsafe func allocWith<T>(allocator: Allocator!, value: T): T^ ?! AllocError {
     fin memory = try allocator.allocate(T.sizeof, T.alignof) catch { return .OutOfMemory }
-    fin pointer = std::bitcast<T^>(memory)
+    fin pointer = bitcast<T^>(memory)
     pointer.^ = mov value // you need to add "mov" keyword like rust "move"
     return pointer
 }
 
-unsafe func purgeWith<T>(allocator: std::Allocator!, pointer: T^) {
+unsafe func purgeWith<T>(allocator: Allocator!, pointer: T^) {
     drop pointer.^
-    allocator.deallocate(std::bitcast<Byte^>(pointer), T.sizeof, T.alignof)
+    allocator.deallocate(bitcast<Byte^>(pointer), T.sizeof, T.alignof)
 }
 ```
 
 ```azora
 unsafe func main() {
-    var allocator = std::SystemAllocator()
+    var allocator = SystemAllocator()
 
-    fin user: User^ = std::allocWith(
+    fin user: User^ = allocWith(
         allocator!,
         User("Gabriel", 30)
     )
 
-    defer std::purgeWith(allocator!, user)
+    defer purgeWith(allocator!, user)
 
     println(user.^.name)
 }

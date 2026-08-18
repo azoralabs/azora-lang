@@ -19,12 +19,12 @@ class SlotsTest {
         run("""
             import std.io
             variant enum Option {
-                Some(std::Int)
+                Some(Int)
                 None
             }
             func main() {
                 var o = Option.Some(42)
-                std::println("ok")
+                println("ok")
             }
         """.trimIndent())
     }
@@ -34,14 +34,14 @@ class SlotsTest {
         assertEquals("nothing", run("""
             import std.io
             variant enum Option {
-                Some(std::Int)
+                Some(Int)
                 None
             }
             func main() {
                 var o = Option.None
                 when o {
-                    Option.None -> { std::println("nothing") }
-                    else -> { std::println("some") }
+                    Option.None -> { println("nothing") }
+                    else -> { println("some") }
                 }
             }
         """.trimIndent()))
@@ -51,14 +51,14 @@ class SlotsTest {
         assertEquals("42", run("""
             import std.io
             variant enum Option {
-                Some(std::Int)
+                Some(Int)
                 None
             }
             func main() {
                 var o = Option.Some(42)
                 when o {
-                    Option.Some(v) -> { std::println(v) }
-                    Option.None -> { std::println("nothing") }
+                    Option.Some(v) -> { println(v) }
+                    Option.None -> { println("nothing") }
                 }
             }
         """.trimIndent()))
@@ -68,16 +68,16 @@ class SlotsTest {
         assertEquals("7", run("""
             import std.io
             variant enum Shape {
-                Circle(std::Int)
-                Rect(std::Int, std::Int)
+                Circle(Int)
+                Rect(Int, Int)
                 Point
             }
             func main() {
                 var s = Shape.Rect(3, 4)
                 when s {
-                    Shape.Circle(r) -> { std::println(r) }
-                    Shape.Rect(w, h) -> { std::println(w + h) }
-                    Shape.Point -> { std::println("0") }
+                    Shape.Circle(r) -> { println(r) }
+                    Shape.Rect(w, h) -> { println(w + h) }
+                    Shape.Point -> { println("0") }
                 }
             }
         """.trimIndent()))
@@ -87,16 +87,16 @@ class SlotsTest {
         assertEquals("0", run("""
             import std.io
             variant enum Shape {
-                Circle(std::Int)
-                Rect(std::Int, std::Int)
+                Circle(Int)
+                Rect(Int, Int)
                 Point
             }
             func main() {
                 var s = Shape.Point
                 when s {
-                    Shape.Circle(r) -> { std::println(r) }
-                    Shape.Rect(w, h) -> { std::println(w + h) }
-                    Shape.Point -> { std::println("0") }
+                    Shape.Circle(r) -> { println(r) }
+                    Shape.Rect(w, h) -> { println(w + h) }
+                    Shape.Point -> { println("0") }
                 }
             }
         """.trimIndent()))

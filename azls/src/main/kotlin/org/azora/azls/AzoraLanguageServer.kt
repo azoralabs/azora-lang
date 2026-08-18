@@ -293,7 +293,7 @@ class AzoraLanguageServer {
         BUILTIN_METHODS.forEach { (name, detail) -> out.add(Completion(name, "method", detail, name)) }
     }
 
-    /** Members reached through a realm-qualified path such as `std::ab`. */
+    /** Members reached through a realm-qualified path such as `ab`. */
     private fun completeRealmMembers(
         realm: String,
         indices: List<SymbolIndex>,
@@ -678,7 +678,7 @@ class AzoraLanguageServer {
 
     private data class MemberReceiver(val text: String, val realmQualified: Boolean)
 
-    /** Receiver before a member (`value.`) or realm path (`std::`) completion. */
+    /** Receiver before a member (`value.`) or realm path (``) completion. */
     private fun receiverBefore(source: String, wordStart: Int): MemberReceiver? {
         if (wordStart >= 2 && source[wordStart - 2] == ':' && source[wordStart - 1] == ':') {
             val end = wordStart - 2

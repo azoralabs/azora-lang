@@ -65,7 +65,7 @@ class ComparisonSpecTest {
         val program = parse(
             """
             spec Order {
-                oper<=> [self: std::Self&](rhs: std::Self&): std::Compare
+                oper<=> [self: Self&](rhs: Self&): Compare
             }
             func main() {}
             """.trimIndent(),
@@ -78,7 +78,7 @@ class ComparisonSpecTest {
         val program = parse(
             """
             spec Negate {
-                oper-: std::Self
+                oper-: Self
             }
             func main() {}
             """.trimIndent(),
@@ -91,9 +91,9 @@ class ComparisonSpecTest {
         val program = parse(
             """
             spec Container {
-                oper[] [self: std::Self&](index: std::Int): std::Int
-                func size[self: std::Self&](): std::Int
-                prop empty[self: std::Self&]: std::Bool
+                oper[] [self: Self&](index: Int): Int
+                func size[self: Self&](): Int
+                prop empty[self: Self&]: Bool
             }
             func main() {}
             """.trimIndent(),
@@ -106,14 +106,14 @@ class ComparisonSpecTest {
         val result = analyze(
             """
             spec Eq {
-                oper== [self: std::Self&](rhs: std::Self&): std::Bool
+                oper== [self: Self&](rhs: Self&): Bool
             }
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             impl Eq for Point {
-                oper== [self: std::Self&](rhs: std::Self&): std::Bool {
+                oper== [self: Self&](rhs: Self&): Bool {
                     return self.x == rhs.x && self.y == rhs.y
                 }
             }
@@ -129,13 +129,13 @@ class ComparisonSpecTest {
         val result = analyze(
             """
             spec Order {
-                oper<=> [self: std::Self&](rhs: std::Self&): std::Int
+                oper<=> [self: Self&](rhs: Self&): Int
             }
             pack Version {
-                var major: std::Int
+                var major: Int
             }
             impl Order for Version {
-                oper<=> [self: std::Self&](rhs: std::Self&): std::Int {
+                oper<=> [self: Self&](rhs: Self&): Int {
                     return self.major - rhs.major
                 }
             }
@@ -152,16 +152,16 @@ class ComparisonSpecTest {
         val result = analyze(
             """
             spec PartialEqual<Rhs> {
-                oper== [self: std::Self&](rhs: Rhs&): std::Bool
+                oper== [self: Self&](rhs: Rhs&): Bool
             }
-            pack A { var v: std::Int }
-            pack B { var v: std::Int }
+            pack A { var v: Int }
+            pack B { var v: Int }
             impl PartialEqual<B> for A {
-                oper== [self: std::Self&](rhs: B&): std::Bool {
+                oper== [self: Self&](rhs: B&): Bool {
                     return self.v == rhs.v
                 }
             }
-            func same<T, U>(a: T, b: U): std::Bool where T: PartialEqual<U> {
+            func same<T, U>(a: T, b: U): Bool where T: PartialEqual<U> {
                 return true
             }
             func main() {}
@@ -174,12 +174,12 @@ class ComparisonSpecTest {
         val result = analyze(
             """
             spec Order {
-                oper<=> [self: std::Self&](rhs: std::Self&): std::Int
+                oper<=> [self: Self&](rhs: Self&): Int
             }
             spec Tagged {
-                prop tag[self: std::Self&]: std::Int
+                prop tag[self: Self&]: Int
             }
-            func sortable<K>(k: K): std::Bool where K: [Order, Tagged] {
+            func sortable<K>(k: K): Bool where K: [Order, Tagged] {
                 return true
             }
             func main() {}
@@ -193,7 +193,7 @@ class ComparisonSpecTest {
         val program = parse(
             """
             pack Pair<...T> where T.size >= 2 {
-                var first: std::Int
+                var first: Int
             }
             func main() {}
             """.trimIndent(),

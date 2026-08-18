@@ -38,10 +38,10 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin x = @std::vec[1, 2, 3]
-                std::println(x.size)
-                std::println(x[0])
-                std::println(x[2])
+                fin x = @vec[1, 2, 3]
+                println(x.size)
+                println(x[0])
+                println(x[2])
             }
             """,
         )
@@ -56,9 +56,9 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin empty: std::List<std::Int> = @std::vec[]
-                std::println(empty.size)
-                std::println(empty.isEmpty)
+                fin empty: List<Int> = @vec[]
+                println(empty.size)
+                println(empty.isEmpty)
             }
             """,
         )
@@ -72,12 +72,12 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin a = @std::vec(1, 2)
-                fin b = @std::vec[1, 2]
-                fin c = @std::vec{1, 2}
-                std::println(a.size)
-                std::println(b.size)
-                std::println(c.size)
+                fin a = @vec(1, 2)
+                fin b = @vec[1, 2]
+                fin c = @vec{1, 2}
+                println(a.size)
+                println(b.size)
+                println(c.size)
             }
         """
         val expected = "2\n2\n2"
@@ -94,11 +94,11 @@ class MacroTest {
             import std.io
 
             func main() {
-                fin s = @std::set[1, 2, 3]
-                fin a = @std::arr[10, 20, 30]
-                std::println(s.size)
-                std::println(a.size)
-                std::println(a[2])
+                fin s = @set[1, 2, 3]
+                fin a = @arr[10, 20, 30]
+                println(s.size)
+                println(a.size)
+                println(a[2])
             }
             """,
         )
@@ -110,13 +110,13 @@ class MacroTest {
         val result = Compiler().compile(
             """
             import std.container.*
-            func main() { fin values = std::@arr[1, 2, 3] }
+            func main() { fin values = @arr[1, 2, 3] }
             """.trimIndent(),
         )
         assertIs<CompilationResult.Failure>(result)
         assertTrue(
             result.errors.any { "Expected member name after '::'" in it || "Unexpected token '@'" in it || "macro" in it },
-            "The reversed 'std::@arr' form must be rejected: ${result.errors}",
+            "The reversed '@arr' form must be rejected: ${result.errors}",
         )
     }
 
@@ -128,18 +128,18 @@ class MacroTest {
             import std.io
 
             macro @dup {
-                [...${'$'}xs] => std::listOf(...${'$'}xs, ...${'$'}xs)
+                [...${'$'}xs] => listOf(...${'$'}xs, ...${'$'}xs)
             }
 
             func main() {
                 fin d = @dup[1, 2]
-                std::println(d.size)
-                std::println(d[0])
-                std::println(d[3])
+                println(d.size)
+                println(d[0])
+                println(d[3])
             }
             """,
         )
-        // std::listOf(1, 2, 1, 2)
+        // listOf(1, 2, 1, 2)
         assertEquals("4\n1\n2", out)
     }
 
@@ -152,13 +152,13 @@ class MacroTest {
 
             // `box` expands to a `vec!` invocation, which must then itself expand.
             macro @box {
-                [...${'$'}xs] => @std::vec[...${'$'}xs]
+                [...${'$'}xs] => @vec[...${'$'}xs]
             }
 
             func main() {
                 fin b = @box[4, 5, 6]
-                std::println(b.size)
-                std::println(b[1])
+                println(b.size)
+                println(b[1])
             }
             """,
         )
@@ -189,7 +189,7 @@ class MacroTest {
             import std.container.*
 
             macro @needsArgs {
-                [...$xs] => std::listOf(...$xs)
+                [...$xs] => listOf(...$xs)
             }
 
             func main() {
@@ -211,7 +211,7 @@ class MacroTest {
             import std.container.*
 
             func main() {
-                fin x = @std::vec[1, 2, 3]
+                fin x = @vec[1, 2, 3]
             }
             """,
         )

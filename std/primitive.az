@@ -132,7 +132,7 @@ spec SignedNumber
  *   the higher `rank` is chosen as the result type (see `promote<…>`).
  */
 @Since("0.1")
-factory spec Number {
+direct spec Number {
     prop rank: Int
 }
 

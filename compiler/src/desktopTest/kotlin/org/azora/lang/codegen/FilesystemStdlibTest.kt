@@ -36,10 +36,10 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::path("/usr/local").join("bin").join("azora").text)
-                std::println(std::path("/usr/").join("bin").text)
-                std::println(std::path("").join("bin").text)
-                std::println(std::path("/usr").join("").text)
+                println(path("/usr/local").join("bin").join("azora").text)
+                println(path("/usr/").join("bin").text)
+                println(path("").join("bin").text)
+                println(path("/usr").join("").text)
             }
             """,
         )
@@ -56,7 +56,7 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::path("/usr/local").join("/etc").text)
+                println(path("/usr/local").join("/etc").text)
             }
             """,
         )
@@ -72,13 +72,13 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin file = std::path("a/b/c.az")
-                std::println(file.fileName)
-                std::println(file.stem)
-                std::println(file.extension)
-                std::println(file.parent.text)
-                std::println(std::path("/x").parent.text)
-                std::println(std::path("bare").parent.text)
+                fin file = path("a/b/c.az")
+                println(file.fileName)
+                println(file.stem)
+                println(file.extension)
+                println(file.parent.text)
+                println(path("/x").parent.text)
+                println(path("bare").parent.text)
             }
             """,
         )
@@ -95,8 +95,8 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::path(".gitignore").stem)
-                std::println("[${'$'}{std::path(".gitignore").extension}]")
+                println(path(".gitignore").stem)
+                println("[${'$'}{path(".gitignore").extension}]")
             }
             """,
         )
@@ -112,10 +112,10 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::path("a/./b/../c").normalized.text)
-                std::println(std::path("/a/b/../../../c").normalized.text)
-                std::println(std::path("../x").normalized.text)
-                std::println(std::path("a/b/..").normalized.text)
+                println(path("a/./b/../c").normalized.text)
+                println(path("/a/b/../../../c").normalized.text)
+                println(path("../x").normalized.text)
+                println(path("a/b/..").normalized.text)
             }
             """,
         )
@@ -133,9 +133,9 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::path("a/b/c.az").withExtension("ll").text)
-                std::println(std::path("c.az").withExtension("ll").text)
-                std::println(std::path("plain").withExtension("az").text)
+                println(path("a/b/c.az").withExtension("ll").text)
+                println(path("c.az").withExtension("ll").text)
+                println(path("plain").withExtension("az").text)
             }
             """,
         )
@@ -151,10 +151,10 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                std::println(std::path("/x/y").isAbsolute)
-                std::println(std::path("x/y").isAbsolute)
-                std::println(std::path("C:/x").isAbsolute)
-                std::println(std::path("").isAbsolute)
+                println(path("/x/y").isAbsolute)
+                println(path("x/y").isAbsolute)
+                println(path("C:/x").isAbsolute)
+                println(path("").isAbsolute)
             }
             """,
         )
@@ -172,20 +172,20 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin dir = std::createTemporaryDirectory("azfs") catch std::path("")
+                fin dir = createTemporaryDirectory("azfs") catch path("")
                 fin file = dir.join("hello.txt")
 
-                std::writeText(file, "one\ntwo\n") catch { std::println("write failed") }
-                std::println(std::exists(file))
-                std::println(std::isFile(file))
-                std::println(std::isDirectory(dir))
-                std::println(std::trim(std::readText(file) catch "READ FAILED"))
+                writeText(file, "one\ntwo\n") catch { println("write failed") }
+                println(exists(file))
+                println(isFile(file))
+                println(isDirectory(dir))
+                println(trim(readText(file) catch "READ FAILED"))
 
-                std::appendText(file, "three\n") catch { std::println("append failed") }
-                std::println(std::trim(std::readText(file) catch "READ FAILED"))
+                appendText(file, "three\n") catch { println("append failed") }
+                println(trim(readText(file) catch "READ FAILED"))
 
-                std::removeAll(dir) catch { }
-                std::println(std::exists(dir))
+                removeAll(dir) catch { }
+                println(exists(dir))
             }
             """,
         )
@@ -205,14 +205,14 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin dir = std::createTemporaryDirectory("azfs") catch std::path("")
+                fin dir = createTemporaryDirectory("azfs") catch path("")
                 // Bracketed so an empty read is visible rather than blank.
-                fin missing = std::readText(dir.join("absent.txt")) catch "MISSING"
-                std::println("[${'$'}{missing}]")
-                std::writeText(dir.join("empty.txt"), "") catch { }
-                fin empty = std::readText(dir.join("empty.txt")) catch "MISSING"
-                std::println("[${'$'}{empty}]")
-                std::removeAll(dir) catch { }
+                fin missing = readText(dir.join("absent.txt")) catch "MISSING"
+                println("[${'$'}{missing}]")
+                writeText(dir.join("empty.txt"), "") catch { }
+                fin empty = readText(dir.join("empty.txt")) catch "MISSING"
+                println("[${'$'}{empty}]")
+                removeAll(dir) catch { }
             }
             """,
         )
@@ -230,23 +230,23 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin dir = std::createTemporaryDirectory("azfs") catch std::path("")
-                std::writeText(dir.join("b.txt"), "b") catch { }
-                std::writeText(dir.join("a.txt"), "a") catch { }
-                std::createDirectory(dir.join("sub")) catch { }
+                fin dir = createTemporaryDirectory("azfs") catch path("")
+                writeText(dir.join("b.txt"), "b") catch { }
+                writeText(dir.join("a.txt"), "a") catch { }
+                createDirectory(dir.join("sub")) catch { }
 
-                fin empty: std::Array<std::Path> = std::Array::fill<std::Path>(0)
-                fin entries: std::Array<std::Path> = std::listDirectory(dir) catch empty
-                std::println(entries.size)
+                fin empty: Array<Path> = Array::fill<Path>(0)
+                fin entries: Array<Path> = listDirectory(dir) catch empty
+                println(entries.size)
                 var names = ""
                 for i in 0..<entries.size {
                     names = names + entries[i].fileName + " "
                 }
-                std::println(std::trim(names))
+                println(trim(names))
                 // Full paths, not bare names: each entry sits under the directory.
-                std::println(std::startsWith(entries[0].text, dir.text))
+                println(startsWith(entries[0].text, dir.text))
 
-                std::removeAll(dir) catch { }
+                removeAll(dir) catch { }
             }
             """,
         )
@@ -262,19 +262,19 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin dir = std::createTemporaryDirectory("azfs") catch std::path("")
+                fin dir = createTemporaryDirectory("azfs") catch path("")
                 fin file = dir.join("data.bin")
-                std::writeText(file, "12345") catch { }
+                writeText(file, "12345") catch { }
 
-                fin info = std::fileInfo(file) catch std::FileInfo(std::FileKind.Other, 0L, std::Instant(0L, 0))
-                std::println(info.size)
-                std::println(info.isFile)
-                std::println(info.isDirectory)
+                fin info = fileInfo(file) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
+                println(info.size)
+                println(info.isFile)
+                println(info.isDirectory)
 
-                fin about = std::fileInfo(dir) catch std::FileInfo(std::FileKind.Other, 0L, std::Instant(0L, 0))
-                std::println(about.isDirectory)
+                fin about = fileInfo(dir) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
+                println(about.isDirectory)
 
-                std::removeAll(dir) catch { }
+                removeAll(dir) catch { }
             }
             """,
         )
@@ -290,21 +290,21 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin dir = std::createTemporaryDirectory("azfs") catch std::path("")
+                fin dir = createTemporaryDirectory("azfs") catch path("")
                 fin first = dir.join("first.txt")
                 fin copied = dir.join("copied.txt")
                 fin moved = dir.join("moved.txt")
 
-                std::writeText(first, "content") catch { }
-                std::copyFile(first, copied) catch { std::println("copy failed") }
-                std::println(std::readText(copied) catch "?")
-                std::println(std::exists(first))
+                writeText(first, "content") catch { }
+                copyFile(first, copied) catch { println("copy failed") }
+                println(readText(copied) catch "?")
+                println(exists(first))
 
-                std::rename(first, moved) catch { std::println("rename failed") }
-                std::println(std::exists(first))
-                std::println(std::readText(moved) catch "?")
+                rename(first, moved) catch { println("rename failed") }
+                println(exists(first))
+                println(readText(moved) catch "?")
 
-                std::removeAll(dir) catch { }
+                removeAll(dir) catch { }
             }
             """,
         )
@@ -321,15 +321,15 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin dir = std::createTemporaryDirectory("azfs") catch std::path("")
-                std::writeText(dir.join("x.txt"), "x") catch { }
+                fin dir = createTemporaryDirectory("azfs") catch path("")
+                writeText(dir.join("x.txt"), "x") catch { }
 
                 // A refused remove leaves the directory where it was.
-                std::remove(dir) catch { }
-                std::println(std::exists(dir))
+                remove(dir) catch { }
+                println(exists(dir))
 
-                std::removeAll(dir) catch { }
-                std::println(std::exists(dir))
+                removeAll(dir) catch { }
+                println(exists(dir))
             }
             """,
         )
@@ -345,17 +345,17 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin dir = std::createTemporaryDirectory("azfs") catch std::path("")
+                fin dir = createTemporaryDirectory("azfs") catch path("")
                 fin deep = dir.join("a").join("b").join("c")
 
                 // One level cannot create three, so nothing appears.
-                std::createDirectory(deep) catch { }
-                std::println(std::isDirectory(deep))
+                createDirectory(deep) catch { }
+                println(isDirectory(deep))
 
-                std::createDirectories(deep) catch { std::println("createDirectories failed") }
-                std::println(std::isDirectory(deep))
+                createDirectories(deep) catch { println("createDirectories failed") }
+                println(isDirectory(deep))
 
-                std::removeAll(dir) catch { }
+                removeAll(dir) catch { }
             }
             """,
         )
@@ -372,12 +372,12 @@ class FilesystemStdlibTest {
             import std.io
 
             func main() {
-                fin first = std::createTemporaryDirectory("azfs") catch std::path("")
-                fin second = std::createTemporaryDirectory("azfs") catch std::path("")
-                std::println(first.text != second.text)
-                std::println(std::exists(first) && std::exists(second))
-                std::removeAll(first) catch { }
-                std::removeAll(second) catch { }
+                fin first = createTemporaryDirectory("azfs") catch path("")
+                fin second = createTemporaryDirectory("azfs") catch path("")
+                println(first.text != second.text)
+                println(exists(first) && exists(second))
+                removeAll(first) catch { }
+                removeAll(second) catch { }
             }
             """,
         )

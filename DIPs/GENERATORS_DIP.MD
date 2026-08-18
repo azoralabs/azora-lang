@@ -6,10 +6,10 @@ and model streams as a standard-library builder and type, like Kotlin:
 examples:
 
 ```azora
-func countdown(from: Int): std::Flow<Int> = flow {
+func countdown(from: Int): Flow<Int> = flow {
     reverse for n in from..0 {
-        std::emit(n)
-        std::delay(1.seconds) // seconds to be in std.time an extension to Int (prop) and be type Duration, something like this: "func seconds[self: Int]() = Duration(self)"
+        emit(n)
+        delay(1.seconds) // seconds to be in std.time an extension to Int (prop) and be type Duration, something like this: "func seconds[self: Int]() = Duration(self)"
     }
 }
 ```
@@ -20,7 +20,7 @@ Collection:
 ```azora
 async func main() {
     countdown(5).collect { number ->
-        std::println(number)
+        println(number)
     }
 }
 ```
@@ -28,13 +28,13 @@ async func main() {
 That gives you the clean Kotlin distinction:
 
 ```azora
-func values(): std::Sequence<Int> = std::sequence {
-    std::yield(1)
-    std::yield(2)
+func values(): Sequence<Int> = sequence {
+    yield(1)
+    yield(2)
 }
 
-func events(): std::Flow<Event> = std::flow {
-    std::emit(readEvent())
+func events(): Flow<Event> = flow {
+    emit(readEvent())
 }
 ```
 
@@ -47,14 +47,14 @@ Notice that both declarations remain ordinary funcs. The returned type describes
 ```azora
 func calculate(): Int
 async func download(): Bytes
-func observeMessages(): std::Flow<Message>
+func observeMessages(): Flow<Message>
 ```
 
 I would also keep Kotlin’s familiar builder vocabulary:
 
 ```azora
-std::flow { std::emit(value) }
-std::sequence { std::yield(value) }
+flow { emit(value) }
+sequence { yield(value) }
 ```
 
 This is clearer than adding a third declaration keyword and keeps asynchronous streams as a library abstraction rather than baking them deeply into the language.

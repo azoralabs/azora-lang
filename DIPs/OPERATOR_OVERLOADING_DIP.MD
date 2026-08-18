@@ -1668,8 +1668,8 @@ realm std {                                    // std/cast.az - deleted entirely
 ```
 
 The file's own header calls them sugar for the operators  - 
-"`std::cast<T>(x)` ≡ `x as T`", "`std::dyncast<T>(x)` ≡ `x as? T`",
-"`std::bitcast<T>(x)` ≡ `x as* T`" - so they were never a second mechanism, only
+"`cast<T>(x)` ≡ `x as T`", "`dyncast<T>(x)` ≡ `x as? T`",
+"`bitcast<T>(x)` ≡ `x as* T`" - so they were never a second mechanism, only
 a second spelling of the first.
 
 Removal is clean:
@@ -1741,8 +1741,8 @@ line 240: two impls of 'Arithmetic' for 'Vec2' differ only in Out
   'Arithmetic<Vec2, Vec2>' and 'Arithmetic<Vec2, Vec2Long>' both match 'a + b'
   a family's result type is fixed per Rhs - merge them or change the Rhs
 
-line 258: 'std::cast' no longer exists - write 'value as T'
-  'std::dyncast' is 'value as? T'; 'std::bitcast' is 'value as* T'
+line 258: 'cast' no longer exists - write 'value as T'
+  'dyncast' is 'value as? T'; 'bitcast' is 'value as* T'
 
 line 190: 'Order' requires 'Equal', which 'Version' does not state
   a total order and its equality have to agree

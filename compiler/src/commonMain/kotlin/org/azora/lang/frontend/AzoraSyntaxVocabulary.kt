@@ -59,6 +59,8 @@ object AzoraSyntaxVocabulary {
         "delay" to TokenType.DELAY,
         "bridge" to TokenType.BRIDGE,
         "solo" to TokenType.SOLO,
+        "scoped" to TokenType.SCOPED,
+        "direct" to TokenType.DIRECT,
         "inject" to TokenType.INJECT,
         "lazy" to TokenType.LAZY,
         "factory" to TokenType.FACTORY,

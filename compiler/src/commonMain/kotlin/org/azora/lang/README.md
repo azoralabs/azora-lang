@@ -104,7 +104,7 @@ not reference kinds in the grammar.
   `Mutable…` counterparts, `Tuple<A, B>`, function types `(A) -> B`. Types are
   always written with generics - type macros are gone, so a type's spelling
   does not depend on what a file imports. The value-level macro sugar is
-  `@std::arr[…]`, `@std::vec[…]`, `@std::vec![…]` and `@std::set[…]`; `@std::map` is declared but its
+  `@arr[…]`, `@vec[…]`, `@vec![…]` and `@set[…]`; `@map` is declared but its
   `key: value` call form is not implemented yet.
 - **User-defined**: `pack` (structs), `enum`, `variant enum` (tagged unions),
   `unsafe union` (untagged), `typealias`, `error` (error sets).
@@ -535,7 +535,7 @@ The stdlib (`Internal/Std/*.az`, 35 modules) is compiled into an `AzStdlib`
 index and **import-gated**: a file sees a module's names only after `use`-ing
 it, and only referenced items are injected transitively (`StdlibInjector.kt`).
 User declarations shadow stdlib items; programs that never touch the stdlib
-compile unchanged. `QualifiedStdRewriter.kt` resolves `std::module::name`
+compile unchanged. `QualifiedStdRewriter.kt` resolves `module::name`
 qualified references. `Compiler.withStdlibHint` points undefined-symbol errors
 at the right `use`.
 
@@ -589,7 +589,7 @@ compiler/src/commonMain/kotlin/org/azora/lang/
 │
 ├── stdlib/
 │   ├── StdlibInjector.kt        Import-gated, transitive stdlib injection
-│   └── QualifiedStdRewriter.kt  Resolves `std::module::name` references
+│   └── QualifiedStdRewriter.kt  Resolves `module::name` references
 │
 ├── ir/
 │   ├── IrNode.kt                IrType, IrExpr, IrStmt, IrFunction, IrProgram

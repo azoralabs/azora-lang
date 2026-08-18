@@ -19,12 +19,12 @@ class ParamModifiersTest {
     @Test fun mutParamCanBeReassigned() {
         assertEquals("20", run("""
             import std.io
-            func increment(n: std::Int!): std::Int {
+            func increment(n: Int!): Int {
                 n = n + 10
                 return n
             }
             func main() {
-                std::println(increment(10))
+                println(increment(10))
             }
         """.trimIndent()))
     }
@@ -32,14 +32,14 @@ class ParamModifiersTest {
     @Test fun refParamPropagatesBack() {
         assertEquals("10\n99", run("""
             import std.io
-            func modify(x: std::Int!) {
+            func modify(x: Int!) {
                 x = 99
             }
             func main() {
                 var v = 10
-                std::println(v)
+                println(v)
                 modify(v)
-                std::println(v)
+                println(v)
             }
         """.trimIndent()))
     }
@@ -50,7 +50,7 @@ class ParamModifiersTest {
         // parameter you may only write to is neither.
         val result = Compiler().compile("""
             import std.io
-            func produce(out result: std::Int) {
+            func produce(out result: Int) {
                 result = 42
             }
             func main() {
@@ -64,14 +64,14 @@ class ParamModifiersTest {
     @Test fun aMutableBorrowReplacesTheOutParameter() {
         assertEquals("hello\n42", run("""
             import std.io
-            func produce(result: std::Int!) {
+            func produce(result: Int!) {
                 result = 42
             }
             func main() {
                 var r = 0
-                std::println("hello")
+                println("hello")
                 produce(r)
-                std::println(r)
+                println(r)
             }
         """.trimIndent()))
     }
@@ -80,7 +80,7 @@ class ParamModifiersTest {
         // Swap two variables via ref params.
         assertEquals("70\n30", run("""
             import std.io
-            func swap(a: std::Int!, b: std::Int!) {
+            func swap(a: Int!, b: Int!) {
                 var tmp = a
                 a = b
                 b = tmp
@@ -89,8 +89,8 @@ class ParamModifiersTest {
                 var x = 30
                 var y = 70
                 swap(x, y)
-                std::println(x)
-                std::println(y)
+                println(x)
+                println(y)
             }
         """.trimIndent()))
     }

@@ -4,7 +4,7 @@ import std.dynamic
 import std.io
 import std.time
 
-use std::{println, runScript, ScriptError}
+use {println, runScript, ScriptError}
 
 func main(): Unit ?! ScriptError = loop by 1.seconds {
     fin result: Any = try runScript("script.az", entry: "h1")
@@ -22,7 +22,7 @@ We should have an option if we inject the interpreter on not, that will give us 
 import std.io
 
 func h1(): Int {
-    std::println("Hi")
+    println("Hi")
     return 7
 }
 ```

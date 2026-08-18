@@ -15,14 +15,14 @@ class TupleTest {
             import std.container.tuple
             import std.*
 
-            func swap(value: std::Tuple<std::Int, std::String>): std::Tuple<std::String, std::Int> {
-                return std::tupleOf(value.1, value.0)
+            func swap(value: Tuple<Int, String>): Tuple<String, Int> {
+                return tupleOf(value.1, value.0)
             }
 
             func main() {
-                fin result = swap(std::tupleOf(7, "ready"))
-                std::println(result.0)
-                std::println(result.1)
+                fin result = swap(tupleOf(7, "ready"))
+                println(result.0)
+                println(result.1)
             }
         """.trimIndent(), release = false)
 
@@ -32,25 +32,25 @@ class TupleTest {
 
     @Test fun tupleLiteralIsRejectedWithMigration() {
         // `(a, b, …)` value tuple literals were removed: build tuples with
-        // `std::tupleOf(…)` or the `tup@` macro. Parentheses only group.
+        // `tupleOf(…)` or the `tup@` macro. Parentheses only group.
         val result = Compiler().compile("""
             import std.io
             import std.container.*
 
             func main() {
                 fin pair = (1, "hello")
-                std::println(pair.0)
+                println(pair.0)
             }
         """.trimIndent(), release = false)
 
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "tuple literal" in it && "std::tupleOf" in it }, result.errors.toString())
+        assertTrue(result.errors.any { "tuple literal" in it && "tupleOf" in it }, result.errors.toString())
     }
 
     @Test fun tupleTypeSyntaxIsRejectedWithMigration() {
         val result = Compiler().compile("""
-            func pair(): (std::Int, std::String) {
-                return std::tupleOf(1, "hello")
+            func pair(): (Int, String) {
+                return tupleOf(1, "hello")
             }
         """.trimIndent(), release = false)
 
@@ -62,12 +62,12 @@ class TupleTest {
         val result = Compiler().compile("""
             import std.io
 
-            func apply(value: std::Int, transform: (std::Int) -> std::Int): std::Int {
+            func apply(value: Int, transform: (Int) -> Int): Int {
                 return transform((value))
             }
 
             func main() {
-                std::println((20) + 22)
+                println((20) + 22)
             }
         """.trimIndent(), release = false)
 

@@ -18,7 +18,7 @@ class InfixFunctionsTest {
         assertEquals("5", run("""
             import std.io
             pack Calc {
-                var v: std::Int
+                var v: Int
             }
             impl Calc {
                 func plus(other: Calc): Calc {
@@ -29,7 +29,7 @@ class InfixFunctionsTest {
                 var a = Calc(2)
                 var b = Calc(3)
                 var c = a plus b
-                std::println(c.v)
+                println(c.v)
             }
         """.trimIndent()))
     }
@@ -40,12 +40,12 @@ class InfixFunctionsTest {
 
             macro ${'$'}a @scaledBy ${'$'}b
 
-            func scaledBy(self: std::Int, factor: std::Int): std::Int {
+            func scaledBy(self: Int, factor: Int): Int {
                 return self * factor
             }
 
             func main() {
-                std::println(6 @scaledBy 7)
+                println(6 @scaledBy 7)
             }
         """.trimIndent()))
     }
@@ -54,7 +54,7 @@ class InfixFunctionsTest {
         assertEquals("11", run("""
             import std.io
             pack Calc {
-                var v: std::Int
+                var v: Int
             }
             impl Calc {
                 func plus(other: Calc): Calc {
@@ -70,7 +70,7 @@ class InfixFunctionsTest {
                 var c = Calc(5)
                 // arithmetic binds tighter than infix: (a * b) plus c = 6 + 5 = 11
                 var result = a times b plus c
-                std::println(result.v)
+                println(result.v)
             }
         """.trimIndent()))
     }
@@ -79,7 +79,7 @@ class InfixFunctionsTest {
         assertEquals("10", run("""
             import std.io
             pack Calc {
-                var v: std::Int
+                var v: Int
             }
             impl Calc {
                 func plus(other: Calc): Calc {
@@ -93,7 +93,7 @@ class InfixFunctionsTest {
                 var d = Calc(4)
                 // Left-associative: ((a plus b) plus c) plus d
                 var result = a plus b plus c plus d
-                std::println(result.v)
+                println(result.v)
             }
         """.trimIndent()))
     }
@@ -102,7 +102,7 @@ class InfixFunctionsTest {
         assertEquals("true", run("""
             import std.io
             pack Box {
-                var v: std::Int
+                var v: Int
             }
             impl Box {
                 func plus(other: Box): Box {
@@ -114,7 +114,7 @@ class InfixFunctionsTest {
                 var b = Box(3)
                 // (a plus b).v == 5
                 var c = a plus b
-                std::println(c.v == 5)
+                println(c.v == 5)
             }
         """.trimIndent()))
     }

@@ -15,7 +15,7 @@ graph AppGraph {
     solo    Config("https://api.example.com")
     solo    HttpClient(inject Config) bind Api
     factory LoginViewModel(inject Api)
-    scope   ProfileViewModel(inject Api, inject Session)
+    scoped  ProfileViewModel(inject Api, inject Session)
 }
 
 func main() with AppGraph {
@@ -53,7 +53,7 @@ impl Counter {
 fin a = inject Counter
 a.bump()
 fin b = inject Counter     // the same instance
-std::println(b.n)          // 1
+println(b.n)          // 1
 ```
 
 Everything below is what this has to become.
@@ -89,7 +89,7 @@ program that wants it.
 
 ```azora
 graph AppGraph include [NetworkGraph, DataGraph, UiGraph] {
-    scope ProfileViewModel(inject Api)
+    scoped ProfileViewModel(inject Api)
 }
 ```
 
@@ -99,7 +99,7 @@ graph AppGraph include [NetworkGraph, DataGraph, UiGraph] {
 
 ```azora
 graph TestGraph replace AppGraph {
-    solo FakeApi() bind Api
+    solod FakeApi() bind Api
 }
 ```
 
@@ -152,7 +152,7 @@ declares fields, its members live in an `impl` block, and its receiver is
 `self`. A singleton is not different enough to earn its own declaration form,
 its own member syntax, or its own receiver word.
 
-### 3.2 Provider lifetimes - `solo`, `factory`, `scope`
+### 3.2 Provider lifetimes - `solo`, `factory`, `scoped`
 
 ✅ Parsed. The lifetime is a `graph` entry's **first word**, and it is the whole
 difference between the forms:
@@ -161,7 +161,7 @@ difference between the forms:
 graph AppGraph {
     solo    Repository(inject Db)        // this graph owns one
     factory LoginViewModel(inject Api)   // a new owned value per resolution
-    scope   ProfileViewModel(inject Api) // one per active scope
+    scoped   ProfileViewModel(inject Api) // one per active scoped
 }
 ```
 
@@ -169,7 +169,7 @@ graph AppGraph {
 |-----------|--------------|------------|
 | `solo`    | graph        | the graph  |
 | `factory` | resolution   | the caller |
-| `scope`   | active scope | the scope  |
+| `scoped`  | active scope | the scope  |
 
 Every entry used to be a singleton, which cannot model a view model, a request
 object, a session, or any transient service. The three lifetimes are what let a
@@ -242,7 +242,7 @@ no new vocabulary.
 
 ```azora
 fin config = inject Config
-std::println(inject Config.name)     // chains into member access
+println(inject Config.name)     // chains into member access
 ```
 
 ### 4.2 A field initialiser
@@ -295,9 +295,9 @@ register a family:
 
 ```azora
 graph UiGraph {
-    scope LoginViewModel(inject Api)      bind ViewModel
-    scope ProfileViewModel(inject Api)    bind ViewModel
-    scope SettingsViewModel(inject Config) bind ViewModel
+    scoped LoginViewModel(inject Api)      bind ViewModel
+    scoped ProfileViewModel(inject Api)    bind ViewModel
+    scoped SettingsViewModel(inject Config) bind ViewModel
 }
 ```
 
@@ -312,7 +312,7 @@ Three ways to ask, and they mean different things:
 ```azora
 import std.di
 
-fin viewModels: std::Many<ViewModel> = inject Many<ViewModel>
+fin viewModels: Many<ViewModel> = inject Many<ViewModel>
 
 for viewModel in viewModels {
     viewModel.start()
@@ -336,10 +336,10 @@ access.
 questions, and separate forms:
 
 ```azora
-inline fin viewModelTypes = std::reflect<UiGraph>.implementations<ViewModel>
+inline fin viewModelTypes = reflect<UiGraph>.implementations<ViewModel>
 
-inline for VM in std::reflect<AppGraph>.implementations<ViewModel> {
-    inline trace "registering ${std::reflect<VM>.declName}"
+inline for VM in reflect<AppGraph>.implementations<ViewModel> {
+    inline trace "registering ${reflect<VM>.declName}"
 }
 ```
 
@@ -366,7 +366,7 @@ model is, and should not.
 ⬜ **Proposed.**
 
 A graph **owns** what it constructs with `solo`, and a scope owns what it
-constructs with `scope`. When a graph or scope ends, it destroys what it owns in
+constructs with `scoped`. When a graph or scope ends, it destroys what it owns in
 **reverse dependency order** - a definition is destroyed before anything it was
 built from.
 
@@ -375,10 +375,10 @@ ownership rules from there.
 
 That distinction decides the native representation:
 
-| lifetime         | LLVM returns                                          |
-|------------------|-------------------------------------------------------|
-| `solo` / `scope` | `shared` ref `T` - the graph or scope keeps ownership |
-| `factory`        | an owned `T` - the caller has it                      |
+| lifetime          | LLVM returns                                          |
+|-------------------|-------------------------------------------------------|
+| `solo` / `scoped` | `shared` ref `T` - the graph or scope keeps ownership |
+| `factory`         | an owned `T` - the caller has it                      |
 
 ---
 
@@ -479,7 +479,7 @@ works, and the pool is never starved by construction.
 | `inject`  | ✅ reserved, implemented  | resolution                          |
 | `bind`    | ✅ reserved, parsed       | binding a definition to a spec      |
 | `factory` | ✅ reserved, parsed       | the per-resolution lifetime         |
-| `scope`   | ✅ reserved, parsed       | the per-scope lifetime              |
+| `scoped`  | ✅ reserved, parsed       | the per-scope lifetime              |
 | `include` | ✅ **contextual**, parsed | graph composition                   |
 | `lazy`    | ✅ reserved, implemented  | first-read `fin` and `let` bindings  |
 | `replace` | ✅ **contextual**, parsed | graph substitution                  |
@@ -488,11 +488,11 @@ works, and the pool is never starved by construction.
 `Many<T>` is deliberately **not** a keyword: it is a type in `std.di`, so it can
 grow filtering, qualifiers and conversions without touching the grammar.
 
-`bind` and `scope` are reused in new positions with meanings consistent with
+`bind` and `scoped` are reused in new positions with meanings consistent with
 the ones they already carry, which is the reason to prefer them over inventing
 words.
 
-`replace` is **contextual**, not reserved: `std::replace` is the string
+`replace` is **contextual**, not reserved: `replace` is the string
 function, and a keyword would take that name from every program. It means graph
 substitution only in `graph TestGraph replace AppGraph {`, where a name follows
 it inside a graph header - nowhere else.

@@ -23,7 +23,7 @@ class ErrorHandlingTest {
                 try {
                     throw "boom"
                 } catch { e ->
-                    std::println("caught: " + e)
+                    println("caught: " + e)
                 }
             }
         """.trimIndent()))
@@ -34,9 +34,9 @@ class ErrorHandlingTest {
             import std.io
             func main() {
                 try {
-                    std::println("ok")
+                    println("ok")
                 } catch { e ->
-                    std::println("error")
+                    println("error")
                 }
             }
         """.trimIndent()))
@@ -49,7 +49,7 @@ class ErrorHandlingTest {
                 try {
                     throw "anything"
                 } catch {
-                    std::println("recovered")
+                    println("recovered")
                 }
             }
         """.trimIndent()))
@@ -58,12 +58,12 @@ class ErrorHandlingTest {
     @Test fun catchExprFallback() {
         assertEquals("-1", run("""
             import std.io
-            func safeDiv(a: std::Int, b: std::Int): std::Int {
+            func safeDiv(a: Int, b: Int): Int {
                 if b == 0 { throw "div0" }
                 return a / b
             }
             func main() {
-                std::println(safeDiv(10, 0) catch -1)
+                println(safeDiv(10, 0) catch -1)
             }
         """.trimIndent()))
     }
@@ -71,12 +71,12 @@ class ErrorHandlingTest {
     @Test fun catchExprSuccess() {
         assertEquals("5", run("""
             import std.io
-            func safeDiv(a: std::Int, b: std::Int): std::Int {
+            func safeDiv(a: Int, b: Int): Int {
                 if b == 0 { throw "div0" }
                 return a / b
             }
             func main() {
-                std::println(safeDiv(10, 2) catch -1)
+                println(safeDiv(10, 2) catch -1)
             }
         """.trimIndent()))
     }

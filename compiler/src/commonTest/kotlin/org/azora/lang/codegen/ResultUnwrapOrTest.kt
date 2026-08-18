@@ -19,8 +19,8 @@ class ResultUnwrapOrTest {
             import std.io
             import std.result
             func main() {
-                fin r = std::ok(42)
-                std::println(std::unwrapOr(r, 0))
+                fin r = ok(42)
+                println(unwrapOr(r, 0))
             }
         """.trimIndent()))
     }
@@ -30,8 +30,8 @@ class ResultUnwrapOrTest {
             import std.io
             import std.result
             func main() {
-                fin r = std::err(1, "boom")
-                std::println(std::unwrapOr(r, 0))
+                fin r = err(1, "boom")
+                println(unwrapOr(r, 0))
             }
         """.trimIndent()))
     }

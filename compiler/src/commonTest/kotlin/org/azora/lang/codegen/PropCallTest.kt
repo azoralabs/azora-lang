@@ -21,7 +21,7 @@ class PropCallTest {
             import std.io
             func main() {
                 var x = $build
-                std::println(x.$name())
+                println(x.$name())
             }
             """.trimIndent(),
         )
@@ -32,8 +32,8 @@ class PropCallTest {
     }
 
     @Test fun anArrayEmptinessPropertyIsNotCallable() {
-        refusesCallForm("@std::arr[1]", "isEmpty")
-        refusesCallForm("@std::arr[1]", "isNotEmpty")
+        refusesCallForm("@arr[1]", "isEmpty")
+        refusesCallForm("@arr[1]", "isNotEmpty")
     }
 
 }

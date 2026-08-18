@@ -18,8 +18,8 @@ class NullableTest {
         assertEquals("5", run("""
             import std.io
             func main() {
-                var x: std::Int? = null
-                std::println(x ?? 5)
+                var x: Int? = null
+                println(x ?? 5)
             }
         """.trimIndent()))
     }
@@ -28,8 +28,8 @@ class NullableTest {
         assertEquals("10", run("""
             import std.io
             func main() {
-                var x: std::Int? = 10
-                std::println(x ?? 5)
+                var x: Int? = 10
+                println(x ?? 5)
             }
         """.trimIndent()))
     }
@@ -38,9 +38,9 @@ class NullableTest {
         assertEquals("default", run("""
             import std.io
             func main() {
-                var a: std::String? = null
-                var b: std::String? = null
-                std::println(a ?? b ?? "default")
+                var a: String? = null
+                var b: String? = null
+                println(a ?? b ?? "default")
             }
         """.trimIndent()))
     }
@@ -49,12 +49,12 @@ class NullableTest {
         assertEquals("0", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
                 var p: Point? = null
-                std::println(p?.x ?? 0)
+                println(p?.x ?? 0)
             }
         """.trimIndent()))
     }
@@ -63,12 +63,12 @@ class NullableTest {
         assertEquals("3", run("""
             import std.io
             pack Point {
-                var x: std::Int
-                var y: std::Int
+                var x: Int
+                var y: Int
             }
             func main() {
                 var p: Point? = Point(3, 4)
-                std::println(p?.x ?? 0)
+                println(p?.x ?? 0)
             }
         """.trimIndent()))
     }
@@ -76,11 +76,11 @@ class NullableTest {
     @Test fun nullableInParameter() {
         assertEquals("42", run("""
             import std.io
-            func defaultIfNull(x: std::Int?, fallback: std::Int): std::Int {
+            func defaultIfNull(x: Int?, fallback: Int): Int {
                 return x ?? fallback
             }
             func main() {
-                std::println(defaultIfNull(null, 42))
+                println(defaultIfNull(null, 42))
             }
         """.trimIndent()))
     }

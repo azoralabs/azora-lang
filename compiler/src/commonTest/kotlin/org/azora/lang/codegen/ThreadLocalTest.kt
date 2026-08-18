@@ -21,7 +21,7 @@ class ThreadLocalTest {
             import std.io
             threadlocal fin answer = 42
             func main() {
-                std::println(answer)
+                println(answer)
             }
         """.trimIndent()))
     }
@@ -32,7 +32,7 @@ class ThreadLocalTest {
             threadlocal var counter = 0
             func main() {
                 counter = 5
-                std::println(counter)
+                println(counter)
             }
         """.trimIndent())
         when (result) {
@@ -52,14 +52,14 @@ class ThreadLocalTest {
             threadlocal var counter = 0
             func main() {
                 var t1 = async {
-                    std::println(counter)
+                    println(counter)
                     counter = 5
-                    std::println(counter)
+                    println(counter)
                 }
                 var t2 = async {
-                    std::println(counter)
+                    println(counter)
                     counter = 5
-                    std::println(counter)
+                    println(counter)
                 }
                 await t1
                 await t2
@@ -72,9 +72,9 @@ class ThreadLocalTest {
     @Test fun threadLocalWithTypedAnnotation() {
         assertEquals("hello", run("""
             import std.io
-            threadlocal var msg: std::String = "hello"
+            threadlocal var msg: String = "hello"
             func main() {
-                std::println(msg)
+                println(msg)
             }
         """.trimIndent()))
     }

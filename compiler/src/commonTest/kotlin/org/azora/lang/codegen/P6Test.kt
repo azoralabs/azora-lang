@@ -6,11 +6,11 @@ class P6Test {
         val r = Compiler().compile("""
             import std.io
             import std.format
-            pack Vec2 { var x: std::Int }
-            impl std::Display for Vec2 {
-                func display[self: std::Self&](formatter: std::Formatter!) { formatter.write("v") }
+            pack Vec2 { var x: Int }
+            impl Display for Vec2 {
+                func display[self: Self&](formatter: Formatter!) { formatter.write("v") }
             }
-            func main() { std::println("${'$'}{Vec2(1)}") }
+            func main() { println("${'$'}{Vec2(1)}") }
         """.trimIndent(), release = false)
         if (r is CompilationResult.Success) {
             println("PROBE llvm has __display: " + r.llvm.contains("__display"))

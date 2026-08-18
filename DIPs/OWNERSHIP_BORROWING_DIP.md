@@ -421,7 +421,7 @@ trace other // Hello
 ### Collections
 
 ```azora
-var original: List<Int> = std::listOf(1, 2, 3)
+var original: List<Int> = listOf(1, 2, 3)
 var duplicate: List<Int> = original.clone()
 
 original.add(4)
@@ -765,7 +765,7 @@ What this buys is the case `take` cannot express - a value that is not `Copy`
 going into a function more than once:
 
 ```azora
-var handle = Handle(std::listOf<String>())
+var handle = Handle(listOf<String>())
 
 fin a = inspect(lend handle)
 fin b = inspect(lend handle)   // fine: the first call gave it back
@@ -861,8 +861,8 @@ The returned borrow is valid only while every possible source required by the AP
 func pair(
     a: String&,
     b: String&
-): std::Tuple(String&[a], String&[b]) {
-    return std::tupleOf(a, b)
+): Tuple(String&[a], String&[b]) {
+    return tupleOf(a, b)
 }
 ```
 
@@ -875,7 +875,7 @@ func slice(
     text: String&,
     start: Int,
     end: Int
-): std::StringView&[text] {
+): StringView&[text] {
     ...
 }
 ```
@@ -1153,7 +1153,7 @@ The keyword form remains the primitive ownership operation.
 `Unique<T>` is move-only by default.
 
 ```azora
-var image: std::Unique<Image> = std::uniqueOf(Image())
+var image: Unique<Image> = uniqueOf(Image())
 renderer.upload(take image)
 
 trace image // Error
@@ -1164,7 +1164,7 @@ It should not be `Copy`.
 It may or may not be `Clone`, depending on whether cloning duplicates the pointed-to value:
 
 ```azora
-var duplicate: std::Unique<Image> = image.clone()
+var duplicate: Unique<Image> = image.clone()
 ```
 
 ### `Shared<T>`
@@ -1174,7 +1174,7 @@ var duplicate: std::Unique<Image> = image.clone()
 It may also be `Copy` only if Azora intentionally considers reference-count increments cheap and implicit. A safer design is:
 
 ```azora
-var second: std::Shared<Image> = first.clone()
+var second: Shared<Image> = first.clone()
 ```
 
 This keeps reference-count changes explicit.
@@ -1220,7 +1220,7 @@ where T: Clone {
 ```azora
 func repeat<T>(value: T, count: Int): List<T>
 where T: Copy {
-    var result: std::List<T> = std::listOf()
+    var result: List<T> = listOf()
 
     for _ in 0..<count {
         result.add(value)
@@ -1283,7 +1283,7 @@ Example:
 ```azora
 pack UserProfile {
     var name: String
-    var tags: std::List<String>
+    var tags: List<String>
 }
 
 impl Clone for UserProfile {

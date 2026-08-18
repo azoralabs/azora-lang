@@ -46,7 +46,7 @@ import org.azora.lang.putIfAbsentCompat
  * - `import std.*` - every module below that namespace,
  * - importing a module never creates bare aliases for declarations inside a realm,
  * - compile-time type functions may instead use a complete module-plus-realm path,
- *   such as `std.traits.std::promote!(Int, Double)`.
+ *   such as `std.traits.promote!(Int, Double)`.
  *
  * The module root is derived from the loaded library modules; the frontend
  * import grammar does not special-case `std`. Only the items actually
@@ -1663,7 +1663,7 @@ class StdlibInjector private constructor(
                 // A `meta` is a compile-time macro definition, not a dependency
                 // root. Registering its name keeps it available to the macro
                 // expander, but its arm templates must NOT be treated as injection
-                // dependencies: an arm like `@std::arr[…] => std::arrayOf(…)` references
+                // dependencies: an arm like `@arr[…] => arrayOf(…)` references
                 // every collection factory the macro *could* expand to, and pulling
                 // those eagerly drags the whole container library into every program
                 // (including un-optimized builds where dead-code elimination cannot
@@ -1905,7 +1905,7 @@ class StdlibInjector private constructor(
                 // has to be pulled in too, the same as for a `Type::member` call.
                 if ("__" in expr.name) {
                     names.add(expr.name.substringBeforeLast("__"))
-                    // A realm-qualified *type* keeps its bare name, so `std::SerialValue`
+                    // A realm-qualified *type* keeps its bare name, so `SerialValue`
                     // arrives as `std__SerialValue` while the declaration is `SerialValue`.
                     // Without the tail the type is never injected and the reference
                     // fails to resolve.
@@ -1931,7 +1931,7 @@ class StdlibInjector private constructor(
                 // in - so also mark the base type as referenced.
                 if ("__" in expr.callee) {
                     names.add(expr.callee.substringBeforeLast("__"))
-                    // `std::SerialField(…)` constructs a realm-scoped pack, whose
+                    // `SerialField(…)` constructs a realm-scoped pack, whose
                     // declaration is the bare tail; see the identifier case above.
                     names.add(expr.callee.substringAfterLast("__"))
                 }

@@ -91,7 +91,7 @@ Storage is by value, and a value has exactly one owner.
 ```azora
 fin a = User("Andrew", 34)
 fin b = mov a          // ownership transfers
-std::println(a.name)   // error: 'a' was moved on line 2
+println(a.name)   // error: 'a' was moved on line 2
 ```
 
 `mov` transfers; the source binding is dead afterwards and naming it is an error. This is

@@ -77,15 +77,15 @@ try {
     fin v = risky()
     use(v)
 } catch {
-    std::println("failed")
+    println("failed")
 }
 ```
 
 ### 5.2 Expression form (fallback value)
 
 ```azora
-fin days = std::daysInMonth(2024, 13) catch -1
-fin date = std::localDate(2024, 2, 29) catch LocalDate(0, 1, 1)
+fin days = daysInMonth(2024, 13) catch -1
+fin date = localDate(2024, 2, 29) catch LocalDate(0, 1, 1)
 ```
 
 `expr catch fallback` evaluates to `expr` on success or `fallback` on failure.
@@ -95,8 +95,8 @@ fin date = std::localDate(2024, 2, 29) catch LocalDate(0, 1, 1)
 ```azora
 func step() {
     risky()
-    rescue { std::println("rescued!") }   // on failure, run block and continue
-    std::println("ok")
+    rescue { println("rescued!") }   // on failure, run block and continue
+    println("ok")
 }
 ```
 

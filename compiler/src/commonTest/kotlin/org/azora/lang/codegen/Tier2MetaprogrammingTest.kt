@@ -23,7 +23,7 @@ class Tier2MetaprogrammingTest {
             import std.io
             func main() {
                 inline for x in 0..<3 {
-                    std::println(x)
+                    println(x)
                 }
             }
         """.trimIndent()))
@@ -34,7 +34,7 @@ class Tier2MetaprogrammingTest {
             import std.io
             func main() {
                 inline for x in 1..4 {
-                    std::println(x)
+                    println(x)
                 }
             }
         """.trimIndent()))
@@ -48,7 +48,7 @@ class Tier2MetaprogrammingTest {
                 inline for x in 1..4 {
                     sum = sum + x
                 }
-                std::println(sum)
+                println(sum)
             }
         """.trimIndent()))
     }
@@ -60,7 +60,7 @@ class Tier2MetaprogrammingTest {
             func main() {
                 inline for x in 1..3 {
                     inline fin doubled = x * 2
-                    std::println(doubled)
+                    println(doubled)
                 }
             }
         """.trimIndent()))
@@ -72,7 +72,7 @@ class Tier2MetaprogrammingTest {
             func main() {
                 inline fin count = 5
                 inline for x in 0..<count {
-                    std::println(x)
+                    println(x)
                 }
             }
         """.trimIndent()))
@@ -84,10 +84,10 @@ class Tier2MetaprogrammingTest {
             import std.io
             func main() {
                 inline for x in 0..<3 {
-                    std::println(x)
+                    println(x)
                 }
                 var x = 99
-                std::println(x)
+                println(x)
             }
         """.trimIndent()))
     }
@@ -98,14 +98,14 @@ class Tier2MetaprogrammingTest {
         assertEquals("hi", run("""
             import std.io
             annot Log {
-                fin msg: std::String
+                fin msg: String
             }
             @Log("entry")
-            func greet(): std::String {
+            func greet(): String {
                 return "hi"
             }
             func main() {
-                std::println(greet())
+                println(greet())
             }
         """.trimIndent()))
     }
@@ -119,12 +119,12 @@ class Tier2MetaprogrammingTest {
             fin PI = 3
             @Deprecated
             pack P {
-                var x: std::Int
+                var x: Int
             }
             func main() {
-                std::println(PI)
+                println(PI)
                 var p = P(5)
-                std::println(p.x)
+                println(p.x)
             }
         """.trimIndent()))
     }
@@ -136,11 +136,11 @@ class Tier2MetaprogrammingTest {
             annot B { }
             @A
             @B
-            func run(): std::String {
+            func run(): String {
                 return "done"
             }
             func main() {
-                std::println(run())
+                println(run())
             }
         """.trimIndent()))
     }
@@ -152,13 +152,13 @@ class Tier2MetaprogrammingTest {
             import std.io
             realm Math {
                 fin PI = 314
-                func double(x: std::Int): std::Int {
+                func double(x: Int): Int {
                     return x * 2
                 }
             }
             func main() {
-                std::println(Math::PI)
-                std::println(Math::double(5))
+                println(Math::PI)
+                println(Math::double(5))
             }
         """.trimIndent()))
     }
@@ -172,7 +172,7 @@ class Tier2MetaprogrammingTest {
                 }
             }
             func main() {
-                std::println(Outer::Inner::VALUE)
+                println(Outer::Inner::VALUE)
             }
         """.trimIndent()))
     }
@@ -182,12 +182,12 @@ class Tier2MetaprogrammingTest {
             import std.io
             realm Geom {
                 fin R = 5
-                func area(): std::Int {
+                func area(): Int {
                     return Geom::R * Geom::R
                 }
             }
             func main() {
-                std::println(Geom::area())
+                println(Geom::area())
             }
         """.trimIndent()))
     }
@@ -202,7 +202,7 @@ class Tier2MetaprogrammingTest {
                     var y = 2
                     x = x + y
                 }
-                std::println(x)
+                println(x)
             }
         """.trimIndent()))
     }

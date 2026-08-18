@@ -31,9 +31,9 @@ class DelayExecTest {
     private val program = """
         import std.io
         func main() {
-            std::println("start")
+            println("start")
             delay 5
-            std::println("end")
+            println("end")
         }
     """.trimIndent()
 

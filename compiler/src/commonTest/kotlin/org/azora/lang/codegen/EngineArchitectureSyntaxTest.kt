@@ -48,18 +48,18 @@ class EngineArchitectureSyntaxTest {
         pack Resource<T> { fin value: T }
         pack MutResource<T> { var value: T }
         bridge pack Query<...T>
-        pack Vec3 { var x: std::Double }
+        pack Vec3 { var x: Double }
         typealias Vector3 = Vec3
         pack Transform { var translation: Vector3 }
 
         pack Single<...T> where (...T).size >= 1 {
-            fin matched: std::Bool = true
+            fin matched: Bool = true
             inline for Ty in ...T {
                 value: Ty
             }
         }
         impl Single<...T> {
-            oper.* [self: std::Self&] {
+            oper.* [self: Self&] {
                 return self.value
             }
         }

@@ -43,11 +43,11 @@ class CodegenGoldenTest {
     /** Program 1 - functions, if/else-if, for, while, interpolation, int division. */
     private val scalarProgram = """
         import std.io
-        func add(a: std::Int, b: std::Int): std::Int {
+        func add(a: Int, b: Int): Int {
             return a + b
         }
 
-        func classify(n: std::Int): std::String {
+        func classify(n: Int): String {
             if n < 0 {
                 return "negative"
             } else if n == 0 {
@@ -58,19 +58,19 @@ class CodegenGoldenTest {
 
         func main() {
             let sum = add(2, 3)
-            std::println("sum = ${'$'}sum")
+            println("sum = ${'$'}sum")
             var total = 0
             for i in 1..5 {
                 total = total + i
             }
-            std::println(total)
+            println(total)
             while total > 10 {
                 total = total - 4
             }
-            std::println(total)
-            std::println(classify(sum))
+            println(total)
+            println(classify(sum))
             let half = sum / 2
-            std::println(half)
+            println(half)
         }
     """.trimIndent()
 
@@ -78,22 +78,22 @@ class CodegenGoldenTest {
     private val aggregateProgram = """
         import std.io
         pack Point {
-            var x: std::Int
-            var y: std::Int
+            var x: Int
+            var y: Int
         }
 
         func main() {
             let p = Point(3, 4)
             p.x = p.x + 1
-            std::println(p.x)
-            let nums = @std::arr[10, 20, 30]
+            println(p.x)
+            let nums = @arr[10, 20, 30]
             nums[1] = 25
-            std::println(nums[1])
+            println(nums[1])
             let grade = 2
             when grade {
-                1 -> { std::println("one") }
-                2, 3 -> { std::println("two or three") }
-                else -> { std::println("other") }
+                1 -> { println("one") }
+                2, 3 -> { println("two or three") }
+                else -> { println("other") }
             }
         }
     """.trimIndent()
@@ -132,12 +132,12 @@ class CodegenGoldenTest {
         val wat = compile(
             """
             bridge .WebAssembly {
-                func webClear(r: std::Double, g: std::Double, b: std::Double): std::Unit
-                func webWave(time: std::Double, speed: std::Double): std::Double
-                func unused(value: std::Int): std::Unit
+                func webClear(r: Double, g: Double, b: Double): Unit
+                func webWave(time: Double, speed: Double): Double
+                func unused(value: Int): Unit
             }
 
-            func frame(time: std::Double): std::Double {
+            func frame(time: Double): Double {
                 webClear(0.1, 0.2, 0.3)
                 return webWave(time, 2.0)
             }
@@ -277,7 +277,7 @@ class CodegenGoldenTest {
               ret i8* %buf
             }
 
-            ; std::String constants
+            ; String constants
             @.str.0 = private unnamed_addr constant [9 x i8] c"negative\00"
             @.str.1 = private unnamed_addr constant [5 x i8] c"zero\00"
             @.str.2 = private unnamed_addr constant [9 x i8] c"positive\00"

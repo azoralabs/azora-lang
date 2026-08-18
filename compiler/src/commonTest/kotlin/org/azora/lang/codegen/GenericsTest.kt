@@ -22,7 +22,7 @@ class GenericsTest {
                 return x
             }
             func main() {
-                std::println(identity(5))
+                println(identity(5))
             }
         """.trimIndent()))
     }
@@ -34,7 +34,7 @@ class GenericsTest {
                 return x
             }
             func main() {
-                std::println(identity("hello"))
+                println(identity("hello"))
             }
         """.trimIndent()))
     }
@@ -46,7 +46,7 @@ class GenericsTest {
                 return a
             }
             func main() {
-                std::println(first(10, "hello"))
+                println(first(10, "hello"))
             }
         """.trimIndent()))
     }
@@ -59,7 +59,7 @@ class GenericsTest {
             }
             func main() {
                 var b = Box(42)
-                std::println(b.value)
+                println(b.value)
             }
         """.trimIndent()))
     }
@@ -72,7 +72,7 @@ class GenericsTest {
             }
             func main() {
                 var b = Box("hello")
-                std::println(b.value)
+                println(b.value)
             }
         """.trimIndent()))
     }
@@ -85,7 +85,7 @@ class GenericsTest {
             }
             func main() {
                 var x = identity(42)
-                std::println(x + 1)
+                println(x + 1)
             }
         """.trimIndent()))
     }
@@ -100,7 +100,7 @@ class GenericsTest {
             }
 
             pack Player {
-                var health: std::Int
+                var health: Int
             }
 
             func get<T>(store: Store<T>): T {
@@ -110,7 +110,7 @@ class GenericsTest {
             func main() {
                 var store = Store<Player>(Player(3))
                 fin player = get<Player>(store)
-                std::println(player.health)
+                println(player.health)
             }
             """.trimIndent(),
             release = false,

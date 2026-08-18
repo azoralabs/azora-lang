@@ -18,9 +18,9 @@ class StdlibMethodsTest {
         assertEquals("apple\nbanana\ncherry", run("""
             import std.io
             func main() {
-                var fruits = @std::arr["apple", "banana", "cherry"]
+                var fruits = @arr["apple", "banana", "cherry"]
                 for fruit in fruits {
-                    std::println(fruit)
+                    println(fruit)
                 }
             }
         """.trimIndent()))
@@ -30,12 +30,12 @@ class StdlibMethodsTest {
         assertEquals("6", run("""
             import std.io
             func main() {
-                var nums = @std::arr[1, 2, 3]
+                var nums = @arr[1, 2, 3]
                 var sum = 0
                 for n in nums {
                     sum = sum + n
                 }
-                std::println(sum)
+                println(sum)
             }
         """.trimIndent()))
     }
@@ -44,7 +44,7 @@ class StdlibMethodsTest {
         assertEquals("HELLO", run("""
             import std.io
             func main() {
-                std::println("hello".toUpperCase())
+                println("hello".toUpperCase())
             }
         """.trimIndent()))
     }
@@ -53,8 +53,8 @@ class StdlibMethodsTest {
         assertEquals("true\nfalse", run("""
             import std.io
             func main() {
-                std::println("hello world".contains("world"))
-                std::println("hello world".contains("xyz"))
+                println("hello world".contains("world"))
+                println("hello world".contains("xyz"))
             }
         """.trimIndent()))
     }
@@ -63,8 +63,8 @@ class StdlibMethodsTest {
         assertEquals("true\ntrue", run("""
             import std.io
             func main() {
-                std::println("hello".startsWith("he"))
-                std::println("hello".endsWith("lo"))
+                println("hello".startsWith("he"))
+                println("hello".endsWith("lo"))
             }
         """.trimIndent()))
     }
@@ -73,7 +73,7 @@ class StdlibMethodsTest {
         assertEquals("hi", run("""
             import std.io
             func main() {
-                std::println("  hi  ".trim())
+                println("  hi  ".trim())
             }
         """.trimIndent()))
     }
@@ -82,7 +82,7 @@ class StdlibMethodsTest {
         assertEquals("hxllo", run("""
             import std.io
             func main() {
-                std::println("hello".replace("e", "x"))
+                println("hello".replace("e", "x"))
             }
         """.trimIndent()))
     }
@@ -91,7 +91,7 @@ class StdlibMethodsTest {
         assertEquals("[b, x, c]", run("""
             import std.io
             func main() {
-                var items = @std::arr["a", "b", "c"]
+                var items = @arr["a", "b", "c"]
                 items.insert(2, "x")
                 items.remove(0)
                 var result = ""
@@ -99,7 +99,7 @@ class StdlibMethodsTest {
                     if i > 0 { result = result + ", " }
                     result = result + items[i]
                 }
-                std::println("[" + result + "]")
+                println("[" + result + "]")
             }
         """.trimIndent()))
     }
@@ -108,9 +108,9 @@ class StdlibMethodsTest {
         assertEquals("true\nfalse", run("""
             import std.io
             func main() {
-                var nums = @std::arr[1, 2, 3]
-                std::println(nums.contains(2))
-                std::println(nums.contains(9))
+                var nums = @arr[1, 2, 3]
+                println(nums.contains(2))
+                println(nums.contains(9))
             }
         """.trimIndent()))
     }
@@ -121,9 +121,9 @@ class StdlibMethodsTest {
             import std.*
 
             func main() {
-                fin nums = std::setOf(1, 2, 2, 3)
-                std::println(nums.size)
-                std::println(nums.contains(2))
+                fin nums = setOf(1, 2, 2, 3)
+                println(nums.size)
+                println(nums.contains(2))
             }
         """.trimIndent()))
     }

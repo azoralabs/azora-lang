@@ -21,20 +21,20 @@ class Tier3DiTest {
         assertEquals("1\n2\n3", run("""
             import std.io
             solo pack Counter {
-                var count: std::Int = 0
+                var count: Int = 0
             }
             impl Counter {
-                func inc[self: std::Self!](): std::Int {
+                func inc[self: Self!](): Int {
                     self.count = self.count + 1
                     return self.count
                 }
             }
             func main() {
                 var c1 = inject Counter
-                std::println(c1.inc())
-                std::println(c1.inc())
+                println(c1.inc())
+                println(c1.inc())
                 var c2 = inject Counter
-                std::println(c2.inc())
+                println(c2.inc())
             }
         """.trimIndent()))
     }
@@ -43,15 +43,15 @@ class Tier3DiTest {
         assertEquals("42", run("""
             import std.io
             solo pack Config {
-                var value: std::Int = 42
+                var value: Int = 42
             }
             impl Config {
-                func get[self: std::Self!](): std::Int {
+                func get[self: Self!](): Int {
                     return self.value
                 }
             }
             func main() {
-                std::println(inject Config.get())
+                println(inject Config.get())
             }
         """.trimIndent()))
     }
@@ -60,11 +60,11 @@ class Tier3DiTest {
         assertEquals("hello", run("""
             import std.io
             solo pack Greeting {
-                var msg: std::String = "hello"
+                var msg: String = "hello"
             }
             func main() {
                 var g = inject Greeting
-                std::println(g.msg)
+                println(g.msg)
             }
         """.trimIndent()))
     }
@@ -73,10 +73,10 @@ class Tier3DiTest {
         assertEquals("APP\npostgres://localhost", run("""
             import std.io
             pack Logger {
-                var prefix: std::String
+                var prefix: String
             }
             pack DB {
-                var url: std::String
+                var url: String
             }
             graph App {
                 solo Logger("APP")
@@ -84,9 +84,9 @@ class Tier3DiTest {
             }
             func main() {
                 var l = inject Logger
-                std::println(l.prefix)
+                println(l.prefix)
                 var d = inject DB
-                std::println(d.url)
+                println(d.url)
             }
         """.trimIndent()))
     }
@@ -95,7 +95,7 @@ class Tier3DiTest {
         assertEquals("same", run("""
             import std.io
             pack Logger {
-                var prefix: std::String
+                var prefix: String
             }
             graph App {
                 solo Logger("test")
@@ -110,7 +110,7 @@ class Tier3DiTest {
                 // a different question and one the pack never answered.
                 a.prefix = "written through a"
                 if b.prefix == "written through a" {
-                    std::println("same")
+                    println("same")
                 }
             }
         """.trimIndent()))
@@ -120,10 +120,10 @@ class Tier3DiTest {
     fun lazyBindingCanDeferInjection() {
         assertEquals("64", run("""
             import std.io
-            solo pack Cache { fin size: std::Int = 64 }
+            solo pack Cache { fin size: Int = 64 }
             func main() {
                 lazy fin c = inject Cache
-                std::println(c.size)
+                println(c.size)
             }
         """.trimIndent()))
     }
@@ -144,7 +144,7 @@ class Tier3DiTest {
         // difference between the forms.
         val result = Compiler().compile(
             """
-            pack Service { fin url: std::String = "" }
+            pack Service { fin url: String = "" }
             graph AppGraph { Service("https://x") }
             func main() {}
             """.trimIndent(),
@@ -160,11 +160,11 @@ class Tier3DiTest {
     fun everyProviderLifetimeAndGraphCompositionParse() {
         assertEquals("https://api", run("""
             import std.io
-            spec Api { func host[self: std::Self&](): std::String }
-            pack Config { fin url: std::String = "" }
-            pack HttpClient { fin url: std::String = "" }
-            impl Api for HttpClient { func host[self: std::Self&](): std::String { return self.url } }
-            pack LoginViewModel { fin tag: std::String = "" }
+            spec Api { func host[self: Self&](): String }
+            pack Config { fin url: String = "" }
+            pack HttpClient { fin url: String = "" }
+            impl Api for HttpClient { func host[self: Self&](): String { return self.url } }
+            pack LoginViewModel { fin tag: String = "" }
 
             graph NetworkGraph {
                 solo Config("https://api")
@@ -176,7 +176,7 @@ class Tier3DiTest {
                 scope LoginViewModel("per-scope")
             }
 
-            func main() { std::println(inject Config.url) }
+            func main() { println(inject Config.url) }
         """.trimIndent()))
     }
 
@@ -190,17 +190,17 @@ class Tier3DiTest {
     fun includeComposesGraphsWithoutTakingTheNameFromPrograms() {
         assertEquals("kept\n42", run("""
             import std.io
-            pack Config { fin url: std::String = "" }
+            pack Config { fin url: String = "" }
             graph BaseGraph { solo Config("u") }
             graph AppGraph includes BaseGraph { }
 
-            func includes(n: std::Int): std::Int { return n }
+            func includes(n: Int): Int { return n }
 
             func main() {
                 var includes = true
                 fin used = if includes { "kept" } else { "dropped" }
-                std::println(used)
-                std::println(includes(42))
+                println(used)
+                println(includes(42))
             }
         """.trimIndent()))
     }

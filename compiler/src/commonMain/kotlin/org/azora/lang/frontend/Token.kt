@@ -141,6 +141,12 @@ enum class TokenType {
     BRIDGE,
     // DI: `solo pack Name { … }` singleton, `inject Type` resolve, `graph Name { … }` container.
     SOLO, INJECT, GRAPH,
+    // `scoped Type(args)` inside a `graph` - one value per active scope. A
+    // separate word from `scope`, which is a namespace.
+    SCOPED,
+    // `direct spec Number { prop rank: Int }` - a spec whose members belong to
+    // the type rather than to its values.
+    DIRECT,
 
     // `lazy fin` / `lazy let` - evaluate a binding on its first read.
     LAZY,

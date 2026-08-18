@@ -23,14 +23,14 @@ class ReactivityTest {
     @Test fun reactiveStateKindsAreAvailableInsideReactiveFunctions() {
         assertEquals("6", run("""
             import std.io
-                        react func calculate(): std::Int {
+                        react func calculate(): Int {
                 preserve var a = 1
                 remember var b = 2
                 retain var c = 3
                 return a + b + c
             }
                         react func main() {
-                std::println(calculate())
+                println(calculate())
             }
         """.trimIndent()))
     }
@@ -38,9 +38,9 @@ class ReactivityTest {
     @Test fun aReactivePropertyOwnsReactiveState() {
         assertEquals("7", run("""
             import std.io
-            pack Counter { var base: std::Int = 0 }
+            pack Counter { var base: Int = 0 }
             impl Counter {
-                react prop total[self: std::Self&]: std::Int {
+                react prop total[self: Self&]: Int {
                     remember var value = 1
                     var observed = 0
                     effect { observed = value }
@@ -50,16 +50,16 @@ class ReactivityTest {
             }
             react func main() {
                 fin c = Counter(0)
-                std::println(c.total)
+                println(c.total)
             }
         """.trimIndent()))
     }
 
     @Test fun anOrdinaryPropertyMayNotOwnReactiveState() {
         val found = errors("""
-            pack Counter { var base: std::Int = 0 }
+            pack Counter { var base: Int = 0 }
             impl Counter {
-                prop total[self: std::Self&]: std::Int {
+                prop total[self: Self&]: Int {
                     remember var value = 1
                     return value
                 }
@@ -74,9 +74,9 @@ class ReactivityTest {
 
     @Test fun reactMayOnlyQualifyAMember() {
         val found = errors("""
-            pack P { var n: std::Int = 0 }
+            pack P { var n: Int = 0 }
             impl P {
-                react var n: std::Int = 0
+                react var n: Int = 0
             }
         """.trimIndent())
         assertTrue(
@@ -91,16 +91,16 @@ class ReactivityTest {
         assertEquals("3", run("""
             import std.io
 
-            pack P { var n: std::Int = 0 }
+            pack P { var n: Int = 0 }
             impl P {
-                react ctor[self: Self!](n: std::Int) {
+                react ctor[self: Self!](n: Int) {
                     self.n = n
                 }
             }
 
             func main() {
                 fin p = P(3)
-                std::println(p.n)
+                println(p.n)
             }
         """.trimIndent()))
     }
@@ -111,7 +111,7 @@ class ReactivityTest {
                         react func observe() {
                 remember var value = 1
                 effect {
-                    std::println(value)
+                    println(value)
                 }
                 value = 7
             }
@@ -128,7 +128,7 @@ class ReactivityTest {
                 remember var observed = 1
                 remember var unrelated = 10
                 effect {
-                    std::println(observed)
+                    println(observed)
                 }
                 unrelated = 11
                 observed = 2
@@ -145,8 +145,8 @@ class ReactivityTest {
                         react func observe() {
                 remember var x = 1
                 remember var y = 1
-                effect x { std::println(x * 10 + y) }
-                effect [x, y] { std::println(x * 10 + y) }
+                effect x { println(x * 10 + y) }
+                effect [x, y] { println(x * 10 + y) }
                 y = 2
                 x = 2
             }
@@ -161,7 +161,7 @@ class ReactivityTest {
             import std.io
                         react func work() {
                 effect defer {
-                    std::println("cleanup")
+                    println("cleanup")
                 }
             }
                         react func main() {
@@ -196,9 +196,9 @@ class ReactivityTest {
     @Test fun viewIsAnOrdinaryIdentifierNotAKeyword() {
         assertEquals("4", run("""
             import std.io
-            func view(value: std::Int): std::Int = value * 2
+            func view(value: Int): Int = value * 2
             func main() {
-                std::println(view(2))
+                println(view(2))
             }
         """.trimIndent()))
     }
@@ -207,13 +207,13 @@ class ReactivityTest {
         assertEquals("10", run("""
             import std.io
             import std.reactive
-            pack Settings { var n: std::Int = 0 }
+            pack Settings { var n: Int = 0 }
                         react func main() {
                 preserve var a = Settings(1)
                 preserve val b = Settings(2)
                 preserve let c = Settings(3)
                 preserve fin d = Settings(4)
-                std::println(a.n + b.n + c.n + d.n)
+                println(a.n + b.n + c.n + d.n)
             }
         """.trimIndent()))
     }
@@ -257,7 +257,7 @@ class ReactivityTest {
                 remember var a = 1
                 retain var b = 2
                 preserve var c = 3
-                std::println(a + b + c)
+                println(a + b + c)
             }
         """.trimIndent()))
     }
@@ -292,15 +292,15 @@ class ReactivityTest {
     @Test fun lazyFinEvaluatesOnlyOnFirstRead() {
         assertEquals("before\ninit\n42\n42", run("""
             import std.io
-            func make(): std::Int {
-                std::println("init")
+            func make(): Int {
+                println("init")
                 return 42
             }
             func main() {
                 lazy fin answer = make()
-                std::println("before")
-                std::println(answer)
-                std::println(answer)
+                println("before")
+                println(answer)
+                println(answer)
             }
         """.trimIndent()))
     }
@@ -315,15 +315,15 @@ class ReactivityTest {
     @Test fun rememberedStateSurvivesRepeatedReactiveCalls() {
         assertEquals("1\n2\n3", run("""
             import std.io
-            react func counter(): std::Int {
+            react func counter(): Int {
                 remember var count = 0
                 count = count + 1
                 return count
             }
             react func main() {
-                std::println(counter())
-                std::println(counter())
-                std::println(counter())
+                println(counter())
+                println(counter())
+                println(counter())
             }
         """.trimIndent()))
     }
@@ -331,12 +331,12 @@ class ReactivityTest {
     @Test fun parallelFirstReadsInitializeRememberedStateExactlyOnce() {
         assertEquals("init\n14", run("""
             import std.io
-            async func build(): std::Int {
+            async func build(): Int {
                 delay 20
-                std::println("init")
+                println("init")
                 return 7
             }
-            react async func read(): std::Int {
+            react async func read(): Int {
                 remember fin value = await build()
                 return value
             }
@@ -345,7 +345,7 @@ class ReactivityTest {
                 fin second = read()
                 fin a = await first
                 fin b = await second
-                std::println(a + b)
+                println(a + b)
             }
         """.trimIndent()))
     }
@@ -356,10 +356,10 @@ class ReactivityTest {
             react func main() {
                 remember var value = 1
                 lazy fin doubled = value * 2
-                std::println(doubled)
+                println(doubled)
                 value = 3
-                std::println(doubled)
-                std::println(doubled)
+                println(doubled)
+                println(doubled)
             }
         """.trimIndent()))
     }
@@ -370,7 +370,7 @@ class ReactivityTest {
             react func main() {
                 remember var value = 1
                 lazy fin doubled = value * 2
-                effect doubled { std::println(doubled) }
+                effect doubled { println(doubled) }
                 value = 3
             }
         """.trimIndent()))
@@ -381,18 +381,18 @@ class ReactivityTest {
             import std.io
             import std.reactive
             func main() {
-                var source = std::state(1)
+                var source = state(1)
                 var latest = 0
                 var calls = 0
-                var subscription = std::observe(source) [; latest.!, calls.!] { value: std::Int ->
+                var subscription = observe(source) [; latest.!, calls.!] { value: Int ->
                     latest = value
                     calls += 1
                 }
                 source.set(7)
-                std::println("${'$'}{latest}:${'$'}{calls}")
+                println("${'$'}{latest}:${'$'}{calls}")
                 subscription.dispose()
                 source.set(9)
-                std::println("${'$'}{latest}:${'$'}{calls}")
+                println("${'$'}{latest}:${'$'}{calls}")
             }
         """.trimIndent()))
     }

@@ -13,10 +13,10 @@ item: collection members the compiler still supplies without a declaration.
 
 ## 1. Test sources on the old dialect (28)
 
-### 1.1 `@arr[...]` -> `@std::arr[...]` (3)
+### 1.1 `@arr[...]` -> `@arr[...]` (3)
 
-A value macro is invoked through the realm that declares it. `@std::arr` takes
-`[...$items]` only - a `key: value` entry belongs to `@std::map`.
+A value macro is invoked through the realm that declares it. `@arr` takes
+`[...$items]` only - a `key: value` entry belongs to `@map`.
 
 ```
 compiler/src/desktopTest/kotlin/org/azora/lang/codegen/LlvmAggregateExecTest.kt:285  arrayContainsScalarsAndStrings
@@ -62,7 +62,7 @@ compiler/src/desktopTest/kotlin/org/azora/lang/codegen/WasmCodegenExecTest.kt:43
 ## 2. Golden output on the old mangling (17)
 
 A canonical symbol is `__<realm path>_<local>`: `realm x::y { func z }` is
-`__x_y_z`, `std::println` is `__std_println`.
+`__x_y_z`, `println` is `__std_println`.
 
 ```
 compiler/src/commonTest/kotlin/org/azora/lang/codegen/CodegenGoldenTest.kt:167        llvmFullOutputScalar

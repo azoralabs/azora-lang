@@ -9,10 +9,10 @@ class ArrayStdlibExecTest {
         import std.io
 
         func main() {
-            fin values: std::Array<std::Int> = std::arrayOf(5, 8, 13)
-            std::println(values.size)
-            std::println(values[1])
-            unsafe { std::println(values.data[1]) }
+            fin values: Array<Int> = arrayOf(5, 8, 13)
+            println(values.size)
+            println(values[1])
+            unsafe { println(values.data[1]) }
         }
     """.trimIndent()
 

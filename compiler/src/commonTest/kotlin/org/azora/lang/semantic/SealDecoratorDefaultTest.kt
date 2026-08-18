@@ -55,7 +55,7 @@ class SealDecoratorDefaultTest {
 
         annot Log for .Pack {
             fin level: Level = .Info
-            fin prefix: std::String = when level {
+            fin prefix: String = when level {
                 .Error -> seal "!! "
                 else -> ""
             }
@@ -69,13 +69,13 @@ class SealDecoratorDefaultTest {
             @Log(level: .Error) pack Loud
             @Log pack Plain
 
-            func loud(): std::String {
-                inline fin value = std::reflect<Loud>.annotMeta<Log>.prefix
+            func loud(): String {
+                inline fin value = reflect<Loud>.annotMeta<Log>.prefix
                 return value
             }
 
-            func plain(): std::String {
-                inline fin value = std::reflect<Plain>.annotMeta<Log>.prefix
+            func plain(): String {
+                inline fin value = reflect<Plain>.annotMeta<Log>.prefix
                 return value
             }
 
@@ -93,8 +93,8 @@ class SealDecoratorDefaultTest {
 
             @Log(.Error) pack Loud
 
-            func loud(): std::String {
-                inline fin value = std::reflect<Loud>.annotMeta<Log>.prefix
+            func loud(): String {
+                inline fin value = reflect<Loud>.annotMeta<Log>.prefix
                 return value
             }
 
@@ -127,8 +127,8 @@ class SealDecoratorDefaultTest {
 
             @Log(level: .Info, prefix: "mine") pack Plain
 
-            func plain(): std::String {
-                inline fin value = std::reflect<Plain>.annotMeta<Log>.prefix
+            func plain(): String {
+                inline fin value = reflect<Plain>.annotMeta<Log>.prefix
                 return value
             }
 
@@ -143,8 +143,8 @@ class SealDecoratorDefaultTest {
         val result = analyze("""
             enum Level { Error, Info }
 
-            func label(l: Level): std::String {
-                fin value: std::String = when l {
+            func label(l: Level): String {
+                fin value: String = when l {
                     .Error -> seal "!! "
                     else -> ""
                 }

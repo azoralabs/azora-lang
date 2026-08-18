@@ -30,16 +30,16 @@ class QuantumStdlibTest {
                 import std.io
 
                 func main() {
-                    fin bell = std::bellPair()
-                    fin hidden = std::bernsteinVazirani(@std::arr[1, 0, 1])
-                    fin fourier = std::quantumFourierTransform(3)
-                    fin search = std::groverSearch(3, 5)
-                    std::println(bell.qubits)
-                    std::println(bell.gates.size)
-                    std::println(hidden.qubits)
-                    std::println(fourier.gates.size)
-                    std::println(search.gates.size)
-                    std::println(std::groverIterations(3))
+                    fin bell = bellPair()
+                    fin hidden = bernsteinVazirani(@arr[1, 0, 1])
+                    fin fourier = quantumFourierTransform(3)
+                    fin search = groverSearch(3, 5)
+                    println(bell.qubits)
+                    println(bell.gates.size)
+                    println(hidden.qubits)
+                    println(fourier.gates.size)
+                    println(search.gates.size)
+                    println(groverIterations(3))
                 }
                 """,
             ),

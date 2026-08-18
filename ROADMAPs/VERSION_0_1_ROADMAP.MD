@@ -171,7 +171,7 @@ lines).
 - ✅ Modules, imports, realms, import gating
 - ⬜ **`use realmName` at a use site**, the equivalent of C++'s
   `using namespace std`: bring a realm's members into scope unqualified for the
-  rest of the file or block, so `println(x)` works where `std::println(x)` is
+  rest of the file or block, so `println(x)` works where `println(x)` is
   written today. is written today.
   - ⬜ Scoping: file-level, block-level, or both
   - ⬜ Ambiguity rules when two opened realms export the same name; a
@@ -341,8 +341,8 @@ generation. Every form the parser accepts:
 - ✅ `channel()` with send/receive/close (a compiler builtin)
 - ✅ `delay`
 - ⬜ **`Mutex` and `Atomic` do not exist**, so `std.parallelism.sync` and
-  `std.parallelism.channel` **do not compile when used**: `std::SpinLock`,
-  `std::Guard`, `std::CountDownLatch` and `std::Channel` all fail with
+  `std.parallelism.channel` **do not compile when used**: `SpinLock`,
+  `Guard`, `CountDownLatch` and `Channel` all fail with
   `undefined function 'Mutex'` / `'Atomic'`. Importing the module is fine, which
   is what hides it
 - ⬜ `Send` / `Sync` capabilities
@@ -353,7 +353,7 @@ generation. Every form the parser accepts:
   duration, and `joinAll(count)` **joins nothing** - it sleeps for `count` ms.
   Delete the module or implement it
 - ⬜ **Two unrelated channels**: the working compiler builtin `channel()` and
-  the library `std::Channel<T>` that does not compile and whose `receive`
+  the library `Channel<T>` that does not compile and whose `receive`
   asserts rather than waiting. Decide which survives
 - ⬜ A memory model - ordering, visibility, and what a data race *is* in Azora
   terms. Every atomic operation's meaning depends on it
@@ -643,19 +643,19 @@ And what has to be true after it, or the removal just loses a feature:
   never mapped it back. Each is fixed and covered by
   `RealmQualifiedAccessTest`:
   - ✅ `?!` took a single identifier, so no function outside `std` could
-    declare `?! std::SerializationError` - which every `Serializer<T>` member
+    declare `?! SerializationError` - which every `Serializer<T>` member
     must. `Parser.parseErrorSetName`
-  - ✅ `impl std::Serializer<T> for MyCodec` did not parse; the name after
+  - ✅ `impl Serializer<T> for MyCodec` did not parse; the name after
     `impl` was a bare identifier. `Parser.parseImplHeadName`
-  - ✅ `std::SerialValue.Text(x)` did not resolve, in expression or pattern
+  - ✅ `SerialValue.Text(x)` did not resolve, in expression or pattern
     position. `lookupEnum` / `lookupSlot` / `lookupFail` now take the
     realm-qualified form that `lookupStruct` already accepted, and
     `SymbolTable.canonicalTypeName` gives the resulting type its declared
     identity
-  - ✅ `std::SerialField(…)` construction failed: the injector recorded the
+  - ✅ `SerialField(…)` construction failed: the injector recorded the
     qualifier and the mangled name as referenced, never the bare tail that is
     the declaration, so the pack was never injected
-  - ✅ `ArrayList<std::SerialField>` was a parse error; `isGenericCallAhead`
+  - ✅ `ArrayList<SerialField>` was a parse error; `isGenericCallAhead`
     stopped at `::`
   - ✅ `impl Spec for Realm::Type` named a *field*, because `Type::member` is
     the decorator's field target and the two share a spelling. A member target
@@ -672,7 +672,7 @@ And what has to be true after it, or the removal just loses a feature:
   `ignoreUnknownFields` behaves the same, because they shape the value tree
   rather than the text format
 
-None of these were serializer-specific. `std::Compare.Less` was equally
+None of these were serializer-specific. `Compare.Less` was equally
 unspellable, so the fixes reach every realm-scoped type in the language.
 
 ---

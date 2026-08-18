@@ -31,16 +31,16 @@ the compiler-native kernel syntax is implemented incrementally.
 import std.gpu
 
 func main() {
-    fin device = std::open(std::GpuBackend.Default)
-    fin source = std::computeShader(
+    fin device = open(GpuBackend.Default)
+    fin source = computeShader(
         "addVectors",
         "fn addVectors() { /* portable kernel source */ }",
         64,
     )
-    fin shader = std::compile(device, source)
-    fin pipeline = std::pipeline(device, shader)
-    std::dispatch(device, pipeline, std::dispatchFor(4096, 64))
-    std::finish(device)
+    fin shader = compile(device, source)
+    fin pipeline = pipeline(device, shader)
+    dispatch(device, pipeline, dispatchFor(4096, 64))
+    finish(device)
 }
 ```
 
@@ -93,9 +93,9 @@ The proposed spelling is:
 ```azora
 @WorkgroupSize(64, 1, 1)
 kernel addVectors(
-    storage output: std::GpuBuffer<Float>,
-    storage left: std::GpuBuffer<Float>,
-    storage right: std::GpuBuffer<Float>,
+    storage output: GpuBuffer<Float>,
+    storage left: GpuBuffer<Float>,
+    storage right: GpuBuffer<Float>,
     uniform count: Int,
 ) {
     fin i = gpu::globalId.x
@@ -110,15 +110,15 @@ The host side remains ordinary Azora:
 ```azora
 import std.gpu
 
-func runAdd(device: std::GpuDevice, values: std::Array<Float>) {
-    fin left = std::upload<Float>(device, values, std::BufferUsage.Storage)
-    fin right = std::upload<Float>(device, values, std::BufferUsage.Storage)
-    fin output = std::buffer<Float>(device, values.size, std::BufferUsage.Storage)
-    fin program = std::pipeline(device, std::compile(device, addVectors))
+func runAdd(device: GpuDevice, values: Array<Float>) {
+    fin left = upload<Float>(device, values, BufferUsage.Storage)
+    fin right = upload<Float>(device, values, BufferUsage.Storage)
+    fin output = buffer<Float>(device, values.size, BufferUsage.Storage)
+    fin program = pipeline(device, compile(device, addVectors))
 
-    std::dispatch(device, program, std::dispatchFor(values.size, 64))
-    std::finish(device)
-    return std::download<Float>(device, output)
+    dispatch(device, program, dispatchFor(values.size, 64))
+    finish(device)
+    return download<Float>(device, output)
 }
 ```
 
@@ -168,7 +168,7 @@ The contextuality rule is important. This must remain legal outside a GPU
 declaration:
 
 ```azora
-func dispatch(queue: std::String): std::Int { return queue.size }
+func dispatch(queue: String): Int { return queue.size }
 ```
 
 The parser recognizes GPU-only forms only after `kernel`, `shader`, or a GPU
@@ -188,8 +188,8 @@ The portable subset initially allows:
 - `Bool`, integer and floating-point scalar types;
 - fixed-size vectors and matrices;
 - immutable value packs composed of those types;
-- `std::GpuBuffer<T>` and read-only `uniform` values;
-- `std::Array<T, N>` when `N` is compile-time known;
+- `GpuBuffer<T>` and read-only `uniform` values;
+- `Array<T, N>` when `N` is compile-time known;
 - GPU builtins such as `gpu::globalId` and `gpu::localId`;
 - ordinary arithmetic, comparisons, conditionals, bounded loops, and calls to
   other `@kernel` helpers.
@@ -398,9 +398,9 @@ or tiled for a particular workgroup. `GpuLayout` is therefore a first-class
 value and `GpuTensor<T>` is a non-owning view over a typed buffer.
 
 ```azora
-fin storage = std::uploadAsync<Double>(stream, values, std::BufferUsage.Storage)
-fin layout = std::tiled(@std::arr[4096, 4096], 32, 32, 1)
-fin matrix = std::view<Double>(storage, layout)
+fin storage = uploadAsync<Double>(stream, values, BufferUsage.Storage)
+fin layout = tiled(@arr[4096, 4096], 32, 32, 1)
+fin matrix = view<Double>(storage, layout)
 ```
 
 The compiler and adapters must preserve these invariants:
@@ -488,8 +488,8 @@ The syntax should keep the fast path readable:
 ```azora
 @workgroupSize(128, 1, 1)
 kernel reduceSum(
-    storage input: std::GpuBuffer<Float>,
-    storage output: std::GpuBuffer<Float>,
+    storage input: GpuBuffer<Float>,
+    storage output: GpuBuffer<Float>,
     uniform count: Int,
 ) {
     fin i = gpu::globalId.x
@@ -582,7 +582,7 @@ Each backend must declare capabilities before pipeline creation:
 - available subgroup operations and atomic operations;
 - whether readback, timestamps, or presentation is supported.
 
-`std::open` selects a backend, but it does not silently fall back to another
+`open` selects a backend, but it does not silently fall back to another
 one. `GpuBackend.CpuFallback` is an explicit test/development choice, not a
 hidden recovery path. A compiled shader artifact should include:
 

@@ -180,7 +180,7 @@ class CollectionCtorTest {
     @Test fun alloc_buffer_and_pointer_index() = assertEquals("10\n30\n99", run("""
         import std.io
         func main() {
-            var p: Int* = alloc Int[3]
+            var p: Int* = alloc Int*() * 3
             p[0] = 10
             p[1] = 20
             p[2] = 30

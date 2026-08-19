@@ -90,15 +90,15 @@ bridge spec Allocator
  * Usage:
  *
  *     var arena = Arena(64 * 1024)
- *     var particles = alloc Double[1000] in arena
- *     var transforms = alloc Double[1000] in arena
+ *     var particles: Double* = alloc .() * 1000 in arena
+ *     var transforms: Double* = alloc .() * 1000 in arena
  *     // ... compute ...
  *     arena.reset()   // all allocations freed at once
  *
  * Or with region blocks:
  *
  *     region(32 * 1024) { alloc ->
- *         var verts = alloc Double[600] in alloc
+ *         var verts: Double* = alloc .() * 600 in alloc
  *     }
  *     // everything freed here
  */

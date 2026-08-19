@@ -580,6 +580,10 @@ class SymbolCollector {
                                     params.drop(1),
                                     yields,
                                     false,
+                                    // `ctor[self](...args: T)` - a variadic ctor is
+                                    // satisfied by any number of arguments, none
+                                    // included, exactly as a variadic `func` is.
+                                    isVariadic = method.params.lastOrNull()?.variadic == true,
                                     visibility = method.visibility,
                                     contextualParams = method.contextualParams,
                                     // A ctor takes named arguments and fills what
@@ -1086,7 +1090,7 @@ class SymbolCollector {
         is Expr.NamedArg -> null
         is Expr.NullLiteral -> IrType.Any
         is Expr.NullCoalesce, is Expr.SafeMember,
-        is Expr.Cast, is Expr.IsCheck, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null
+        is Expr.Cast, is Expr.IsCheck, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null
         // Macros are expanded before symbol collection; unreachable.
         is Expr.MetaInvoke -> null
         is Expr.Slice -> null

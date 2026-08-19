@@ -61,6 +61,16 @@ object Intrinsics {
     const val PRINTLN = "println"
     const val TO_STRING = "toString"
     const val ARRAY_FILL = "Array_fill"
+
+    /**
+     * The array type.
+     *
+     * A language primitive with a library-declared surface, as `String` is: the
+     * IR has [IrType.Array], every backend builds one natively, and `arr![…]`
+     * expands to `Array(…)`. The library declares what an array *offers*; making
+     * one is the compiler's job.
+     */
+    const val ARRAY = "Array"
     const val CANCEL = "concurrency_cancel"
 
     /**

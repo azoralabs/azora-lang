@@ -168,7 +168,7 @@ class Tier3MemoryTest {
             import std.io
             import std.memory.*
             func main() {
-                var p = alloc^ Int[3]
+                var p = alloc Int^() * 3
                 p[0] = 7
                 p[1] = 8
                 p[2] = 9

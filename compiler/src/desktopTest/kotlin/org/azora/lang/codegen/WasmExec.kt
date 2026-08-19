@@ -64,7 +64,7 @@ object WasmExec {
           return dec.decode(new Uint8Array(mem.buffer, ptr + 4, len));
         }
         const imports = { env: {
-          print_i32: x => console.log(x),
+          print_i32: x => console.log(String(x)),
           print_i64: x => console.log(x.toString()),
           print_f64: x => console.log(Number.isInteger(x) ? x.toFixed(1) : String(x)),
           print_f32: x => console.log(Number.isInteger(x) ? x.toFixed(1) : String(x)),
@@ -108,7 +108,14 @@ object WasmExec {
             val asmOut = asmProc.inputStream.bufferedReader().readText()
             if (asmProc.waitFor() != 0) fail("wat2wasm failed:\n$asmOut\n--- WAT ---\n$wat")
 
-            val runProc = ProcessBuilder(nodeTool, driverFile.absolutePath, wasmFile.absolutePath).start()
+            // `console.log(number)` *inspects* its argument, and node colours an
+            // inspected number when it believes stdout is a terminal - which turns
+            // `14` into `\u001b[33m14\u001b[39m` and fails a comparison that is
+            // about the program, not about node. The driver prints strings, and
+            // this says so a second time for anything that slips through.
+            val runProc = ProcessBuilder(nodeTool, driverFile.absolutePath, wasmFile.absolutePath)
+                .apply { environment()["NO_COLOR"] = "1"; environment()["FORCE_COLOR"] = "0" }
+                .start()
             val stdout = runProc.inputStream.bufferedReader().readText()
             val stderr = runProc.errorStream.bufferedReader().readText()
             if (runProc.waitFor() != 0) fail("node exited non-zero\n--- stderr ---\n$stderr\n--- WAT ---\n$wat")

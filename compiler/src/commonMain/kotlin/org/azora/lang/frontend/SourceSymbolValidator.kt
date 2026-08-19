@@ -292,7 +292,6 @@ internal object SourceSymbolValidator {
             is Expr.InCheck -> { expression(expression.value); expression(expression.collection) }
             is Expr.MapLit -> expression.entries.forEach { (key, value) -> expression(key); expression(value) }
             is Expr.Alloc -> expression(expression.value)
-            is Expr.AllocBuffer -> expression(expression.count)
             is Expr.Deref -> expression(expression.target)
             is Expr.Isolated -> expression(expression.value)
             is Expr.Await -> expression(expression.value)

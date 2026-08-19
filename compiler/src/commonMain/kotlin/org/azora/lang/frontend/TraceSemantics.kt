@@ -77,7 +77,6 @@ private fun Expr.bindTraceReceiver(receiver: Expr, interpolation: Boolean): Expr
         key.bindTraceReceiver(receiver, interpolation) to value.bindTraceReceiver(receiver, interpolation)
     })
     is Expr.Alloc -> copy(value = value.bindTraceReceiver(receiver, interpolation))
-    is Expr.AllocBuffer -> copy(count = count.bindTraceReceiver(receiver, interpolation))
     is Expr.Deref -> copy(target = target.bindTraceReceiver(receiver, interpolation))
     is Expr.Isolated -> copy(value = value.bindTraceReceiver(receiver, interpolation))
     is Expr.Await -> copy(value = value.bindTraceReceiver(receiver, interpolation))

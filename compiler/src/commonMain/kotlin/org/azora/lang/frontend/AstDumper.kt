@@ -561,10 +561,6 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             sb.appendLine("${indent}Alloc")
             dumpExpr(sb, expr.value, "$indent    ")
         }
-        is Expr.AllocBuffer -> {
-            sb.appendLine("${indent}AllocBuffer(${expr.typeName})")
-            dumpExpr(sb, expr.count, "$indent    ")
-        }
         is Expr.Deref -> {
             sb.appendLine("${indent}Deref")
             dumpExpr(sb, expr.target, "$indent    ")

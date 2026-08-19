@@ -168,9 +168,7 @@ impl ArrayList<T> {
 
     // this is .(1, 2, 3)
     ctor[self: Self!](...args: T) {
-        self._data = alloc .(
-            inline for e in args { e }
-        )
+        self._data = alloc args
         self._size = args.length
         self._capacity = args.length
     }
@@ -193,8 +191,8 @@ impl ArrayList<T> {
 impl Clone for ArrayList {
     func clone[self: Self&]() {
         var copy = ArrayList<T>()
-        for i in 0..<self.size {
-            copy.add(self.data[i])
+        for i in 0..<self._size {
+            copy.add(self._data[i])
         }
         return copy
     }
@@ -208,38 +206,38 @@ impl ArrayList<T> {
     /** Doubles the backing buffer, copying existing elements. */
     @Experimental(since: "0.1")
     func grow[self: Self!]() {
-        fin newCap = self.capacity * 2
-        let newData = alloc T[newCap]
-        for i in 0..<self.size {
-            newData[i] = self.data[i]
+        fin newCap = self._capacity * 2
+        let newData: T* = alloc .() * newCap
+        for i in 0..<self._size {
+            newData[i] = self._data[i]
         }
-        fin oldData = self.data
-        self.data = newData
-        self.capacity = newCap
+        fin oldData = self._data
+        self._data = newData
+        self._capacity = newCap
         purge oldData
     }
 }
 
 impl List<T> for ArrayList<T> {
-    prop size[self: Self&]: Int = self.size
-    prop isEmpty[self: Self&]: Bool = self.size == 0
-    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+    prop size[self: Self&]: Int = self._size
+    prop isEmpty[self: Self&]: Bool = self._size == 0
+    prop isNotEmpty[self: Self&]: Bool = self._size > 0
 
     prop first[self: Self&]: T {
-        assert self.size > 0 { "List is empty" }
-        return self.data[0]
+        assert self._size > 0 { "List is empty" }
+        return self._data[0]
     }
 
     prop last[self: Self&]: T {
-        assert self.size > 0 { "List is empty" }
-        return self.data[self.size - 1]
+        assert self._size > 0 { "List is empty" }
+        return self._data[self._size - 1]
     }
 
     prop reversed[self: Self&]: List<T> {
         var result = ArrayList<T>()
-        var i = self.size - 1
+        var i = self._size - 1
         while i >= 0 {
-            result.add(self.data[i])
+            result.add(self._data[i])
             i -= 1
         }
         return result
@@ -247,93 +245,93 @@ impl List<T> for ArrayList<T> {
 
     func get[self: Self&](index: Int): T {
         assert index >= 0 { "List index must be non-negative" }
-        assert index < self.size { "List index out of bounds" }
-        return self.data[index]
+        assert index < self._size { "List index out of bounds" }
+        return self._data[index]
     }
 
     func contains[self: Self&](element: T): Bool {
-        for i in 0..<self.size {
-            if self.data[i] == element { return true }
+        for i in 0..<self._size {
+            if self._data[i] == element { return true }
         }
         return false
     }
 
     func indexOf[self: Self&](element: T): Int {
-        for i in 0..<self.size {
-            if self.data[i] == element { return i }
+        for i in 0..<self._size {
+            if self._data[i] == element { return i }
         }
         return -1
     }
 
     func lastIndexOf[self: Self&](element: T): Int {
         var result = -1
-        for i in 0..<self.size {
-            if self.data[i] == element { result = i }
+        for i in 0..<self._size {
+            if self._data[i] == element { result = i }
         }
         return result
     }
 
     func forEach[self: Self&](action: (T) -> Unit) {
-        for i in 0..<self.size {
-            action(self.data[i])
+        for i in 0..<self._size {
+            action(self._data[i])
         }
     }
 
     func map[self: Self&](transform: (T) -> T): List<T> {
         var result = ArrayList<T>()
-        for i in 0..<self.size {
-            result.add(transform(self.data[i]))
+        for i in 0..<self._size {
+            result.add(transform(self._data[i]))
         }
         return result
     }
 
     func filter[self: Self&](predicate: (T) -> Bool): List<T> {
         var result = ArrayList<T>()
-        for i in 0..<self.size {
-            if predicate(self.data[i]) {
-                result.add(self.data[i])
+        for i in 0..<self._size {
+            if predicate(self._data[i]) {
+                result.add(self._data[i])
             }
         }
         return result
     }
 
     func any[self: Self&](predicate: (T) -> Bool): Bool {
-        for i in 0..<self.size {
-            if predicate(self.data[i]) { return true }
+        for i in 0..<self._size {
+            if predicate(self._data[i]) { return true }
         }
         return false
     }
 
     func all[self: Self&](predicate: (T) -> Bool): Bool {
-        for i in 0..<self.size {
-            if !predicate(self.data[i]) { return false }
+        for i in 0..<self._size {
+            if !predicate(self._data[i]) { return false }
         }
         return true
     }
 
     func none[self: Self&](predicate: (T) -> Bool): Bool {
-        for i in 0..<self.size {
-            if predicate(self.data[i]) { return false }
+        for i in 0..<self._size {
+            if predicate(self._data[i]) { return false }
         }
         return true
     }
 
     func count[self: Self&](predicate: (T) -> Bool): Int {
         var c = 0
-        for i in 0..<self.size {
-            if predicate(self.data[i]) { c += 1 }
+        for i in 0..<self._size {
+            if predicate(self._data[i]) { c += 1 }
         }
         return c
     }
 
     func subList[self: Self&](from: Int, to: Int): List<T> in {
         assert from >= 0 { "subList from must be non-negative" }
-        assert to <= self.size { "subList to out of bounds" }
+        assert to <= self._size { "subList to out of bounds" }
         assert from <= to { "subList from must be <= to" }
     } scope {
         var result = ArrayList<T>()
         for i in from..<to {
-            result.add(self.data[i])
+            result.add(self._data[i])
         }
         return result
     }
@@ -341,58 +339,58 @@ impl List<T> for ArrayList<T> {
 
 impl MutableList<T> for ArrayList<T> {
     func add[self: Self!](element: T) {
-        if self.size >= self.capacity { self.grow() }
-        self.data[self.size] = element
-        self.size = self.size + 1
+        if self._size >= self._capacity { self.grow() }
+        self._data[self._size] = element
+        self._size = self._size + 1
     }
 
     func insert[self: Self!](index: Int, element: T) {
         assert index >= 0 { "Insert index must be non-negative" }
-        assert index <= self.size { "Insert index out of bounds" }
-        if self.size >= self.capacity { self.grow() }
-        var i = self.size
+        assert index <= self._size { "Insert index out of bounds" }
+        if self._size >= self._capacity { self.grow() }
+        var i = self._size
         while i > index {
-            self.data[i] = self.data[i - 1]
+            self._data[i] = self._data[i - 1]
             i -= 1
         }
-        self.data[index] = element
-        self.size = self.size + 1
+        self._data[index] = element
+        self._size = self._size + 1
     }
 
     func set[self: Self!](index: Int, element: T) {
         assert index >= 0 { "Set index must be non-negative" }
-        assert index < self.size { "Set index out of bounds" }
-        self.data[index] = element
+        assert index < self._size { "Set index out of bounds" }
+        self._data[index] = element
     }
 
     func removeAt[self: Self!](index: Int): T {
         assert index >= 0 { "Remove index must be non-negative" }
-        assert index < self.size { "Remove index out of bounds" }
-        fin removed = self.data[index]
-        for i in index..<self.size - 1 {
-            self.data[i] = self.data[i + 1]
+        assert index < self._size { "Remove index out of bounds" }
+        fin removed = self._data[index]
+        for i in index..<self._size - 1 {
+            self._data[i] = self._data[i + 1]
         }
-        self.size = self.size - 1
+        self._size = self._size - 1
         return removed
     }
 
     func removeFirst[self: Self!](): T {
-        assert self.size > 0 { "List is empty" }
+        assert self._size > 0 { "List is empty" }
         return self.removeAt(0)
     }
 
     func removeLast[self: Self!](): T {
-        assert self.size > 0 { "List is empty" }
-        fin removed = self.data[self.size - 1]
-        self.size = self.size - 1
+        assert self._size > 0 { "List is empty" }
+        fin removed = self._data[self._size - 1]
+        self._size = self._size - 1
         return removed
     }
 
     func clear[self: Self!]() {
-        fin oldData = self.data
-        self.data = alloc T[8]
-        self.size = 0
-        self.capacity = 8
+        fin oldData = self._data
+        self._data = alloc .() * 8
+        self._size = 0
+        self._capacity = 8
         purge oldData
     }
 }
@@ -434,27 +432,27 @@ func arrayListOf<T>(...elements: T): ArrayList<T> {
 
 @Experimental(since: "0.1")
 oper[] [self: ArrayList<T>&](index: Int): T {
-    assert index >= 0 && index < self.size {
+    assert index >= 0 && index < self._size {
         "List index out of bounds"
     }
-    return self.data[index]
+    return self._data[index]
 }
 
 @Experimental(since: "0.1")
 oper[]= [self: ArrayList<T>!](index: Int, element: T) {
-    assert index >= 0 && index < self.size {
+    assert index >= 0 && index < self._size {
         "List index out of bounds"
     }
-    self.data[index] = element
+    self._data[index] = element
 }
 
 @Experimental(since: "0.1")
 impl Into<String> for ArrayList<T> {
     prop into[self: Self&]: String {
         var s = "["
-        for i in 0..<self.size {
+        for i in 0..<self._size {
             if i > 0 { s = s + ", " }
-            s = s + self.data[i] as String
+            s = s + self._data[i] as String
         }
         return s + "]"
     }
@@ -462,8 +460,8 @@ impl Into<String> for ArrayList<T> {
 
 @Experimental(since: "0.1")
 oper== [self: ArrayList<T>&](rhs: List<T>): Bool {
-    if self.size != rhs.size { return false }
-    for i in 0..<self.size {
+    if self._size != rhs.size { return false }
+    for i in 0..<self._size {
         if !(self.get(i) == rhs.get(i)) { return false }
     }
     return true
@@ -478,8 +476,8 @@ oper!= [self: ArrayList<T>&](rhs: List<T>): Bool {
 impl ArrayList<T> {
     prop hash[self: Self&]: ULong {
         var result = 0 as ULong
-        for i in 0..<self.size {
-            result = result + self.data[i].hash
+        for i in 0..<self._size {
+            result = result + self._data[i].hash
         }
         return result
     }

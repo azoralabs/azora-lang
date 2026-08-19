@@ -128,7 +128,7 @@ spec MutableSet<T> : Set<T> {
 @Experimental(since: "0.1")
 @Serializable
 pack LinkedHashSet<T> {
-    var data: T* = alloc T[8]
+    var data: T* = alloc .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
@@ -142,7 +142,7 @@ impl LinkedHashSet<T> {
     @Experimental(since: "0.1")
     func growSet[self: Self!]() {
         fin newCap = self.capacity * 2
-        let newData = alloc T[newCap]
+        let newData: T* = alloc .() * newCap
         for i in 0..<self.size {
             newData[i] = self.data[i]
         }
@@ -263,7 +263,7 @@ impl MutableSet<T> for LinkedHashSet<T> {
 
     func clear[self: Self!]() {
         fin oldData = self.data
-        self.data = alloc T[8]
+        self.data = alloc .() * 8
         self.size = 0
         self.capacity = 8
         purge oldData
@@ -321,7 +321,7 @@ func emptyLinkedHashSet<T>(): MutableSet<T> {
 @Experimental(since: "0.1")
 @Serializable
 pack HashSet<T> {
-    var data: T* = alloc T[8]
+    var data: T* = alloc .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
@@ -360,7 +360,7 @@ impl HashSet<T> {
     @Experimental(since: "0.1")
     func growSet[self: Self!]() {
         fin newCap = self.capacity * 2
-        let newData = alloc T[newCap]
+        let newData: T* = alloc .() * newCap
         for i in 0..<self.size {
             newData[i] = self.data[i]
         }
@@ -484,7 +484,7 @@ impl MutableSet<T> for HashSet<T> {
 
     func clear[self: Self!]() {
         fin oldData = self.data
-        self.data = alloc T[8]
+        self.data = alloc .() * 8
         self.size = 0
         self.capacity = 8
         purge oldData
@@ -541,7 +541,7 @@ impl HashSet<T> {
 @Experimental(since: "0.1")
 @Serializable
 pack TreeSet<T> {
-    var data: T* = alloc T[8]
+    var data: T* = alloc .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
@@ -559,7 +559,7 @@ impl TreeSet<T> {
     @Experimental(since: "0.1")
     func growSet[self: Self!]() {
         fin newCap = self.capacity * 2
-        let newData = alloc T[newCap]
+        let newData: T* = alloc .() * newCap
         for i in 0..<self.size {
             newData[i] = self.data[i]
         }
@@ -683,7 +683,7 @@ impl MutableSet<T> for TreeSet<T> {
 
     func clear[self: Self!]() {
         fin oldData = self.data
-        self.data = alloc T[8]
+        self.data = alloc .() * 8
         self.size = 0
         self.capacity = 8
         purge oldData

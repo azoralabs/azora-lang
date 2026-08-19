@@ -978,7 +978,6 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.Isolated -> expr.copy(value = sub(expr.value))
             is Expr.Spread -> expr.copy(array = sub(expr.array))
             is Expr.Alloc -> expr.copy(value = sub(expr.value))
-            is Expr.AllocBuffer -> expr.copy(count = sub(expr.count))
             else -> expr
         }
     }
@@ -1414,7 +1413,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     Pair(expr, false)
                 }
             }
-            is Expr.NamedArg, is Expr.NullLiteral, is Expr.MapLit, is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
+            is Expr.NamedArg, is Expr.NullLiteral, is Expr.MapLit, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
             is Expr.TryPropagate -> {
                 val (inner, changed) = foldExpr(expr.expr, program)
                 Pair(if (changed) expr.copy(expr = inner) else expr, changed)
@@ -1941,7 +1940,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.NullLiteral, is Expr.NullCoalesce, is Expr.SafeMember,
             is Expr.Cast, is Expr.IsCheck,
             is Expr.MapLit -> null
-            is Expr.Alloc, is Expr.AllocBuffer, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null // runtime ops, not CTCE-evaluable
+            is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> null // runtime ops, not CTCE-evaluable
             // Macros are expanded to concrete expressions by MacroExpander before
             // CTCE; a MetaInvoke reaching here means expansion was skipped.
             is Expr.MetaInvoke -> null

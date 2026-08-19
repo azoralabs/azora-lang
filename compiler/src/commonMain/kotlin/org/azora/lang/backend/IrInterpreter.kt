@@ -1977,7 +1977,12 @@ class IrInterpreter {
 
     /** A heap pointer - a mutable cell holding the pointee value. */
     private class Pointer(val buffer: MutableList<Any?>, val index: Int) {
-        val value: Any? get() = buffer[index]
+        /**
+         * A pointer to an empty buffer points at nothing - `alloc args` with no
+         * arguments makes one - so reading it answers null rather than failing.
+         * Writing through it still does, because that is a real mistake.
+         */
+        val value: Any? get() = buffer.getOrNull(index)
         fun setValue(v: Any?) { buffer[index] = v }
 
         override fun equals(other: Any?): Boolean =

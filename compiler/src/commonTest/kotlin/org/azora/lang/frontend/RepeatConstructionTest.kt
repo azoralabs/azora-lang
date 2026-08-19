@@ -188,8 +188,13 @@ class RepeatConstructionTest {
         assertEquals(4L, assertIs<Expr.IntLiteral>(repeat.right).value)
     }
 
-    @Test fun theBufferFormIsUntouched() {
-        // `alloc T[n]` still builds a buffer node; its removal is its own step.
-        assertIs<Expr.AllocBuffer>(initializerOf("var p: Int* = alloc Int[8]"))
+    @Test fun theBracketBufferFormIsGone() {
+        // `alloc T[n]` said "a buffer of n" a second way. A buffer is a repeated
+        // allocation, so it is spelled like one.
+        val e = assertFailsWith<IllegalStateException> {
+            initializerOf("var p: Int* = alloc Int[8]")
+        }
+        assertTrue("was removed" in e.message.orEmpty(), e.message.orEmpty())
+        assertTrue("alloc Int*() * <count>" in e.message.orEmpty(), e.message.orEmpty())
     }
 }

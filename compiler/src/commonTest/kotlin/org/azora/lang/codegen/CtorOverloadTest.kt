@@ -140,4 +140,74 @@ class CtorOverloadTest {
         assertEquals(3, called.size, "each factory calls a ctor: $called")
         assertTrue(called.all { it in declared }, "every call names a declared ctor: $called vs $declared")
     }
+
+    // -- a variadic ctor takes any number of arguments ----------------------
+
+    private val variadic =
+        """
+        pack Bag<T> {
+            var _items: T* = null
+            var _n: Int = 0
+        }
+
+        impl Bag<T> {
+            prop count[self: Self&]: Int = self._n
+
+            ctor[self: Self!](...args: T) {
+                self._items = alloc args
+                self._n = args.length
+            }
+        }
+        """.trimIndent()
+
+    private fun run(source: String): String {
+        val result = Compiler().compile(source)
+        assertIs<CompilationResult.Success>(
+            result,
+            "compilation failed: ${(result as? CompilationResult.Failure)?.errors}",
+        )
+        return org.azora.lang.backend.IrInterpreter().interpret(result.ir).trim()
+    }
+
+    @Test fun aVariadicCtorTakesMoreArgumentsThanItHasSlots() {
+        // `.(1, 2, 3)` reaches a ctor with one parameter: the last one takes
+        // however many arguments are left. Selection used to search only upwards
+        // from the argument count, so a three-argument call never found it.
+        assertEquals(
+            "3",
+            run("import std.io\n$variadic\nfunc main() {\n    var b: Bag<Int> = .(1, 2, 3)\n    println(b.count)\n}"),
+        )
+    }
+
+    @Test fun aVariadicCtorTakesNoneAtAll() {
+        assertEquals(
+            "0",
+            run("import std.io\n$variadic\nfunc main() {\n    var b: Bag<Int> = .()\n    println(b.count)\n}"),
+        )
+    }
+
+    @Test fun anInlineForOverARuntimeVariadicIsRefused() {
+        // `args` is a packed array that exists at run time, so there is nothing
+        // for a compile-time loop to expand. The buffer is `alloc args`.
+        val result = Compiler().compile(
+            """
+            pack Bag<T> {
+                var _items: T* = null
+            }
+            impl Bag<T> {
+                ctor[self: Self!](...args: T) {
+                    self._items = alloc .(
+                        inline for e in args { e }
+                    )
+                }
+            }
+            func main() {}
+            """.trimIndent(),
+        )
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            failure.errors.any { "'inline for' argument was not expanded" in it },
+            "expected a clear refusal, got: ${failure.errors}",
+        )
+    }
 }

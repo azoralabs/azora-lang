@@ -16,6 +16,7 @@
 
 package org.azora.lang.stdlib
 
+import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
@@ -485,6 +486,11 @@ class StdlibInjector private constructor(
                         if (!ref.synthesized &&
                             !TypeFunctionCall.isCall(ref) &&
                             ref.name !in typeParams &&
+                            // An array is the compiler's own type - `IrType.Array`,
+                            // built natively by every backend. The library declares
+                            // what one offers, not what one *is*, so naming the type
+                            // needs no import any more than `Int` does.
+                            ref.name != Intrinsics.ARRAY &&
                             ref.name !in localGlobalTypes
                         ) {
                             val localRealm = program.realmTypeNamespaces[ref.name]
@@ -636,7 +642,6 @@ class StdlibInjector private constructor(
                         expression(value, typeParams, currentRealm)
                     }
                     is Expr.Alloc -> expression(expr.value, typeParams, currentRealm)
-                    is Expr.AllocBuffer -> expression(expr.count, typeParams, currentRealm)
                     is Expr.Deref -> expression(expr.target, typeParams, currentRealm)
                     is Expr.Isolated -> expression(expr.value, typeParams, currentRealm)
                     is Expr.Await -> expression(expr.value, typeParams, currentRealm)
@@ -2007,10 +2012,6 @@ class StdlibInjector private constructor(
                 names.add(expr.typeName)
             }
             is Expr.Alloc -> collectNamesFromExpr(expr.value, names)
-            is Expr.AllocBuffer -> {
-                names.add(expr.typeName)
-                collectNamesFromExpr(expr.count, names)
-            }
             is Expr.Deref -> collectNamesFromExpr(expr.target, names)
             is Expr.Isolated -> collectNamesFromExpr(expr.value, names)
             is Expr.Await -> collectNamesFromExpr(expr.value, names)

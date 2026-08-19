@@ -16,8 +16,10 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.ir.ctorFactorySymbol
 import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.symbolDenotes
+import org.azora.lang.frontend.asRepeatedConstruction
 import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.OPTIONAL_UNWRAP
 import org.azora.lang.frontend.OwnershipOp
@@ -295,6 +297,9 @@ class TypeResolver(private val table: SymbolTable) {
                         // `deepinline prop`; only the declaration set can tell.
                         isTypeProperty(type) ||
                         IrType.isPrimitiveName(type.name) ||
+                        // `IrType.Array` is the compiler's own; naming it needs an
+                        // import no more than naming `Int` does.
+                        type.name == Intrinsics.ARRAY ||
                         table.lookupStruct(type.name) != null ||
                         table.lookupEnum(type.name) != null ||
                         table.lookupFail(type.name) != null ||
@@ -889,8 +894,33 @@ class TypeResolver(private val table: SymbolTable) {
                 seedExpectedValue(expr.left, expected)
                 seedExpectedValue(expr.right, expected)
             }
+            // `alloc .(…)` - what the allocation points at is what the
+            // construction inside it builds, so the expectation passes through
+            // the pointer. A slot's type may be a primitive, which is a name the
+            // ordinary receiver seeding does not carry.
+            is Expr.Alloc -> {
+                val pointee = (expected as? IrType.Pointer)?.inner ?: expected
+                elementOwnerName(pointee)?.let { owner ->
+                    inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, owner) }
+                }
+                seedExpectedValue(expr.value, pointee)
+            }
+            // `.(…) * count` - the count is a number of its own; the expectation
+            // belongs to the construction being repeated.
+            is Expr.Binary -> {
+                val repeated = asRepeatedConstruction(expr)
+                if (repeated != null) seedExpectedValue(repeated.first, expected)
+                else seedInferredReceiver(expr, expected)
+            }
             else -> seedInferredReceiver(expr, expected)
         }
+    }
+
+    /** The name of the type a slot holds, declared or primitive. */
+    private fun elementOwnerName(type: IrType?): String? = when (type) {
+        is IrType.Named -> type.name
+        null -> null
+        else -> type.toString().takeIf { IrType.isPrimitiveName(it) }
     }
 
     /**
@@ -1574,7 +1604,10 @@ class TypeResolver(private val table: SymbolTable) {
             is Stmt.Continue -> { /* no type constraint */ }
             is Stmt.IndexAssign -> {
                 if (!checkValueMutable(stmt.target, stmt.line, "assign by index")) return
-                val targetType = resolveExpr(stmt.target) ?: return
+                // `p.*[i] = v` writes the i-th slot of the buffer, for the same
+                // reason `p.*[i]` reads it - see [bufferPointerType].
+                val targetType = bufferPointerType(stmt.target)
+                    ?: resolveExpr(stmt.target) ?: return
                 // User-defined index-assign operator (`oper[]=`) on a struct.
                 if (targetType is IrType.Named) {
                     val mangled = table.lookupMethod(targetType.name, "indexSet")
@@ -1634,6 +1667,12 @@ class TypeResolver(private val table: SymbolTable) {
                 val resolvedTarget = resolveExpr(stmt.target) ?: return
                 // Auto-deref: assigning through a pointer writes through it (`p.v = x` == `(*p).v = x`).
                 var targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
+                // The field states what the value must be, so a `.()` or `.Variant`
+                // on the right can be read before it is resolved rather than after,
+                // when the position that gave it a type is gone.
+                (targetType as? IrType.Named)
+                    ?.let { table.lookupStruct(it.name)?.field(stmt.name)?.type }
+                    ?.let { seedExpectedValue(stmt.value, it) }
                 val valueType = resolveExpr(stmt.value) ?: return
                 if (targetType is IrType.Named) {
                     var field = table.lookupStruct(targetType.name)?.field(stmt.name)
@@ -1794,6 +1833,114 @@ class TypeResolver(private val table: SymbolTable) {
         else -> IrType.Double
     }
 
+    /**
+     * `.(args) * count` - the type of `count` values built the same way.
+     *
+     * Returns null when the left side does not name a type, which leaves an
+     * ordinary `f() * 2` to be multiplication as it always was.
+     *
+     * Two kinds of thing can be repeated. An array is filled - that is what an
+     * array *is*, `count` slots - and anything else needs a `ctor` that said it
+     * takes a repetition, because building one value `count` times is not the
+     * same as building one and only the author knows what the count means.
+     */
+    private fun resolveRepeatedConstruction(construct: Expr, count: Expr, line: Int): IrType? {
+        // `alloc .(…) * count` - `count` slots of what the pointer points at.
+        // The slot type was settled when the expectation was seeded, so it is
+        // read back rather than derived again from a context that is gone.
+        if (construct is Expr.Alloc) {
+            val countType = resolveExpr(count) ?: return null
+            if (countType != IrType.Int && countType != IrType.Long) return null
+            val element = repeatedElementType(construct.value) ?: return null
+            return IrType.Pointer(element, mutable = construct.mutable)
+        }
+        val call = construct as? Expr.Call ?: return null
+        val struct = table.lookupStruct(call.callee) ?: return null
+        // Every test below is a guard, not a diagnostic. `Type(a) * b` is also how
+        // a user-declared `oper*` between two values reads, so anything that does
+        // not fit a repetition has to fall back to being one - silently, or a
+        // legitimate multiplication would be reported as a malformed repetition.
+        val countType = resolveExpr(count) ?: return null
+        if (countType != IrType.Int && countType != IrType.Long) return null
+        if (struct.name == "Array") {
+            // An array repetition fills its slots with the element default, so
+            // there is nothing for arguments to say.
+            if (call.args.isNotEmpty()) return null
+            val element = call.typeArgs.firstOrNull()?.let { IrType.resolve(it, emptySet()) } ?: IrType.Any
+            return IrType.Array(element)
+        }
+        // The written arguments, plus the count the repetition supplies.
+        if (table.lookupFunction(ctorFactorySymbol(call.callee, call.args.size + 1, repeated = true)) == null) {
+            return null
+        }
+        call.args.forEach { resolveExpr(it) }
+        return IrType.Named(call.callee)
+    }
+
+    /**
+     * `p.*` where `p` is a pointer to something that cannot itself be indexed.
+     *
+     * Answers the pointer's own type, so the index that follows reads a slot of
+     * the buffer rather than trying to index a single value. Null for anything
+     * else, which leaves the deref to mean what it says.
+     */
+    private fun bufferPointerType(target: Expr): IrType? {
+        val deref = target as? Expr.Deref ?: return null
+        val pointer = resolveExpr(deref.target) as? IrType.Pointer ?: return null
+        return if (isIndexableType(pointer.inner)) null else pointer
+    }
+
+    /** Whether `x[i]` means something for a value of this type on its own. */
+    private fun isIndexableType(type: IrType): Boolean = when (type) {
+        is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Pointer -> true
+        IrType.String -> true
+        is IrType.Named -> table.lookupMethod(type.name, "index") != null
+        else -> false
+    }
+
+    /**
+     * What `alloc .(…)` builds.
+     *
+     * `.(a, b, c)` names no type of its own, so what it means depends on what the
+     * pointer points at. To a declared type it is that type's constructor -
+     * `var p: Point* = alloc .(1, 2)`. To anything else there is nothing to
+     * construct and the arguments are the run of values the pointer points at,
+     * which is how `ArrayList` fills its buffer from a variadic ctor.
+     */
+    private fun allocatedConstruction(value: Expr): Expr {
+        val member = value as? Expr.InferredMember ?: return value
+        val args = member.ctorArgs?.takeIf { member.name.isEmpty() } ?: return value
+        // A bridge pack cannot be constructed, so `.()` into one is not a
+        // construction: `T*` erases to `Any*`, and what the pointer holds is the
+        // run of values, not one `Any`.
+        val owner = table.lookupInferredMember(member.line, member.column)
+        if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
+        return Expr.ArrayLiteral(args, member.line, member.column, member.length)
+    }
+
+    /** What one slot of an allocated repetition holds, or null if nothing said. */
+    private fun repeatedElementType(construct: Expr): IrType? {
+        val name = when (construct) {
+            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column)
+            is Expr.Call -> construct.callee
+            else -> null
+        } ?: return null
+        return elementTypeNamed(name)
+    }
+
+    /**
+     * The slot type a name stands for.
+     *
+     * A type parameter names no type of its own - generics are erased - so a
+     * buffer of `T` is a buffer of anything, which is also what the declared
+     * `T*` field it is assigned to resolves to. Anything declared keeps its name.
+     */
+    private fun elementTypeNamed(name: String): IrType = when {
+        IrType.isPrimitiveName(name) -> IrType.fromName(name)
+        table.lookupStruct(name) != null -> IrType.Named(name)
+        else -> IrType.Any
+    }
+
     private fun resolveExpr(expr: Expr): IrType? {
         return when (expr) {
             // Reached with no expected type: `.Name` on its own says nothing.
@@ -1883,6 +2030,11 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.Binary -> {
+                // `.(args) * count` builds `count` values, so the `*` joins a
+                // construction to a count rather than multiplying two numbers.
+                asRepeatedConstruction(expr)?.let { (construct, count) ->
+                    resolveRepeatedConstruction(construct, count, expr.line)?.let { return it }
+                }
                 // `c == .Red` - a comparison states the type of whichever side
                 // is written as a bare `.Name`, because the other side has one.
                 // This is also how a `when` expression's patterns are typed:
@@ -1911,6 +2063,12 @@ class TypeResolver(private val table: SymbolTable) {
                 )
             }
             is Expr.Call -> {
+                // `Array(a, b, c)` - what `arr![a, b, c]` expands to. An array is
+                // the compiler's own aggregate, so making one needs no library and
+                // no import; the library only declares what an array offers.
+                if (expr.callee == Intrinsics.ARRAY && expr.receiver == null) {
+                    return resolveExpr(Expr.ArrayLiteral(expr.args, expr.line, expr.column, expr.length))
+                }
                 // `delay <ms>` parses as a call; it suspends like an `await`.
                 if (expr.callee == "__delay") noteSuspension()
                 // Value call `receiver(args)` - the receiver must be a function value.
@@ -1982,6 +2140,11 @@ class TypeResolver(private val table: SymbolTable) {
                     // how many there are, and that one binds them all.
                     val probe = (expr.args.size..expr.args.size + 8).firstNotNullOfOrNull {
                         table.lookupFunction("__ctor_${calleeName}_$it")
+                    // A variadic ctor's last parameter takes however many arguments
+                    // are left, so it answers a call *wider* than its own arity -
+                    // `.(1, 2, 3)` reaches `ctor[self](...args: T)`, which has one.
+                    } ?: (expr.args.size downTo 1).firstNotNullOfOrNull { arity ->
+                        table.lookupFunction("__ctor_${calleeName}_$arity")?.takeIf { it.isVariadic }
                     }
                     val factory = probe?.let {
                         table.lookupFunction(
@@ -2004,6 +2167,13 @@ class TypeResolver(private val table: SymbolTable) {
                                 // will lower - so it is typed here like any other.
                                 val value = argument ?: factory.defaults[factory.contextualParams + i]
                                 if (value == null) {
+                                    // A variadic parameter is the last one and takes
+                                    // however many arguments are left, none included:
+                                    // `ArrayList<T>()` is an empty list, not a call
+                                    // missing its argument.
+                                    val variadicSlot = factory.isVariadic &&
+                                        factory.contextualParams + i == factory.params.lastIndex
+                                    if (variadicSlot) continue
                                     errors.add(
                                         "line ${expr.line}: '${expr.callee}' has no argument for " +
                                             "'${factory.paramNames[factory.contextualParams + i]}' " +
@@ -2379,7 +2549,12 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.Index -> {
-                val targetType = resolveExpr(expr.target) ?: return null
+                // `p.*[i]` on a `T*` reads the i-th slot of the buffer: the deref
+                // and the index are one operation, which is what replaced
+                // `(*p)[i]`. Only when the pointee is not itself indexable - a
+                // `Array<T>*` is dereferenced and then indexed, as written.
+                val targetType = bufferPointerType(expr.target)
+                    ?: resolveExpr(expr.target) ?: return null
                 // User-defined index operator (`oper[]`) on a struct.
                 if (targetType is IrType.Named) {
                     val mangled = table.lookupMethod(targetType.name, "index")
@@ -2470,8 +2645,14 @@ class TypeResolver(private val table: SymbolTable) {
                 // Auto-deref: member access on a pointer reads through it (`p.v` == `(*p).v`).
                 val targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
                 when {
+                    // How many an aggregate holds is native to it - the backends
+                    // all know, and no library declares it. An array belongs in
+                    // this list as much as a map, a set or a string does.
                     expr.name in setOf("length", "size") &&
-                        (targetType is IrType.Map || targetType is IrType.Set || targetType == IrType.String) -> IrType.Int
+                        (
+                            targetType is IrType.Map || targetType is IrType.Set ||
+                                targetType is IrType.Array || targetType == IrType.String
+                            ) -> IrType.Int
                     declaredAggregateMember(targetType, expr.name) != null -> {
                         if (aggregateFieldIsUnsafe(targetType, expr.name) && !unsafeContext) {
                             errors.add(
@@ -2935,15 +3116,10 @@ class TypeResolver(private val table: SymbolTable) {
                 IrType.Map(keyType ?: IrType.Any, valType ?: IrType.Any)
             }
             is Expr.Alloc -> {
-                val inner = resolveExpr(expr.value) ?: return null
+                val inner = resolveExpr(allocatedConstruction(expr.value)) ?: return null
                 // alloc [a, b, c] → pointer to the element type (buffer), not pointer to array.
                 val pointee = (inner as? IrType.Array)?.element ?: inner
                 IrType.Pointer(pointee, mutable = expr.mutable)
-            }
-            is Expr.AllocBuffer -> {
-                resolveExpr(expr.count) ?: return null
-                val elem = if (IrType.isPrimitiveName(expr.typeName)) IrType.fromName(expr.typeName) else IrType.Any
-                IrType.Pointer(elem)
             }
             is Expr.Deref -> {
                 val target = resolveExpr(expr.target) ?: return null

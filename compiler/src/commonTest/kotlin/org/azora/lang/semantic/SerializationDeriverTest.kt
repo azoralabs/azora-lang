@@ -218,7 +218,7 @@ class SerializationDeriverTest {
             }
             pack SerializerOptions
             pack List<T> {
-                var data: T* = alloc T[16]
+                var data: T* = alloc T*() * 16
                 var size: Int = 0
             }
             impl List<T> {
@@ -229,7 +229,7 @@ class SerializationDeriverTest {
             }
             impl oper[] for List<T> { self&, index -> return self.data[index] }
             pack Set<T> {
-                var data: T* = alloc T[16]
+                var data: T* = alloc T*() * 16
                 var size: Int = 0
             }
             impl Set<T> {
@@ -241,8 +241,8 @@ class SerializationDeriverTest {
             }
             impl oper[] for Set<T> { self&, index -> return self.data[index] }
             pack Map<K, V> {
-                var keysData: K* = alloc K[16]
-                var valuesData: V* = alloc V[16]
+                var keysData: K* = alloc K*() * 16
+                var valuesData: V* = alloc V*() * 16
                 var size: Int = 0
             }
             impl Map<K, V> {

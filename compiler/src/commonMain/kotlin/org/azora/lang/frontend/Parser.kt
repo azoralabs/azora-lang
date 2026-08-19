@@ -8933,7 +8933,10 @@ class Parser(
             advance()
             val args = parseCallArgumentList()
             consume(TokenType.R_PAREN, "Expected ')' after '.(' constructor arguments")
-            val call = Expr.Call(named.name, args, dot.line, dot.column, named.name.length)
+            // The declared type's arguments travel with the call: `.()` said the
+            // type once, in the place that already had to say it, so `Array<Int>`
+            // must not arrive as a bare `Array`.
+            val call = Expr.Call(named.name, args, dot.line, dot.column, named.name.length, typeArgs = named.args)
             // `.() * count` - repetition. Read here because this path builds the
             // call itself and returns; without it the `*` would be left to open
             // the next statement, where it parses as a dereference of the count
@@ -10058,7 +10061,7 @@ class Parser(
             return Expr.TryPropagate(parseUnary(), at.line, at.column, at.lexeme.length)
         }
         // `alloc <expr>` - heap-allocate a single value (e.g. `alloc P(10)`, `alloc 42`).
-        // `alloc T[N]` - allocate a buffer of N T's → T* (C++ `new T[N]`-style).
+        // A buffer is a repeated allocation: `alloc T*() * N`.
         if (check(TokenType.ALLOC)) {
             val at = advance()
             // `alloc T*(…)` yields a `T*` and `alloc T^(…)` a `T^` - the sigil sits
@@ -10086,7 +10089,11 @@ class Parser(
             }
             val operand = parseUnary()
             if (operand is Expr.Index && operand.target is Expr.Identifier) {
-                return Expr.AllocBuffer(operand.target.name, operand.index, at.line, at.column, at.lexeme.length)
+                val type = (operand.target as Expr.Identifier).name
+                error(
+                    "'alloc $type[…]' was removed at line ${at.line}; a buffer is a " +
+                        "repeated allocation - write 'alloc $type*() * <count>'",
+                )
             }
             return Expr.Alloc(operand, at.line, at.column, at.lexeme.length, mutable = mutable)
         }

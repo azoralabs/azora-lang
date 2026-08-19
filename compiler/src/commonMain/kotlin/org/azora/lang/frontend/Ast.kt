@@ -470,8 +470,6 @@ sealed class Expr {
     /** `alloc* value` → `T*` (read-only), `alloc^ value` → `T^` (mutable). */
     data class Alloc(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0, val mutable: Boolean = false) : Expr()
 
-    /** `alloc T(count)` - allocate a buffer of `count` elements of type T (C++-style), returning `T*`. */
-    data class AllocBuffer(val typeName: String, val count: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /** `*ptr` - dereference a pointer. */
     data class Deref(val target: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -532,6 +530,22 @@ sealed class Expr {
  * Statements represent actions that execute in sequence within a function body.
  * Every statement carries source-location metadata for diagnostics.
  */
+/**
+ * `.(args) * count` - the construction and the count it is repeated by, or null.
+ *
+ * Only the *shape* is read here. Whether the left side really constructs
+ * something - rather than being an ordinary call whose result is multiplied - is
+ * a question for a pass that knows what names mean, so each asks its own tables
+ * before treating the answer as a repetition.
+ */
+fun asRepeatedConstruction(expr: Expr.Binary): Pair<Expr, Expr>? {
+    if (expr.op != TokenType.STAR) return null
+    val left = expr.left
+    val constructs = left is Expr.Call || left is Expr.InferredMember ||
+        (left is Expr.Alloc && (left.value is Expr.Call || left.value is Expr.InferredMember))
+    return if (constructs) left to expr.right else null
+}
+
 sealed class Stmt {
     /** 1-based line number where this statement starts. */
     abstract val line: Int

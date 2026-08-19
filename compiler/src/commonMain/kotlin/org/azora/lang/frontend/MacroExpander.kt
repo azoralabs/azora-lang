@@ -663,7 +663,6 @@ internal object MacroExpander {
                 collection = rewriteExpr(expr.collection, macros, depth),
             )
             is Expr.Alloc -> expr.copy(value = rewriteExpr(expr.value, macros, depth))
-            is Expr.AllocBuffer -> expr.copy(count = rewriteExpr(expr.count, macros, depth))
             is Expr.Deref -> expr.copy(target = rewriteExpr(expr.target, macros, depth))
             is Expr.Isolated -> expr.copy(value = rewriteExpr(expr.value, macros, depth))
             is Expr.Await -> expr.copy(value = rewriteExpr(expr.value, macros, depth))
@@ -886,7 +885,6 @@ internal object MacroExpander {
             collection = substitute(template.collection, bindings, invokeLine),
         )
         is Expr.Alloc -> template.copy(value = substitute(template.value, bindings, invokeLine))
-        is Expr.AllocBuffer -> template.copy(count = substitute(template.count, bindings, invokeLine))
         is Expr.Deref -> template.copy(target = substitute(template.target, bindings, invokeLine))
         is Expr.Isolated -> template.copy(value = substitute(template.value, bindings, invokeLine))
         is Expr.Await -> template.copy(value = substitute(template.value, bindings, invokeLine))

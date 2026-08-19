@@ -16,6 +16,7 @@
 
 package org.azora.lang.ir
 
+import org.azora.lang.frontend.asRepeatedConstruction
 import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.OPTIONAL_UNWRAP
 import org.azora.lang.frontend.OwnershipOp
@@ -1175,7 +1176,8 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.Assignment(name, value)
             }
             is Stmt.IndexAssign -> {
-                val target = lowerExpr(stmt.target)
+                // `p.*[i] = v` writes the i-th slot; see [bufferPointerTarget].
+                val target = lowerExpr(bufferPointerTarget(stmt.target) ?: stmt.target)
                 val tt = target.type
                 // User-defined index-assign operator (`oper[]=`) on a struct → Type_indexSet(self, i, v).
                 if (tt is IrType.Named) {
@@ -1672,6 +1674,90 @@ class IrGenerator(private val table: SymbolTable) {
     private fun ctorFactoryName(typeName: String, arity: Int): String = ctorFactorySymbol(typeName, arity)
 
     /**
+     * The pointer behind `p.*` when what it points at cannot itself be indexed.
+     *
+     * Indexing that deref means reading a slot of the buffer, so the pointer is
+     * what gets indexed. A pointer to something indexable in its own right - an
+     * `Array<T>*` - is dereferenced and then indexed, as written.
+     */
+    private fun bufferPointerTarget(target: Expr): Expr? {
+        val deref = target as? Expr.Deref ?: return null
+        val pointer = lowerExpr(deref.target).type as? IrType.Pointer ?: return null
+        return if (isIndexableType(pointer.inner)) null else deref.target
+    }
+
+    /** Whether `x[i]` means something for a value of this type on its own. */
+    private fun isIndexableType(type: IrType): Boolean = when (type) {
+        is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Pointer -> true
+        IrType.String -> true
+        is IrType.Named -> table.lookupMethod(type.name, "index") != null
+        else -> false
+    }
+
+    /** What `alloc .(…)` builds; see the resolver's twin. */
+    private fun allocatedConstruction(value: Expr): Expr {
+        val member = value as? Expr.InferredMember ?: return value
+        val args = member.ctorArgs?.takeIf { member.name.isEmpty() } ?: return value
+        // A bridge pack cannot be constructed, so `.()` into one is not a
+        // construction: `T*` erases to `Any*`, and what the pointer holds is the
+        // run of values, not one `Any`.
+        val owner = table.lookupInferredMember(member.line, member.column)
+        if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
+        return Expr.ArrayLiteral(args, member.line, member.column, member.length)
+    }
+
+    /** What one slot of an allocated repetition holds; see the resolver's twin. */
+    private fun repeatedElementType(construct: Expr): IrType? {
+        val name = when (construct) {
+            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column)
+            is Expr.Call -> construct.callee
+            else -> null
+        } ?: return null
+        // A type parameter names no type of its own; see the resolver's twin.
+        return when {
+            IrType.isPrimitiveName(name) -> IrType.fromName(name)
+            table.lookupStruct(name) != null -> IrType.Named(name)
+            else -> IrType.Any
+        }
+    }
+
+    /**
+     * `.(args) * count` - `count` values built by the same construction.
+     *
+     * An array is *filled*: `count` slots holding the element default, which is
+     * what the `Array_fill` intrinsic every backend already implements does.
+     * Anything else runs the `ctor` that declared it takes a repetition, with
+     * the count arriving as its last argument - the same shape the declaration
+     * put it in.
+     *
+     * Returns null when the left side names no type, leaving `f() * 2` to be the
+     * multiplication it has always been.
+     */
+    private fun lowerRepeatedConstruction(construct: Expr, count: Expr): IrExpr? {
+        // `alloc .(…) * count` - a buffer of `count` slots. One intrinsic, so
+        // every backend gets the behaviour without a second spelling for it.
+        if (construct is Expr.Alloc) {
+            val element = repeatedElementType(construct.value) ?: return null
+            return IrExpr.Call(
+                "__allocBuffer",
+                listOf(lowerExpr(count)),
+                IrType.Pointer(element, mutable = construct.mutable),
+            )
+        }
+        val call = construct as? Expr.Call ?: return null
+        val struct = table.lookupStruct(call.callee) ?: return null
+        val loweredCount = lowerExpr(count)
+        if (struct.name == "Array") {
+            val element = call.typeArgs.firstOrNull()?.let { resolveType(it) } ?: IrType.Any
+            return IrExpr.Call(Intrinsics.ARRAY_FILL, listOf(loweredCount), IrType.Array(element))
+        }
+        val args = call.args.map { lowerExpr(it) }
+        val factory = ctorFactorySymbol(call.callee, args.size + 1, repeated = true)
+        if (table.lookupFunction(factory) == null) return null
+        return IrExpr.Call(factory, args + loweredCount, IrType.Named(call.callee))
+    }
+
+    /**
      * The symbol of a member declared in an `impl` on an aggregate builtin, or
      * null when [type] is not an aggregate or declares no such member.
      */
@@ -1959,6 +2045,11 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Unary(op, operand, operand.type)
             }
             is Expr.Binary -> {
+                // `.(args) * count` - `count` values built the same way, not a
+                // product. The resolver has already said this is a construction.
+                asRepeatedConstruction(expr)?.let { (construct, count) ->
+                    lowerRepeatedConstruction(construct, count)?.let { return it }
+                }
                 var left = lowerExpr(expr.left)
                 var right = lowerExpr(expr.right)
                 // Pointer arithmetic: ptr + n, ptr - n, ptr - ptr
@@ -2102,6 +2193,11 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
+                // `Array(a, b, c)` - the compiler's own aggregate; see the
+                // resolver, which types it the same way and just as early.
+                if (expr.callee == Intrinsics.ARRAY && expr.receiver == null) {
+                    return lowerExpr(Expr.ArrayLiteral(expr.args, expr.line, expr.column, expr.length))
+                }
                 // Value call `receiver(args)` - lower the receiver (a function value)
                 // and emit an indirect call carrying it.
                 expr.receiver?.let { recv ->
@@ -2161,6 +2257,10 @@ class IrGenerator(private val table: SymbolTable) {
                     // parameter left to its default.
                     val probeCtor = (expr.args.size..expr.args.size + 8).firstNotNullOfOrNull {
                         table.lookupFunction(ctorFactoryName(actualCallee, it))
+                    // A variadic ctor answers a call wider than its own arity; see
+                    // the resolver, which selects the same one.
+                    } ?: (expr.args.size downTo 1).firstNotNullOfOrNull { arity ->
+                        table.lookupFunction(ctorFactoryName(actualCallee, arity))?.takeIf { it.isVariadic }
                     }
                     val declaredCtor = probeCtor?.let {
                         table.lookupFunction(
@@ -2203,10 +2303,45 @@ class IrGenerator(private val table: SymbolTable) {
                                 while (next < slots.size && slots[next] != null) next++
                                 slots[next] = argument
                             }
-                            val bound = slots.take(written.size).mapIndexed { i, argument ->
+                            // `.(1, 2, 3)` into `ctor[self](...args: T)`: the fixed
+                            // parameters take theirs and the rest become the one
+                            // array the variadic slot holds, exactly as a variadic
+                            // function call packs its own.
+                            if (declaredCtor.isVariadic && slots.size > written.size) {
+                                val fixed = slots.take(written.size - 1).map { argument ->
+                                    val slot = declaredCtor.params.getOrNull(
+                                        declaredCtor.contextualParams + slots.indexOf(argument),
+                                    )?.second
+                                    val value = argument ?: error("'$actualCallee' has no value for a fixed parameter")
+                                    slot?.let { coerceToFloat(lowerExpr(value), it) } ?: lowerExpr(value)
+                                }
+                                val rest = slots.drop(written.size - 1).filterNotNull().map { lowerExpr(it) }
+                                val element = (declaredCtor.params.lastOrNull()?.second as? IrType.Array)?.element
+                                    ?: rest.firstOrNull()?.type ?: IrType.Any
+                                val packed = IrExpr.ArrayLiteral(rest, IrType.Array(element, rest.size.toLong()))
+                                return IrExpr.Call(
+                                    ctorFactoryName(actualCallee, written.size),
+                                    scopeArgs.filterNotNull() + fixed + packed,
+                                    declaredCtor.returnType,
+                                )
+                            }
+                            val bound = slots.take(written.size).mapIndexedNotNull { i, argument ->
                                 val slot = declaredCtor.params.getOrNull(declaredCtor.contextualParams + i)?.second
                                 val value = argument ?: declaredCtor.defaults[declaredCtor.contextualParams + i]
                                 if (value == null) {
+                                    // A variadic parameter takes however many
+                                    // arguments are left - and when none are, it
+                                    // takes an empty run rather than nothing at
+                                    // all: the callee still has a slot to bind.
+                                    if (declaredCtor.isVariadic && i == written.lastIndex) {
+                                        val element =
+                                            (declaredCtor.params.lastOrNull()?.second as? IrType.Array)?.element
+                                                ?: IrType.Any
+                                        return@mapIndexedNotNull IrExpr.ArrayLiteral(
+                                            emptyList(),
+                                            IrType.Array(element, 0L),
+                                        )
+                                    }
                                     error("'$actualCallee' has no value for '${written[i]}'")
                                 }
                                 slot?.let { coerceToFloat(lowerExpr(value), it) } ?: lowerExpr(value)
@@ -2394,16 +2529,10 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.MapLit(entries, IrType.Map(keyType, valType))
             }
             is Expr.Alloc -> {
-                val value = lowerExpr(expr.value)
+                val value = lowerExpr(allocatedConstruction(expr.value))
                 // alloc [a, b, c] → pointer to element type (buffer for arithmetic).
                 val pointee = (value.type as? IrType.Array)?.element ?: value.type
                 IrExpr.Call("__alloc", listOf(value), IrType.Pointer(pointee))
-            }
-            is Expr.AllocBuffer -> {
-                // alloc T(count) → buffer of `count` T's → T* (C++-style).
-                val count = lowerExpr(expr.count)
-                val elem = if (IrType.isPrimitiveName(expr.typeName)) IrType.fromName(expr.typeName) else IrType.Any
-                IrExpr.Call("__allocBuffer", listOf(count), IrType.Pointer(elem))
             }
             is Expr.Deref -> {
                 val target = lowerExpr(expr.target)
@@ -2448,7 +2577,10 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Spread(lowerExpr(expr.array))
             }
             is Expr.Index -> {
-                val target = lowerExpr(expr.target)
+                // `p.*[i]` on a `T*` reads the i-th slot of the buffer, so the
+                // pointer is indexed directly - dereferencing first would read
+                // slot zero and index *that*. The resolver types it the same way.
+                val target = lowerExpr(bufferPointerTarget(expr.target) ?: expr.target)
                 val tt = target.type
                 // User-defined index operator (`oper[]`) on a struct → Type_index(self, i).
                 if (tt is IrType.Named) {

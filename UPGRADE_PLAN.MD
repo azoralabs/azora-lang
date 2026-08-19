@@ -277,11 +277,98 @@ one surfaces as its predecessor is fixed.
 > duplicate the pointer rather than the elements, which its own doc comment says. Dropped
 > the `derives`.
 >
-> **The remaining 208** are ordinary semantic work with no single systemic cause:
-> undefined library functions (62), `no member on Array<Any>` (10), `compiler bridge pack
-> cannot be constructed` (8), and a long tail - plus a handful of tests whose *subject*
-> the `std` sweep removed (they assert a qualifier survives parsing, or that an
-> unqualified name fails) and which now need rewriting against the new truth.
+> ### `Array` is the compiler's own type (2026-08-19) - **208 -> 149**
+>
+> The largest remaining bucket was `undefined function 'Array'` (58) and `compiler
+> bridge pack 'Array' cannot be constructed directly` (8). `Array` used to live in
+> `realm std`, so its short name was globally reachable; with the realm gone, naming
+> the core array type needed `import std.container.array`.
+>
+> **What it is:** an array is a language primitive with a library-declared *surface*.
+> `IrType.Array` exists, every backend builds one natively, and `arr![…]` is an
+> always-on macro. The library declares what an array **offers**; making one and
+> naming it are the compiler's. Three places had to say so:
+> - `Array(a, b, c)` - what `arr![…]` expands to - resolves and lowers to an array
+>   literal, recognised **before** any library lookup, so it needs no import;
+> - `.size` on an array is native, as it already was for a map, a set and a string -
+>   `IrType.Array` was simply missing from that list;
+> - naming the type `Array<Int>` needs no import, as naming `Int` does not.
+>
+> **The wrong fix, which the suite caught:** making `std.container.array` an `exposed`
+> module. It fixed the 58, then broke 8 LLVM exec tests - auto-importing the whole
+> `impl Array` meant `s.size` on a **String** started resolving against `Array`'s
+> member and emitting bad IR. Exposure drags a module's entire surface into every
+> program; the narrow fix is to say which *things* are the compiler's.
+>
+> ### The serialization bucket dissolved (2026-08-19) - **149, and a real blocker named**
+>
+> `__serialFields` and friends were never the cause. Every one of those failures began
+> with the *same first error* - `'ArrayList' has no argument for 'args'` - and the
+> serializer names were cascade. Three real bugs sat under it:
+> - **A variadic ctor is satisfied by zero arguments.** `ctor[self](...args: T)` was
+>   treated as requiring one, so `ArrayList<T>()` - an empty list, and what the
+>   generated code builds - was rejected. Fixed in both the resolver and the generator,
+>   which each had their own copy of the check; the ctor factory never carried
+>   `isVariadic` at all.
+> - **`std/container/list.az` was a half-done rename.** The pack declares `_data`,
+>   `_size`, `_capacity`; its impls read `self.data`, `self.size`, `self.capacity`. 87
+>   uses in `list.az` and 3 in `map.az`, including `prop size[self: Self&]: Int =
+>   self.size` - **infinitely recursive**.
+> - **`alloc .(a, b, c)` had no meaning.** It now builds a buffer holding those values,
+>   while `alloc .(1, 2)` into a `Point*` still constructs a `Point`: what `.()` means
+>   depends on whether the pointee is a declared type.
+>
+> ### The variadic ctor (2026-08-19) - **149 -> 140**
+>
+> The `inline for` was a red herring: it iterates `args`, a **runtime** packed array, so
+> there is nothing for a compile-time loop to expand and the compiler is right to refuse
+> it. `std/container/list.az` now writes `alloc args`, which is what it meant. The
+> refusal is now a clear message instead of an internal error, and a test.
+>
+> What was actually broken was **finding and binding a variadic ctor**:
+> - **Selection searched only upward.** `.(1, 2, 3)` probed for a factory of arity 3, 4,
+>   … while the variadic ctor has arity **1** - its last parameter takes whatever is
+>   left. Both the resolver and the generator now also search downward for a variadic
+>   factory. `.()` already worked, which is why the empty case looked fine.
+> - **The extras were never packed.** A call wider than the ctor's arity now packs the
+>   remainder into the one array the variadic slot holds - the same shape a variadic
+>   *function* call has always used.
+> - **An empty variadic slot was dropped instead of passed.** `.()` bound zero arguments
+>   to a one-parameter factory, and the interpreter read `args[0]` off a call that had
+>   none. It takes an empty run now, not nothing at all.
+> - **A pointer to an empty buffer reads as nothing.** `alloc args` with no arguments
+>   makes one; reading it answered `IndexOutOfBounds`. Writing through it still fails,
+>   because that is a real mistake.
+>
+> ### One spelling for an allocated buffer (2026-08-19)
+>
+> `std/` now writes `alloc .() * n` throughout - 49 sites - so the type is stated by the
+> declaration that already had to state it, rather than a second time in the allocation:
+>
+> ```azora
+> var keys: K* = alloc .() * 16          // the annotation says it
+> self.keys = alloc .() * newCapacity    // the field says it
+> let newKeys: K* = alloc .() * newCapacity
+> ```
+>
+> The third shape was `let newKeys = alloc K*() * newCapacity` - unannotated, so nothing
+> stated the type and inference had nothing to read. Those 19 declarations gained the
+> annotation rather than keeping the explicit form: it says the type once either way, and
+> one spelling beats two. `alloc T*(…)` remains legal for where no context states a
+> type.
+>
+> **Also fixed: a measurement flake, not a compiler bug.** 28 Wasm exec tests were
+> failing on `expected:<14> but was:<^[[33m14^[[39m>` - `console.log(number)` *inspects*
+> its argument, and node colours an inspected number when it thinks stdout is a
+> terminal. The driver prints strings now, with `NO_COLOR` set as a second guard. Worth
+> knowing because it silently inflated every count taken while it was happening.
+>
+> **The remaining 140** are ordinary semantic work with no single systemic cause:
+> the serialization deriver's generated helpers (`__serialFields`, `serialFieldAt`,
+> `encodeSerialValue`), `ArrayList`/`LinkedHashSet` members (`add`, `data`, `capacity`),
+> filesystem stdlib, and a long tail - plus a handful of tests whose *subject* the `std`
+> sweep removed (they assert a qualifier survives parsing, or that an unqualified name
+> fails) and which now need rewriting against the new truth.
 > `StdlibInjector.register` (line ~924) maps a declared `std__println` *down* to
 > `println`, because declarations used to live in `realm std`. They no longer do -
 > `std/io/io.az` declares a plain `println` - so the mapping has nothing to fire on,
@@ -773,13 +860,51 @@ to say, or relaxing a list to separate its elements as every other list does:
 - **`alloc T*(…)` / `alloc T^(…)`** - the sigil on the type, where it sits when the type
   is written out. The older `alloc* T(…)` / `alloc^ T(…)` still parse.
 - **Accepted** new `frontend/RepeatConstructionTest.kt`, 16 tests. **Suite** 1609 / 1848.
-- **NOT DONE - semantics.** All of the above is *parsing*. `.(…) * n` produces
-  `Expr.Binary(<construct>, STAR, count)`, which no later pass reads as a repetition -
-  TypeResolver and IrGenerator will treat it as multiplication. Selecting the repeated
-  ctor at a call site is likewise unwired. **`Expr.AllocBuffer(typeName, count)` already
-  exists and is plumbed through every pass and all four backends** (it is what
-  `alloc T[n]` builds), so it is the obvious lowering target for the pointer form; the
-  value form (`Array<T>`) needs its own answer. Do this before believing any of it runs.
+- **Semantics wired 2026-08-19 - it runs.** `.(args) * count` now resolves and lowers,
+  in two shapes:
+  - **an array is filled** - `count` slots holding the element default, lowered to the
+    `Array_fill` intrinsic every backend already implements.
+  - **anything else runs the `ctor` that declared a repetition**, with the count arriving
+    as its last argument - the shape the declaration put it in. `.() * 7` selects the
+    arity-1 repeated ctor, `.(5) * 10` the arity-2 one.
+- **Every test is a guard, not a diagnostic.** `Type(a) * b` is also how a user-declared
+  `oper*` reads, so anything that does not fit a repetition falls back to multiplication
+  *silently*. `N(3) * N(2)` (both operands constructed, both a known type) is told apart
+  only by the count's type; `Scaled(2) * 3` by the absence of a repeated ctor. Getting
+  this wrong first cost `OperatorFamilyTest.oneImplCarriesTheWholeFamily`, which is now a
+  regression test for it.
+- **Also fixed:** `parseInitializer` dropped the declared type's arguments, so
+  `var x: Array<Int> = .()` arrived as a bare `Array` - which is where the
+  `no member on Array<Any>` failures came from.
+- **Accepted** `codegen/RepeatedConstructionTest.kt`, 8 tests, all executing through the
+  interpreter rather than stopping at the parse.
+- **The `alloc` form landed 2026-08-19.** `alloc .(…) * count` and `alloc T*() * count`
+  build a buffer of `count` slots, lowered to the one `__allocBuffer` intrinsic every
+  backend already implements. Three things had to meet for it to work:
+  - **the expectation had to reach the `.()`** - it now passes through `Alloc` (unwrapping
+    the pointer) and through the repetition, and names a primitive slot type as readily as
+    a declared one;
+  - **a field had to state its type first** - `Stmt.MemberAssign` resolved the value
+    *before* looking the field up, so `self.data = alloc .() * count` had nothing to read.
+    The field is looked up first now;
+  - **`p.*[i]` had to index the buffer.** It was resolving as deref-then-index, so it read
+    slot zero and indexed *that* - `Cannot index-assign to null`. The deref and the index
+    are one operation when the pointee is not itself indexable; an `Array<T>*` is still
+    dereferenced and then indexed, as written. **This was broken for the old
+    `alloc T[n]` form too**, so `std/allocator`'s `freeStack.*[i]` had never worked.
+- **A type parameter erases.** `alloc T*() * 16` is a buffer of anything, which is what
+  the `T*` field it is assigned to resolves to as well; only a declared type keeps its
+  name. Getting this wrong first broke every `LinkedHashSet`/`HashMap` field default.
+
+### S6.2 `[DROP]` `alloc T[N]` is not allocation syntax - **DONE 2026-08-19**
+A buffer is a repeated allocation, so it is spelled like one. `alloc T[n]` said the same
+thing a second way and is now an error naming `alloc T*() * <count>`.
+- **Migrated 59 sites** across `std/` (49), tests and examples - including the
+  sigil-on-keyword spelling `alloc^ Int[3]`, which the first pass's pattern missed and
+  the suite caught.
+- **`Expr.AllocBuffer` is gone** - 20 sites across 14 files. Nothing constructed it once
+  the parse was removed, and a node no parser produces is exactly the dead weight that
+  made the `std__` spellings rot unnoticed.
 
 ### S6.1 `[ADD]` `alloc T*()` / `alloc T^()` and inference
 - **Touch** `Parser.kt:9466` (`parseAlloc`), `TypeResolver.kt`, `semantic/AllocDropAnalyzer.kt`

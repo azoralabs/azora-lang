@@ -28,7 +28,7 @@
  */
 exposed module std.string
 
-import std.container.array.*
+import std.container.array::*
 
 /**
  *
@@ -396,7 +396,7 @@ impl StringBuilder {
      * Appends a string to the builder.
      */
     @Experimental(since: "0.1")
-    func append(s: String): Unit {
+    func append[self: Self!](s: String): Unit {
         self.parts[self.count] = s
         self.count += 1
     }
@@ -405,7 +405,7 @@ impl StringBuilder {
      * Appends a string followed by a newline.
      */
     @Experimental(since: "0.1")
-    func appendLine(s: String): Unit {
+    func appendLine[self: Self!](s: String): Unit {
         self.parts[self.count] = s
         self.count += 1
         self.parts[self.count] = "\n"
@@ -416,7 +416,7 @@ impl StringBuilder {
      * Builds the final concatenated string.
      */
     @Experimental(since: "0.1")
-    func build(): String {
+    func build[self: Self&](): String {
         var result: String = ""
         for i in 0..<self.count {
             result = result + self.parts[i]
@@ -434,7 +434,7 @@ impl StringBuilder {
      * Clears the builder.
      */
     @Since("0.1")
-    func clear(): Unit {
+    func clear[self: Self!](): Unit {
         self.parts = .() * 16
         self.count = 0
     }

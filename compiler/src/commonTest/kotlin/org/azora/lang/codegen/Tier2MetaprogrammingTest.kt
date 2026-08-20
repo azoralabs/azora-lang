@@ -145,12 +145,12 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    // -- named realms as namespaces + :: resolution -------------------------
+    // -- named scopes as namespaces + :: resolution -------------------------
 
-    @Test fun namedRealmNamespaceConstAndFunc() {
+    @Test fun namedScopeNamespaceConstAndFunc() {
         assertEquals("314\n10", run("""
             import std.io
-            realm Math {
+            scope Math {
                 fin PI = 314
                 func double(x: Int): Int {
                     return x * 2
@@ -163,11 +163,11 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    @Test fun nestedNamedRealms() {
+    @Test fun nestedNamedScopes() {
         assertEquals("42", run("""
             import std.io
-            realm Outer {
-                realm Inner {
+            scope Outer {
+                scope Inner {
                     fin VALUE = 42
                 }
             }
@@ -177,10 +177,10 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    @Test fun namedRealmMemberReferencesAnotherMember() {
+    @Test fun namedScopeMemberReferencesAnotherMember() {
         assertEquals("25", run("""
             import std.io
-            realm Geom {
+            scope Geom {
                 fin R = 5
                 func area(): Int {
                     return Geom::R * Geom::R
@@ -192,7 +192,7 @@ class Tier2MetaprogrammingTest {
         """.trimIndent()))
     }
 
-    @Test fun anonymousRealmStillBlockScopes() {
+    @Test fun anAnonymousScopeStillIntroducesABlock() {
         // Anonymous `scope { … }` keeps its existing block-scope meaning.
         assertEquals("7", run("""
             import std.io

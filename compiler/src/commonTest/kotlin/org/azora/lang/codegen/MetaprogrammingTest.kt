@@ -155,13 +155,13 @@ class MetaprogrammingTest {
         assertTrue("e" in irFuncNames, "noinline func e() should be in IR")
         assertTrue("main" in irFuncNames, "import std.io\nfunc main() should be in IR")
 
-        // main() should have a, b, d inlined as realm blocks, and call c, e directly
+        // main() should have a, b, d inlined as scope blocks, and call c, e directly
         val mainBody = result.ir.functions.first { it.name == "main" }.body
-        val realms = mainBody.filterIsInstance<IrStmt.Scope>()
+        val scopes = mainBody.filterIsInstance<IrStmt.Scope>()
         val calls = mainBody.filterIsInstance<IrStmt.ExprStmt>()
             .map { it.expr }.filterIsInstance<IrExpr.Call>().map { it.name }
 
-        assertEquals(3, realms.size, "main should have 3 realm blocks (inlined a, b, d)")
+        assertEquals(3, scopes.size, "main should have 3 scope blocks (inlined a, b, d)")
         assertTrue("c" in calls, "main should call c() directly")
         assertTrue("e" in calls, "main should call e() directly")
     }

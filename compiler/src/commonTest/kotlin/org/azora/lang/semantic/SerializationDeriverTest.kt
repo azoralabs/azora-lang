@@ -395,7 +395,7 @@ class SerializationDeriverTest {
                 std__println(lenient.name)
             }
         """.trimIndent()
-        // This fixture deliberately spells the already-lowered realm names that
+        // This fixture deliberately spells the already-lowered scope names that
         // compiler-generated serializer bodies consume.
         val parsed = Parser(Lexer(source).tokenize(), internalSource = true).parse()
         val derived = SerializationDeriver.derive(parsed)

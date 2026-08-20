@@ -40,7 +40,7 @@
  */
 module std.serializer
 
-import std.[container.list.*, char.*, string.*]
+import std.[container.list::*, char::*, string::*]
 
 /** Failures reported by text decoders and typed serializers. */
 @Experimental(since: "0.1")

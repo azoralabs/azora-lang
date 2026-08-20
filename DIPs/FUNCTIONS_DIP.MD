@@ -530,7 +530,7 @@ add(1, 2)                       // positional
 greet("Ann", punctuation: ".")  // named argument
 sumAll(1, ...more)              // spread a variadic
 value.method(x)                 // method / extension call
-Type::path(x)                   // realm-qualified free function
+Type::path(x)                   // scope-qualified free function
 @vec[1, 2, 3]                   // macro invocation (immutable)
 @vec![1, 2, 3]                  // macro invocation (mutable variant)
 ```

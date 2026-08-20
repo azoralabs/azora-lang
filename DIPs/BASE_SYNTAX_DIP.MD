@@ -183,4 +183,4 @@ scope {
 ```
 
 A bare `scope { … }` introduces a nested lexical scope. `::name` accesses the
-same name in the parent scope. (See the Modules & Realms DIP for named realms.)
+same name in the parent scope. (See the Modules & Scopes DIP for named scopes.)

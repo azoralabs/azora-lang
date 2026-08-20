@@ -33,10 +33,10 @@
 module std.time
 
 import std.[
-    char.*
-    container.list.*
-    serializer.*
-    string.*
+    char::*
+    container.list::*
+    serializer::*
+    string::*
 ]
 
 /** Errors raised by validation, parsing, and unsafe temporal arithmetic. */

@@ -140,9 +140,9 @@ class AzoraLanguageServerTest {
     }
 
     @Test
-    fun genericParametersLoopLabelsAndRealmPathsHaveDistinctSemanticRoles() {
+    fun genericParametersLoopLabelsAndScopePathsHaveDistinctSemanticRoles() {
         val source = """
-            realm ide::editor {
+            scope ide::editor {
                 func transform<T>[self: Box<T>&](value: T): T {
                     outer: loop {
                         continue:outer
@@ -158,9 +158,9 @@ class AzoraLanguageServerTest {
 
         assertTrue(roles("T").isNotEmpty() && roles("T").all { it == "generic" }, roles("T").toString())
         assertEquals(listOf("label", "label"), roles("outer"))
-        assertEquals("realm", roles("ide").single())
-        assertEquals("realm", roles("editor").single())
-        assertEquals("parameter", roles("self").first())
+        assertEquals("scope", roles("ide").single())
+        assertEquals("scope", roles("editor").single())
+        assertEquals("contextParameter", roles("self").first())
     }
 
     @Test
@@ -214,7 +214,12 @@ class AzoraLanguageServerTest {
         fun textOf(span: HighlightSpan) = source.substring(span.start, span.end)
 
         assertEquals(2, all.count { it.type == "function" && textOf(it) == "greeting" })
-        assertTrue(all.filter { textOf(it) == "self" }.all { it.type == "parameter" })
+        // The receiver's declaration is a context parameter; reading it in the
+        // body is an ordinary parameter reference.
+        assertEquals(
+            listOf("contextParameter", "parameter"),
+            all.filter { textOf(it) == "self" }.map { it.type },
+        )
     }
 
     @Test
@@ -278,7 +283,7 @@ fin array = @collect_all(tuple)"""
     }
 
     @Test
-    fun highlightsRealmQualifiedSigilsInCompilerOrder() {
+    fun highlightsScopeQualifiedSigilsInCompilerOrder() {
         val source = """
             @Serializable pack User
             fin values = @arr[1, 2, 3]
@@ -290,19 +295,49 @@ fin array = @collect_all(tuple)"""
     }
 
     @Test
-    fun standardTypesAndReflectRequireRealmQualification() {
+    fun contextReceiversAndPropertiesHaveRolesOfTheirOwn() {
+        // A receiver is supplied by the call site, so it is not one of the
+        // parameters the declaration invents; a `prop` is not a plain variable.
+        val source = """
+            pack Point {
+                var x: Double
+            }
+            impl Point {
+                prop magnitude[self: Self&]: Double = self.x
+
+                func scaled[self: Self&](factor: Double): Double {
+                    return self.magnitude * factor
+                }
+            }
+        """.trimIndent()
+        val all = spans(source)
+        fun roles(text: String) = all
+            .filter { source.substring(it.start, it.end) == text }
+            .map { it.type }
+
+        assertTrue("contextParameter" in roles("self"), "the receiver: ${roles("self")}")
+        assertTrue(roles("magnitude").all { it == "property" }, "prop decl and read: ${roles("magnitude")}")
+        assertTrue("parameter" in roles("factor"), "an ordinary parameter: ${roles("factor")}")
+        assertTrue("function" in roles("scaled"), "a function declaration: ${roles("scaled")}")
+    }
+
+    @Test
+    fun standardTypesAndReflectAreWrittenPlain() {
+        // A library is no longer a namespace, so a standard type needs no
+        // qualifier and `reflect` none either. Both used to require one, and this
+        // test used to assert the unqualified spelling was *not* a type.
         val source = """
             import std.primitive
             import std.reflection
-            fin invalid: Int = 1
-            fin valid: Int = 1
+            fin first: Int = 1
+            fin second: Int = 1
             inline fin metadata = reflect<Int>
         """.trimIndent()
         val all = spans(source)
         fun kinds(text: String) = all.filter { source.substring(it.start, it.end) == text }.map { it.type }
 
-        assertEquals("variable", kinds("Int").first())
-        assertEquals("type", kinds("Int").drop(1).first())
+        assertTrue(kinds("Int").isNotEmpty(), "Int should be highlighted at all")
+        assertTrue(kinds("Int").all { it == "type" }, "every Int is a type now: ${kinds("Int")}")
         assertTrue(all.any { it.type == "function" && source.substring(it.start, it.end) == "reflect" })
     }
 

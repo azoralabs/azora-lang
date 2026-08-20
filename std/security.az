@@ -26,7 +26,7 @@
  */
 module std.security
 
-import std.[char.*, container.array.*]
+import std.[char::*, container.array::*]
 
 /** Data classification used by policies and audit records. */
 @Experimental(since: "0.1")

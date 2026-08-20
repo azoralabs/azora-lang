@@ -25,8 +25,8 @@
 module std.ml
 
 import std.[
-    container.[array.*, list.*]
-    math.*
+    container.[array::*, list::*]
+    math::*
 ]
 
 /** Activation functions understood by portable model descriptions. */

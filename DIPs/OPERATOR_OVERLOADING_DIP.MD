@@ -1660,7 +1660,7 @@ exists only to record that the operator DIP does not own them.
 duplicate go:
 
 ```azora
-realm std {                                    // std/cast.az - deleted entirely
+scope std {                                    // std/cast.az - deleted entirely
     bridge func cast<T, U>(value: U): T
     bridge func dyncast<T, U>(value: U): T?
     bridge func bitcast<T, U>(value: U): T

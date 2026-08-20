@@ -46,7 +46,7 @@ class ReadmeSnippetTest {
         "func add(a: Int, b: Int = 0): Int" to emptyMain,
         "macro @arr {" to Context(bodyFrom = "@arr[1, 2, 3]", epilogue = ""),
         "macro \$a @to \$b" to Context(
-            prelude = "realm std { func mapEntry<K, V>(key: K, value: V): K { return key } }\n",
+            prelude = "scope std { func mapEntry<K, V>(key: K, value: V): K { return key } }\n",
             bodyFrom = "\"key\" @to 42",
             epilogue = "",
         ),

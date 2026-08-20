@@ -191,7 +191,7 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}Wrap(name=${item.name}, registrations=[${item.registrations.joinToString(", ") { "${it.typeName}(${it.args.size} args)" }}])")
         }
         is TopLevel.UseImport -> {
-            sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (realm, item) -> if (item != null) "$realm::$item" else "$realm::*" }})")
+            sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (scope, item) -> if (item != null) "$scope::$item" else "$scope::*" }})")
         }
         is TopLevel.Spec -> {
             val typeParams = if (item.typeParams.isEmpty()) "" else "<${item.typeParams.joinToString(", ")}>"
@@ -269,7 +269,7 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             dumpExpr(sb, stmt.expr, "$indent    ")
         }
         is Stmt.Scope -> {
-            sb.appendLine("${indent}Realm")
+            sb.appendLine("${indent}Scope")
             for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
         }
         is Stmt.If -> {

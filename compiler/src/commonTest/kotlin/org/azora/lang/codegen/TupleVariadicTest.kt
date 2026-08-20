@@ -40,7 +40,7 @@ class TupleVariadicTest {
     @Test fun tupleOfInferredMonomorphizes() {
         val out = compile("""
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin x = tupleOf(1, 2.0)
                 println(x.0)
@@ -53,7 +53,7 @@ class TupleVariadicTest {
     @Test fun tupleOfExplicitAnnotation() {
         val src = """
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin x: Tuple<Int, Double> = tupleOf(1, 2.0)
                 println(x.0)
@@ -67,7 +67,7 @@ class TupleVariadicTest {
     @Test fun tupleOfExplicitTypeArgsBothForms() {
         val a = compile("""
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin x: Tuple<Int, Double> = tupleOf<Int, Double>(1, 2.0)
                 println(x.0)
@@ -76,7 +76,7 @@ class TupleVariadicTest {
         """.trimIndent())
         val b = compile("""
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin x = tupleOf<Int, Double>(1, 2.0)
                 println(x.0)
@@ -90,7 +90,7 @@ class TupleVariadicTest {
     @Test fun tupleOfThreeElementsAndMutation() {
         val src = """
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin t = tupleOf(true, "hi", 42)
                 println(t.0)
@@ -108,7 +108,7 @@ class TupleVariadicTest {
         // checked across backends in the other tests.
         val src = """
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin tup = tupleOf(1, 2.0, "3")
                 if tup.0 is Int && tup.0 == 1 { println("ok0") }
@@ -240,7 +240,7 @@ class TupleVariadicTest {
         assertEquals("3\n2", IrInterpreter().interpret(out.ir).trim())
     }
 
-    @Test fun tupleOutputIncludesItsFullRealmQualifiedSignature() {
+    @Test fun tupleOutputIncludesItsFullScopeQualifiedSignature() {
         val out = compile("""
             import std.io
             import std.container.tuple
@@ -276,7 +276,7 @@ class TupleVariadicTest {
         assertFalse("pack __Tuple_Int_Int" in ir, ir)
     }
 
-    @Test fun tupleTypeRequiresItsDeclaredRealm() {
+    @Test fun tupleTypeRequiresItsDeclaredScope() {
         val result = Compiler().compile("""
             import std.container.tuple
 
@@ -287,7 +287,7 @@ class TupleVariadicTest {
 
         val failure = assertIs<CompilationResult.Failure>(result)
         assertEquals(
-            listOf("line 3: undefined type 'Tuple'; 'Tuple' is part of realm 'std', use 'Tuple' instead"),
+            listOf("line 3: undefined type 'Tuple'; 'Tuple' is part of scope 'std', use 'Tuple' instead"),
             failure.errors,
         )
     }
@@ -318,7 +318,7 @@ class TupleVariadicTest {
     @Test fun nestedTuple() {
         val src = """
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin outer = tupleOf(tupleOf(1, 2), 3)
                 println(outer.0.0)
@@ -334,7 +334,7 @@ class TupleVariadicTest {
         // `where (...T).size >= 2` - a 1-element tuple must fail with a clear message.
         val r = Compiler().compile("""
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin x = tupleOf(1)
             }

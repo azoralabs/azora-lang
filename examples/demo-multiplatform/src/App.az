@@ -1,8 +1,8 @@
 package demo_multiplatform
 
-import std.ui
+import std::ui
 import std
-import std.convert
+import std::convert
 
 // Counter App - A single-file app that compiles to every UI target.
 // Uses Compose-compatible modifier names so output is identical on all targets.

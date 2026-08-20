@@ -181,7 +181,7 @@ impl Point {
 - Dynamic dispatch on a spec-typed value: the value is a fat pointer carrying
   a type id and the data, and the call goes through the spec's dispatch table.
   There is no keyword for it - using a spec as a type is what selects it
-- `realm Name { }` namespaces, members reached as `Name::member`
+- `scope Name { }` namespaces, members reached as `Name::member`
 
 ```azora
 spec Greet {
@@ -344,8 +344,8 @@ generation.
 **Bindings**: `inline fin`, `inline let`, `inline var`, `inline val`, and
 `inline name = expr` to re-assign one.
 
-**Blocks**: `inline { }`, `inline scope { }`, and `inline realm { }` at top
-level. `deepinline { }`, `deepinline realm { }` and `deepinline prop` evaluate
+**Blocks**: `inline { }`, `inline scope { }`, and `inline scope { }` at top
+level. `deepinline { }`, `deepinline scope { }` and `deepinline prop` evaluate
 through nested declarations. `noinline` escapes back to runtime.
 
 **Branching and iteration**: `inline if` / `else if` / `else`, and `inline for`,
@@ -478,8 +478,8 @@ exposed import std.traits.core   // re-exported to importers
   character.
 - `confined` narrows a declaration or module to its package.
 - `exposed` marks a module or import as auto-imported.
-- `realm` groups members under a `::` namespace.
-- `realm Name { }` groups members under a `::` namespace; the same realm may
+- `scope` groups members under a `::` namespace.
+- `scope Name { }` groups members under a `::` namespace; the same scope may
   be reopened and the contributions merge.
 
 ## FFI

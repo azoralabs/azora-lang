@@ -65,7 +65,7 @@ impl Channel<T> {
      * @throws AssertionError if the channel is closed.
      */
     @Experimental(since: "0.1")
-    func send(value: T) {
+    func send[self: Self!](value: T) {
         assert !closed { "Cannot send on closed channel" }
         mutex.lock()
         queue.enqueue(value)
@@ -79,7 +79,7 @@ impl Channel<T> {
      * @throws AssertionError if the channel is empty.
      */
     @Experimental(since: "0.1")
-    func receive(): T {
+    func receive[self: Self!](): T {
         assert queue.isNotEmpty { "Channel is empty" }
         mutex.lock()
         fin value = queue.dequeue()
@@ -94,7 +94,7 @@ impl Channel<T> {
      * @return The next message, or the default value if empty.
      */
     @Experimental(since: "0.1")
-    func tryReceive(default: T): T {
+    func tryReceive[self: Self!](default: T): T {
         mutex.lock()
         if queue.isEmpty {
             mutex.unlock()
@@ -109,7 +109,7 @@ impl Channel<T> {
      * Closes the channel, preventing further sends.
      */
     @Since("0.1")
-    func close() {
+    func close[self: Self!]() {
         self._closed = true
     }
 }

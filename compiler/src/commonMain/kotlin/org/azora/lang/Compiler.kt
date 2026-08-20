@@ -40,7 +40,7 @@ import org.azora.lang.semantic.SpecDefaults
 import org.azora.lang.semantic.CastDeriver
 import org.azora.lang.semantic.ComparisonDeriver
 import org.azora.lang.semantic.DisplayDeriver
-import org.azora.lang.semantic.RealmQualifiedImplTargets
+import org.azora.lang.semantic.ScopeQualifiedImplTargets
 import org.azora.lang.semantic.SerializationDeriver
 import org.azora.lang.semantic.VariadicMonomorphizer
 
@@ -128,7 +128,7 @@ class Compiler(
      * @return a [CompilationResult.Success] with all generated outputs, or a
      *   [CompilationResult.Failure] with error messages
      */
-    /** Points unknown symbols at their imported realm path or providing module. */
+    /** Points unknown symbols at their imported scope path or providing module. */
     private fun withLibraryHint(message: String, program: Program, libraries: StdlibInjector): String {
         // The message already carries the source spelling (`println`), while
         // the tables are keyed by the frontend's internal one - so the name is read
@@ -139,8 +139,8 @@ class Compiler(
         val name = shown.replace("::", "__")
         val qualified = libraries.qualifiedAccessOf(name, program)
         if (qualified != null) {
-            val realm = qualified.substringBeforeLast("::")
-            return "$message; '$shown' is part of realm '$realm', use '$qualified' instead"
+            val scope = qualified.substringBeforeLast("::")
+            return "$message; '$shown' is part of scope '$scope', use '$qualified' instead"
         }
         val module = libraries.moduleOf(name) ?: return message
         return "$message - '$shown' is provided by '$module': add 'import $module'"
@@ -181,7 +181,7 @@ class Compiler(
                 Lexer(source).tokenize(),
                 AzStdlib.comptimeLists.toMutableMap(),
                 AzStdlib.declaredEnums.toMutableMap(),
-                typeListRealm = AzStdlib.comptimeListRealms.toMutableMap(),
+                typeListScope = AzStdlib.comptimeListScopes.toMutableMap(),
             ).parse()
         } catch (error: IllegalStateException) {
             return CompilationResult.Failure(listOf(error.message ?: "frontend parsing failed"))
@@ -220,7 +220,7 @@ class Compiler(
 
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
-        val initiallyInjected = RealmQualifiedImplTargets.resolve(
+        val initiallyInjected = ScopeQualifiedImplTargets.resolve(
             SpecDefaults.apply(CallbackImplNormalizer.normalize(libraries.inject(parsed))),
         )
 

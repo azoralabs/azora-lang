@@ -195,11 +195,11 @@ class ProgramTest {
     }
 
     // -----------------------------------------------------------------------
-    // 9. friendRealm
+    // 9. friendScope
     // -----------------------------------------------------------------------
 
     @Test
-    fun friendRealm() {
+    fun friendScope() {
         val output = run("""
             import std.io
             func main() {

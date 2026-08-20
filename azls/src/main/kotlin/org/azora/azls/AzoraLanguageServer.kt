@@ -204,6 +204,15 @@ class AzoraLanguageServer {
 
         val out = mutableListOf<Completion>()
 
+        // On an `import` line the dotted path names modules and the symbols one
+        // declares - not a value and its members, which is what a `.` means
+        // everywhere else.
+        val line = source.lineAt(safeOffset)
+        if (line.trimStart().startsWith("import ")) {
+            completeImportPath(source, wordStart, out)
+            return json.encodeToString(ListSerializer(Completion.serializer()), out)
+        }
+
         if (receiver != null) {
             completeMembers(receiver, userIndex, preludeIndex, cursorLine, importsOf(source), out)
         } else {
@@ -229,12 +238,12 @@ class AzoraLanguageServer {
                     }
                 }
                 index.packs.values.forEach {
-                    if (!index.isRealmType(it.name) && visible(it.name)) {
+                    if (!index.isScopeType(it.name) && visible(it.name)) {
                         out.add(Completion(it.name, "pack", withOrigin(it.name, packDetail(it)), it.name))
                     }
                 }
                 index.enums.values.forEach {
-                    if (!index.isRealmType(it.name) && visible(it.name)) {
+                    if (!index.isScopeType(it.name) && visible(it.name)) {
                         out.add(Completion(it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name))
                     }
                 }
@@ -264,8 +273,8 @@ class AzoraLanguageServer {
         out: MutableList<Completion>,
     ) {
         val indices = listOf(userIndex, preludeIndex, stdlibIndex)
-        if (receiver.realmQualified) {
-            completeRealmMembers(receiver.text, indices, imports, out)
+        if (receiver.scopeQualified) {
+            completeScopeMembers(receiver.text, indices, imports, out)
             return
         }
 
@@ -293,26 +302,26 @@ class AzoraLanguageServer {
         BUILTIN_METHODS.forEach { (name, detail) -> out.add(Completion(name, "method", detail, name)) }
     }
 
-    /** Members reached through a realm-qualified path such as `ab`. */
-    private fun completeRealmMembers(
-        realm: String,
+    /** Members reached through a scope-qualified path such as `ab`. */
+    private fun completeScopeMembers(
+        scope: String,
         indices: List<SymbolIndex>,
         imports: Set<String>,
         out: MutableList<Completion>,
     ) {
-        val canonicalRealm = realm.replace("::", "__")
-        val prefix = "${canonicalRealm}__"
+        val canonicalScope = scope.replace("::", "__")
+        val prefix = "${canonicalScope}__"
         for (index in indices) {
             fun visible(name: String): Boolean = moduleVisible(index.origins[name], imports)
             fun directSegment(name: String): String? = name.takeIf { it.startsWith(prefix) }
                 ?.removePrefix(prefix)?.substringBefore("__")?.takeIf { it.isNotEmpty() }
-            fun realmChild(name: String): Boolean = "__" in name.removePrefix(prefix)
+            fun scopeChild(name: String): Boolean = "__" in name.removePrefix(prefix)
 
             for ((canonical, declaration) in index.functions) {
                 val label = directSegment(canonical) ?: continue
                 if (!visible(canonical)) continue
-                if (realmChild(canonical)) {
-                    out += Completion(label, "realm", "realm $realm::$label", label)
+                if (scopeChild(canonical)) {
+                    out += Completion(label, "scope", "scope $scope::$label", label)
                 } else {
                     val completion = functionCompletion(declaration.copy(name = label))
                     val detail = index.origins[canonical]?.let { "${completion.detail} - $it" } ?: completion.detail
@@ -322,8 +331,8 @@ class AzoraLanguageServer {
             for ((canonical, bindingDetail) in index.topLevelVars) {
                 val label = directSegment(canonical) ?: continue
                 if (!visible(canonical)) continue
-                if (realmChild(canonical)) {
-                    out += Completion(label, "realm", "realm $realm::$label", label)
+                if (scopeChild(canonical)) {
+                    out += Completion(label, "scope", "scope $scope::$label", label)
                 } else {
                     val plain = bindingDetail.replaceFirst(canonical, label)
                     val detail = index.origins[canonical]?.let { "$plain - $it" } ?: plain
@@ -334,8 +343,8 @@ class AzoraLanguageServer {
                 val label = directSegment(canonical) ?: continue
                 val origin = index.qualifiedTypeOrigins[canonical]
                 if (!moduleVisible(origin, imports)) continue
-                if (realmChild(canonical)) {
-                    out += Completion(label, "realm", "realm $realm::$label", label)
+                if (scopeChild(canonical)) {
+                    out += Completion(label, "scope", "scope $scope::$label", label)
                     continue
                 }
                 index.packs[label]?.let { pack ->
@@ -592,6 +601,61 @@ class AzoraLanguageServer {
      * syntax-only: it records paths and lets completion visibility decide what
      * those paths mean for packaged symbols.
      */
+    /** The text of the line containing [offset]. */
+    private fun String.lineAt(offset: Int): String {
+        val start = lastIndexOf('\n', (offset - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val end = indexOf('\n', offset).let { if (it < 0) length else it }
+        return substring(start, end.coerceAtLeast(start))
+    }
+
+    /**
+     * Completions for an `import` path: the modules under what has been typed,
+     * and the symbols the named module declares.
+     *
+     * `import std.math.ab` offers `abs`, because `std.math` is a module and
+     * `abs` is one of its declarations - a selective import names a symbol.
+     */
+    private fun completeImportPath(source: String, wordStart: Int, out: MutableList<Completion>) {
+        // Everything between `import ` and the word being typed is the path so
+        // far; a trailing `.` leaves it as the parent module.
+        val typed = source.substring(0, wordStart)
+            .substringAfterLast("import ")
+            .substringAfterLast('[')
+            .substringAfterLast('{')
+            .substringAfterLast(',')
+            .substringAfterLast('\n')
+            .trim()
+        // The separator says what is being asked for. After a `::` the module is
+        // settled and what follows is a name it declares; after a `.` the path
+        // is still walking down the module tree.
+        val selecting = typed.endsWith("::") || "::" in typed
+        val parent = typed.trimEnd('.').removeSuffix("::").trimEnd(':').ifEmpty { null }
+
+        val modules = stdlibIndex.origins.values.toSortedSet() +
+            stdlibIndex.qualifiedTypeOrigins.values.filterNotNull()
+        if (!selecting) {
+            // A child module one segment below what has been typed.
+            for (module in modules) {
+                val rest = when {
+                    parent == null -> module
+                    module.startsWith("$parent.") -> module.removePrefix("$parent.")
+                    else -> continue
+                }
+                val segment = rest.substringBefore('.')
+                if (segment.isNotEmpty() && out.none { it.label == segment && it.kind == "module" }) {
+                    out.add(Completion(segment, "module", module, segment))
+                }
+            }
+        }
+        // A symbol the named module declares - what a `::` selection takes.
+        if (parent == null) return
+        for ((name, origin) in stdlibIndex.origins) {
+            if (origin != parent) continue
+            val detail = stdlibIndex.functions[name]?.let { signatureOf(it) } ?: name
+            out.add(Completion(name, "function", "$detail - $origin", name))
+        }
+    }
+
     private fun importsOf(source: String): Set<String> {
         val out = mutableSetOf<String>()
         for (line in source.lines()) {
@@ -676,9 +740,9 @@ class AzoraLanguageServer {
         return start to source.substring(start, offset)
     }
 
-    private data class MemberReceiver(val text: String, val realmQualified: Boolean)
+    private data class MemberReceiver(val text: String, val scopeQualified: Boolean)
 
-    /** Receiver before a member (`value.`) or realm path (``) completion. */
+    /** Receiver before a member (`value.`) or scope path (``) completion. */
     private fun receiverBefore(source: String, wordStart: Int): MemberReceiver? {
         if (wordStart >= 2 && source[wordStart - 2] == ':' && source[wordStart - 1] == ':') {
             val end = wordStart - 2
@@ -691,7 +755,7 @@ class AzoraLanguageServer {
                 }
             }
             return source.substring(start, end).takeIf { it.isNotEmpty() }
-                ?.let { MemberReceiver(it, realmQualified = true) }
+                ?.let { MemberReceiver(it, scopeQualified = true) }
         }
         if (wordStart == 0 || source[wordStart - 1] != '.') return null
         val end = wordStart - 1
@@ -700,7 +764,7 @@ class AzoraLanguageServer {
         var start = end
         while (start > 0 && source[start - 1].isIdentPart()) start--
         return source.substring(start, end).takeIf { it.isNotEmpty() }
-            ?.let { MemberReceiver(it, realmQualified = false) }
+            ?.let { MemberReceiver(it, scopeQualified = false) }
     }
 
     private data class LocalDeclaration(
@@ -841,7 +905,7 @@ class AzoraLanguageServer {
         return source.substring(start, end).takeIf { it.isNotEmpty() && it[0].isIdentStart() }
     }
 
-    /** Canonical compiler key for `realm::name` at [offset] (`realm__name`). */
+    /** Canonical compiler key for `scope::name` at [offset] (`scope__name`). */
     private fun qualifiedNameAt(source: String, name: String, offset: Int): String {
         var wordStart = offset.coerceIn(0, source.length)
         while (wordStart > 0 && source[wordStart - 1].isIdentPart()) wordStart--
@@ -984,7 +1048,7 @@ internal class SymbolIndex {
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val enums = linkedMapOf<String, TopLevel.Enum>()
 
-    /** Canonical realm-qualified type names (`std__Int`, `shapes__Point`). */
+    /** Canonical scope-qualified type names (`std__Int`, `shapes__Point`). */
     val qualifiedTypes = linkedSetOf<String>()
     val qualifiedTypeOrigins = linkedMapOf<String, String?>()
 
@@ -1013,7 +1077,7 @@ internal class SymbolIndex {
             if (doc.isNotEmpty()) documentation.putIfAbsent(name, doc)
         }
         fun typeOrigin(name: String): String {
-            val namespace = program.realmTypeNamespaces[name]
+            val namespace = program.scopeTypeNamespaces[name]
             val qualified = if (namespace == null) name else "${namespace.replace("::", "__")}__$name"
             qualifiedTypes += qualified
             qualifiedTypeOrigins.putIfAbsent(qualified, module)
@@ -1091,8 +1155,8 @@ internal class SymbolIndex {
         topLevelVarLines[name] = line
     }
 
-    /** True when [name] is declared inside a named realm and therefore needs `::`. */
-    fun isRealmType(name: String): Boolean = qualifiedTypes.any { it != name && it.endsWith("__$name") }
+    /** True when [name] is declared inside a named scope and therefore needs `::`. */
+    fun isScopeType(name: String): Boolean = qualifiedTypes.any { it != name && it.endsWith("__$name") }
 
     private fun typeNameForKey(name: String): String? = when {
         name in packs || name in enums -> name

@@ -1,4 +1,4 @@
-# Azora Modules & Realms - DIP Implementation Profile
+# Azora Modules & Scopes - DIP Implementation Profile
 
 ## Grammar
 
@@ -32,10 +32,10 @@ resident module app.shared  // public, autoimported in package, all symbols resi
 ## 2. Imports
 
 ```azora
-import std.io.*                  // module
-import std.container.*           // every module under std.container
-import std.container.[list.*, map.*]
-import std.math.abs              // selective symbol
+import std.io::*                  // module
+import std.container::*           // every module under std.container
+import std.container.[list::*, map::*]
+import std.math::abs              // selective symbol
 ```
 
 

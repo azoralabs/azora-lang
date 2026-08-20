@@ -89,7 +89,7 @@ class Tier3MemoryTest {
         """.trimIndent()))
     }
 
-    @Test fun unsafeBlockDesugarsToRealm() {
+    @Test fun unsafeBlockDesugarsToScope() {
         assertEquals("11", run("""
             import std.io
             func main() {
@@ -138,7 +138,7 @@ class Tier3MemoryTest {
     @Test fun sharedCountsOwnersWithoutSynchronisation() {
         assertEquals("41\n42\n2\n1", run("""
             import std.io
-            import std.memory.*
+            import std.memory::*
             func main() {
                 var p = sharedOf(41)
                 println(p.*)
@@ -153,7 +153,7 @@ class Tier3MemoryTest {
     @Test fun syncSharedCountsOwnersAcrossThreads() {
         assertEquals("41\n2\n1", run("""
             import std.io
-            import std.memory.*
+            import std.memory::*
             func main() {
                 var p = syncSharedOf(41)
                 println(p.get)
@@ -166,7 +166,7 @@ class Tier3MemoryTest {
     @Test fun sliceIndexesPointerBuffer() {
         assertEquals("9\n4", run("""
             import std.io
-            import std.memory.*
+            import std.memory::*
             func main() {
                 var p = alloc Int^() * 3
                 p[0] = 7

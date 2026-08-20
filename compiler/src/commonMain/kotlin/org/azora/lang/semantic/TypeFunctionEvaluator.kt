@@ -59,13 +59,13 @@ internal object TypeFunctionEvaluator {
      * (`promote<T, U>`), so the two are told apart here rather than in the
      * parser: only the declaration set knows which names are type properties,
      * and a declaration can arrive from an injected stdlib module long after the
-     * use site was parsed. A realm-qualified use (`promote<…>`) and a bare
-     * one inside the declaring realm both find the mangled declaration.
+     * use site was parsed. A scope-qualified use (`promote<…>`) and a bare
+     * one inside the declaring scope both find the mangled declaration.
      */
     fun declarationNameFor(type: TypeRef.Named, declaredNames: Collection<String>): String? {
         val qualified = type.qualifier?.replace("::", "__")?.let { "${it}__${type.name}" }
         listOfNotNull(qualified, type.name).firstOrNull { it in declaredNames }?.let { return it }
-        // A bare use inside the declaring realm: exactly one mangled declaration
+        // A bare use inside the declaring scope: exactly one mangled declaration
         // ending in this name. Ambiguity is left alone rather than guessed at, so
         // it surfaces as an ordinary unknown-type error.
         return declaredNames.filter { it.endsWith("__${type.name}") }.distinct().singleOrNull()

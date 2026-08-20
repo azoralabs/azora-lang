@@ -70,7 +70,7 @@ intrinsic exists rather than an Azora implementation:
 | LLVM        | `declare double @sqrt(double)`, with the mangled Azora symbol calling it   |
 | Wasm        | native where the instruction set has it, software implementation otherwise |
 
-The LLVM path matters: `realm std { bridge func sqrt(…) }` mangles to
+The LLVM path matters: `scope std { bridge func sqrt(…) }` mangles to
 `std__math__sqrt`, a symbol nothing provides. Rather than ship a hand-written C
 shim, the compiler declares the libm function and *defines* the mangled name as
 a call to it. Nothing has to be linked beyond libm.

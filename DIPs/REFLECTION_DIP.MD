@@ -43,7 +43,7 @@ folds during compile-time evaluation, and an intrinsic that survives it is a
 compiler bug rather than a runtime call.
 
 - ⬜ The diagnostic names only `.hasAnnot` and `.annotMeta`, but `.withAnnot`,
-  `.declName` and `.enclosingRealm` are equally valid. The message should list
+  `.declName` and `.enclosingScope` are equally valid. The message should list
   what is actually allowed
 
 ---
@@ -75,13 +75,13 @@ where it passed none. This is what keeps a decorator the **single place** the
 information is written: the library reads it back rather than asking the author
 to repeat it in a registration call.
 
-### 2.3 `enclosingRealm`
+### 2.3 `enclosingScope`
 
 ```azora
-inline fin r = reflect<P>.enclosingRealm
+inline fin r = reflect<P>.enclosingScope
 ```
 
-The realm a declaration sits in, or null.
+The scope a declaration sits in, or null.
 
 ---
 
@@ -154,7 +154,7 @@ used, and it is the one a reader is most likely to reach for.
 | `hasAnnot<D>`     | ✅ works                            |
 | `annotMeta<D>`    | ✅ works                            |
 | `withAnnot<D>`    | ✅ works on `reflect<*>`, in a body |
-| `enclosingRealm` | ✅ accepted                         |
+| `enclosingScope` | ✅ accepted                         |
 | `fields`         | ⬜ **unreachable**                  |
 
 ```azora
@@ -181,7 +181,7 @@ equally unreachable, since nothing can produce one.
 
 - ⬜ **No declaration generation** (§3.1)
 - ⬜ **No enumeration except by decorator.** There is no "every pack", no "every
-  implementer of this spec", no filter by realm or module. `withAnnot<D>` is the
+  implementer of this spec", no filter by scope or module. `withAnnot<D>` is the
   only query, so discovering anything requires it be decorated first
 - ⬜ **No method or signature reflection.** A declaration's members, parameter
   types and return type are not askable

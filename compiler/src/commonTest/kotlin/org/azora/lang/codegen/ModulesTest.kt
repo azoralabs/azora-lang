@@ -6,12 +6,12 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * Tests for realms and visibility under the realm/import model:
+ * Tests for scopes and visibility under the scope/import model:
  *
- * - A named `realm X { ... }` namespaces its members (`X::member`). Members are
+ * - A named `scope X { ... }` namespaces its members (`X::member`). Members are
  *   reached via the qualified `X::name` path; bare access is rejected.
- * - `realm X { ... }` may be declared in multiple blocks (and across
- *   modules); the contributions merge into one logical realm.
+ * - `scope X { ... }` may be declared in multiple blocks (and across
+ *   modules); the contributions merge into one logical scope.
  * - Visibility modifiers (`exposed`/`confined`/`protected`) still constrain access.
  */
 class ModulesTest {
@@ -62,7 +62,7 @@ class ModulesTest {
                 var _cache: Int
             }
             impl Body {
-                func bumped(): Int {
+                func bumped[self: Self&](): Int {
                     return self._cache + 1
                 }
             }
@@ -110,12 +110,12 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    // -- qualified realm access (no bare aliases) ----
+    // -- qualified scope access (no bare aliases) ----
 
-    @Test fun qualifiedRealmFunctionAndConstant() {
+    @Test fun qualifiedScopeFunctionAndConstant() {
         assertEquals("3\n14159", run("""
             import std.io
-            realm Math {
+            scope Math {
                 fin PI = 14159
                 func triple(x: Int): Int {
                     return x * 3
@@ -128,10 +128,10 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun qualifiedRealmAccessForFuncsAndFins() {
+    @Test fun qualifiedScopeAccessForFuncsAndFins() {
         assertEquals("hello\n42", run("""
             import std.io
-            realm Utils {
+            scope Utils {
                 func greet(): String {
                     return "hello"
                 }
@@ -144,10 +144,10 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun bareRealmAccessIsRejected() {
+    @Test fun bareScopeAccessIsRejected() {
         val result = Compiler().compile("""
             import std.io
-            realm Const {
+            scope Const {
                 fin five = 5
             }
             func main() {
@@ -155,14 +155,14 @@ class ModulesTest {
             }
         """.trimIndent())
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "five" in it }, "bare realm access should be rejected: ${'$'}{result.errors}")
+        assertTrue(result.errors.any { "five" in it }, "bare scope access should be rejected: ${'$'}{result.errors}")
     }
 
     @Test fun useDoesNotCreateBareAlias() {
-        // `use Const` is a no-op for user realms; bare `five` must still be rejected.
+        // `use Const` is a no-op for user scopes; bare `five` must still be rejected.
         val result = Compiler().compile("""
             import std.io
-            realm Const {
+            scope Const {
                 fin five = 5
             }
             import Const
@@ -174,15 +174,15 @@ class ModulesTest {
         assertTrue(result.errors.any { "five" in it }, "${'$'}{result.errors}")
     }
 
-    @Test fun friendRealmMergesAcrossBlocks() {
+    @Test fun friendScopeMergesAcrossBlocks() {
         assertEquals("3\n42", run("""
             import std.io
-            realm std {
+            scope std {
                 func triple(x: Int): Int {
                     return x * 3
                 }
             }
-            realm std {
+            scope std {
                 fin answer = 42
             }
             func main() {
@@ -192,15 +192,15 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun reopeningARealmMergesItsContributions() {
-        // A realm is a name a package agrees on, not a block one file owns, so
+    @Test fun reopeningAScopeMergesItsContributions() {
+        // A scope is a name a package agrees on, not a block one file owns, so
         // opening it twice adds to it rather than colliding.
         assertEquals("1\n2", run("""
             import std.io
-            realm x {
+            scope x {
                 func a(): Int { return 1 }
             }
-            realm x {
+            scope x {
                 func b(): Int { return 2 }
             }
             func main() {

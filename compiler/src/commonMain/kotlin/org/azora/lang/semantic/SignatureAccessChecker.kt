@@ -150,7 +150,7 @@ object SignatureAccessChecker {
         }
     }
 
-    /** A decorator's name without the realm it was declared in. */
+    /** A decorator's name without the scope it was declared in. */
     private fun named(name: String): String = name.substringAfterLast("__")
 
     /** Every call written in [body], with the line it was written on. */

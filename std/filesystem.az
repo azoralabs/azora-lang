@@ -35,8 +35,8 @@
  */
 module std.filesystem
 
-import std.container.array.*
-import std.time.*
+import std.container.array::*
+import std.time::*
 
 /** The separator this module writes. Both are accepted when reading a path. */
 @Experimental(since: "0.1")

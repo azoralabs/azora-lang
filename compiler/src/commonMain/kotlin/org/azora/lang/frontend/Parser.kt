@@ -55,11 +55,11 @@ class Parser(
     /** Compiler-generated source may use reserved `__` names while being reparsed. */
     private val internalSource: Boolean = false,
     /**
-     * Compile-time list name -> the named realm it was declared in ("std",
-     * "std__container"), or "" for one declared outside any realm. Read by
-     * [comptimeList] to qualify elements for a consumer in another realm.
+     * Compile-time list name -> the named scope it was declared in ("std",
+     * "std__container"), or "" for one declared outside any scope. Read by
+     * [comptimeList] to qualify elements for a consumer in another scope.
      */
-    private val typeListRealm: MutableMap<String, String> = mutableMapOf(),
+    private val typeListScope: MutableMap<String, String> = mutableMapOf(),
 ) {
 
     /**
@@ -76,7 +76,7 @@ class Parser(
 
     /** Compile-time type functions are declarations, but never runtime top-level items. */
     private val typeFunctions = mutableListOf<TypeFunctionDecl>()
-    /** Namespace used to qualify unqualified type-function calls inside a realm. */
+    /** Namespace used to qualify unqualified type-function calls inside a scope. */
     private var typeFunctionNamespacePrefix = ""
 
     /**
@@ -139,11 +139,11 @@ class Parser(
         TokenType.NEWLINE, TokenType.EOF,
     )
 
-    /** Enclosing labeled/anonymous realms while parsing (outermost first). */
-    private data class RealmFrame(val label: String?, val isInline: Boolean)
-    private val realmStack = mutableListOf<RealmFrame>()
-    /** Declaration name → its innermost realm, for `(reflect X).realm` reflection. */
-    private val realmMetaByName = mutableMapOf<String, RealmMeta>()
+    /** Enclosing labeled/anonymous scopes while parsing (outermost first). */
+    private data class ScopeFrame(val label: String?, val isInline: Boolean)
+    private val scopeStack = mutableListOf<ScopeFrame>()
+    /** Declaration name → its innermost scope, for `(reflect X).scope` reflection. */
+    private val scopeMetaByName = mutableMapOf<String, ScopeMeta>()
 
     /**
      * One frame per lambda body being parsed; true once that body has mentioned a
@@ -151,42 +151,42 @@ class Parser(
      */
     private val lambdaMentionsIt = mutableListOf<Boolean>()
 
-    /** Declarations written inside a `realm test`, and how far each reaches. */
-    private val testRealmMembers = mutableMapOf<String, Visibility>()
+    /** Declarations written inside a `test scope`, and how far each reaches. */
+    private val testScopeMembers = mutableMapOf<String, Visibility>()
     /** Type declaration name → named namespace path (`std`, `container`, ...). */
-    private val realmTypeNamespaces = linkedMapOf<String, String>()
+    private val scopeTypeNamespaces = linkedMapOf<String, String>()
 
     /**
      * The compile-time list [name] holds, as its elements must be written here.
      *
-     * A list declares its elements in whatever realm it is written in - `std`'s
-     * `Numbers` is `[Byte, Short, …]`, bare, because inside `realm std` that is
-     * what those types are called. Read from another realm the same elements have
+     * A list declares its elements in whatever scope it is written in - `std`'s
+     * `Numbers` is `[Byte, Short, …]`, bare, because inside `scope std` that is
+     * what those types are called. Read from another scope the same elements have
      * to carry the qualifier, or splicing one into type position yields a name
-     * that resolves nowhere. Reading a list inside its own realm is left alone, so
+     * that resolves nowhere. Reading a list inside its own scope is left alone, so
      * the library's own `inline for Ty in Numbers` is unaffected.
      */
     private fun comptimeList(name: String): List<String>? {
         val values = typeListEnv[name] ?: return null
-        val declaring = typeListRealm[name].orEmpty()
+        val declaring = typeListScope[name].orEmpty()
         if (declaring.isEmpty() || declaring == typeFunctionNamespacePrefix) return values
         val qualifier = declaring.replace("__", "::")
         return values.map { if ("::" in it) it else "$qualifier::$it" }
     }
 
-    /** Builds the [RealmMeta] chain for the current [realmStack] (innermost outward). */
-    private fun currentRealmMeta(): RealmMeta? {
-        var meta: RealmMeta? = null
-        for (frame in realmStack) meta = RealmMeta(frame.label, frame.isInline, meta)
+    /** Builds the [ScopeMeta] chain for the current [scopeStack] (innermost outward). */
+    private fun currentScopeMeta(): ScopeMeta? {
+        var meta: ScopeMeta? = null
+        for (frame in scopeStack) meta = ScopeMeta(frame.label, frame.isInline, meta)
         return meta
     }
 
-    /** Records the current realm for each named declaration in [items] (innermost wins). */
-    private fun recordRealmMembers(items: List<TopLevel>) {
-        val meta = currentRealmMeta() ?: return
+    /** Records the current scope for each named declaration in [items] (innermost wins). */
+    private fun recordScopeMembers(items: List<TopLevel>) {
+        val meta = currentScopeMeta() ?: return
         for (item in items) {
             val name = declaredTopLevelName(item) ?: continue
-            if (name !in realmMetaByName) realmMetaByName[name] = meta
+            if (name !in scopeMetaByName) scopeMetaByName[name] = meta
         }
     }
 
@@ -207,28 +207,28 @@ class Parser(
     }
 
     /**
-     * True when a labeled/anonymous realm block begins here: an optional
-     * `inline`/`deepinline`, then `realm`, then a string label or `{`. Excludes the
-     * identifier-named namespace form `realm Foo { … }` (handled separately) and
+     * True when a labeled/anonymous scope block begins here: an optional
+     * `inline`/`deepinline`, then `scope`, then a string label or `{`. Excludes the
+     * identifier-named namespace form `scope Foo { … }` (handled separately) and
      * plain `inline { … }`/`deepinline if …`.
      */
-    private fun isRealmBlockAhead(): Boolean {
+    private fun isScopeBlockAhead(): Boolean {
         var i = current
         val t = tokens.getOrNull(i)?.type
         if (t == TokenType.INLINE || t == TokenType.DEEPINLINE) i++
-        if (tokens.getOrNull(i)?.type != TokenType.REALM && tokens.getOrNull(i)?.type != TokenType.SCOPE) return false
+        if (tokens.getOrNull(i)?.type != TokenType.SCOPE) return false
         val after = tokens.getOrNull(i + 1)?.type
         return after == TokenType.STRING_LITERAL || after == TokenType.L_BRACE
     }
 
     /**
-     * `[inline|deepinline] realm ["label"] { … }` - a labeled or anonymous realm.
-     * Unlike a namespace `realm Foo { … }`, members keep their top-level names;
-     * the realm only attaches reflection metadata ([realmMetaByName]) and, for the
+     * `[inline|deepinline] scope ["label"] { … }` - a labeled or anonymous scope.
+     * Unlike a namespace `scope Foo { … }`, members keep their top-level names;
+     * the scope only attaches reflection metadata ([scopeMetaByName]) and, for the
      * inline/deepinline forms, the usual compile-time block semantics. Inline-ness
-     * is inherited by nested realms.
+     * is inherited by nested scopes.
      */
-    private fun parseRealmBlock(): List<TopLevel> {
+    private fun parseScopeBlock(): List<TopLevel> {
         val start = peek()
         val ownInline = when {
             match(TokenType.DEEPINLINE) -> true
@@ -236,30 +236,30 @@ class Parser(
             else -> false
         }
         val isDeep = start.type == TokenType.DEEPINLINE
-        if (!match(TokenType.SCOPE)) consume(TokenType.REALM, "Expected 'scope'")
+        consume(TokenType.SCOPE, "Expected 'scope'")
         val label = if (check(TokenType.STRING_LITERAL)) advance().literal as String else null
         // Inline-ness is inherited: a plain scope nested in an inline/deepinline
         // scope is itself inline.
-        val isInline = ownInline || (realmStack.lastOrNull()?.isInline == true)
+        val isInline = ownInline || (scopeStack.lastOrNull()?.isInline == true)
         consume(TokenType.L_BRACE, "Expected '{' to open the scope")
         skipNewlines()
-        realmStack.add(RealmFrame(label, isInline))
+        scopeStack.add(ScopeFrame(label, isInline))
         val body = mutableListOf<TopLevel>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             when {
-                isRealmBlockAhead() -> body.addAll(parseRealmBlock())
-                isRealmNamespaceAhead() -> body.addAll(parseRealmNamespace())
+                isScopeBlockAhead() -> body.addAll(parseScopeBlock())
+                isScopeNamespaceAhead() -> body.addAll(parseScopeNamespace())
                 isTypePropAhead() -> parseTypeProp()
                 isInline -> body.add(parseTopLevelBlockItem(deepInline = true))
                 else -> body.add(parseTopLevel())
             }
             skipNewlines()
         }
-        recordRealmMembers(body)
-        realmStack.removeAt(realmStack.size - 1)
-        consume(TokenType.R_BRACE, "Expected '}' to close realm")
+        recordScopeMembers(body)
+        scopeStack.removeAt(scopeStack.size - 1)
+        consume(TokenType.R_BRACE, "Expected '}' to close scope")
         consumeNewline()
         return when {
             !ownInline -> body
@@ -330,19 +330,19 @@ class Parser(
         while (!isAtEnd()) {
             skipNewlines()
             if (isAtEnd()) break
-            if (isTestRealmAhead()) {
-                // `[exposed|protected|confined] realm test { … }` - declarations
+            if (isTestScopeAhead()) {
+                // `[exposed|protected|confined] test scope { … }` - declarations
                 // that exist only for tests.
-                items.addAll(parseTestRealm())
-            } else if (isRealmNamespaceAhead()) {
-                // `realm Name { … }` - a named namespace whose members are always
-                // qualified outside that realm.
-                items.addAll(parseRealmNamespace())
-            } else if (isRealmBlockAhead()) {
-                // `[inline|deepinline] realm ["label"] { … }` - a labeled/anonymous
-                // realm; members stay top-level, the realm only adds reflection
+                items.addAll(parseTestScope())
+            } else if (isScopeNamespaceAhead()) {
+                // `scope Name { … }` - a named namespace whose members are always
+                // qualified outside that scope.
+                items.addAll(parseScopeNamespace())
+            } else if (isScopeBlockAhead()) {
+                // `[inline|deepinline] scope ["label"] { … }` - a labeled/anonymous
+                // scope; members stay top-level, the scope only adds reflection
                 // metadata (and inline semantics for the inline forms).
-                items.addAll(parseRealmBlock())
+                items.addAll(parseScopeBlock())
             } else if (isTypePropAhead()) {
                 parseTypeProp()
             } else {
@@ -372,16 +372,16 @@ class Parser(
                 isExported,
                 moduleVisibility,
                 exportCondition,
-                realmMetaByName.toMap(),
+                scopeMetaByName.toMap(),
                 typeFunctions = typeFunctions.toList(),
                 typeMacroRules = pendingTypeMacroRules.toList(),
                 infixMacros = pendingInfixMacros.toList(),
                 usesMacros = usedMetaInvoke,
-                realmTypeNamespaces = realmTypeNamespaces.toMap(),
-                testRealmMembers = testRealmMembers.toMap(),
+                scopeTypeNamespaces = scopeTypeNamespaces.toMap(),
+                testScopeMembers = testScopeMembers.toMap(),
             )
         )
-        val rewritten = IntraRealmRewriter.rewrite(normalized)
+        val rewritten = ScopeAccessRewriter.rewrite(normalized)
         if (!internalSource) SourceSymbolValidator.validateProgram(rewritten)
         return rewritten
     }
@@ -389,14 +389,12 @@ class Parser(
     /**
      * The keyword opening a named namespace here, or null if none does.
      *
-     * `scope Name { … }` and `realm Name { … }` declare the same thing; `scope` is
-     * the spelling that survives. Both need a name and a brace to be a namespace,
-     * which is what separates them from `scope { … }` (a block) and
-     * `realm "label" { … }` (reflection metadata).
+     * A namespace needs a name and a brace, which is what separates it from
+     * `scope { … }` (a block) and `scope "label" { … }` (reflection metadata).
      */
     private fun namespaceKeywordAhead(): TokenType? {
         val keyword = tokens.getOrNull(current)?.type
-        if (keyword != TokenType.REALM && keyword != TokenType.SCOPE) return null
+        if (keyword != TokenType.SCOPE) return null
         var i = current + 1
         if (tokens.getOrNull(i)?.type != TokenType.IDENTIFIER) return null
         i++
@@ -408,38 +406,36 @@ class Parser(
         return if (tokens.getOrNull(i)?.type == TokenType.L_BRACE) keyword else null
     }
 
-    private fun isRealmNamespaceAhead(): Boolean = namespaceKeywordAhead() != null
+    private fun isScopeNamespaceAhead(): Boolean = namespaceKeywordAhead() != null
 
     /**
-     * `realm Name (:: Name)* { items }` - a namespace contribution.
+     * `scope Name (:: Name)* { items }` - a namespace contribution.
      *
-     * Each member is mangled with the realm path (`realm std { realm math { fin PI } }`
-     * → `std__math__PI`, reached as `PI`). The same realm path may be
+     * Each member is mangled with the scope path (`scope std { scope math { fin PI } }`
+     * → `std__math__PI`, reached as `PI`). The same scope path may be
      * opened as many times as it likes, in as many modules as it likes, and the
-     * contributions merge - a realm is a name a package agrees on, not a block
+     * contributions merge - a scope is a name a package agrees on, not a block
      * one file owns.
      *
-     * Realm members are always qualified outside their realm. Inside the same
-     * realm, [IntraRealmRewriter] preserves ergonomic sibling access.
+     * Scope members are always qualified outside their scope. Inside the same
+     * scope, [ScopeAccessRewriter] preserves ergonomic sibling access.
      */
-    private fun parseRealmNamespace(outerPrefix: String = ""): List<TopLevel> {
-        val keyword = namespaceKeywordAhead() ?: TokenType.REALM
-        val word = if (keyword == TokenType.SCOPE) "scope" else "realm"
-        advance() // 'scope' or 'realm'
-        val first = consume(TokenType.IDENTIFIER, "Expected a name after '$word'").lexeme
-        val realmPath = StringBuilder(first).apply {
+    private fun parseScopeNamespace(outerPrefix: String = ""): List<TopLevel> {
+        consume(TokenType.SCOPE, "Expected 'scope'")
+        val first = consume(TokenType.IDENTIFIER, "Expected a name after 'scope'").lexeme
+        val scopePath = StringBuilder(first).apply {
             while (match(TokenType.DOUBLE_COLON)) {
-                append("__").append(consume(TokenType.IDENTIFIER, "Expected a name after '::' in a $word path").lexeme)
+                append("__").append(consume(TokenType.IDENTIFIER, "Expected a name after '::' in a scope path").lexeme)
             }
         }.toString()
-        val prefix = if (outerPrefix.isEmpty()) realmPath else "${outerPrefix}__$realmPath"
-        consume(TokenType.L_BRACE, "Expected '{' after the $word's name")
+        val prefix = if (outerPrefix.isEmpty()) scopePath else "${outerPrefix}__$scopePath"
+        consume(TokenType.L_BRACE, "Expected '{' after the scope's name")
         skipNewlines()
         // A scope holds names, not state: its bindings are `fin`. Anything that can
         // be rebound or mutated belongs to something that owns it - a `solo`
         // namespace takes all four mutabilities for exactly that reason.
-        val items = parseRealmBody(prefix, finOnlyBindings = keyword == TokenType.SCOPE, word = word)
-        consume(TokenType.R_BRACE, "Expected '}' after $word")
+        val items = parseScopeBody(prefix)
+        consume(TokenType.R_BRACE, "Expected '}' after scope")
         consumeNewline()
         return items
     }
@@ -451,11 +447,7 @@ class Parser(
         else -> null
     }
 
-    private fun parseRealmBody(
-        prefix: String,
-        finOnlyBindings: Boolean = false,
-        word: String = "realm",
-    ): List<TopLevel> {
+    private fun parseScopeBody(prefix: String): List<TopLevel> {
         val result = mutableListOf<TopLevel>()
         val previousTypeNamespace = typeFunctionNamespacePrefix
         typeFunctionNamespacePrefix = prefix
@@ -464,21 +456,21 @@ class Parser(
                 skipNewlines()
                 if (check(TokenType.R_BRACE)) break
                 when {
-                    isRealmNamespaceAhead() -> result.addAll(parseRealmNamespace(prefix))
+                    isScopeNamespaceAhead() -> result.addAll(parseScopeNamespace(prefix))
                     isTypePropAhead() -> parseTypeProp(prefix)
                     else -> {
                         val memberLine = peek().line
                         val parsed = parseTopLevel()
-                        if (finOnlyBindings) {
+                        run {
                             bindingKeywordOf(parsed)?.let { keyword ->
                                 error(
-                                    "a $word declares only 'fin' bindings, so '$keyword' is not one of " +
+                                    "a scope declares only 'fin' bindings, so '$keyword' is not one of " +
                                         "its members at line $memberLine; a binding that can be " +
                                         "rebound or mutated needs an owner - declare it in a 'solo' namespace",
                                 )
                             }
                         }
-                        declaredTypeName(parsed)?.let { realmTypeNamespaces[it] = prefix.replace("__", "::") }
+                        declaredTypeName(parsed)?.let { scopeTypeNamespaces[it] = prefix.replace("__", "::") }
                         result.add(mangleTopLevel(parsed, prefix))
                         if (pendingTopLevels.isNotEmpty()) {
                             result.addAll(pendingTopLevels.map { mangleTopLevel(it, prefix) })
@@ -534,21 +526,21 @@ class Parser(
         is TopLevel.InlineFin -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineLet -> item.copy(name = "${prefix}__${item.name}")
         is TopLevel.InlineVar -> item.copy(name = "${prefix}__${item.name}")
-        is TopLevel.Impl -> item.copy(realmPrefix = prefix)
+        is TopLevel.Impl -> item.copy(scopePrefix = prefix)
         is TopLevel.Meta -> item.copy(name = "${prefix}__${item.name}")
-        is TopLevel.Pack -> if (item.nameMacro != null) item.copy(localRealm = prefix) else item
+        is TopLevel.Pack -> if (item.nameMacro != null) item.copy(localScope = prefix) else item
         // `bridge func` members of `impl Type:: { … }` are static intrinsics
         // reached as `Type::member`; mangle each to `Type__member` to match.
         is TopLevel.Bridge -> item.copy(
             funcs = item.funcs.map { sig ->
                 when {
-                    sig.nameMacro != null -> sig.copy(localRealm = prefix)
+                    sig.nameMacro != null -> sig.copy(localScope = prefix)
                     sig.localName != null -> sig.copy(localName = "${prefix}__${sig.localName}")
                     else -> sig.copy(name = "${prefix}__${sig.name}")
                 }
             },
             values = item.values.map { value ->
-                if (value.nameMacro != null) value.copy(localRealm = prefix)
+                if (value.nameMacro != null) value.copy(localScope = prefix)
                 else value.copy(name = "${prefix}__${value.name}")
             },
         )
@@ -1067,7 +1059,7 @@ class Parser(
             check(TokenType.VARIANT) -> parseSlot(annotations)
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
             check(TokenType.MACRO) -> parseMeta()
-            // `prop name: T = expr` at top level - accepted inside `impl … as realm
+            // `prop name: T = expr` at top level - accepted inside `impl … as scope
             // for Type` / `impl Type:: { … }` bodies (which reparse members as
             // top-level items); desugars to a `fin` so it mangles to `Type__name`.
             check(TokenType.PROP) -> parsePropAsFin(annotations, visibility)
@@ -1265,7 +1257,6 @@ class Parser(
             TokenType.FUNC -> { advance(); TopLevel.Func(parseFuncDecl(isInline = true, annotations = annotations)) }
             TokenType.FOR -> parseTopLevelInlineFor()
             TokenType.L_BRACE -> parseTopLevelInlineBlock()
-            TokenType.REALM -> parseTopLevelInlineRealmBlock()
             TokenType.IF -> parseTopLevelInlineIf()
             TokenType.ASSERT -> parseTopLevelInlineAssert()
             TokenType.TRACE -> parseTopLevelInlineTrace()
@@ -1273,7 +1264,7 @@ class Parser(
             TokenType.LET -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineLet(name, init, start.line, start.column) }
             TokenType.VAR, TokenType.VAL -> { val start = peek(); advance(); val valueMutable = advance().type == TokenType.VAR; val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineVar(name, init, start.line, start.column, valueMutable = valueMutable) }
             TokenType.IDENTIFIER -> { val start = peek(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; consume(TokenType.EQUAL, "Expected '='"); val value = parseExpr(); consumeNewline(); TopLevel.InlineAssignment(name, value, start.line, start.column) }
-            else -> error("Expected 'func', '{', 'realm', 'if', 'assert', 'trace', 'fin', 'var', 'let', or identifier after 'inline' at line ${peek().line}")
+            else -> error("Expected 'func', '{', 'scope', 'if', 'assert', 'trace', 'fin', 'var', 'let', or identifier after 'inline' at line ${peek().line}")
         }
     }
 
@@ -1340,7 +1331,7 @@ class Parser(
             if (indexVar != null) rendered = substituteLoopVar(rendered, indexVar, i.toString())
             rendered = foldListIndexing(rendered)
             pendingTopLevels.addAll(
-                Parser(rendered + Token(TokenType.EOF, "", start.line, start.column), typeListEnv, typeListRealm = typeListRealm).parse().items
+                Parser(rendered + Token(TokenType.EOF, "", start.line, start.column), typeListEnv, typeListScope = typeListScope).parse().items
             )
         }
         return TopLevel.InlineBlock(emptyList(), start.line, start.column)
@@ -1482,7 +1473,7 @@ class Parser(
         val name = consume(TokenType.IDENTIFIER, "Expected type-list name").lexeme
         consume(TokenType.EQUAL, "Expected '=' in type-list alias")
         typeListEnv[name] = parseComptimeListValue()
-        typeListRealm[name] = typeFunctionNamespacePrefix
+        typeListScope[name] = typeFunctionNamespacePrefix
         consumeNewline()
         return TopLevel.InlineBlock(emptyList(), start.line, start.column)
     }
@@ -1546,13 +1537,13 @@ class Parser(
         }
         consume(TokenType.EQUAL, "Expected '=' in compile-time list binding")
         typeListEnv[name] = parseComptimeListValue()
-        typeListRealm[name] = typeFunctionNamespacePrefix
+        typeListScope[name] = typeFunctionNamespacePrefix
         consumeNewline()
         return TopLevel.InlineBlock(emptyList(), start.line, start.column)
     }
 
     private fun parseComptimeListTerm(): List<String> {
-        // `@arr[...]` inside its declaring realm, or `@arr[...]` outside it:
+        // `@arr[...]` inside its declaring scope, or `@arr[...]` outside it:
         // consume the macro prefix and parse the bracket body as compile-time values.
         val isMacro = isMacroInvokeAhead()
         if (isMacro) {
@@ -1571,7 +1562,7 @@ class Parser(
                             if (check(TokenType.STRING_LITERAL)) advance().literal as String
                             else (advance().literal as NumericLiteral).value.toString()
                         }
-                        // A type in the list may be reached through its realm -
+                        // A type in the list may be reached through its scope -
                         // `[Int, Double]`. The qualifier is part of how
                         // the type is named here and is kept: the element is
                         // spliced back into type position, where a module outside
@@ -1630,7 +1621,7 @@ class Parser(
         // A bare use is replaced by the value itself when the value is a name or a
         // number - the two things that mean something on their own in code. An
         // operator (`"+"`) does not, so a bare use of it reads as the string it is.
-        // A realm-qualified type (`Int`, from a list written outside `std`)
+        // A scope-qualified type (`Int`, from a list written outside `std`)
         // is several tokens but still one name, and reads bare exactly as a plain
         // identifier does.
         val isQualifiedPath = valueTokens.size >= 3 && valueTokens.size % 2 == 1 &&
@@ -1652,7 +1643,7 @@ class Parser(
                 t.type == TokenType.IDENTIFIER && t.lexeme == varName ->
                     result.add(Token(TokenType.STRING_LITERAL, "\"$value\"", t.line, t.column, value))
                 // Spliced *into* a name (`hold$Ty` over `[Float, …]`), only the
-                // declaration's own name can appear: a realm is a path to a symbol,
+                // declaration's own name can appear: a scope is a path to a symbol,
                 // not part of its identifier, and `holdstd_Float` is not a name any
                 // source may write. The qualifier still travels with the bare form
                 // above, which lands in type position where it belongs.
@@ -1678,39 +1669,12 @@ class Parser(
         return TopLevel.InlineBlock(body, start.line, start.column)
     }
 
-    /** `inline realm { ... }` at top level -- alias for `inline { ... }`. */
-    private fun parseTopLevelInlineRealmBlock(): TopLevel.InlineBlock {
-        val start = peek()
-        consume(TokenType.INLINE, "Expected 'inline'")
-        consume(TokenType.REALM, "Expected 'realm'")
-        consume(TokenType.L_BRACE, "Expected '{'")
-        skipNewlines()
-        val body = parseTopLevelBlock(deepInline = true)
-        consume(TokenType.R_BRACE, "Expected '}'")
-        consumeNewline()
-        return TopLevel.InlineBlock(body, start.line, start.column)
-    }
-
     private fun parseTopLevelDeepInline(): TopLevel {
         return when (peekNext()?.type) {
             TokenType.L_BRACE -> parseTopLevelDeepInlineBlock()
-            TokenType.REALM -> parseTopLevelDeepInlineRealmBlock()
             TokenType.IF -> parseTopLevelDeepInlineIf()
-            else -> error("Expected '{', 'realm', or 'if' after 'deepinline' at line ${peek().line}")
+            else -> error("Expected '{' or 'if' after 'deepinline' at line ${peek().line}")
         }
-    }
-
-    /** `deepinline realm { ... }` at top level -- alias for `deepinline { ... }`. */
-    private fun parseTopLevelDeepInlineRealmBlock(): TopLevel.DeepInlineBlock {
-        val start = peek()
-        consume(TokenType.DEEPINLINE, "Expected 'deepinline'")
-        consume(TokenType.REALM, "Expected 'realm'")
-        consume(TokenType.L_BRACE, "Expected '{'")
-        skipNewlines()
-        val body = parseTopLevelBlock(deepInline = true)
-        consume(TokenType.R_BRACE, "Expected '}'")
-        consumeNewline()
-        return TopLevel.DeepInlineBlock(body, start.line, start.column)
     }
 
     private fun parseTopLevelDeepInlineBlock(): TopLevel.DeepInlineBlock {
@@ -1782,7 +1746,7 @@ class Parser(
 
     private fun parseTopLevelBlockItem(deepInline: Boolean = false): TopLevel {
         // Leading `@Deco(...)` annotations are permitted on declarations nested in
-        // a compile-time block (e.g. `std.config`'s `deepinline realm`). They apply
+        // a compile-time block (e.g. `std.config`'s `deepinline scope`). They apply
         // to type declarations; value bindings fold to compile-time constants and
         // carry no annotations, so any leading annotations there are metadata-only.
         val annotations = parseAnnotations()
@@ -1852,18 +1816,17 @@ class Parser(
     }
 
     /**
-     * True when `[exposed|protected|confined] realm test {` begins here.
+     * True when `[exposed|protected|confined] test scope {` begins here.
      *
      * The visibility prefix is scanned past because the caller has to decide
      * which form this is before consuming it.
      */
-    private fun isTestRealmAhead(): Boolean {
+    private fun isTestScopeAhead(): Boolean {
         var i = indexAfterAnnotations(current)
         while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSE, TokenType.PROTECT, TokenType.CONFINE)) i++
-        // `test scope { … }`, and the `realm test` it replaces.
+        // `test scope { … }`, and the `scope test` it replaces.
         return when (tokens.getOrNull(i)?.type) {
             TokenType.TEST -> tokens.getOrNull(i + 1)?.type == TokenType.SCOPE
-            TokenType.REALM -> tokens.getOrNull(i + 1)?.type == TokenType.TEST
             else -> false
         }
     }
@@ -1884,9 +1847,9 @@ class Parser(
      * The members are returned flattened: a test scope is a visibility rule, not
      * a namespace, so it does not mangle the names it contains.
      */
-    private fun parseTestRealm(): List<TopLevel> {
+    private fun parseTestScope(): List<TopLevel> {
         val annotations = parseAnnotations()
-        // A bare `realm test` is file-local, so the default reach is CONFINE
+        // A bare `scope test` is file-local, so the default reach is CONFINE
         // rather than the PUBLIC that an ordinary declaration defaults to.
         val visibility = when {
             match(TokenType.PROTECT) -> Visibility(Visibility.Reach.PROTECT)
@@ -1898,13 +1861,8 @@ class Parser(
             }
             else -> Visibility(Visibility.Reach.CONFINE)
         }
-        // `test scope`, or the `realm test` it replaces.
-        if (match(TokenType.TEST)) {
-            consume(TokenType.SCOPE, "Expected 'scope' after 'test'")
-        } else {
-            consume(TokenType.REALM, "Expected 'test'")
-            consume(TokenType.TEST, "Expected 'test' after 'realm'")
-        }
+        consume(TokenType.TEST, "Expected 'test'")
+        consume(TokenType.SCOPE, "Expected 'scope' after 'test'")
         consume(TokenType.L_BRACE, "Expected '{' to open a test scope")
         skipNewlines()
         val body = mutableListOf<TopLevel>()
@@ -1912,22 +1870,22 @@ class Parser(
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             when {
-                isTestRealmAhead() -> error(
+                isTestScopeAhead() -> error(
                     "A 'test scope' cannot nest inside another at line ${peek().line} - " +
                         "its declarations are already test-only",
                 )
-                isRealmNamespaceAhead() -> body.addAll(parseRealmNamespace())
-                isRealmBlockAhead() -> body.addAll(parseRealmBlock())
+                isScopeNamespaceAhead() -> body.addAll(parseScopeNamespace())
+                isScopeBlockAhead() -> body.addAll(parseScopeBlock())
                 isTypePropAhead() -> parseTypeProp()
                 else -> body.add(parseTopLevel())
             }
             skipNewlines()
         }
-        consume(TokenType.R_BRACE, "Expected '}' to close a test realm")
+        consume(TokenType.R_BRACE, "Expected '}' to close a test scope")
         consumeNewline()
         for (item in body) {
             val name = declaredTopLevelName(item) ?: continue
-            testRealmMembers[name] = visibility
+            testScopeMembers[name] = visibility
         }
         return body
     }
@@ -2471,7 +2429,7 @@ class Parser(
                 Token(TokenType.R_BRACE, "}", start.line, start.column),
                 Token(TokenType.EOF, "", start.line, start.column),
             )
-            val parsed = Parser(wrapper, typeListEnv, declaredEnums, typeListRealm = typeListRealm).parse().items
+            val parsed = Parser(wrapper, typeListEnv, declaredEnums, typeListScope = typeListScope).parse().items
             parsed.filterIsInstance<TopLevel.Impl>().forEach { generated.addAll(it.methods) }
         }
         return generated
@@ -2634,7 +2592,7 @@ class Parser(
         val base = (ret as? TypeAnnotation.Explicit)?.ref ?: return ret
         val rendered = Lexer(base.toString()).tokenize().dropLast(1) + fragment +
             Token(TokenType.EOF, "", at.line, at.column)
-        return TypeAnnotation.Explicit(Parser(rendered, typeListEnv, declaredEnums, typeListRealm = typeListRealm).parseTypeNameForFragment())
+        return TypeAnnotation.Explicit(Parser(rendered, typeListEnv, declaredEnums, typeListScope = typeListScope).parseTypeNameForFragment())
     }
 
     /** Entry point for re-parsing a type built from a signature fragment. */
@@ -3017,12 +2975,12 @@ class Parser(
     }
 
     /**
-     * Parses the name after `impl`, accepting a realm qualifier.
+     * Parses the name after `impl`, accepting a scope qualifier.
      *
-     * A spec declared inside `realm std` is only reachable from outside as
+     * A spec declared inside `scope std` is only reachable from outside as
      * `Serializer`, so `impl Serializer<T> for MyCodec` has to be
      * writable or the spec cannot be implemented outside the standard library.
-     * As in type position the realm is a path to the declaration rather than
+     * As in type position the scope is a path to the declaration rather than
      * part of its name, so the qualifier is dropped once it has been read.
      *
      * `impl Type:: { … }` is the type-scoped static block and keeps its `::`,
@@ -3053,7 +3011,7 @@ class Parser(
             match(TokenType.STAR) -> "*"
             else -> consume(TokenType.IDENTIFIER, "Expected member name or '*' after '::'").lexeme
         }
-        // A realm-qualified target carries its parameters like any other:
+        // A scope-qualified target carries its parameters like any other:
         // `impl PrettyPrint for Tuple<...T>`.
         skipGenericTypeArgs()
         return "$owner.$member"
@@ -3229,7 +3187,7 @@ class Parser(
             consumeNewline()
             val implTypeParams = lastImplTypeParams
             for (target in targets) {
-                val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv, declaredEnums, typeListRealm = typeListRealm).parse().items
+                val members = Parser(bodyTokens + Token(TokenType.EOF, "", start.line, start.column), typeListEnv, declaredEnums, typeListScope = typeListScope).parse().items
                 members.forEach {
                     pendingTopLevels.add(mangleTopLevel(withImplTypeParams(it, implTypeParams), target))
                 }
@@ -3373,7 +3331,7 @@ class Parser(
                         Token(TokenType.NEWLINE, "\n", start.line, start.column),
                         Token(TokenType.EOF, "", start.line, start.column),
                     ),
-                    typeListEnv, declaredEnums, typeListRealm = typeListRealm,
+                    typeListEnv, declaredEnums, typeListScope = typeListScope,
                 ).parse().items
             }
             val first = produced.firstOrNull { it is TopLevel.Impl } as? TopLevel.Impl
@@ -3481,9 +3439,9 @@ class Parser(
                 hasBody = true,
             )
         }
-        // `impl Spec for realm::Type { members }` names a realm-qualified type.
+        // `impl Spec for scope::Type { members }` names a scope-qualified type.
         // An explicitly empty body remains ambiguous until declarations are known,
-        // and RealmQualifiedImplTargets resolves that case after parsing.
+        // and ScopeQualifiedImplTargets resolves that case after parsing.
         if (traitName != null &&
             implementationTargets.size == 1 &&
             typeName.count { it == '.' } == 1 &&
@@ -3567,7 +3525,7 @@ class Parser(
                         // `prop name: T = expr` - expression-body property (returns the expression).
                         val expr = parseExpr()
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp))
+                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, declaresReceiver = propReceiver.declared, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp))
                     } else {
                         val contracts = parseContractClauses()
                         skipScopeBodyIntroducer()
@@ -3577,7 +3535,7 @@ class Parser(
                         val propBody = parseBlock()
                         consume(TokenType.R_BRACE, "Expected '}' after prop body")
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp))
+                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, emptyList(), methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, declaresReceiver = propReceiver.declared, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp))
                     }
                     currentFailSets = savedPropFailSets
                 }
@@ -3627,7 +3585,7 @@ class Parser(
                                 TypeAnnotation.Inferred
                             }
                             consumeNewline()
-                            methods.add(FuncDecl(propName, emptyList(), propType, emptyList(), bridgeInline, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = bridgeReceiver.modifier, receiverName = bridgeReceiver.name, memberCallStyle = MemberCallStyle.PROPERTY, isDeepInline = bridgeDeep))
+                            methods.add(FuncDecl(propName, emptyList(), propType, emptyList(), bridgeInline, tp.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = bridgeReceiver.modifier, receiverName = bridgeReceiver.name, declaresReceiver = bridgeReceiver.declared, memberCallStyle = MemberCallStyle.PROPERTY, isDeepInline = bridgeDeep))
                         }
                         check(TokenType.FUNC) -> {
                             advance()
@@ -3865,8 +3823,29 @@ class Parser(
         currentImplTypeName = savedImplTypeName
         consume(TokenType.R_BRACE, "Expected '}' after impl methods")
         consumeNewline()
+        // A member of a plain `impl T { }` that wrote no receiver belongs to the
+        // type, not to a value of it: `func make(): Arena` leaves as `Arena__make`
+        // and is reached as `Arena.make()`. It is the same desugaring the `fin`
+        // case above already does, and the same one the retired `impl T:: { … }`
+        // block produced.
+        //
+        // A spec impl is exempt. There the member's shape is the spec's to state,
+        // and a conformance that wrote no receiver is answering the spec, not
+        // declaring something of its own.
+        val instanceMethods = if (traitName != null) methods else {
+            val (statics, instance) = methods.partition { !it.declaresReceiver }
+            statics.forEach {
+                pendingTopLevels.add(
+                    mangleTopLevel(
+                        withImplTypeParams(TopLevel.Func(it), implTypeParams.names),
+                        typeName,
+                    ),
+                )
+            }
+            instance
+        }
         return TopLevel.Impl(
-            typeName, bindSelf(methods, typeName), traitName, start.line, start.column,
+            typeName, bindSelf(instanceMethods, typeName), traitName, start.line, start.column,
             isPackImpl = isPackImpl,
             traitArgs = traitArgs,
             traitQualifier = firstHead.qualifier,
@@ -4024,10 +4003,10 @@ class Parser(
             return checkedBridgeTarget(member, at)
         }
         val first = consume(TokenType.IDENTIFIER, "Expected bridge target ('.C', 'Target.C', or a constant bound to one)").lexeme
-        // `Target.C` - the enum may be reached through its realm, exactly as
-        // any other realm-scoped type is. The realm path is consumed and dropped:
+        // `Target.C` - the enum may be reached through its scope, exactly as
+        // any other scope-scoped type is. The scope path is consumed and dropped:
         // what a bridge names is the member, and `Target` is the only enum that
-        // can appear here whatever realm declares it.
+        // can appear here whatever scope declares it.
         if (check(TokenType.DOUBLE_COLON)) {
             while (match(TokenType.DOUBLE_COLON)) {
                 consume(TokenType.IDENTIFIER, "Expected a name after '::' in a bridge target")
@@ -4104,12 +4083,12 @@ class Parser(
      * - `@foreignName("clock_gettime")` defers naming to a normal prefix macro.
      */
     /**
-     * A type name that may be reached through its realm - `Int`, `Int`,
+     * A type name that may be reached through its scope - `Int`, `Int`,
      * `a::b::Thing`.
      *
      * Returns the mangled form the rest of the frontend uses (`Int` becomes
      * `std__Int`), so a caller that only needs a name can take one without
-     * knowing whether a realm was written.
+     * knowing whether a scope was written.
      */
     private fun parseQualifiedTypeName(message: String): String {
         val name = StringBuilder(consume(TokenType.IDENTIFIER, message).lexeme)
@@ -4147,7 +4126,7 @@ class Parser(
     private fun noteBridgeTargetConstant(name: String, initializer: Expr) {
         val member = initializer as? Expr.Member ?: return
         val qualifier = member.target as? Expr.Identifier ?: return
-        // `Target.C` reaches here realm-mangled, so the enum is matched by its
+        // `Target.C` reaches here scope-mangled, so the enum is matched by its
         // own name rather than by the path that led to it.
         val enumName = qualifier.name.substringAfterLast("__")
         if (enumName == "Target" && member.name in bridgeTargetMembers) {
@@ -4947,7 +4926,7 @@ class Parser(
         return base + sigil
     }
 
-    /** A macro invocation name after `@`: `name` or realm-qualified `name`. */
+    /** A macro invocation name after `@`: `name` or scope-qualified `name`. */
     private fun parseQualifiedMacroName(): String {
         val parts = mutableListOf(parseMacroName())
         while (match(TokenType.DOUBLE_COLON)) {
@@ -5899,6 +5878,7 @@ class Parser(
             visibility = visibility,
             receiverModifier = receiverModifier,
             receiverName = receiverName,
+            declaresReceiver = bracketReceiver != null,
             extensionReceiver = extensionReceiver,
             variadicParam = variadicParam,
             minVariadicLength = minVariadicLength,
@@ -6189,10 +6169,10 @@ class Parser(
      */
     /**
      * Member name after `.`/`?.`. Like [consumeIdentifierLike] but also accepts
-     * the `realm` keyword, so the reflection member `(reflect X).realm` parses.
+     * the `scope` keyword, so the reflection member `(reflect X).scope` parses.
      */
     private fun consumeMemberName(message: String): String =
-        if (check(TokenType.REALM)) advance().lexeme else consumeIdentifierLike(message)
+        consumeIdentifierLike(message)
 
     /**
      * True when [index] starts `async func` - an asynchronous declaration.
@@ -6860,7 +6840,7 @@ class Parser(
                     return TypeRef.Named("$name.ActualType")
                 }
                 // A fully qualified path combines a dotted owning module with a
-                // realm path: `std.traits.promote!`. Realm-only access remains
+                // scope path: `std.traits.promote!`. Scope-only access remains
                 // `promote!` and requires the module to have been imported.
                 val dottedPath = mutableListOf(name)
                 while (match(TokenType.DOT)) {
@@ -6875,7 +6855,7 @@ class Parser(
                     typeName = consume(TokenType.IDENTIFIER, "Expected type name after '::' in type path").lexeme
                     qualifiedName += "__$typeName"
                 }
-                val realmQualifier = qualifiedName
+                val scopeQualifier = qualifiedName
                     .takeIf { it != typeName }
                     ?.substringBeforeLast("__")
                     ?.replace("__", "::")
@@ -6906,7 +6886,7 @@ class Parser(
                         else -> consume(TokenType.GREATER, "Expected '>' to close generic type arguments")
                     }
                     // A module-qualified path can only name a type property - a
-                    // generic pack is reached through its realm, not its file - so
+                    // generic pack is reached through its scope, not its file - so
                     // it resolves as a call straight away. Everything else stays a
                     // named type; the evaluator turns it into a call if the name
                     // turns out to belong to a `deepinline prop`.
@@ -6921,13 +6901,13 @@ class Parser(
                     if (modulePath != null) {
                         TypeFunctionCall.create(ModuleQualifiedSymbol.create(modulePath, qualifiedName), a)
                     } else {
-                        TypeRef.Named(typeName, a, variadic, realmQualifier, valueArgs = values)
+                        TypeRef.Named(typeName, a, variadic, scopeQualifier, valueArgs = values)
                     }
                 } else {
                     if (modulePath != null) {
                         error("A module-qualified path must name a type property at line ${peek().line}")
                     }
-                    TypeRef.Named(typeName, qualifier = realmQualifier)
+                    TypeRef.Named(typeName, qualifier = scopeQualifier)
                 }
             }
             else -> error("Expected type name at line ${peek().line}, got '${peek().lexeme}'")
@@ -7735,30 +7715,46 @@ class Parser(
         path.append(consumeIdentifierLike("Expected a name after 'import'"))
         while (match(TokenType.DOT)) {
             when {
-                // `path.*` - every symbol below the path. Distinct from a plain
-                // `import path`, which must name an actual module rather than a
-                // namespace above one.
-                match(TokenType.STAR) ->
-                    return ImportSpec(path.toString(), ImportSpec.Selector.All, line = clauseStart.line, column = clauseStart.column)
+                // `*` selects the symbols a module declares, and reaching inside
+                // a module is what `::` is for. A `.` in front of one is always
+                // the same slip, so the message names the spelling that works.
+                match(TokenType.STAR) -> error(
+                    "a '.' walks down the module path and '::' reaches inside a module, so " +
+                        "write 'import $path::*' at line ${clauseStart.line}",
+                )
+                // `base.[a, b]` - a group of paths under one base. The members
+                // are modules, so the separator that leads to them is the one
+                // that walks the module tree.
                 check(TokenType.L_BRACKET) || check(TokenType.L_BRACE) ->
                     return parseImportGroup(path.toString(), clauseStart)
                 else -> path.append('.').append(consumeIdentifierLike("Expected a name after '.'"))
             }
         }
-        if (check(TokenType.DOUBLE_COLON)) {
-            error(
-                "'::' is not import syntax at line ${peek().line}; write a dotted path - " +
-                    "'import module.item' or 'import module.[a, b]'",
-            )
+        if (match(TokenType.DOUBLE_COLON)) {
+            return when {
+                // `path::*` - every symbol the module declares. Distinct from a
+                // plain `import path`, which names the module itself.
+                match(TokenType.STAR) ->
+                    ImportSpec(path.toString(), ImportSpec.Selector.All, line = clauseStart.line, column = clauseStart.column)
+                // `path::[A, B]` - several symbols out of one module.
+                check(TokenType.L_BRACKET) || check(TokenType.L_BRACE) ->
+                    parseImportGroup(path.toString(), clauseStart)
+                else -> {
+                    path.append('.').append(consumeIdentifierLike("Expected a name after '::'"))
+                    ImportSpec(path.toString(), ImportSpec.Selector.Path, line = clauseStart.line, column = clauseStart.column)
+                }
+            }
         }
         return ImportSpec(path.toString(), ImportSpec.Selector.Path, line = clauseStart.line, column = clauseStart.column)
     }
 
     /**
-     * `base.[a, b.*]` - a group of clauses under one path.
+     * `base::[a, b::*]` - a group of clauses under one module.
      *
-     * The brace spelling `base.{a, b}` is the older one and still reads.
-     * Members are separated by a comma or by a line break.
+     * A member is a clause in its own right, relative to [base], so it may walk
+     * further down with `.` and reach inside again with `::`. The brace spelling
+     * `base::{a, b}` is the older one and still reads. Members are separated by
+     * a comma or by a line break.
      */
     private fun parseImportGroup(base: String, clauseStart: Token): ImportSpec {
         val closer = if (match(TokenType.L_BRACKET)) TokenType.R_BRACKET else {
@@ -7846,7 +7842,18 @@ class Parser(
     }
 
     /** A `prop` receiver: its borrow, and the type it extends (null inside an `impl`). */
-    private data class PropReceiver(val name: String, val type: TypeRef?, val modifier: ParamModifier)
+    /**
+     * @property declared whether the member *wrote* the receiver. Everything else
+     *   here holds a value either way, so this is the only record that a member
+     *   said nothing - which is what makes it a member of the type rather than of
+     *   a value of it.
+     */
+    private data class PropReceiver(
+        val name: String,
+        val type: TypeRef?,
+        val modifier: ParamModifier,
+        val declared: Boolean = true,
+    )
 
     /**
      * Parses a bracketed receiver: `[self: Model&]` inside `impl Model`, or
@@ -7857,13 +7864,13 @@ class Parser(
      * its `impl` - so every member reads the same way.
      */
     private fun parsePropReceiver(): PropReceiver {
-        // A member inside an `impl` receives that type; writing `[self: Self&]`
-        // says only what the `impl` already said. Omitting the bracket means the
-        // obvious receiver - a shared borrow of `Self` - so `prop isValid: Bool
-        // = self.id >= 0` reads as the fact it states. An extension still writes
-        // its receiver, because there the type is not implied by anything.
+        // A member that writes no receiver belongs to the *type*, not to a value
+        // of it - `func make(): Arena` is `Arena.make()`. The shared borrow of
+        // `Self` is still filled in, because a static that turns out to reference
+        // `self` needs a receiver to report against; `declared` is what tells the
+        // two apart.
         if (!check(TokenType.L_BRACKET)) {
-            return PropReceiver("self", TypeRef.Named("Self"), ParamModifier.SHARED)
+            return PropReceiver("self", TypeRef.Named("Self"), ParamModifier.SHARED, declared = false)
         }
         consume(TokenType.L_BRACKET, "Expected '[' - a member declares its receiver, as in '[self: Self&]'")
         val (receiver, extra) = parseReceiverList()
@@ -7967,7 +7974,7 @@ class Parser(
 
         // `prop name[self: Type&]: T = …` - an extension property on Type, read as
         // `value.name`. Without a receiver type there is no type to extend, so the
-        // declaration is a realm-mangled constant instead (the `impl … as realm`
+        // declaration is a scope-mangled constant instead (the `impl … as scope`
         // bodies that reparse their members as top-level items rely on this).
         val receiverType = receiver.type
             ?: return TopLevel.FinDecl(name, type, init, start.line, start.column, annotations, visibility = visibility)
@@ -8083,7 +8090,7 @@ class Parser(
      * `promote<T, U>` - the same spelling as a generic type, because to a caller
      * that is exactly what it is.
      */
-    private fun parseTypeProp(realmPrefix: String = "") {
+    private fun parseTypeProp(scopePrefix: String = "") {
         val annotations = parseAnnotations()
         parseVisibility()
         val start = consume(TokenType.DEEPINLINE, "Expected 'deepinline'")
@@ -8092,7 +8099,7 @@ class Parser(
         val kind = if (isFunc) "func" else "prop"
         val nameToken = consume(TokenType.IDENTIFIER, "Expected type-property name")
         val localName = nameToken.lexeme
-        val name = if (realmPrefix.isEmpty()) localName else "${realmPrefix}__$localName"
+        val name = if (scopePrefix.isEmpty()) localName else "${scopePrefix}__$localName"
 
         val params = parseTypePropParams(localName)
         // `(hasDefault: Bool, isNullable: Bool)` - values the computed type
@@ -8569,7 +8576,7 @@ class Parser(
         val prefix = Lexer("func __inline_for_body__() {\n").tokenize().dropLast(1) // drop trailing EOF
         val suffix = Lexer("\n}\n").tokenize() // includes EOF
         val tokens = prefix + rendered + suffix
-        val program = Parser(tokens, typeListEnv, declaredEnums, typeListRealm = typeListRealm).parse()
+        val program = Parser(tokens, typeListEnv, declaredEnums, typeListScope = typeListScope).parse()
         val fn = program.items.filterIsInstance<TopLevel.Func>()
             .firstOrNull { it.decl.name == "__inline_for_body__" }
             ?: error("failed to expand 'inline for' body at line ${start.line}")
@@ -9970,7 +9977,7 @@ class Parser(
     /**
      * Whether [name] names the reflection handle.
      *
-     * `reflect` is a plain name: there is no `realm std` for it to sit in, so it
+     * `reflect` is a plain name: there is no `scope std` for it to sit in, so it
      * is not qualified anywhere. The `__reflect` suffix is still accepted while
      * the `` spelling is on its way out.
      *
@@ -10017,11 +10024,11 @@ class Parser(
     }
 
     /**
-     * Parses an error-set name in a failable type, accepting the realm-qualified
-     * form. A type declared inside `realm std` is only reachable from outside as
+     * Parses an error-set name in a failable type, accepting the scope-qualified
+     * form. A type declared inside `scope std` is only reachable from outside as
      * `SerializationError`, so an error set has to spell it that way too or
      * `impl Serializer<T> for MyCodec` cannot be written outside the standard
-     * library. `Realm::Name` mangles to `Realm__Name`, matching type paths.
+     * library. `Scope::Name` mangles to `Scope__Name`, matching type paths.
      */
     private fun parseErrorSetName(context: String): String {
         var name = consume(TokenType.IDENTIFIER, "Expected error-set name $context").lexeme
@@ -10352,7 +10359,7 @@ class Parser(
                 check(TokenType.LESS) && expr is Expr.Identifier &&
                     isReflectName((expr as Expr.Identifier).name) && isReflectTargetAhead() -> {
                     // `reflect<X>` - compile-time reflection prop. Desugars to the
-                    // internal `__reflect(X)` receiver used by `.hasAnnot`/`.annotMeta`/`.realm`.
+                    // internal `__reflect(X)` receiver used by `.hasAnnot`/`.annotMeta`/`.scope`.
                     val start = expr
                     advance() // '<'
                     val target = parseReflectTarget()
@@ -10660,7 +10667,7 @@ class Parser(
                 TokenType.IDENTIFIER, TokenType.COMMA, TokenType.DOT,
                 TokenType.L_BRACKET, TokenType.R_BRACKET, TokenType.QMARK,
                 TokenType.COLON, TokenType.STAR, TokenType.INT_LITERAL,
-                // A type argument may be realm-qualified: `ArrayList<SerialField>`.
+                // A type argument may be scope-qualified: `ArrayList<SerialField>`.
                 TokenType.DOUBLE_COLON,
                 // `(A, B) -> R` as a type argument.
                 TokenType.ARROW,
@@ -10754,7 +10761,7 @@ class Parser(
         if (tok.type == TokenType.LESS) {
             return parseGenericLambda()
         }
-        // `@name[…]`, `@name(…)`, `@name{…}` - a local macro invocation. Realm
+        // `@name[…]`, `@name(…)`, `@name{…}` - a local macro invocation. Scope
         // qualification follows the sigil: `@arr[…]`.
         // as it does on the declaration (`macro @name { … }`), so a call and the
         // thing it calls are spelled the same way round. A decorator is also

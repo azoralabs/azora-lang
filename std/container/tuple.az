@@ -27,9 +27,9 @@
 exposed module std.container.tuple
 
 import std.[
-    serializer.Serializable
-    traits.PrettyPrint
-    reflection.reflect
+    serializer::Serializable
+    traits::PrettyPrint
+    reflection::reflect
 ]
 
 /**

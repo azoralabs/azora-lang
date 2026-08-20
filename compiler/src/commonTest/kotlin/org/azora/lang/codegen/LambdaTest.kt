@@ -154,7 +154,7 @@ class LambdaTest {
         """.trimIndent()))
     }
 
-    @Test fun genericAndRealmQualifiedCallsAcceptTrailingLambdas() {
+    @Test fun genericAndScopeQualifiedCallsAcceptTrailingLambdas() {
         assertEquals("qualified", run("""
             import std.io
             import std.reactive

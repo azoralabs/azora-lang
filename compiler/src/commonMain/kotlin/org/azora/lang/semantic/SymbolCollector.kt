@@ -760,7 +760,7 @@ class SymbolCollector {
 
         // `import` declarations act only as visibility gates for bundled-library
         // injection (read by StdlibInjector). They no longer create bare aliases:
-        // realm members are reached via their qualified `Realm::name` path, which
+        // scope members are reached via their qualified `Scope::name` path, which
         // the parser flattens to the mangled name (`std.math::abs` →
         // `std__math__abs`) registered for the injected item.
 

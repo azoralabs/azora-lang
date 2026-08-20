@@ -46,7 +46,7 @@ class ContractsTest {
     }
 
     @Test
-    fun inOutRealmContractsRunOnSuccess() {
+    fun inOutScopeContractsRunOnSuccess() {
         assertEquals("0\n5\n10", run("""
             import std.io
             func clamp(x: Int, lo: Int, hi: Int): Int

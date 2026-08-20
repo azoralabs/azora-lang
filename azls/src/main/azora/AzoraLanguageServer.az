@@ -81,7 +81,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "return") || rangeIs(source, start, end, "if") ||
         rangeIs(source, start, end, "else") || rangeIs(source, start, end, "inline") ||
         rangeIs(source, start, end, "deepinline") || rangeIs(source, start, end, "noinline") ||
-        rangeIs(source, start, end, "realm") || rangeIs(source, start, end, "test") ||
+        rangeIs(source, start, end, "scope") || rangeIs(source, start, end, "test") ||
         rangeIs(source, start, end, "assert") || rangeIs(source, start, end, "trace") ||
         rangeIs(source, start, end, "panic") || rangeIs(source, start, end, "macro") ||
         rangeIs(source, start, end, "for") || rangeIs(source, start, end, "while") ||
@@ -333,13 +333,13 @@ func loopLabelIsKnown(source: String, start: Int, end: Int): Bool {
             previousWordBefore(source, before, "continue"))
 }
 
-func realmPathSegmentIsKnown(source: String, start: Int, end: Int): Bool {
+func scopePathSegmentIsKnown(source: String, start: Int, end: Int): Bool {
     fin next = nextNonSpace(source, end)
     if next + 1 < stringLength(source) && charAt(source, next) == ':' &&
         charAt(source, next + 1) == ':' { return true }
 
     fin lineStart = lineStartAt(source, 0, start)
-    if !previousLineContainsWord(source, start, "realm") ||
+    if !previousLineContainsWord(source, start, "scope") ||
         findFrom(source, lineStart, start, "{") >= 0 { return false }
     return true
 }
@@ -508,7 +508,7 @@ func addHighlight(result: String, start: Int, end: Int, kind: String): String {
         ",\"type\":\"" + kind + "\"}"
 }
 
-/** End of a current `@name` / `@realm::name` macro or annotation path. */
+/** End of a current `@name` / `@scope::name` macro or annotation path. */
 func atSymbolEnd(source: String, documentEnd: Int, start: Int): Int {
     var index = start + 1
     if index >= documentEnd || !isIdentifierStart(charAt(source, index)) { return index }
@@ -740,7 +740,7 @@ func addInterpolationHighlights(
             if isKeywordRange(source, identifierStart, index) ||
                 isContextualKeywordRange(source, identifierStart, index) { kind = "keyword" }
             else if loopLabelIsKnown(source, identifierStart, index) { kind = "label" }
-            else if realmPathSegmentIsKnown(source, identifierStart, index) { kind = "realm" }
+            else if scopePathSegmentIsKnown(source, identifierStart, index) { kind = "scope" }
             else if rangeIs(source, identifierStart, index, "self") ||
                 rangeIs(source, identifierStart, index, "it") ||
                 parameterReferenceIsKnown(source, identifierStart, index) { kind = "parameter" }
@@ -900,7 +900,7 @@ func azlsHighlightRange(
                 else if expectedDeclarationKind == "annotation" { kind = "annotation" }
                 else if expectedDeclarationKind != "" { kind = "variable" }
                 else if loopLabelIsKnown(source, start, index) { kind = "label" }
-                else if realmPathSegmentIsKnown(source, start, index) { kind = "realm" }
+                else if scopePathSegmentIsKnown(source, start, index) { kind = "scope" }
                 else if rangeIs(source, start, index, "self") ||
                     rangeIs(source, start, index, "it") ||
                     parameterReferenceIsKnown(source, start, index) { kind = "parameter" }

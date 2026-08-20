@@ -71,7 +71,7 @@ declaration marker: `pack Body { var _cache: Double }` is readable from
 `func _helper()` and `pack _Internal` are private to their declaring module.
 User symbols may never begin with `__`, which is reserved for compiler-generated
 names, and an underscore is not legal in any other position. Locals, parameters,
-module names, realms, and other declarations without private visibility cannot
+module names, scopes, and other declarations without private visibility cannot
 use the marker.
 
 `exposed` is not a visibility modifier. It marks a `module` or a top-level
@@ -154,14 +154,14 @@ checking; `break`/`continue`.
 | `inject Type` / `lazy fin value = inject Type` | resolve now / on first read |
 | `react func name() { }` | reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |
-| `realm Name { }` | named namespace (`Name::member`); reopenable and merging |
+| `scope Name { }` | named namespace (`Name::member`); reopenable and merging |
 | `test "name" { }` | one test |
 
 Removed since earlier drafts of this document: `node` / `leaf` / `virt` /
 `repl` / `base` (inheritance, replaced by `dyn` spec dispatch), `hook`,
 `flow` / `yield` (generators are now the library types `Sequence<T>` and
 `Flow<T>`), `slot` (now `variant enum`), `fail` (now `error`), `deco` (now
-`annot`), and `zone` (now `realm`). None of them are keywords.
+`annot`), and `zone` (now `scope`). None of them are keywords.
 
 ### Members inside an `impl`
 
@@ -390,7 +390,7 @@ Grouped:
 - **FFI and DI**: `bridge` `solo` `graph` `inject`
 - **Reactivity**: `remember` `retain` `preserve` `effect`
 - **Metaprogramming**: `inline` `deepinline` `noinline` `macro` `derive`
-- **Modules and scoping**: `realm` `import` `use` `exposed` `protected` `confined`
+- **Modules and scoping**: `scope` `import` `use` `exposed` `protected` `confined`
 - **Annotations**: `annot` `bind`; contextual declaration clauses use `binds`
 - **Contracts and testing**: `out` `test` `assert` `trace`
 - **Expressions**: `as` `is` `null` `true` `false` `with`

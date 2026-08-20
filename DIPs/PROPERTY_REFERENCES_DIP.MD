@@ -211,7 +211,7 @@ User::name                  // not a runtime value by itself
 user::name                  // not ordinary member access by itself
 ```
 
-This avoids ambiguity with realm access and existing declaration paths such as:
+This avoids ambiguity with scope access and existing declaration paths such as:
 
 ```azora
 impl SerialName for User::name
@@ -226,7 +226,7 @@ compiler-provided bridge types must be declared in `std/core.az`, where `Unit`,
 `Any`, `Self`, and `Type` are already declared:
 
 ```azora
-use realm std {
+use scope std {
     bridge pack PropertyRef<Owner, Value>
     bridge pack MutablePropertyRef<Owner, Value>
     bridge pack BoundPropertyRef<Owner, Value>

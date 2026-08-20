@@ -48,7 +48,7 @@ impl Guard<T> {
      * @param action The function to execute with the current value.
      */
     @Experimental(since: "0.1")
-    func read(action: (T) -> Unit) {
+    func read[self: Self&](action: (T) -> Unit) {
         mutex.lock()
         action(value)
         mutex.unlock()
@@ -60,7 +60,7 @@ impl Guard<T> {
      * @param action The function that receives the current value and returns the new value.
      */
     @Experimental(since: "0.1")
-    func write(action: (T) -> T) {
+    func write[self: Self!](action: (T) -> T) {
         mutex.lock()
         self._value = action(value)
         mutex.unlock()
@@ -72,7 +72,7 @@ impl Guard<T> {
      * @return The current value.
      */
     @Experimental(since: "0.1")
-    func get(): T {
+    func get[self: Self&](): T {
         mutex.lock()
         fin v = value
         mutex.unlock()
@@ -97,7 +97,7 @@ impl CountDownLatch<T> {
      * Decrements the latch count by one.
      */
     @Experimental(since: "0.1")
-    func countDown() {
+    func countDown[self: Self!]() {
         atomic.add(1)
     }
 
@@ -126,7 +126,7 @@ impl SpinLock<T> {
      * Acquires the lock, spinning until successful.
      */
     @Experimental(since: "0.1")
-    func acquire() {
+    func acquire[self: Self&]() {
         while !flag.cas(0, 1) { }
     }
 
@@ -134,7 +134,7 @@ impl SpinLock<T> {
      * Releases the lock.
      */
     @Experimental(since: "0.1")
-    func release() {
+    func release[self: Self&]() {
         flag.store(0)
     }
 
@@ -144,7 +144,7 @@ impl SpinLock<T> {
      * @param action The function to execute under lock.
      */
     @Experimental(since: "0.1")
-    func withLock(action: () -> Unit) {
+    func withLock[self: Self&](action: () -> Unit) {
         self.acquire()
         action()
         self.release()

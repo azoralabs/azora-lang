@@ -17,24 +17,32 @@
 package org.azora.lang.frontend
 
 /**
- * Rewrites bare references that appear INSIDE a realm member's body to their
- * realm-mangled form, so that sibling declarations resolve without qualification.
+ * Resolves the two ways a scope's declarations are reached, both of which are
+ * spelled without the mangling the declaration actually carries.
  *
- * Realms desugar at parse time to flat mangled top-level items (`realm
- * std { func floor(){...} }` → `std__math__floor`). A sibling call like
- * `floor()` inside `std__math__round` would otherwise fail to resolve, because
- * the reference stays bare while the declaration is mangled.
+ * Scopes desugar at parse time to flat mangled top-level items (`scope
+ * std { func floor(){...} }` → `std__math__floor`), so neither spelling matches
+ * a declaration until this pass rewrites it.
  *
- * For each realm member (a top-level item whose name contains `__`), this pass
- * walks its body/initializer and rewrites a bare identifier/callee `X` to
- * `<realmPrefix>__X` when such a mangled sibling exists in the program - UNLESS
- * `X` is shadowed by a parameter or local declaration in that member (e.g.
- * `func pow(value, exp)` has a parameter `exp` that must not be rewritten to a
- * hypothetical `std__math__exp` sibling). Bare names with no mangled sibling
- * are left untouched. This gives realm members bare sibling access while keeping
- * cross-realm access qualified.
+ * **From inside** - a sibling is reached bare. A call to `floor()` inside
+ * `std__math__round` would otherwise fail to resolve, because the reference
+ * stays bare while the declaration is mangled. For each scope member (a
+ * top-level item whose name contains `__`), a bare identifier/callee `X` becomes
+ * `<scopePrefix>__X` when such a mangled sibling exists - UNLESS `X` is shadowed
+ * by a parameter or local declaration in that member (e.g. `func pow(value,
+ * exp)` has a parameter `exp` that must not be rewritten to a hypothetical
+ * `std__math__exp` sibling).
+ *
+ * **From outside** - a member is reached through the name that holds it, with a
+ * `.`: `math.PI`, `helper.twice(21)`, `a.b.f()`. A `.` means "member of" whether
+ * what precedes it is a value or a name, and only the program's declarations can
+ * say which, so the decision belongs here rather than in the parser.
+ *
+ * Both jobs take a name only when the program declares it. `a.b` where nothing
+ * declares `a__b` is left alone, and stays a member access on a value - which is
+ * what a `.` means everywhere else.
  */
-internal object IntraRealmRewriter {
+internal object ScopeAccessRewriter {
 
     fun rewrite(program: Program): Program {
         val mangled = HashSet<String>()
@@ -52,21 +60,19 @@ internal object IntraRealmRewriter {
         val rewrittenItems = program.items.map { item ->
             if (item is TopLevel.Bridge) {
                 return@map item.copy(values = item.values.map { value ->
-                    val prefix = value.localRealm ?: value.name.realmPrefix()
-                    if (prefix == null) value else value.copy(
-                        initializer = expr(value.initializer, prefix, mangled, emptySet()),
-                    )
+                    val prefix = value.localScope ?: value.name.scopePrefix()
+                    value.copy(initializer = expr(value.initializer, prefix, mangled, emptySet()))
                 })
             }
-            if (item is TopLevel.Impl && item.realmPrefix != null) {
+            if (item is TopLevel.Impl) {
                 return@map item.copy(methods = item.methods.map { method ->
                     val shadowed = collectShadowed(method)
-                    method.copy(body = method.body.map { stmt(it, item.realmPrefix, mangled, shadowed) })
+                    method.copy(body = method.body.map { stmt(it, item.scopePrefix, mangled, shadowed) })
                 })
             }
-            // Realm-scoped types keep their source-level type name rather than a
+            // Scope-scoped types keep their source-level type name rather than a
             // mangled declaration name. Their field defaults nevertheless execute
-            // in that realm and may refer to sibling values or type statics.
+            // in that scope and may refer to sibling values or type statics.
             val typeName = when (item) {
                 is TopLevel.Pack -> item.name
                 is TopLevel.Solo -> item.name
@@ -74,9 +80,9 @@ internal object IntraRealmRewriter {
                 else -> null
             }
             val typePrefix = typeName
-                ?.let { program.realmTypeNamespaces[it] }
+                ?.let { program.scopeTypeNamespaces[it] }
                 ?.replace("::", "__")
-            if (typePrefix != null) {
+            if (typeName != null) {
                 return@map when (item) {
                     is TopLevel.Pack -> item.copy(fields = item.fields.map { field ->
                         field.copy(default = field.default?.let { expr(it, typePrefix, mangled, emptySet()) })
@@ -90,8 +96,7 @@ internal object IntraRealmRewriter {
                     else -> item
                 }
             }
-            val name = nameOf(item)
-            val prefix = name?.realmPrefix() ?: return@map item
+            val prefix = nameOf(item)?.scopePrefix()
             val shadowed = collectShadowed(item)
             when (item) {
                 is TopLevel.Func -> item.copy(decl = item.decl.copy(body = item.decl.body.map { stmt(it, prefix, mangled, shadowed) }))
@@ -99,6 +104,7 @@ internal object IntraRealmRewriter {
                 is TopLevel.FinDecl -> item.copy(initializer = expr(item.initializer, prefix, mangled, shadowed))
                 is TopLevel.LetDecl -> item.copy(initializer = expr(item.initializer, prefix, mangled, shadowed))
                 is TopLevel.VarDecl -> item.copy(initializer = expr(item.initializer, prefix, mangled, shadowed))
+                is TopLevel.InlineFin -> item.copy(initializer = expr(item.initializer, prefix, mangled, shadowed))
                 else -> item
             }
         }
@@ -110,6 +116,9 @@ internal object IntraRealmRewriter {
         is TopLevel.FinDecl -> item.name
         is TopLevel.LetDecl -> item.name
         is TopLevel.VarDecl -> item.name
+        // `impl Byte { inline fin limit = 7 }` hoists out of the impl as its own
+        // item named `Byte__limit`, which is what `Byte.limit` has to find.
+        is TopLevel.InlineFin -> item.name
         else -> null
     }
 
@@ -117,12 +126,12 @@ internal object IntraRealmRewriter {
      * `std__math__floor` → `std__math`; a bare name with no `__` → null.
      *
      * A private declaration carries its leading underscore into the mangled
-     * name (`realm std { fin _cache = 1 }` → `std___cache`), so the separator is the last
+     * name (`scope std { fin _cache = 1 }` → `std___cache`), so the separator is the last
      * `__` that is not itself preceded by one. Splitting on the plain last `__`
      * would yield `std_`, match no sibling, and silently leave every bare call in
      * that member's body unrewritten.
      */
-    private fun String.realmPrefix(): String? {
+    private fun String.scopePrefix(): String? {
         for (i in length - 2 downTo 1) {
             if (this[i] == '_' && this[i + 1] == '_' && this[i - 1] != '_') return substring(0, i)
         }
@@ -131,7 +140,7 @@ internal object IntraRealmRewriter {
 
     /**
      * Names declared inside [item] (parameters + local bindings) that shadow a
-     * same-named realm sibling and must therefore NOT be rewritten.
+     * same-named scope sibling and must therefore NOT be rewritten.
      */
     private fun collectShadowed(item: TopLevel): Set<String> {
         val names = mutableSetOf<String>()
@@ -220,11 +229,38 @@ internal object IntraRealmRewriter {
         }
     }
 
-    private fun maybe(name: String, prefix: String, mangled: Set<String>, shadowed: Set<String>): String? {
-        // A separator does not necessarily mean the name is realm-qualified.
-        // `Array::fill` is parsed as `Array__fill`; inside `realm std` it still
-        // needs the enclosing realm and resolves to `std__Array__fill`. Only a
-        // name that already starts with this member's complete realm prefix is
+    /**
+     * The declaration `<target>.<member>` names, or null if it names none.
+     *
+     * `math.PI` → `math__PI`, `a.b.f` → `a__b__f`: the dotted head is a name a
+     * scope holds, not a value, so the whole access is one declaration. Nothing
+     * is assumed - only a name the program actually declares is taken, so an
+     * ordinary field read is untouched.
+     *
+     * A local or parameter of the head's name shadows the scope, exactly as it
+     * does for bare sibling access: `func f(math: Config) { math.PI }` reads the
+     * parameter.
+     */
+    private fun staticPath(target: Expr, member: String, mangled: Set<String>, shadowed: Set<String>): String? {
+        val head = dottedName(target) ?: return null
+        if (head.substringBefore("__") in shadowed) return null
+        val qualified = "${head}__$member"
+        return if (qualified in mangled) qualified else null
+    }
+
+    /** `std.math` → `std__math`; anything that is not a plain dotted name → null. */
+    private fun dottedName(e: Expr): String? = when (e) {
+        is Expr.Identifier -> e.name
+        is Expr.Member -> if (e.nameExpr != null) null else dottedName(e.target)?.let { "${it}__${e.name}" }
+        else -> null
+    }
+
+    private fun maybe(name: String, prefix: String?, mangled: Set<String>, shadowed: Set<String>): String? {
+        if (prefix == null) return null
+        // A separator does not necessarily mean the name is scope-qualified.
+        // `Array::fill` is parsed as `Array__fill`; inside `scope std` it still
+        // needs the enclosing scope and resolves to `std__Array__fill`. Only a
+        // name that already starts with this member's complete scope prefix is
         // fully qualified here.
         if (name.startsWith("${prefix}__")) return null
         if ("__" !in name && name in shadowed) return null // parameter/local shadows the sibling
@@ -232,7 +268,7 @@ internal object IntraRealmRewriter {
         return if (qualified in mangled) qualified else null
     }
 
-    private fun stmt(s: Stmt, prefix: String, mangled: Set<String>, shadowed: Set<String>): Stmt = when (s) {
+    private fun stmt(s: Stmt, prefix: String?, mangled: Set<String>, shadowed: Set<String>): Stmt = when (s) {
         is Stmt.VarDecl -> s.copy(initializer = expr(s.initializer, prefix, mangled, shadowed))
         is Stmt.LetDecl -> s.copy(initializer = expr(s.initializer, prefix, mangled, shadowed))
         is Stmt.FinDecl -> s.copy(initializer = expr(s.initializer, prefix, mangled, shadowed))
@@ -268,10 +304,20 @@ internal object IntraRealmRewriter {
         else -> s
     }
 
-    private fun expr(e: Expr, prefix: String, mangled: Set<String>, shadowed: Set<String>): Expr = when (e) {
+    private fun expr(e: Expr, prefix: String?, mangled: Set<String>, shadowed: Set<String>): Expr = when (e) {
         is Expr.Identifier -> maybe(e.name, prefix, mangled, shadowed)?.let { e.copy(name = it) } ?: e
-        is Expr.MethodCall -> e.copy(target = expr(e.target, prefix, mangled, shadowed), args = e.args.map { expr(it, prefix, mangled, shadowed) })
-        is Expr.Member -> e.copy(target = expr(e.target, prefix, mangled, shadowed))
+        is Expr.MethodCall -> {
+            val target = expr(e.target, prefix, mangled, shadowed)
+            val args = e.args.map { expr(it, prefix, mangled, shadowed) }
+            staticPath(target, e.name, mangled, shadowed)
+                ?.let { Expr.Call(it, args, e.line, e.column, e.length) }
+                ?: e.copy(target = target, args = args)
+        }
+        is Expr.Member -> {
+            val target = expr(e.target, prefix, mangled, shadowed)
+            val static = if (e.nameExpr == null) staticPath(target, e.name, mangled, shadowed) else null
+            static?.let { Expr.Identifier(it, e.line, e.column, e.length) } ?: e.copy(target = target)
+        }
         is Expr.Call -> {
             val args = e.args.map { expr(it, prefix, mangled, shadowed) }
             val calleeQual = maybe(e.callee, prefix, mangled, shadowed)

@@ -33,7 +33,7 @@
  */
 module std.os
 
-import std.container.array.*
+import std.container.array::*
 
 /**
  * A finished command: what it printed, and how it ended.

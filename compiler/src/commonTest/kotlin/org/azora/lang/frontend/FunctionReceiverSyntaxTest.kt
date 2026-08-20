@@ -48,7 +48,7 @@ class FunctionReceiverSyntaxTest {
                 pack Language
 
                 impl Language {
-                    func greeting(): String { self& ->
+                    func greeting[self: Self&](): String { self& ->
                         return "hello"
                     }
                 }

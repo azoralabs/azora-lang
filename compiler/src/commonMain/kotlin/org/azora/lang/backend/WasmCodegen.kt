@@ -1268,8 +1268,8 @@ class WasmCodegen {
      * still comes from the host until its approximation is written.
      */
     private fun wasmSoftwareMathFor(extern: IrTopLevel.Extern): String? {
-        // `realm vha` mangles to `__std_vha_sin`; the extra accuracy is what the
-        // realm exists for, so it maps to the longer series where one is implemented.
+        // `scope vha` mangles to `__std_vha_sin`; the extra accuracy is what the
+        // scope exists for, so it maps to the longer series where one is implemented.
         val vha = "_vha_" in extern.name
         val name = when (extern.name.substringAfterLast('_')) {
             "sin" -> if (vha) "__vha_sin" else "__soft_sin"

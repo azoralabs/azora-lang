@@ -27,9 +27,16 @@ import org.azora.lang.frontend.AzoraSyntaxVocabulary
  * The scanner never throws - any unrecognized character is simply skipped.
  *
  * Span types (see [HighlightSpan.type]): `keyword`, `string`,
- * `interpolation-punctuation`, `number`, `comment`, `function`, `variable`,
- * `parameter`, `type`, `generic`, `label`, `realm`, `annotation`, `macro`,
- * `char`.
+ * `interpolation-punctuation`, `number`, `comment`, `doc`, `docTag`,
+ * `docTagValue`, `function`, `variable`, `parameter`, `contextParameter`,
+ * `property`, `type`, `generic`, `label`, `scope`, `modulePath`, `annotation`,
+ * `macro`, `char`.
+ *
+ * `contextParameter` is a receiver a call site must supply (`[self: Self&]`),
+ * told apart from the parameters a declaration invents for itself. `property`
+ * covers a `prop` at its declaration and where it is read. `modulePath` is the
+ * part of an `import` that says where to look, as opposed to what to take -
+ * which keeps whatever colour the declaration it names has.
  */
 object AzHighlighter {
 
@@ -76,9 +83,13 @@ object AzHighlighter {
                         while (next < end && source[next].isWhitespace()) next++
                         val type = when {
                             word in RESERVED_KEYWORDS || isContextualKeyword(source, tokenStart, cursor) -> "keyword"
+                            tokenStart in semantics.modulePathOffsets -> "modulePath"
                             tokenStart in semantics.labelOffsets -> "label"
-                            tokenStart in semantics.realmOffsets -> "realm"
+                            tokenStart in semantics.scopeOffsets -> "scope"
                             semantics.isGeneric(word, tokenStart) -> "generic"
+                            tokenStart in semantics.contextParameterOffsets -> "contextParameter"
+                            tokenStart in semantics.propertyDeclarations -> "property"
+                            semantics.isProperty(word) && isQualifiedMemberAt(source, tokenStart) -> "property"
                             word == "self" || word == "it" -> "parameter"
                             semantics.isParameter(word, tokenStart) && !isQualifiedMemberAt(source, tokenStart) -> "parameter"
                             next < end && source[next] in setOf('(', '<') &&
@@ -101,6 +112,15 @@ object AzHighlighter {
                     val start = i
                     while (i < n && source[i] != '\n') i++
                     spans.add(HighlightSpan(start, i, "comment"))
+                }
+                // Doc comment. Split into prose, tags, and the names those tags
+                // document, so `@param capacity` reads as three things.
+                c == '/' && peek(1) == '*' && peek(2) == '*' -> {
+                    val start = i
+                    i += 3
+                    while (i < n && !(source[i] == '*' && peek(1) == '/')) i++
+                    i = minOf(i + 2, n)
+                    addDocComment(source, start, i, spans)
                 }
                 // Block comment (tolerated even if the language is line-comment only)
                 c == '/' && peek(1) == '*' -> {
@@ -192,8 +212,8 @@ object AzHighlighter {
                     }
                     spans.add(HighlightSpan(start, i, "number"))
                 }
-                // Macro invocation `@name` / `@realm::name` (lowercase final
-                // segment) or decorator `@Name` / `@realm::Name`.
+                // Macro invocation `@name` / `@scope::name` (lowercase final
+                // segment) or decorator `@Name` / `@scope::Name`.
                 c == '@' && peek(1).isIdentStart() -> {
                     val start = i
                     i++
@@ -221,9 +241,15 @@ object AzHighlighter {
                     val type = when {
                         word in RESERVED_KEYWORDS || isContextualKeyword(source, start, i) -> "keyword"
                         start in semantics.functionDeclarations -> "function"
+                        start in semantics.modulePathOffsets -> "modulePath"
                         start in semantics.labelOffsets -> "label"
-                        start in semantics.realmOffsets -> "realm"
+                        start in semantics.scopeOffsets -> "scope"
                         semantics.isGeneric(word, start) -> "generic"
+                        // A receiver is named `self`, so it has to answer before
+                        // the implicit-parameter branch below claims the word.
+                        start in semantics.contextParameterOffsets -> "contextParameter"
+                        start in semantics.propertyDeclarations -> "property"
+                        semantics.isProperty(word) && isQualifiedMemberAt(source, start) -> "property"
                         word == "self" || word == "it" -> "parameter"
                         semantics.isParameter(word, start) && !isQualifiedMemberAt(source, start) -> "parameter"
                         j < n && source[j] in setOf('(', '<') && semantics.isFunction(source, word, start) -> "function"
@@ -473,10 +499,17 @@ object AzHighlighter {
         val genericScopes: List<GenericScope>,
         val types: Set<String>,
         val labelOffsets: Set<Int>,
-        val realmOffsets: Set<Int>,
+        val scopeOffsets: Set<Int>,
+        /** Segments of an `import`/`module` path - the "where", not the "what". */
+        val modulePathOffsets: Set<Int>,
+        val contextParameterOffsets: Set<Int>,
+        val properties: Set<String>,
+        val propertyDeclarations: Set<Int>,
     ) {
         fun isParameter(name: String, offset: Int): Boolean =
             parameterScopes.any { offset in it.start..it.end && name in it.names }
+
+        fun isProperty(name: String): Boolean = name in properties
 
         fun isFunction(source: String, name: String, offset: Int): Boolean =
             name in functions || qualifiedNameAt(source, name, offset) in functions
@@ -508,6 +541,14 @@ object AzHighlighter {
             """\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<([^>{}\n]*)>)?\s*(?:\[([^\]\n]*)])?\s*\(([^)]*)\)""",
         )
         val parameter = Regex("""(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)\s*:""")
+        // `prop name[receiver]: Type` - a property states its type where a
+        // function states its parameters.
+        val property = Regex(
+            """\bprop\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<([^>{}\n]*)>)?\s*(?:\[([^\]\n]*)])?\s*:""",
+        )
+        val contextParameterOffsets = linkedSetOf<Int>()
+        val properties = linkedSetOf<String>()
+        val propertyDeclarations = linkedSetOf<Int>()
         val typeDeclaration = Regex(
             """\b(?:pack|enum|error|spec|annot|union|typealias)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<([^>{}\n]*)>)?""",
         )
@@ -523,6 +564,13 @@ object AzHighlighter {
                 .flatMap { parameter.findAll(it) }
                 .mapNotNull { it.groups[1]?.value }
                 .toSet()
+            // A receiver is supplied by the call site, so its declaration is
+            // marked apart from the parameters the function invents for itself.
+            receiverGroup?.let { group ->
+                parameter.findAll(group.value).mapNotNullTo(contextParameterOffsets) {
+                    it.groups[1]?.range?.first?.plus(group.range.first)
+                }
+            }
 
             val bodyOpen = source.indexOf('{', match.range.last + 1)
             val bodyEnd = if (bodyOpen >= 0) matchingBrace(source, bodyOpen) else match.range.last
@@ -531,6 +579,20 @@ object AzHighlighter {
                 val generics = genericNames(genericText)
                 if (generics.isNotEmpty()) genericScopes += GenericScope(generics, match.range.first, bodyEnd)
             }
+        }
+        for (match in property.findAll(declarationsSource)) {
+            val nameGroup = match.groups[1] ?: continue
+            properties += nameGroup.value
+            propertyDeclarations += nameGroup.range.first
+            val receiverGroup = match.groups[3] ?: continue
+            val names = parameter.findAll(receiverGroup.value).mapNotNull { it.groups[1]?.value }.toSet()
+            parameter.findAll(receiverGroup.value).mapNotNullTo(contextParameterOffsets) {
+                it.groups[1]?.range?.first?.plus(receiverGroup.range.first)
+            }
+            val bodyOpen = source.indexOf('{', match.range.last + 1)
+            val lineEnd = source.indexOf('\n', match.range.last + 1).takeIf { it >= 0 } ?: source.length
+            val end = if (bodyOpen in (match.range.last + 1)..lineEnd) matchingBrace(source, bodyOpen) else lineEnd
+            if (names.isNotEmpty()) scopes += ParameterScope(names, match.range.first, end)
         }
         for (match in typeDeclaration.findAll(declarationsSource)) {
             match.groups[1]?.value?.let(declaredTypes::add)
@@ -549,20 +611,133 @@ object AzHighlighter {
         Regex("""\b(?:break|continue)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\b""")
             .findAll(declarationsSource).mapNotNullTo(labelOffsets) { it.groups[1]?.range?.first }
 
-        val realmOffsets = linkedSetOf<Int>()
+        // An `import` clause is a path saying where to look and a selection
+        // saying what to take, and the separator says which is which: a `.`
+        // walks down the module tree, a `::` reaches inside the module it lands
+        // on. Only the path is a module chain, so only the path wears the module
+        // colour; what is selected is a declaration and reads as one.
+        val modulePathOffsets = importPathOffsets(declarationsSource)
+
+        val scopeOffsets = linkedSetOf<Int>()
         Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*::""")
-            .findAll(declarationsSource).mapNotNullTo(realmOffsets) { it.groups[1]?.range?.first }
-        Regex("""\brealm\s+((?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*[A-Za-z_][A-Za-z0-9_]*)""")
-            .findAll(declarationsSource).forEach { realm ->
-                val path = realm.groups[1] ?: return@forEach
+            .findAll(declarationsSource).mapNotNullTo(scopeOffsets) { it.groups[1]?.range?.first }
+        Regex("""\bscope\s+((?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*[A-Za-z_][A-Za-z0-9_]*)""")
+            .findAll(declarationsSource).forEach { scope ->
+                val path = scope.groups[1] ?: return@forEach
                 Regex("""[A-Za-z_][A-Za-z0-9_]*""").findAll(path.value)
-                    .mapTo(realmOffsets) { path.range.first + it.range.first }
+                    .mapTo(scopeOffsets) { path.range.first + it.range.first }
             }
 
         return SemanticNames(
             functions, declarations, scopes, genericScopes, declaredTypes,
-            labelOffsets, realmOffsets,
+            labelOffsets, scopeOffsets, modulePathOffsets,
+            contextParameterOffsets, properties, propertyDeclarations,
         )
+    }
+
+    /**
+     * The offsets of every module-path segment in [source]'s import clauses.
+     *
+     * A clause reads left to right in one of two modes. It starts in *path*
+     * mode, where each `.` steps down the module tree; the first `::` switches
+     * it to *selection* mode, where the names are declarations inside the module
+     * the path reached. A group resets its members to path mode when a `.`
+     * opened it and to selection mode when a `::` did, because that is exactly
+     * what the two spellings mean.
+     */
+    private fun importPathOffsets(source: String): Set<Int> {
+        val result = linkedSetOf<Int>()
+        for (clause in Regex("""(?m)^[ \t]*(?:export[ \t]+|exposed[ \t]+)?(?:import|use|module)\b""").findAll(source)) {
+            var i = clause.range.last + 1
+            var depth = 0
+            // The mode each open group was in, so a comma can put the next
+            // member back where the group's own separator left it.
+            val opened = ArrayDeque<Boolean>()
+            var selecting = false
+            while (i < source.length) {
+                when {
+                    source[i] == '\n' && depth == 0 -> break
+                    source.startsWith("::", i) -> { selecting = true; i += 2 }
+                    source[i] == '.' -> { selecting = false; i++ }
+                    source[i] == '[' || source[i] == '{' -> { opened.addLast(selecting); depth++; i++ }
+                    source[i] == ']' || source[i] == '}' -> {
+                        selecting = opened.removeLastOrNull() ?: false
+                        depth--
+                        i++
+                        if (depth <= 0) break
+                    }
+                    source[i] == ',' || source[i] == '\n' -> {
+                        selecting = opened.lastOrNull() ?: false
+                        i++
+                    }
+                    source[i].isIdentStart() -> {
+                        val start = i
+                        while (i < source.length && source[i].isIdentPart()) i++
+                        if (!selecting) result.add(start)
+                    }
+                    else -> i++
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Doc tags whose first word names something the signature also names.
+     *
+     * `@param capacity` documents a parameter, so `capacity` is a reference and
+     * reads as one. `@return`, `@file` and `@since` are followed by prose, and
+     * singling out its first word would only suggest a link that is not there.
+     */
+    private val DOC_NAMING_TAGS = setOf("param", "member", "generic", "receiver", "throws")
+
+    /**
+     * Splits `/** … */` between [start] and [end] into `doc`, `docTag` and
+     * `docTagValue` spans.
+     *
+     * A doc comment is one lexical thing but three things to read: the sentence,
+     * the `@param` that introduces a clause of it, and the `capacity` that says
+     * which parameter the clause is about. Everything not recognized stays
+     * `doc`, so the spans tile the comment exactly and no character loses its
+     * colour.
+     */
+    private fun addDocComment(source: String, start: Int, end: Int, spans: MutableList<HighlightSpan>) {
+        var run = start
+        var i = start
+
+        fun flush(upTo: Int) {
+            if (upTo > run) spans.add(HighlightSpan(run, upTo, "doc"))
+            run = upTo
+        }
+
+        while (i < end) {
+            // A tag opens a clause, so it only counts at the start of one: after
+            // the `*` that opens a line, never inside a word or an address.
+            if (source[i] != '@' || (i > start && !source[i - 1].isWhitespace() && source[i - 1] != '*')) {
+                i++
+                continue
+            }
+            var j = i + 1
+            while (j < end && source[j].isLetter()) j++
+            val tag = source.substring(i + 1, j)
+            if (tag.isEmpty()) { i++; continue }
+            flush(i)
+            spans.add(HighlightSpan(i, j, "docTag"))
+            run = j
+            i = j
+            if (tag !in DOC_NAMING_TAGS) continue
+            var k = j
+            while (k < end && (source[k] == ' ' || source[k] == '\t')) k++
+            var m = k
+            while (m < end && source[m].isIdentPart()) m++
+            if (m > k) {
+                flush(k)
+                spans.add(HighlightSpan(k, m, "docTagValue"))
+                run = m
+                i = m
+            }
+        }
+        flush(end)
     }
 
     /** Declared names only; bounds/default types in `T: Copy` are not generics. */

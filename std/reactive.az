@@ -41,7 +41,7 @@
  */
 module std.reactive
 
-import std.container.list.*
+import std.container.list::*
 
 /** Lifetime selected by a language-level reactive binding. */
 @Experimental(since: "0.1")

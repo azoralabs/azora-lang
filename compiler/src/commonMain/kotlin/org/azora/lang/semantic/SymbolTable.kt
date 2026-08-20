@@ -188,7 +188,7 @@ data class TraitConformance(
  * 2. [TypeResolver] uses it to look up functions and manages local scopes.
  *
  * Functions are stored in a flat global namespace. Variables use a stack of
- * scopes (one per function body, block, or realm) to support lexical scoping
+ * scopes (one per function body, block, or scope) to support lexical scoping
  * with inner scopes shadowing outer ones.
  */
 class SymbolTable {
@@ -243,9 +243,9 @@ class SymbolTable {
      */
     /**
      * A member declared on [owner] as a type-scoped constant or function -
-     * `impl Array:: { bridge fin size }` - whatever realm declares the type.
+     * `impl Array:: { bridge fin size }` - whatever scope declares the type.
      *
-     * The realm is part of the symbol but not of the question being asked, so it
+     * The scope is part of the symbol but not of the question being asked, so it
      * is matched on the tail rather than reconstructed.
      */
     fun lookupTypeStatic(owner: String, name: String): FunctionSymbol? {
@@ -284,8 +284,8 @@ class SymbolTable {
         structs[struct.name] = struct
     }
 
-    /** Looks up a struct by name. Accepts a realm-qualified name (`Deque`
-     *  lowers to `std__Deque`); types are not realm-mangled, so fall back to the
+    /** Looks up a struct by name. Accepts a scope-qualified name (`Deque`
+     *  lowers to `std__Deque`); types are not scope-mangled, so fall back to the
      *  final segment when the mangled form is not found. */
     fun lookupStruct(name: String): StructType? =
         structs[name] ?: if ("__" in name) structs[name.substringAfterLast("__")] else null
@@ -302,7 +302,7 @@ class SymbolTable {
     }
 
     /** Returns the variants of an enum, or `null` if no such enum exists.
-     *  Accepts a realm-qualified name, like [lookupStruct]. */
+     *  Accepts a scope-qualified name, like [lookupStruct]. */
     fun lookupEnum(name: String): List<String>? =
         enums[name] ?: if ("__" in name) enums[name.substringAfterLast("__")] else null
 
@@ -321,11 +321,11 @@ class SymbolTable {
         fails[name] ?: if ("__" in name) fails[name.substringAfterLast("__")] else null
 
     /**
-     * The declared name a possibly realm-qualified type reference denotes.
+     * The declared name a possibly scope-qualified type reference denotes.
      *
-     * `Realm::Type` reaches the semantic layer as `Realm__Type`, because `::`
+     * `Scope::Type` reaches the semantic layer as `Scope__Type`, because `::`
      * is the same namespace operator that mangles `println` into
-     * `std__println`. Types are not realm-mangled, so the qualified spelling
+     * `std__println`. Types are not scope-mangled, so the qualified spelling
      * has to be mapped back before the name is used as a type identity.
      * A name that is already declared is returned untouched, which leaves
      * genuinely mangled function names alone.
@@ -548,13 +548,13 @@ class SymbolTable {
 
     /**
      * Pushes a new empty scope onto the scope stack. Called when entering
-     * a function body, block, or realm.
+     * a function body, block, or scope.
      */
     fun pushScope() { scopes.addLast(mutableMapOf()) }
 
     /**
      * Pops the top scope from the scope stack. Called when exiting
-     * a function body, block, or realm.
+     * a function body, block, or scope.
      */
     fun popScope() { scopes.removeLast() }
 
@@ -569,7 +569,7 @@ class SymbolTable {
 
     /**
      * Copies all variables from the current (innermost) scope into the given map.
-     * Used by friend realms to persist their shared scope between blocks.
+     * Used by friend scopes to persist their shared scope between blocks.
      */
     fun exportCurrentScope(target: MutableMap<String, VariableSymbol>) {
         scopes.lastOrNull()?.let { target.putAll(it) }

@@ -113,7 +113,7 @@ class TraitsTest {
                 var x: Int
             }
             impl P {
-                func getX(): Int {
+                func getX[self: Self&](): Int {
                     return self.x
                 }
             }

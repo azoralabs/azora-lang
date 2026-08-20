@@ -881,9 +881,9 @@ sealed class IrStmt {
     ) : IrStmt()
 
     /**
-     * Scoped block (`realm { ... }`). Introduces a new variable scope.
+     * Scoped block (`scope { ... }`). Introduces a new variable scope.
      *
-     * @property body the list of statements inside the realm
+     * @property body the list of statements inside the scope
      */
     data class Scope(val body: List<IrStmt>) : IrStmt()
 
@@ -1025,7 +1025,7 @@ sealed class IrStmt {
                 sb.appendLine("${pad}}")
             }
             is Scope -> {
-                sb.appendLine("${pad}realm {")
+                sb.appendLine("${pad}scope {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }

@@ -310,7 +310,7 @@ Three ways to ask, and they mean different things:
 | `inject LoginViewModel`  | that concrete definition                           |
 
 ```azora
-import std.di
+import std::di
 
 fin viewModels: Many<ViewModel> = inject Many<ViewModel>
 
@@ -525,8 +525,8 @@ Ordered by how much they block.
 - ⬜ **`func main() with AppGraph`** (§2.3) - static selection, so an
   unsatisfiable injection is a compile error rather than a runtime surprise
 - ⬜ **Resolution is keyed by a string.** `__inject("TypeName")` looks the
-  instance up in a `typeName → instance` map, which is why a realm-scoped
-  `Config` collides with another realm's. Replace it with compiler-generated
+  instance up in a `typeName → instance` map, which is why a scope-scoped
+  `Config` collides with another scope's. Replace it with compiler-generated
   `DefinitionId` symbols: one per definition, resolved at compile time, so a
   missing definition and an ambiguous one are both diagnosed there
 - ⬜ **One concurrent attempt, one successful instance** (§6.3) - today's race

@@ -391,8 +391,8 @@ class SymbolTest {
             }
         """.trimIndent())
         val ir = result.ir.prettyPrint()
-        // ::x inside realm resolves to the function-scope x, which keeps its original name
-        // The realm's x gets mangled since it shadows the outer one
+        // ::x inside scope resolves to the function-scope x, which keeps its original name
+        // The scope's x gets mangled since it shadows the outer one
         assertTrue("println(x)" in ir, "::x should resolve to outer x (not mangled), got:\n$ir")
     }
 

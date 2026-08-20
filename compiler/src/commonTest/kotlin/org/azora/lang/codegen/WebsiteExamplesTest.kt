@@ -278,7 +278,7 @@ func main() { println("Hello, Azora!") }"""))
         }
     """.trimIndent()))
 
-    @Test fun ch11_realm() = assertEquals("15", run("""
+    @Test fun ch11_siblingScopesShareOne() = assertEquals("15", run("""
         import std.io
         func main() {
             scope {

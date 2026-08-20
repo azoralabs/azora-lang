@@ -23,7 +23,7 @@
  */
 exposed module std.primitive
 
-import std.traits.*
+import std.traits::*
 
 /** Boolean truth value: `true` or `false`. */
 @Since("0.1")

@@ -51,7 +51,7 @@ impl Unique<T> {
 
     /** Overwrites the owned value (panics if already released). */
     @Experimental(since: "0.1")
-    func set(value: T) {
+    func set[self: Self!](value: T) {
         assert active { "Unique pointer was released" }
         self._raw[0] = value
     }
@@ -68,7 +68,7 @@ impl Unique<T> {
      * (the value is no longer freed by the Unique).
      */
     @Experimental(since: "0.1")
-    func release(): T* {
+    func release[self: Self!](): T* {
         assert active { "Unique pointer was already released" }
         self.active = false
         return self._raw
@@ -76,7 +76,7 @@ impl Unique<T> {
 
     /** Frees the owned value now (a no-op if already released/disposed). */
     @Experimental(since: "0.1")
-    func dispose() {
+    func dispose[self: Self!]() {
         if active {
             purge self._raw
             self.active = false

@@ -24,17 +24,17 @@ import org.azora.lang.frontend.TopLevel
  *
  * Two forms share the spelling. `impl SerialName(…) for User::name` targets a
  * *field*, and `impl Display for shapes::Circle` targets a *type* reached
- * through its realm. The parser cannot tell them apart: it emits `A.B` for
+ * through its scope. The parser cannot tell them apart: it emits `A.B` for
  * both. A non-empty spec implementation settles it because fields cannot own
  * implementation members; an explicitly empty implementation remains ambiguous.
  *
  * An empty decorator application or derive request has no such proof, so the decision is made here, once every
- * declaration is present - realms the program declares and realms the standard
+ * declaration is present - scopes the program declares and scopes the standard
  * library declares alike. `A::B` names a type when `B` is a declared type and
  * `A` has no member called `B`; a pack whose field happens to share a type's
  * name therefore still reads as a field target.
  */
-internal object RealmQualifiedImplTargets {
+internal object ScopeQualifiedImplTargets {
 
     fun resolve(program: Program): Program {
         val declaredTypes = program.items.mapNotNullTo(mutableSetOf()) { declaredTypeName(it) }
@@ -45,7 +45,7 @@ internal object RealmQualifiedImplTargets {
         var rewrote = false
         val items = program.items.map { item ->
             if (item !is TopLevel.Impl) return@map item
-            val resolved = realmQualifiedType(item.typeName, declaredTypes, packFields) ?: return@map item
+            val resolved = scopeQualifiedType(item.typeName, declaredTypes, packFields) ?: return@map item
             rewrote = true
             item.copy(typeName = resolved)
         }
@@ -53,11 +53,11 @@ internal object RealmQualifiedImplTargets {
     }
 
     /**
-     * The type `target` names when it is a realm-qualified type, or `null` when
+     * The type `target` names when it is a scope-qualified type, or `null` when
      * it is anything else - an unqualified target, a `Type::*` wildcard, or a
      * field.
      */
-    private fun realmQualifiedType(
+    private fun scopeQualifiedType(
         target: String,
         declaredTypes: Set<String>,
         packFields: Map<String, Set<String>>,

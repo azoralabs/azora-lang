@@ -27,7 +27,7 @@
  */
 module std.math
 
-import std.container.array.*
+import std.container.array::*
 
 /**
  * The ratio of a circle's circumference to its diameter.

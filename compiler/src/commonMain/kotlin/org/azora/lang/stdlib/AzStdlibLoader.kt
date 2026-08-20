@@ -77,7 +77,7 @@ object AzStdlib {
         cachedPrograms = null
         comptimeLists.clear()
         declaredEnums.clear()
-        comptimeListRealms.clear()
+        comptimeListScopes.clear()
     }
 
     private var cachedTree: StdlibTree? = null
@@ -101,13 +101,13 @@ object AzStdlib {
     val declaredEnums: MutableMap<String, List<String>> = mutableMapOf()
 
     /**
-     * Compile-time list name -> the named realm that declared it.
+     * Compile-time list name -> the named scope that declared it.
      *
      * A list declares its elements the way they are written inside its own
-     * realm (`Numbers` is `[Byte, …]`, bare). A consumer in another realm needs
-     * them qualified, so the declaring realm travels with the list.
+     * scope (`Numbers` is `[Byte, …]`, bare). A consumer in another scope needs
+     * them qualified, so the declaring scope travels with the list.
      */
-    val comptimeListRealms: MutableMap<String, String> = mutableMapOf()
+    val comptimeListScopes: MutableMap<String, String> = mutableMapOf()
 
     /** The resolved standard library: origin, version and files. */
     fun tree(): StdlibTree = cachedTree ?: resolve().also { cachedTree = it }
@@ -181,14 +181,14 @@ object AzStdlib {
     private fun parse(tree: StdlibTree): List<Program> {
         comptimeLists.clear()
         declaredEnums.clear()
-        comptimeListRealms.clear()
+        comptimeListScopes.clear()
         return tree.files.map { file ->
             try {
                 Parser(
                     Lexer(file.source).tokenize(),
                     comptimeLists,
                     declaredEnums,
-                    typeListRealm = comptimeListRealms,
+                    typeListScope = comptimeListScopes,
                 ).parse()
             } catch (e: Exception) {
                 error(

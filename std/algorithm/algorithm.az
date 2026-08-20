@@ -23,7 +23,7 @@
  */
 module std.algorithm
 
-import std.container.array.*
+import std.container.array::*
 
 /**
  * Merge sort - O(n log n) stable sorting algorithm.

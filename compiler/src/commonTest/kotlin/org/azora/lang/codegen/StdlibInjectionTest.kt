@@ -20,12 +20,12 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Tests for [org.azora.lang.stdlib.StdlibInjector] under the realm/import model:
+ * Tests for [org.azora.lang.stdlib.StdlibInjector] under the scope/import model:
  *
- * - Library symbols live in realms (`realm std { ... }`) and are
+ * - Library symbols live in scopes (`scope std { ... }`) and are
  *   name-mangled (`std.math::abs` → `std__math__abs`).
  * - `use std.math` makes that module's symbols visible; references must use
- *   the qualified `Realm::name` form. Bare references are rejected.
+ *   the qualified `Scope::name` form. Bare references are rejected.
  * - Qualified access without the matching import is rejected.
  */
 class StdlibInjectionTest {
@@ -44,7 +44,7 @@ class StdlibInjectionTest {
     @Test fun printWritesWithoutNewline() =
         assertEquals("Hello, 7!", run("import std.io\nfunc main() {\n    print(\"Hello, \" )\n    print(7)\n    println(\"!\")\n}"))
 
-    @Test fun stdlibRealmMemberCallsSiblingBare() {
+    @Test fun stdlibScopeMemberCallsSiblingBare() {
         val result = Compiler().compile("import std.io\nfunc main() {\n    header(\"Title\", 4)\n}")
         assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
     }
@@ -272,7 +272,7 @@ class StdlibInjectionTest {
         assertTrue(result.errors.any { "undefined" in it && "abs" in it }, "bare access should be rejected: ${'$'}{result.errors}")
     }
 
-    @Test fun importedRealmMemberRequiresQualifiedAccess() {
+    @Test fun importedScopeMemberRequiresQualifiedAccess() {
         val result = Compiler().compile("""
             module playground
 
@@ -286,21 +286,21 @@ class StdlibInjectionTest {
         assertIs<CompilationResult.Failure>(result)
         assertTrue(
             result.errors.any {
-                it == "line 6: undefined function 'println'; 'println' is part of realm 'std', use 'println' instead"
+                it == "line 6: undefined function 'println'; 'println' is part of scope 'std', use 'println' instead"
             },
             result.errors.toString(),
         )
     }
 
-    @Test fun realmMembersRequireQualifiedAccess() =
+    @Test fun scopeMembersRequireQualifiedAccess() =
         assertEquals("local\nshared", run("""
             import std.io
 
-            realm local {
+            scope local {
                 func first(): String { return "local" }
             }
 
-            realm merged {
+            scope merged {
                 func second(): String { return "shared" }
             }
 
@@ -310,8 +310,8 @@ class StdlibInjectionTest {
             }
         """.trimIndent()))
 
-    @Test fun plainRealmsDoNotExposeBareMembers() {
-        for (declaration in listOf("realm local", "realm local")) {
+    @Test fun plainScopesDoNotExposeBareMembers() {
+        for (declaration in listOf("scope local", "scope local")) {
             val result = Compiler().compile("""
                 $declaration {
                     func hidden(): Int { return 1 }
@@ -333,8 +333,8 @@ class StdlibInjectionTest {
         assertTrue(result.errors.any { "abs" in it }, "qualified access without import should be rejected: ${'$'}{result.errors}")
     }
 
-    @Test fun wrongRealmQualificationIsRejected() {
-        // `abs` lives in realm `std`, so `math::abs` names a realm that does
+    @Test fun wrongScopeQualificationIsRejected() {
+        // `abs` lives in scope `std`, so `math::abs` names a scope that does
         // not exist and must fail even though the module `std.math` is imported.
         val result = Compiler().compile("import std.io\nimport std.math\nfunc main() {\n    println(math::abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
@@ -379,7 +379,7 @@ class StdlibInjectionTest {
             func _helper(): Int { return 41 }
             func openHelper(): Int { return _helper() }
 
-            realm Secret {
+            scope Secret {
                 func _hidden(): Int { return 7 }
                 func shown(): Int { return _hidden() }
             }
@@ -458,7 +458,7 @@ class StdlibInjectionTest {
         )
     }
 
-    @Test fun anotherModulesPrivateRealmMemberCannotBeNamed() {
+    @Test fun anotherModulesPrivateScopeMemberCannotBeNamed() {
         // The mangled form is `Secret___hidden`; the message has to name it the
         // way the source does.
         assertTrue(
@@ -496,14 +496,14 @@ class StdlibInjectionTest {
             """
                 module engine.render
 
-                realm engine {
+                scope engine {
                     func answer(): Int { return 42 }
                 }
             """.trimIndent(),
         )
         val result = Compiler(listOf(library)).compile("""
             import std.io
-            import engine.render
+            import engine::render
             func main() {
                 println(engine::answer())
             }
@@ -513,13 +513,13 @@ class StdlibInjectionTest {
         assertEquals("42", IrInterpreter().interpret(result.ir))
     }
 
-    @Test fun externalRealmTypesRequireTheirDeclaredQualifier() {
+    @Test fun externalScopeTypesRequireTheirDeclaredQualifier() {
         val library = LibrarySource(
             "engine/model.az",
             """
                 module engine.model
 
-                realm engine {
+                scope engine {
                     pack Handle {
                         fin id: Int
                     }
@@ -529,23 +529,23 @@ class StdlibInjectionTest {
         val compiler = Compiler(listOf(library))
 
         val bare = compiler.compile("""
-            import engine.model
+            import engine::model
             func inspect(value: Handle): Int { return value.id }
         """.trimIndent())
         val failure = assertIs<CompilationResult.Failure>(bare)
         assertEquals(
-            listOf("line 2: undefined type 'Handle'; 'Handle' is part of realm 'engine', use 'engine::Handle' instead"),
+            listOf("line 2: undefined type 'Handle'; 'Handle' is part of scope 'engine', use 'engine::Handle' instead"),
             failure.errors,
         )
 
         val qualified = compiler.compile("""
-            import engine.model
+            import engine::model
             func inspect(value: engine::Handle): Int { return value.id }
             func main() {}
         """.trimIndent())
         assertIs<CompilationResult.Success>(
             qualified,
-            "qualified external realm type failed: ${(qualified as? CompilationResult.Failure)?.errors}",
+            "qualified external scope type failed: ${(qualified as? CompilationResult.Failure)?.errors}",
         )
     }
 
@@ -564,8 +564,8 @@ class StdlibInjectionTest {
                 """
                     module engine.render
 
-                    import engine.shaders
-                    realm engine {
+                    import engine::shaders
+                    scope engine {
                         func shaderCount(): Int { return shaderValue() }
                     }
                 """.trimIndent(),
@@ -573,7 +573,7 @@ class StdlibInjectionTest {
         )
         val result = Compiler(libraries).compile("""
             import std.io
-            import engine.render
+            import engine::render
             func main() { println(engine::shaderCount()) }
         """.trimIndent())
 

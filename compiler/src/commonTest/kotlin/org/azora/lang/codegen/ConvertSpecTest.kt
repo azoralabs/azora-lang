@@ -46,7 +46,7 @@ class ConvertSpecTest {
     @Test fun fromIsAStaticReachedThroughTheType() {
         assertEquals("gabriel", run("""
             import std.io
-            import std.convert
+            import std::convert
             pack Username {
                 value: String
             }
@@ -66,7 +66,7 @@ class ConvertSpecTest {
     @Test fun intoConvertsThroughItsReceiver() {
         assertEquals("Label(ok)", run("""
             import std.io
-            import std.convert
+            import std::convert
             pack Label {
                 var value: String
             }
@@ -89,7 +89,7 @@ class ConvertSpecTest {
     @Test fun inBraceReceiverOnASpecImplIsRejected() {
         val result = compile("""
             import std.io
-            import std.convert
+            import std::convert
             pack Label {
                 var value: String
             }

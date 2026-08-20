@@ -46,7 +46,7 @@
  */
 module std.concurrency.generators
 
-import std.container.list.*
+import std.container.list::*
 
 /**
  * The collector a `sequence` producer emits into.

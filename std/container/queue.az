@@ -16,7 +16,7 @@
 
 module std.container.queue
 
-import std.serializer.Serializable
+import std.serializer::Serializable
 
 /**
  * A generic first-in-first-out (FIFO) queue.
@@ -58,7 +58,7 @@ impl Queue<T> {
 
     /** Doubles the backing buffer's capacity, copying existing elements. */
     @Experimental(since: "0.1")
-    func growQueue() {
+    func growQueue[self: Self!]() {
         fin newCap = capacity * 2
         let newData: T* = alloc .() * newCap
         for i in 0..<size {
@@ -78,7 +78,7 @@ impl Queue<T> {
      * @param element The element to enqueue.
      */
     @Experimental(since: "0.1")
-    func enqueue(element: T) {
+    func enqueue[self: Self!](element: T) {
         if size >= capacity { self.growQueue() }
         data[size] = element
         self.size = size + 1
@@ -91,7 +91,7 @@ impl Queue<T> {
      * @throws AssertionError if the queue is empty.
      */
     @Experimental(since: "0.1")
-    func dequeue(): T {
+    func dequeue[self: Self!](): T {
         assert size > 0 { "Queue is empty" }
         fin front = data[0]
         for i in 0..<size - 1 {
@@ -108,14 +108,14 @@ impl Queue<T> {
      * @throws AssertionError if the queue is empty.
      */
     @Experimental(since: "0.1")
-    func peek(): T {
+    func peek[self: Self&](): T {
         assert size > 0 { "Queue is empty" }
         return data[0]
     }
 
     /** Removes all elements from the queue. */
     @Experimental(since: "0.1")
-    func clear() {
+    func clear[self: Self!]() {
         fin oldData = data
         self.data = alloc .() * 8
         self.size = 0
@@ -131,7 +131,7 @@ impl Queue<T> {
      * @return A string in the format "[front, ..., back]".
      */
     @Experimental(since: "0.1")
-    func toString(): String {
+    func toString[self: Self&](): String {
         var s = "["
         for i in 0..<size {
             if i > 0 { s = s + ", " }

@@ -24,7 +24,7 @@
  */
 module std.ai
 
-import std.container.list.ArrayList
+import std.container.list::ArrayList
 
 /** The origin of a message in a structured model conversation. */
 @Experimental(since: "0.1")

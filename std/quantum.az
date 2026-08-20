@@ -28,8 +28,8 @@
 module std.quantum
 
 import std.[
-    container.[array.*, list.*]
-    math.*
+    container.[array::*, list::*]
+    math::*
 ]
 
 /** The operation vocabulary understood by the portable circuit IR. */

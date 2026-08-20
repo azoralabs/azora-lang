@@ -674,7 +674,7 @@ No silent branch failure, no optional ambiguity, and diagnostics can name
 ### 7.2 `attempt`
 
 `attempt` is the standard transactional operation from `std.reactive`,
-re-exported through realm `std`. It is not an ECS keyword and does not replace
+re-exported through scope `std`. It is not an ECS keyword and does not replace
 language `try`.
 
 Conceptually:
@@ -753,7 +753,7 @@ another team". Those are expected domain outcomes.
 Not initially.
 
 `race`, `sync`, `rush`, and `branch` are typed functions supplied through
-realm `std` by `std.concurrency`. Their trailing lambdas expand to task
+scope `std` by `std.concurrency`. Their trailing lambdas expand to task
 attachment, cancellation, awaiting, and cleanup. Their semantics require
 runtime support, but their names do not need to be reserved by the lexer.
 

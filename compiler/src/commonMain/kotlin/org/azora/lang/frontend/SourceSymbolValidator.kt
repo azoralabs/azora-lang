@@ -38,8 +38,8 @@ internal object SourceSymbolValidator {
 
     fun validateProgram(program: Program) {
         program.moduleName?.split('.')?.forEach { declaration(it, "module", 1) }
-        program.realmTypeNamespaces.values.forEach { path ->
-            path.split("::").forEach { declaration(it, "realm", 1) }
+        program.scopeTypeNamespaces.values.forEach { path ->
+            path.split("::").forEach { declaration(it, "scope", 1) }
         }
         program.items.forEach(::topLevel)
         program.typeFunctions.forEach { declaration(it.name, "type property", it.line) }
@@ -92,14 +92,14 @@ internal object SourceSymbolValidator {
             }
             is TopLevel.Bridge -> {
                 item.funcs.forEach { signature ->
-                    realmDeclaration(signature.name, "bridge function", signature.line)
-                    signature.localName?.let { realmDeclaration(it, "bridge function", signature.line) }
+                    scopeDeclaration(signature.name, "bridge function", signature.line)
+                    signature.localName?.let { scopeDeclaration(it, "bridge function", signature.line) }
                     signature.nameMacro?.let(::expression)
                     signature.typeParams.forEach { declaration(it, "type parameter", signature.line) }
                     signature.params.forEach { parameter(it, signature.line) }
                 }
                 item.values.forEach { value ->
-                    realmDeclaration(value.name, "bridge value", value.line)
+                    scopeDeclaration(value.name, "bridge value", value.line)
                     value.nameMacro?.let(::expression)
                     expression(value.initializer)
                 }
@@ -145,7 +145,7 @@ internal object SourceSymbolValidator {
                 item.variants.forEach { declaration(it.name, "variant", item.line, privateAllowed = true) }
             }
             is TopLevel.Meta -> {
-                realmDeclaration(item.name, "macro", item.line)
+                scopeDeclaration(item.name, "macro", item.line)
                 item.parameter?.let { declaration(it, "macro parameter", item.line) }
                 item.arms.forEach { arm ->
                     when (val pattern = arm.pattern) {
@@ -173,7 +173,7 @@ internal object SourceSymbolValidator {
     }
 
     private fun function(function: FuncDecl) {
-        realmDeclaration(
+        scopeDeclaration(
             function.name,
             if (function.memberCallStyle == MemberCallStyle.PROPERTY) "property" else "function",
             function.line,
@@ -320,12 +320,12 @@ internal object SourceSymbolValidator {
     }
 
     private fun storage(name: String, line: Int) {
-        realmPrefix(name)?.split("__")?.forEach { declaration(it, "realm", line) }
+        scopePrefix(name)?.split("__")?.forEach { declaration(it, "scope", line) }
         declaration(sourceMember(name), "storage variable", line, privateAllowed = true)
     }
 
-    private fun realmDeclaration(name: String, kind: String, line: Int) {
-        realmPrefix(name)?.split("__")?.forEach { declaration(it, "realm", line) }
+    private fun scopeDeclaration(name: String, kind: String, line: Int) {
+        scopePrefix(name)?.split("__")?.forEach { declaration(it, "scope", line) }
         declaration(sourceMember(name), kind, line, privateAllowed = true)
     }
 
@@ -352,7 +352,7 @@ internal object SourceSymbolValidator {
         return name
     }
 
-    private fun realmPrefix(name: String): String? {
+    private fun scopePrefix(name: String): String? {
         for (index in name.length - 2 downTo 1) {
             if (name[index] == '_' && name[index + 1] == '_' && name[index - 1] != '_') {
                 return name.substring(0, index)

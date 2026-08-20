@@ -26,7 +26,7 @@
  */
 module std.functional
 
-import std.container.array.*
+import std.container.array::*
 
 /**
  * Returns the identity value (passes through unchanged).

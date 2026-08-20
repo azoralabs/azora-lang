@@ -30,7 +30,6 @@ object AzoraSyntaxVocabulary {
         "inline" to TokenType.INLINE,
         "deepinline" to TokenType.DEEPINLINE,
         "noinline" to TokenType.NOINLINE,
-        "realm" to TokenType.REALM,
         "scope" to TokenType.SCOPE,
         "test" to TokenType.TEST,
         "assert" to TokenType.ASSERT,

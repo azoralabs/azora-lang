@@ -25,7 +25,7 @@ import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
-import org.azora.lang.frontend.RealmMeta
+import org.azora.lang.frontend.ScopeMeta
 import org.azora.lang.ir.IrType
 
 /**
@@ -904,7 +904,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
 
         val substituted = funcDecl.body.map { substituteInStmt(it, paramMap) }
-        // Wrap in a realm (scope block) to avoid variable name collisions
+        // Wrap in a scope (scope block) to avoid variable name collisions
         return listOf(Stmt.Scope(substituted, expr.line))
     }
 
@@ -1379,8 +1379,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Expr.CatchExpr, is Expr.Lambda -> Pair(expr, false)
             is Expr.SafeMember -> {
-                // `(reflect X).realm?.label` / `?.isInline` - fold the safe terminal.
-                foldRealmTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
+                // `(reflect X).scope?.label` / `?.isInline` - fold the safe terminal.
+                foldScopeTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
                 Pair(expr, false)
             }
             is Expr.NullCoalesce -> {
@@ -1443,7 +1443,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val (target, _) = foldExpr(expr.target, program)
                     return Pair(expr.copy(target = target, name = spliced), true)
                 }
-                foldRealmTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
+                foldScopeTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }
                 val metadataQuery = expr.target as? Expr.Call
                 if (compileTimeDepth > 0 && metadataQuery?.callee == "__annotMeta") {
                     val decoratorName = metadataQuery.typeArgs.singleOrNull()?.displayName()
@@ -1560,21 +1560,21 @@ class CtfeEvaluator(private val table: SymbolTable) {
         else -> null
     }
 
-    // -- Realm reflection (`(reflect X).realm.label` / `.isInline` / `.realm`) ---
+    // -- Scope reflection (`(reflect X).scope.label` / `.isInline` / `.scope`) ---
 
     /** The implicit top-level scope reported for globally-declared names. */
-    private val globalRealm = RealmMeta("global", isInline = false, parent = null)
+    private val globalScope = ScopeMeta("global", isInline = false, parent = null)
 
-    /** A partially-evaluated `reflect` chain node used to fold realm queries. */
+    /** A partially-evaluated `reflect` chain node used to fold scope queries. */
     private sealed interface ReflectNode {
         data class Decl(val name: String) : ReflectNode
-        data class Realm(val meta: RealmMeta?) : ReflectNode
+        data class Scope(val meta: ScopeMeta?) : ReflectNode
     }
 
     /**
      * Evaluates a `reflect`-rooted expression to a [ReflectNode], or null if it is
-     * not a reflection chain. `reflect X` → [ReflectNode.Decl]; `.realm` advances to
-     * the declaration's realm (global by default) or an enclosing realm's parent.
+     * not a reflection chain. `reflect X` → [ReflectNode.Decl]; `.scope` advances to
+     * the declaration's scope (global by default) or an enclosing scope's parent.
      */
     private fun evalReflectNode(expr: Expr, program: Program): ReflectNode? = when (expr) {
         is Expr.Grouping -> evalReflectNode(expr.expr, program)
@@ -1582,30 +1582,30 @@ class CtfeEvaluator(private val table: SymbolTable) {
             if (expr.callee == "__reflect")
                 (expr.args.singleOrNull() as? Expr.Identifier)?.let { ReflectNode.Decl(it.name) }
             else null
-        is Expr.Member -> stepReflectRealm(evalReflectNode(expr.target, program), expr.name, program)
-        is Expr.SafeMember -> stepReflectRealm(evalReflectNode(expr.target, program), expr.name, program)
+        is Expr.Member -> stepReflectScope(evalReflectNode(expr.target, program), expr.name, program)
+        is Expr.SafeMember -> stepReflectScope(evalReflectNode(expr.target, program), expr.name, program)
         else -> null
     }
 
-    private fun stepReflectRealm(base: ReflectNode?, member: String, program: Program): ReflectNode? {
-        // `reflect<T>.enclosingRealm` (`realm` is a keyword, so the member is spelled out).
-        if (member != "enclosingRealm") return null
+    private fun stepReflectScope(base: ReflectNode?, member: String, program: Program): ReflectNode? {
+        // `reflect<T>.enclosingScope` (`scope` is a keyword, so the member is spelled out).
+        if (member != "enclosingScope") return null
         return when (base) {
-            is ReflectNode.Decl -> ReflectNode.Realm(program.realms[base.name] ?: globalRealm)
-            is ReflectNode.Realm -> ReflectNode.Realm(base.meta?.parent)
+            is ReflectNode.Decl -> ReflectNode.Scope(program.scopes[base.name] ?: globalScope)
+            is ReflectNode.Scope -> ReflectNode.Scope(base.meta?.parent)
             null -> null
         }
     }
 
     /**
-     * Folds a terminal realm query `<realm>.label` / `<realm>.isInline` to a constant.
-     * A missing realm (e.g. the global scope's parent, or a safe step off null)
-     * yields `null` so `?:` fallbacks work. Returns null if [target] is not a realm
+     * Folds a terminal scope query `<scope>.label` / `<scope>.isInline` to a constant.
+     * A missing scope (e.g. the global scope's parent, or a safe step off null)
+     * yields `null` so `?:` fallbacks work. Returns null if [target] is not a scope
      * chain, so ordinary members named `label`/`isInline` are left untouched.
      */
-    private fun foldRealmTerminal(target: Expr, member: String, program: Program, line: Int): Expr? {
+    private fun foldScopeTerminal(target: Expr, member: String, program: Program, line: Int): Expr? {
         if (member != "label" && member != "isInline") return null
-        val node = evalReflectNode(target, program) as? ReflectNode.Realm ?: return null
+        val node = evalReflectNode(target, program) as? ReflectNode.Scope ?: return null
         return when (member) {
             "label" -> node.meta?.label?.let { Expr.StringLiteral(it, line) } ?: Expr.NullLiteral
             else -> node.meta?.let { Expr.BoolLiteral(it.isInline, line) } ?: Expr.NullLiteral
@@ -1741,10 +1741,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
         typeArgs: List<TypeRef> = emptyList(),
     ): Expr? {
         val funcDecl = program.functions.find { it.name == name } ?: return null
-        // A `realm test` member may only be used from a test. Folding one into
+        // A `scope test` member may only be used from a test. Folding one into
         // the program would quietly do what the visibility rule forbids, and
         // would erase the call before the check that reports it ever sees it.
-        if (name in program.testRealmMembers) return null
+        if (name in program.testScopeMembers) return null
         // Tasks/flows are execution boundaries, not pure value expressions. Folding
         // them would erase scheduling, cancellation, and Task<T> from the type graph.
         if (funcDecl.isTask || funcDecl.isFlow || funcDecl.isUnsafe) return null

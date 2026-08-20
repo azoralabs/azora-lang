@@ -541,7 +541,7 @@ class IrGenerator(private val table: SymbolTable) {
             literalConstant(item)?.let { (name, value) -> constantLiterals[name] = value }
         }
 
-        // Register import aliases in the global name scope so `import Realm.Item` resolves.
+        // Register import aliases in the global name scope so `import Scope.Item` resolves.
         for ((alias, real) in table.aliasMap) {
             nameScopes.last()[alias] = real
         }
@@ -619,7 +619,7 @@ class IrGenerator(private val table: SymbolTable) {
                             IrTopLevel.Struct(
                                 item.name,
                                 fields,
-                                program.realmTypeNamespaces[item.name],
+                                program.scopeTypeNamespaces[item.name],
                                 item.typeParams,
                                 slots,
                                 isUnion = item.isUnion,
@@ -630,7 +630,7 @@ class IrGenerator(private val table: SymbolTable) {
                 is TopLevel.Solo -> {
                     val fields = item.fields.map { IrField(it.name, resolveType(it.type), it.mutable) }
                     val result = mutableListOf<IrTopLevel>(
-                        IrTopLevel.Struct(item.name, fields, program.realmTypeNamespaces[item.name]),
+                        IrTopLevel.Struct(item.name, fields, program.scopeTypeNamespaces[item.name]),
                     )
                     // Lower methods as free functions Name_method (like impl).
                     // The receiver type has to be in scope for the same reason it
@@ -765,7 +765,7 @@ class IrGenerator(private val table: SymbolTable) {
             generatedTraceFunctions.map { IrTopLevel.Func(it) } + orderedItems,
             buildSpecTables(),
         )
-        return IrSymbolCanonicalizer.canonicalize(lowered, program.realmTypeNamespaces)
+        return IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces)
     }
 
     /**
@@ -978,7 +978,7 @@ class IrGenerator(private val table: SymbolTable) {
         )
     }
 
-    /** A shared friend name scope, or null if no friend realms encountered yet. */
+    /** A shared friend name scope, or null if no friend scopes encountered yet. */
     private var friendNameScope: MutableMap<String, String>? = null
 
     /** Guards a pending optional take needs in front of the statement holding it. */
@@ -1009,30 +1009,30 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /**
-     * Lowers a list of statements, handling friend realm blocks by sharing
-     * a name scope across all friend realms in the same body.
+     * Lowers a list of statements, handling friend scope blocks by sharing
+     * a name scope across all friend scopes in the same body.
      */
     private fun lowerBody(stmts: List<Stmt>): List<IrStmt> {
-        val hasRealms = stmts.any { it is Stmt.Scope && it.shared }
+        val hasScopes = stmts.any { it is Stmt.Scope && it.shared }
         val savedFriendScope = friendNameScope
 
-        if (hasRealms) {
+        if (hasScopes) {
             friendNameScope = mutableMapOf()
         }
 
-        // Bindings that persist from one realm block to the next.
+        // Bindings that persist from one scope block to the next.
         val friendSymbols = mutableMapOf<String, VariableSymbol>()
 
         val result = mutableListOf<IrStmt>()
         for (stmt in stmts) {
             if (stmt is Stmt.Scope && stmt.shared) {
-                // Push the shared realm name scope + symbol table scope
+                // Push the shared scope name scope + symbol table scope
                 table.pushScope()
                 nameScopes.addLast(friendNameScope!!)
-                // Restore bindings left by an earlier realm in this body
+                // Restore bindings left by an earlier scope in this body
                 for ((_, sym) in friendSymbols) table.defineVariable(sym)
                 val lowered = stmt.body.map { lowerStmt(it) }
-                // Hand them on to the next realm in this body
+                // Hand them on to the next scope in this body
                 table.exportCurrentScope(friendSymbols)
                 nameScopes.removeLast()
                 table.popScope()
@@ -1804,9 +1804,9 @@ class IrGenerator(private val table: SymbolTable) {
     /**
      * The call `expr` reads as a member of a value a `with` block opened, or null.
      *
-     * `with c { bump() }` is `c.bump()`, and a realm-qualified call reaches its
+     * `with c { bump() }` is `c.bump()`, and a scope-qualified call reaches its
      * contextual receiver the same way: `yield(1)` names the member `yield`,
-     * and the realm only says where it was declared, not what it is called on.
+     * and the scope only says where it was declared, not what it is called on.
      *
      * This is tried before construction, so a member and a pack may share a name:
      * the `with` block names a receiver on purpose, and inside it that member is
@@ -1964,7 +1964,7 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.IsCheck -> {
                 val inner = lowerExpr(expr.expr)
-                // `x is Int` carries the realm-qualified name; the runtime
+                // `x is Int` carries the scope-qualified name; the runtime
                 // compares against the type's own name, which is what a
                 // declaration is registered under.
                 val typeName = table.canonicalTypeName(expr.typeName)
@@ -2213,7 +2213,7 @@ class IrGenerator(private val table: SymbolTable) {
                         ?: error("LogLevel must declare at least one variant")
                     return IrExpr.EnumLiteral("LogLevel", first)
                 }
-                // Resolve import aliases (`import Realm.Item` maps Item to Realm__Item).
+                // Resolve import aliases (`import Scope.Item` maps Item to Scope__Item).
                 // `Self(…)` inside an impl builds the type the impl is on.
                 val calleeName = if (expr.callee == "Self") currentReceiverType ?: expr.callee else expr.callee
                 val actualCallee = table.aliasMap[calleeName] ?: calleeName

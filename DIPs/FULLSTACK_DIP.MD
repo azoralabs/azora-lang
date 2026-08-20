@@ -116,7 +116,7 @@ The highest-value full-stack feature is not a server framework. It is a typed
 endpoint value shared by callers and handlers.
 
 ```azora
-import std.http
+import std::http
 import std.serializer
 
 @Serializable

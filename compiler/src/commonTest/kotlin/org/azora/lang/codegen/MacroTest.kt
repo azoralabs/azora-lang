@@ -34,7 +34,7 @@ class MacroTest {
     fun vecMacroExpandsToListOf() {
         val out = run(
             """
-            import std.container.*
+            import std.container::*
             import std.io
 
             func main() {
@@ -52,7 +52,7 @@ class MacroTest {
     fun vecMacroEmptyArmExpandsToEmptyList() {
         val out = run(
             """
-            import std.container.*
+            import std.container::*
             import std.io
 
             func main() {
@@ -68,7 +68,7 @@ class MacroTest {
     @Test
     fun allThreeDelimitersAreEquivalent() {
         val src = """
-            import std.container.*
+            import std.container::*
             import std.io
 
             func main() {
@@ -90,7 +90,7 @@ class MacroTest {
     fun setTupleArrMacrosExpandToConstructors() {
         val out = run(
             """
-            import std.container.*
+            import std.container::*
             import std.io
 
             func main() {
@@ -106,10 +106,10 @@ class MacroTest {
     }
 
     @Test
-    fun macroSigilPrecedesRealm() {
+    fun macroSigilPrecedesScope() {
         val result = Compiler().compile(
             """
-            import std.container.*
+            import std.container::*
             func main() { fin values = @arr[1, 2, 3] }
             """.trimIndent(),
         )
@@ -124,7 +124,7 @@ class MacroTest {
     fun userMacroSplicesCaptureIntoMultiplePositions() {
         val out = run(
             """
-            import std.container.*
+            import std.container::*
             import std.io
 
             macro @dup {
@@ -147,7 +147,7 @@ class MacroTest {
     fun nestedMacroExpandsRecursively() {
         val out = run(
             """
-            import std.container.*
+            import std.container::*
             import std.io
 
             // `box` expands to a `vec!` invocation, which must then itself expand.
@@ -186,7 +186,7 @@ class MacroTest {
         // A macro with only a spread arm cannot match an empty invocation.
         val result = Compiler().compile(
             $$"""
-            import std.container.*
+            import std.container::*
 
             macro @needsArgs {
                 [...$xs] => listOf(...$xs)
@@ -208,7 +208,7 @@ class MacroTest {
     fun expandedProgramContainsNoMacroNodes() {
         val result = compile(
             """
-            import std.container.*
+            import std.container::*
 
             func main() {
                 fin x = @vec[1, 2, 3]

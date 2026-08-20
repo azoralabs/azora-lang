@@ -47,7 +47,7 @@ object InferredTypeArgs {
         fun remember(decl: FuncDecl) {
             if (decl.typeParams.isEmpty()) return
             generic[decl.name] = decl
-            // A library's declaration carries its realm; a call names it plainly.
+            // A library's declaration carries its scope; a call names it plainly.
             generic.putIfAbsent(decl.name.substringAfterLast("__"), decl)
         }
         for (item in program.items) {

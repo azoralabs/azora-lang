@@ -167,18 +167,18 @@ lines).
 - ⬜ No object-safety rule: nothing rejects using a spec with a static method,
   or one returning `Self`, as a type
 - ✅ Infix calls, declared as macros (`macro $a @to $b`)
-- ✅ Named realms and `::` namespacing
-- ✅ Modules, imports, realms, import gating
-- ⬜ **`use realmName` at a use site**, the equivalent of C++'s
-  `using namespace std`: bring a realm's members into scope unqualified for the
+- ✅ Named scopes and `::` namespacing
+- ✅ Modules, imports, scopes, import gating
+- ⬜ **`use scopeName` at a use site**, the equivalent of C++'s
+  `using namespace std`: bring a scope's members into scope unqualified for the
   rest of the file or block, so `println(x)` works where `println(x)` is
   written today. is written today.
   - ⬜ Scoping: file-level, block-level, or both
-  - ⬜ Ambiguity rules when two opened realms export the same name; a
+  - ⬜ Ambiguity rules when two opened scopes export the same name; a
     collision should be an error at the use, naming both candidates, not a
     silent winner
   - ⬜ Precedence against local declarations, imports and the prelude
-  - ⬜ Interaction with import gating: opening a realm must not import a module
+  - ⬜ Interaction with import gating: opening a scope must not import a module
     that was never asked for
 
 ### 2.4 Operators
@@ -230,7 +230,7 @@ generation. Every form the parser accepts:
 
 - ✅ Bindings: `inline fin`, `inline let`, `inline var`, `inline val`, and
   `inline <name> = expr` (re-assignment of a compile-time binding)
-- ✅ Blocks: `inline { }`, `inline scope { }`, `inline realm { }` (top level)
+- ✅ Blocks: `inline { }`, `inline scope { }`, `inline scope { }` (top level)
 - ✅ `inline if` / `else if` / `else`, at statement and top level
 - ✅ `inline for` - unrolls at statement level, at top level, and **inside an
   `impl` body**, where each iteration generates a member
@@ -240,11 +240,11 @@ generation. Every form the parser accepts:
 - ✅ `inline assert`, `inline trace`, `inline panic`
 - ✅ `inline "…"` string splice, including into a signature fragment
 - ✅ Inline field forms in a `pack` body (conditional and repeated fields)
-- ✅ `deepinline { }`, `deepinline realm { }` (top level) / `deepinline scope { }`
+- ✅ `deepinline { }`, `deepinline scope { }` (top level) / `deepinline scope { }`
   (statement), `deepinline if`, `deepinline prop`, and `= deepinline { }` as a
   function body. That is the complete list: the two dispatch tables in
   `Parser.parseTopLevelDeepInline` and `parseDeepInlineStmt` accept `{`,
-  `realm`/`scope` and `if`, and reject everything else
+  `scope`/`scope` and `if`, and reject everything else
 - ✅ `noinline` - escape back to runtime
 - ✅ Constant folding, constant propagation, dead-code elimination
 - ✅ Prefix macros: `macro @name { }` arms, invoked `@arr[1, 2, 3]`, `@vec[]`
@@ -268,7 +268,7 @@ generation. Every form the parser accepts:
   with `Unknown compile-time list`, so a library cannot generate a function per
   decorated type
 - ⬜ `withAnnot<D>` is the **only** enumeration - no "every pack", no "every
-  implementer of a spec", no filter by realm. Discovery requires a decorator
+  implementer of a spec", no filter by scope. Discovery requires a decorator
 - ⬜ No method or signature reflection: a declaration's members, parameter types
   and return type are not askable
 - ⬜ `reflect<T>(includeInherited: Bool = false)` takes a parameter nothing
@@ -418,7 +418,7 @@ generation. Every form the parser accepts:
   injection is a compile error rather than a runtime surprise
 - ⬜ Replace the string-keyed `typeName → instance` map with compiler-generated
   `DefinitionId` symbols, so missing and ambiguous definitions are diagnosed at
-  compile time and realm-scoped types stop colliding
+  compile time and scope-scoped types stop colliding
 - ⬜ One concurrent construction attempt and one successful instance; today's
   race duplicates construction
 - ⬜ Graph-owned values destroyed in reverse dependency order; `solo`/`scope`
@@ -495,7 +495,7 @@ the bindings are derived from the header rather than transcribed from it.
   skipped, and how include paths and macro definitions are configured
 - ⬜ Struct layout must agree with the platform ABI, checked by generating a C
   program that asserts every `offsetof` and `sizeof` against the Azora side
-- ⬜ Name mapping: C's flat namespace and library prefixes to Azora realms and
+- ⬜ Name mapping: C's flat namespace and library prefixes to Azora scopes and
   names, with an override file for the cases a rule cannot get right
 - ⬜ Bitfields, anonymous members, variadic functions, and `va_list`: each
   either supported or rejected with a diagnostic naming the declaration
@@ -638,10 +638,10 @@ And what has to be true after it, or the removal just loses a feature:
 
 - ✅ `Serializer<T>` is genuinely implementable from outside the standard
   library. It was **not**, when this was first written: a user program could
-  not name the pieces it needs, because a type declared in a realm keeps its
-  bare name while `Realm::Type` arrives mangled, and six separate positions
+  not name the pieces it needs, because a type declared in a scope keeps its
+  bare name while `Scope::Type` arrives mangled, and six separate positions
   never mapped it back. Each is fixed and covered by
-  `RealmQualifiedAccessTest`:
+  `ScopeQualifiedAccessTest`:
   - ✅ `?!` took a single identifier, so no function outside `std` could
     declare `?! SerializationError` - which every `Serializer<T>` member
     must. `Parser.parseErrorSetName`
@@ -649,7 +649,7 @@ And what has to be true after it, or the removal just loses a feature:
     `impl` was a bare identifier. `Parser.parseImplHeadName`
   - ✅ `SerialValue.Text(x)` did not resolve, in expression or pattern
     position. `lookupEnum` / `lookupSlot` / `lookupFail` now take the
-    realm-qualified form that `lookupStruct` already accepted, and
+    scope-qualified form that `lookupStruct` already accepted, and
     `SymbolTable.canonicalTypeName` gives the resulting type its declared
     identity
   - ✅ `SerialField(…)` construction failed: the injector recorded the
@@ -657,10 +657,10 @@ And what has to be true after it, or the removal just loses a feature:
     the declaration, so the pack was never injected
   - ✅ `ArrayList<SerialField>` was a parse error; `isGenericCallAhead`
     stopped at `::`
-  - ✅ `impl Spec for Realm::Type` named a *field*, because `Type::member` is
+  - ✅ `impl Spec for Scope::Type` named a *field*, because `Type::member` is
     the decorator's field target and the two share a spelling. A member target
     must be bodyless, so a body settles it in the parser; a bodyless one is
-    settled by `RealmQualifiedImplTargets`, once every declaration is present,
+    settled by `ScopeQualifiedImplTargets`, once every declaration is present,
     on what the names denote - `A::B` is a type when `B` is a declared type and
     `A` has no member `B`, so a field named after a type still reads as a field
 - ✅ A worked example of a third-party format, tested: `ThirdPartyFormatTest`
@@ -673,7 +673,7 @@ And what has to be true after it, or the removal just loses a feature:
   rather than the text format
 
 None of these were serializer-specific. `Compare.Less` was equally
-unspellable, so the fixes reach every realm-scoped type in the language.
+unspellable, so the fixes reach every scope-scoped type in the language.
 
 ---
 
@@ -682,7 +682,7 @@ unspellable, so the fixes reach every realm-scoped type in the language.
 - ✅ Errors that name the problem *and* the fix (the comparison and cast
   diagnostics are the standard to hold)
 - ✅ Line numbers on diagnostics
-- ✅ Realm/import hints for unknown names
+- ✅ Scope/import hints for unknown names
 - ⬜ Source spans everywhere - column, length, caret
 - ⬜ Multi-line snippets with the offending region underlined
 - ⬜ Error codes (`AZ0001`…) with a documented index
@@ -726,7 +726,7 @@ unspellable, so the fixes reach every realm-scoped type in the language.
 - ✅ Structs, arrays, methods, operators, casts
 - ✅ Scoped-arena subsystem deleted. It was left behind by the `scope alloc`
   removal and was **unreachable**: `arenaStack` was cleared, read and restored
-  but never pushed to, and `stmtUsesAllocRealm` had no branch that could return
+  but never pushed to, and `stmtUsesAllocScope` had no branch that could return
   `true`, so `programUsesArena` was permanently `false`. Around 300 lines went,
   including the `%azora.arena` type, the `@__azora_current_arena` thread-local,
   `__azora_arena_begin` / `_alloc` / `_free_all` / `_detach_current`, and the
@@ -777,7 +777,7 @@ Several constructs degrade silently; each is a potential miscompile.
   - ⬜ A tag vocabulary that is specified and checked: `@param` naming a
     parameter that exists, `@return` on something that returns, `@generic` on a
     declared type parameter
-  - ⬜ Output format decided, and whether it renders the realm/module tree
+  - ⬜ Output format decided, and whether it renders the scope/module tree
   - ⬜ `azls` hover reads the same comments, so the editor and the generated
     docs cannot disagree
 - ⬜ `azora new` - project scaffolding
@@ -975,7 +975,7 @@ Every one fixed, or deleted with a stated reason.
 - ⬜ Grammar published (EBNF) and the parser verified against it
 - ⬜ Memory model written down
 - ⬜ Loose docs folded in or archived: `LAMBDA.MD`,
-  `Realm.md`, `RealmEnum.md`, `StdDynamic.MD`, `UNSAFE.MD`
+  `Scope.md`, `RealmEnum.md`, `StdDynamic.MD`, `UNSAFE.MD`
 
 ### 10.2 Learning material
 

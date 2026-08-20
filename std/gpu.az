@@ -25,7 +25,7 @@
  */
 module std.gpu
 
-import std.container.array.*
+import std.container.array::*
 
 /** A concrete target selected by the host application. */
 @Experimental(since: "0.1")

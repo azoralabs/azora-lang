@@ -26,7 +26,7 @@
  */
 module std.algorithm.search
 
-import std.container.array.*
+import std.container.array::*
 
 /**
  *

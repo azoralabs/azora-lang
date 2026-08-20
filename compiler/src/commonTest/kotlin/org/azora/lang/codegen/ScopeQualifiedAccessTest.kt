@@ -9,8 +9,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * A type declared inside a realm keeps its bare name and is reached from
- * outside as `Realm::Type`. Functions are realm-mangled, so `println`
+ * A type declared inside a scope keeps its bare name and is reached from
+ * outside as `Scope::Type`. Functions are scope-mangled, so `println`
  * arrives as `std__println` and resolves directly; types are not, so every
  * place that reads a qualified name has to map it back to the declaration.
  *
@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
  * `Serializer<T>` outside the standard library, and each is a general hole:
  * `Compare.Less` was unspellable for the same reason.
  */
-class RealmQualifiedAccessTest {
+class ScopeQualifiedAccessTest {
 
     private fun run(source: String): String {
         val result = Compiler().compile(source)
@@ -28,7 +28,7 @@ class RealmQualifiedAccessTest {
         return IrInterpreter().interpret((result as CompilationResult.Success).ir).trim()
     }
 
-    @Test fun reflectionRequiresItsRealmOutsideTheRealm() {
+    @Test fun reflectionIsQualifiedFromOutsideItsScope() {
         val result = Compiler().compile(
             """
             import std.reflection
@@ -39,11 +39,11 @@ class RealmQualifiedAccessTest {
         assertIs<CompilationResult.Failure>(result)
         assertTrue(
             result.errors.any { "reflect" in it },
-            "Bare reflect must point to its realm-qualified spelling: ${result.errors}",
+            "Bare reflect must point to its scope-qualified spelling: ${result.errors}",
         )
     }
 
-    @Test fun enumCaseIsReachableThroughItsRealm() {
+    @Test fun enumCaseIsReachableThroughItsScope() {
         assertEquals(
             "less",
             run(
@@ -62,13 +62,13 @@ class RealmQualifiedAccessTest {
         )
     }
 
-    @Test fun variantCaseConstructsAndMatchesThroughItsRealm() {
+    @Test fun variantCaseConstructsAndMatchesThroughItsScope() {
         assertEquals(
             "3",
             run(
                 """
                 import std.io
-                realm shapes { variant enum Kind { Sized(n: Int) Empty } }
+                scope shapes { variant enum Kind { Sized(n: Int) Empty } }
                 func main() {
                     fin kind = shapes::Kind.Sized(3)
                     when kind {
@@ -81,7 +81,7 @@ class RealmQualifiedAccessTest {
         )
     }
 
-    @Test fun realmScopedPackIsConstructedThroughItsRealm() {
+    @Test fun aScopedPackIsConstructedThroughItsScope() {
         assertEquals(
             "\"x\"",
             run(
@@ -116,7 +116,7 @@ class RealmQualifiedAccessTest {
 
     /**
      * `?!` used to take a single identifier, so a function could not declare
-     * that it fails with an error set owned by another realm - which every
+     * that it fails with an error set owned by another scope - which every
      * `impl Serializer<T>` member has to do.
      */
     @Test fun failableTypeAcceptsAQualifiedErrorSet() {
@@ -136,18 +136,18 @@ class RealmQualifiedAccessTest {
     }
 
     /**
-     * `impl Spec for Realm::Type` with a body. `Type::member` in the same
+     * `impl Spec for Scope::Type` with a body. `Type::member` in the same
      * position is a decorator's field target, and the two share a spelling; a
      * member target is required to be bodyless, so the body settles it.
      */
-    @Test fun implTargetIsReachableThroughItsRealmWithABody() {
+    @Test fun implTargetIsReachableThroughItsScopeWithABody() {
         assertEquals(
             "16",
             run(
                 """
                 import std.io
                 spec Area { func area[self: Self&](): Int }
-                realm shapes { pack Square { fin side: Int = 0 } }
+                scope shapes { pack Square { fin side: Int = 0 } }
                 impl Area for shapes::Square {
                     func area[self: Self&](): Int { return self.side * self.side }
                 }
@@ -160,16 +160,16 @@ class RealmQualifiedAccessTest {
     /**
      * The same target with no body, where nothing structural settles it. It is
      * decided by what the names denote: `Square` is a declared type and
-     * `shapes` has no member by that name, so the qualifier is a realm.
+     * `shapes` has no member by that name, so the qualifier is a scope.
      */
-    @Test fun bodylessDeriveTargetIsReachableThroughItsRealm() {
+    @Test fun bodylessDeriveTargetIsReachableThroughItsScope() {
         assertEquals(
             "eq",
             run(
                 """
                 import std.io
                 import std.traits
-                realm shapes { pack Square { fin side: Int = 0 } }
+                scope shapes { pack Square { fin side: Int = 0 } }
                 derive [Equal] for shapes::Square
                 func main() {
                     println(if shapes::Square(2) == shapes::Square(2) { "eq" } else { "ne" })
@@ -200,7 +200,7 @@ class RealmQualifiedAccessTest {
         )
     }
 
-    /** `Type::*` is a wildcard over fields and never a realm-qualified type. */
+    /** `Type::*` is a wildcard over fields and never a scope-qualified type. */
     @Test fun wildcardFieldTargetIsStillAWildcard() {
         assertEquals(
             "{}",
@@ -223,7 +223,7 @@ class RealmQualifiedAccessTest {
 
     /**
      * A field whose name collides with a declared type still reads as a field:
-     * the owner declares a member by that name, which the realm reading cannot
+     * the owner declares a member by that name, which the scope reading cannot
      * claim.
      */
     @Test fun aFieldNamedLikeATypeIsStillAFieldTarget() {
@@ -247,14 +247,14 @@ class RealmQualifiedAccessTest {
         )
     }
 
-    /** `impl Spec<T> for LocalType` - the spec is named through its realm. */
-    @Test fun specIsImplementedThroughItsRealm() {
+    /** `impl Spec<T> for LocalType` - the spec is named through its scope. */
+    @Test fun specIsImplementedThroughItsScope() {
         assertEquals(
             "ok",
             run(
                 """
                 import std.io
-                realm caps { spec Named { func label[self: Self&](): String } }
+                scope caps { spec Named { func label[self: Self&](): String } }
                 pack Tag
                 impl caps::Named for Tag {
                     func label[self: Self&](): String { return "ok" }

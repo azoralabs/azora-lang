@@ -21,7 +21,7 @@ class InfixFunctionsTest {
                 var v: Int
             }
             impl Calc {
-                func plus(other: Calc): Calc {
+                func plus[self: Self&](other: Calc): Calc {
                     return Calc(self.v + other.v)
                 }
             }
@@ -57,10 +57,10 @@ class InfixFunctionsTest {
                 var v: Int
             }
             impl Calc {
-                func plus(other: Calc): Calc {
+                func plus[self: Self&](other: Calc): Calc {
                     return Calc(self.v + other.v)
                 }
-                func times(other: Calc): Calc {
+                func times[self: Self&](other: Calc): Calc {
                     return Calc(self.v * other.v)
                 }
             }
@@ -82,7 +82,7 @@ class InfixFunctionsTest {
                 var v: Int
             }
             impl Calc {
-                func plus(other: Calc): Calc {
+                func plus[self: Self&](other: Calc): Calc {
                     return Calc(self.v + other.v)
                 }
             }
@@ -105,7 +105,7 @@ class InfixFunctionsTest {
                 var v: Int
             }
             impl Box {
-                func plus(other: Box): Box {
+                func plus[self: Self&](other: Box): Box {
                     return Box(self.v + other.v)
                 }
             }

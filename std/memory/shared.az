@@ -71,18 +71,18 @@ impl Shared<T> {
 
     /** Replaces the pointed-to value without changing ownership. */
     @Experimental(since: "0.1")
-    func set(value: T) { self.raw[0] = value }
+    func set[self: Self!](value: T) { self.raw[0] = value }
 
     /** Records a new shared owner. Returns the new reference count. */
     @Experimental(since: "0.1")
-    func retain(): Int {
+    func retain[self: Self!](): Int {
         self.count = self.count + 1
         return self.count
     }
 
     /** Gives up one owner; reclaims the allocation when the last one leaves. */
     @Experimental(since: "0.1")
-    func release(): Int {
+    func release[self: Self!](): Int {
         self.count = self.count - 1
         if self.count <= 0 {
             purge self.raw

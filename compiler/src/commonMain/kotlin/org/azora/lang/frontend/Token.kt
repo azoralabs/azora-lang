@@ -86,7 +86,7 @@ enum class TokenType {
     IDENTIFIER,
 
     // Keywords
-    VAR, FIN, LET, VAL, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, REALM, SCOPE,
+    VAR, FIN, LET, VAL, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, SCOPE,
     TEST, ASSERT, TRACE, PANIC, MACRO,
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
     // `pack` structs and `enum` variants. (`union` is contextual - see

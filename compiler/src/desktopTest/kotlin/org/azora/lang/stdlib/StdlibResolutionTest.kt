@@ -59,7 +59,7 @@ class StdlibResolutionTest {
     }
 
     @Test fun readsTheTreeFromDiskRatherThanTheBundle() {
-        val root = writeTree(moduleBody = "realm std {\n    func vendoredMarker(): Int { return 7 }\n}\n")
+        val root = writeTree(moduleBody = "scope std {\n    func vendoredMarker(): Int { return 7 }\n}\n")
         AzStdlib.overrideRoot = root.path
 
         val tree = AzStdlib.tree()
@@ -96,10 +96,10 @@ class StdlibResolutionTest {
     }
 
     @Test fun switchingRootsReparsesInsteadOfServingTheOldTree() {
-        AzStdlib.overrideRoot = writeTree(moduleBody = "realm std {\n    func first(): Int { return 1 }\n}\n").path
+        AzStdlib.overrideRoot = writeTree(moduleBody = "scope std {\n    func first(): Int { return 1 }\n}\n").path
         assertTrue(AzStdlib.sources.single().contains("first"))
 
-        AzStdlib.overrideRoot = writeTree(moduleBody = "realm std {\n    func second(): Int { return 2 }\n}\n").path
+        AzStdlib.overrideRoot = writeTree(moduleBody = "scope std {\n    func second(): Int { return 2 }\n}\n").path
         val sources = AzStdlib.sources
         assertTrue(sources.single().contains("second"), "a new root must replace the parsed tree")
         assertTrue(sources.none { it.contains("first") }, "the previous tree must not survive")
@@ -115,7 +115,7 @@ class StdlibResolutionTest {
 
     @Test fun compileTimeListsAreRebuiltFromTheResolvedTree() {
         AzStdlib.overrideRoot = writeTree(
-            moduleBody = "realm std {\n    typealias Pair = [Int, Long]\n}\n",
+            moduleBody = "scope std {\n    typealias Pair = [Int, Long]\n}\n",
         ).path
         AzStdlib.loadPrograms()
         assertEquals(listOf("Int", "Long"), AzStdlib.comptimeLists["Pair"])

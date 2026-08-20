@@ -15,7 +15,7 @@ item: collection members the compiler still supplies without a declaration.
 
 ### 1.1 `@arr[...]` -> `@arr[...]` (3)
 
-A value macro is invoked through the realm that declares it. `@arr` takes
+A value macro is invoked through the scope that declares it. `@arr` takes
 `[...$items]` only - a `key: value` entry belongs to `@map`.
 
 ```
@@ -24,7 +24,7 @@ compiler/src/desktopTest/kotlin/org/azora/lang/codegen/LlvmAggregateExecTest.kt:
 compiler/src/desktopTest/kotlin/org/azora/lang/codegen/LlvmAggregateExecTest.kt:569  realArraySumViaLoop
 ```
 
-### 1.2 Realm qualification (25)
+### 1.2 Scope qualification (25)
 
 `Any`, `Int`, `String`, `Long`, `Unit`, `Double`, `@Deprecated`, `floor`,
 `reverse`, `stringLength`. Author-written, so correctly reported.
@@ -61,7 +61,7 @@ compiler/src/desktopTest/kotlin/org/azora/lang/codegen/WasmCodegenExecTest.kt:43
 
 ## 2. Golden output on the old mangling (17)
 
-A canonical symbol is `__<realm path>_<local>`: `realm x::y { func z }` is
+A canonical symbol is `__<scope path>_<local>`: `scope x::y { func z }` is
 `__x_y_z`, `println` is `__std_println`.
 
 ```
@@ -125,7 +125,7 @@ compiler/src/commonTest/kotlin/org/azora/lang/codegen/Tier1PolishTest.kt:420    
 compiler/src/commonTest/kotlin/org/azora/lang/codegen/Tier4ConcurrencyTest.kt:94     channelWithProducerTask
 compiler/src/commonTest/kotlin/org/azora/lang/codegen/TupleTest.kt:12                tupleOfAndTupleTypeRemainSupported
 compiler/src/commonTest/kotlin/org/azora/lang/codegen/TupleTest.kt:50                tupleTypeSyntaxIsRejectedWithMigration
-compiler/src/commonTest/kotlin/org/azora/lang/codegen/TupleVariadicTest.kt:279       tupleTypeRequiresItsDeclaredRealm
+compiler/src/commonTest/kotlin/org/azora/lang/codegen/TupleVariadicTest.kt:279       tupleTypeRequiresItsDeclaredScope
 compiler/src/commonTest/kotlin/org/azora/lang/codegen/TypeFunctionTest.kt:113        fullyQualifiedStdlibPromoteDoesNotRequireImport
 compiler/src/commonTest/kotlin/org/azora/lang/codegen/TypeFunctionTest.kt:120        fixedTypePropertyResolvesReturnType
 compiler/src/commonTest/kotlin/org/azora/lang/codegen/TypeFunctionTest.kt:132        exactOverloadWinsBeforeVariadicOverload

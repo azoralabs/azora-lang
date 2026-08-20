@@ -13,7 +13,7 @@ class TupleTest {
         val result = Compiler().compile("""
             import std.io
             import std.container.tuple
-            import std.*
+            import std::*
 
             func swap(value: Tuple<Int, String>): Tuple<String, Int> {
                 return tupleOf(value.1, value.0)
@@ -35,7 +35,7 @@ class TupleTest {
         // `tupleOf(…)` or the `tup@` macro. Parentheses only group.
         val result = Compiler().compile("""
             import std.io
-            import std.container.*
+            import std.container::*
 
             func main() {
                 fin pair = (1, "hello")

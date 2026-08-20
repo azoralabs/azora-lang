@@ -59,7 +59,7 @@ class ImportSpecTest {
     }
 
     @Test fun aWildcardIsAnAllSelector() {
-        val spec = specs("import std.io.*").single()
+        val spec = specs("import std.io::*").single()
         assertEquals("std.io", spec.path)
         assertEquals(ImportSpec.Selector.All, spec.selector)
         assertEquals(listOf("std.io" to "*"), spec.flatten())
@@ -92,7 +92,7 @@ class ImportSpecTest {
     @Test fun oneStatementMayCarrySeveralClauses() {
         assertEquals(
             listOf("std.io" to "*", "std.math" to null),
-            imports("import std.io.*, std.math"),
+            imports("import std.io::*, std.math"),
         )
     }
 
@@ -107,8 +107,8 @@ class ImportSpecTest {
             ),
             imports(
                 """
-                import std.io.*
-                import std.math.abs
+                import std.io::*
+                import std.math::abs
                 import std.container.{list, map}
                 import std
                 """.trimIndent(),
@@ -123,8 +123,8 @@ class ImportSpecTest {
         // unfiltered and unaliased, and nothing downstream reads them.
         val all = specs(
             """
-            import std.io.*
-            import std.math.abs
+            import std.io::*
+            import std.math::abs
             import std.container.{list, map}
             """.trimIndent(),
         )
@@ -142,7 +142,7 @@ class ImportSpecTest {
     }
 
     @Test fun aStatementKeepsItsExportFlagAndCondition() {
-        val stmt = Parser(Lexer("import std.io.*").tokenize()).parse().items
+        val stmt = Parser(Lexer("import std.io::*").tokenize()).parse().items
             .filterIsInstance<TopLevel.UseImport>().single()
         assertEquals(false, stmt.exported)
         assertNull(stmt.condition)

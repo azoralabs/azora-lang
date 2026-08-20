@@ -384,8 +384,8 @@ class TypeResolver(private val table: SymbolTable) {
         reactiveContext = func.isReactive
         asyncContext = func.isTask
         val savedTestContext = testContext
-        // A test-realm declaration may use its siblings: it is already test-only.
-        if (program?.testRealmMembers?.containsKey(func.name) == true) testContext = true
+        // A test-scope declaration may use its siblings: it is already test-only.
+        if (program?.testScopeMembers?.containsKey(func.name) == true) testContext = true
         val savedUndeclaredReturn = undeclaredReturnOf
         val savedOrigins = declaredOrigins
         val savedMoves = movedBindings.toMap()
@@ -628,8 +628,8 @@ class TypeResolver(private val table: SymbolTable) {
                 impl.methods.any { it.name == name }
         }
         val member = declaring?.methods?.first { it.name == name }
-            // A realm's members are lifted out of their impl, so the meta-type's
-            // are reached the same way any other realm member is.
+            // A scope's members are lifted out of their impl, so the meta-type's
+            // are reached the same way any other scope member is.
             ?: program?.functions?.firstOrNull {
                 it.memberCallStyle == MemberCallStyle.PROPERTY &&
                     (it.name == name || it.name.endsWith("__$name"))
@@ -652,15 +652,15 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * True while resolving something a test-realm declaration may be used from:
-     * a `test` block, or another declaration that is itself in a test realm.
+     * True while resolving something a test-scope declaration may be used from:
+     * a `test` block, or another declaration that is itself in a test scope.
      */
     private var testContext = false
 
     /**
-     * A `realm test` member is ordinary code that only tests may refer to.
+     * A `scope test` member is ordinary code that only tests may refer to.
      *
-     * Enforcing it at the call site is what makes the realm a visibility rule
+     * Enforcing it at the call site is what makes the scope a visibility rule
      * rather than a naming convention - the fixture is emitted like any other
      * declaration, and cannot be reached by the program it exists to test.
      */
@@ -743,14 +743,14 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun requireTestCaller(name: String, line: Int): Boolean {
         if (testContext) return true
-        val visibility = program?.testRealmMembers?.get(name) ?: return true
+        val visibility = program?.testScopeMembers?.get(name) ?: return true
         val reach = when (visibility.reach) {
             Visibility.Reach.CONFINE -> "this file"
             Visibility.Reach.PROTECT -> "this folder"
             Visibility.Reach.PUBLIC -> "any file"
         }
         errors.add(
-            "line $line: '${name.substringAfterLast("__")}' is declared in a 'realm test' " +
+            "line $line: '${name.substringAfterLast("__")}' is declared in a 'test scope' " +
                 "and can only be used from a test in $reach",
         )
         return false
@@ -947,7 +947,7 @@ class TypeResolver(private val table: SymbolTable) {
         table.defineInferredMember(expr.line, expr.column, owner)
         expr.ctorArgs?.let { args ->
             // The name a type is registered under, which is not always the one it
-            // is written by: a type declared in a realm is keyed by its qualified
+            // is written by: a type declared in a scope is keyed by its qualified
             // name. Written source resolves through the import that named it, and
             // `.()` has no written name to resolve - so the type the position
             // expects is matched to the declaration it stands for here.
@@ -1316,35 +1316,35 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * Resolves a list of statements, sharing one scope across every realm block
+     * Resolves a list of statements, sharing one scope across every scope block
      * in the body.
      *
-     * Sibling realms see each other's bindings; the ordinary code between them
-     * does not. That is what makes a realm a place to group related work rather
+     * Sibling scopes see each other's bindings; the ordinary code between them
+     * does not. That is what makes a scope a place to group related work rather
      * than just an extra pair of braces.
      */
     private fun resolveBody(stmts: List<Stmt>, returnType: IrType) {
-        val hasRealms = stmts.any { it is Stmt.Scope && it.shared }
+        val hasScopes = stmts.any { it is Stmt.Scope && it.shared }
 
-        if (!hasRealms) {
+        if (!hasScopes) {
             for (stmt in stmts) resolveStmt(stmt, returnType)
             return
         }
 
-        // Bindings that persist from one realm block to the next.
-        val realmScope = mutableMapOf<String, VariableSymbol>()
+        // Bindings that persist from one scope block to the next.
+        val scopeScope = mutableMapOf<String, VariableSymbol>()
 
         for (stmt in stmts) {
             if (stmt is Stmt.Scope && stmt.shared) {
                 table.pushScope()
-                for ((_, sym) in realmScope) table.defineVariable(sym)
-                // `realm unsafe { }` is still the boundary it was; sharing the
+                for ((_, sym) in scopeScope) table.defineVariable(sym)
+                // `scope unsafe { }` is still the boundary it was; sharing the
                 // scope must not quietly drop the opt-in.
                 val savedUnsafe = unsafeContext
                 if (stmt.unsafe) unsafeContext = true
                 for (s in stmt.body) resolveStmt(s, returnType)
                 unsafeContext = savedUnsafe
-                table.exportCurrentScope(realmScope)
+                table.exportCurrentScope(scopeScope)
                 table.popScope()
             } else {
                 resolveStmt(stmt, returnType)
@@ -2315,8 +2315,8 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     // Inside `with value { … }`, a bare call may be an extension method
                     // on one of the contextual values: `with c { bump() }` == `c.bump()`.
-                    // A realm-qualified call reaches its contextual receiver too:
-                    // `yield(1)` names the member `yield`, and the realm only
+                    // A scope-qualified call reaches its contextual receiver too:
+                    // `yield(1)` names the member `yield`, and the scope only
                     // says where it was declared, not what it is called on.
                     val contextualName = expr.callee.substringAfterLast("__")
                     for ((ctxExpr, ctxType) in contextualValues.asReversed().flatMap { it.values }) {
@@ -4527,7 +4527,7 @@ class TypeResolver(private val table: SymbolTable) {
         table.lookupStruct(owner)?.field(name)?.let { return it.type }
         // A constant declared on the *type* - `impl Array:: { bridge fin size }` -
         // answers for every value of it, so a value reaches it too. The member is
-        // realm-mangled with the type that owns it, so the realm is asked for.
+        // scope-mangled with the type that owns it, so the scope is asked for.
         table.lookupTypeStatic(owner, name)?.let { return it.returnType }
         val mangled = table.lookupMethod(owner, name) ?: return null
         return table.lookupFunction(mangled)?.returnType

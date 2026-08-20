@@ -55,13 +55,13 @@ checked as a unit, and it costs the per-test reporting.
 - ⬜ Whether a failing aggregate should say *which* child failed is undecided.
   It currently reports the first assertion message and nothing about where
 
-### 1.2 `realm test` - declarations only tests may use
+### 1.2 `test scope` - declarations only tests may use
 
-A fixture is code the tests need and the program must not reach. `realm test`
+A fixture is code the tests need and the program must not reach. `test scope`
 is the visibility rule that says so:
 
 ```azora
-realm test {
+test scope {
     func fixture(): Int { return 7 }
 }
 
@@ -71,7 +71,7 @@ test "the fixture is reachable from a test" {
 ```
 
 Whatever is declared inside is ordinary code, emitted like any other
-declaration - the realm changes *who may refer to it*, not what it compiles to.
+declaration - the scope changes *who may refer to it*, not what it compiles to.
 It is not a namespace either: the names stay unmangled, so a test calls
 `fixture()` and not `test__fixture()`.
 
@@ -79,33 +79,33 @@ Reaching one from the program is an error:
 
 ```
 func main() { fin unused = fixture() }
-// 'fixture' is declared in a 'realm test' and can only be used from a test in this file
+// 'fixture' is declared in a 'test scope' and can only be used from a test in this file
 ```
 
-A test-realm member may use its siblings, since it is already test-only.
+A test-scope member may use its siblings, since it is already test-only.
 
 #### Reach
 
 The ordinary `expose` / `protect` / `confine` ladder bounds which tests can see
-it, and a bare `realm test` is file-local rather than public - the opposite
+it, and a bare `test scope` is file-local rather than public - the opposite
 default to an ordinary declaration, because a fixture is local until it says
 otherwise:
 
 | form                  | visible to               |
 |-----------------------|--------------------------|
-| `realm test`          | tests in this file       |
-| `confine realm test`  | tests in this file       |
-| `protect realm test`  | tests in this folder     |
-| `expose realm test`   | tests in any file        |
+| `test scope`          | tests in this file       |
+| `confine test scope`  | tests in this file       |
+| `protect test scope`  | tests in this folder     |
+| `expose test scope`   | tests in any file        |
 
-A `realm test` may not nest inside another - the inner one would say nothing the
+A `test scope` may not nest inside another - the inner one would say nothing the
 outer has not already said.
 
 - ⬜ **Reach is recorded, not yet enforced across files.** The rule that only a
   test may use these declarations is enforced; *which* file's tests is carried
   on the declaration and waits on the same module-system check that `protect`
   waits on (`MODULES_REALMS_DIP.MD` §5.1)
-- ⬜ **Only calls are checked.** A test realm's packs and enums are recorded, but
+- ⬜ **Only calls are checked.** A test scope's packs and enums are recorded, but
   referring to one as a *type* from program code is not yet refused
 
 ---

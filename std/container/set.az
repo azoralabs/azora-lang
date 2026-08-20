@@ -38,7 +38,7 @@
  */
 module std.container.set
 
-import std.serializer.Serializable
+import std.serializer::Serializable
 
 /**
  * Read-only behavior shared by every set implementation.

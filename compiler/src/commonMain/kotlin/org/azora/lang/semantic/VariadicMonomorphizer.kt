@@ -137,7 +137,7 @@ internal object VariadicMonomorphizer {
             methodReturns,
             implTemplates,
             typeMacroRules,
-            program.realmTypeNamespaces,
+            program.scopeTypeNamespaces,
             program.items.filterIsInstance<TopLevel.Pack>().associate { it.name to it.fields },
             program.items.filterIsInstance<TopLevel.Enum>().associate { it.name to it.variants },
         )
@@ -164,7 +164,7 @@ internal object VariadicMonomorphizer {
         val finalItems = rewritten + ctx.packs.values + ctx.funcs.values + impls + statics
         return program.copy(
             items = finalItems,
-            realmTypeNamespaces = program.realmTypeNamespaces + ctx.generatedPackNamespaces,
+            scopeTypeNamespaces = program.scopeTypeNamespaces + ctx.generatedPackNamespaces,
         )
     }
 

@@ -33,7 +33,7 @@
  */
 module std.allocator
 
-import std.format.Display
+import std.format::Display
 
 // -----------------------------------------------------------------------
 // Error Set

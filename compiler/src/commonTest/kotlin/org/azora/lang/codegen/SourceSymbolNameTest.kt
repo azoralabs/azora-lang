@@ -46,7 +46,7 @@ class SourceSymbolNameTest {
 
     @Test fun leadingUnderscoreIsRejectedWherePrivacyDoesNotApply() {
         assertNameFailure("module _private\nfunc main() {}", "cannot be private")
-        assertNameFailure("realm _private { func value() {} }\nfunc main() {}", "cannot be private")
+        assertNameFailure("scope _private { func value() {} }\nfunc main() {}", "cannot be private")
         assertNameFailure("func read(_value: Int) {}", "cannot be private")
         assertNameFailure("func main() { fin _value = 1 }", "cannot be private")
         assertNameFailure("func main<T_value>() {}", "'_' is allowed only once")
@@ -79,9 +79,9 @@ class SourceSymbolNameTest {
         assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
     }
 
-    @Test fun realmManglingDoesNotLookLikeAUserUnderscore() {
+    @Test fun scopeManglingDoesNotLookLikeAUserUnderscore() {
         val result = compile("""
-            realm tools {
+            scope tools {
                 func answer(): Int { return 42 }
             }
 
@@ -105,7 +105,7 @@ class SourceSymbolNameTest {
 
     @Test fun compilerGeneratedDoubleUnderscoreNamesStillReachIr() {
         val result = compile("""
-            realm tools {
+            scope tools {
                 func generated(): Int { return 1 }
             }
 

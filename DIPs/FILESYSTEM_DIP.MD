@@ -64,8 +64,8 @@ bin.isAbsolute      // true
 one separator however many the operands carry - which is the bug that string
 concatenation reintroduces in every program that does it by hand.
 
-> `oper /` does not work across a realm boundary today (§10.1). `Path` lives in
-> `realm std` and its callers do not, so this spelling is blocked until that is
+> `oper /` does not work across a scope boundary today (§10.1). `Path` lives in
+> `scope std` and its callers do not, so this spelling is blocked until that is
 > fixed. `join` (§2.1) is the same operation under a name that does work, and is
 > what the first implementation should ship.
 
@@ -263,13 +263,13 @@ predicate always has an answer.
 
 Measured against the compiler as it stands, not predicted.
 
-### 10.1 An operator overload does not dispatch across a realm
+### 10.1 An operator overload does not dispatch across a scope
 
-A pack declaring `oper +` inside a named realm gets that operator when the call
-site is **inside** the same realm, and does not when it is outside:
+A pack declaring `oper +` inside a named scope gets that operator when the call
+site is **inside** the same scope, and does not when it is outside:
 
 ```azora
-realm demo {
+scope demo {
     pack Money { var cents: Int = 0 }
     impl Money {
         oper + [self: Self&](rhs: Self&): Self { return Money(self.cents + rhs.cents) }
@@ -289,16 +289,16 @@ The last line fails at run time:
 Cannot add {__type=__demo_Money, cents=500} and {__type=__demo_Money, cents=250}
 ```
 
-The same pack declared **outside** any realm works from anywhere. So the fault is
-in resolving a realm-qualified owner to its declared operator, not in operator
+The same pack declared **outside** any scope works from anywhere. So the fault is
+in resolving a scope-qualified owner to its declared operator, not in operator
 overloading - `IrGenerator` lowers a matched overload to a direct call, and this
 one is not matched, so the expression survives to the backend as arithmetic.
 
 This is not a filesystem bug and its blast radius is wider than this module:
-every operator the standard library declares on a pack inside `realm std` is
+every operator the standard library declares on a pack inside `scope std` is
 reachable only from inside `std`.
 
-- ⬜ Fix realm-qualified operator resolution, then §2's `/` works as written
+- ⬜ Fix scope-qualified operator resolution, then §2's `/` works as written
 
 ---
 
@@ -322,7 +322,7 @@ reachable only from inside `std`.
 In order, each step ending somewhere the tree still builds and the suite still
 passes:
 
-0. **Fix realm-qualified operator resolution** (§10.1), or accept `join` alone
+0. **Fix scope-qualified operator resolution** (§10.1), or accept `join` alone
    for 0.1. Everything below works either way; only the `/` spelling depends on
    it, and shipping `join` first keeps the two decisions separate
 ✅ **`Path` and the path algebra.** Pure, testable without a disk, and no
@@ -350,6 +350,6 @@ Steps 1-2 are pure Azora. Step 3 onward needs Kotlin in the compiler.
 
 - `ERROR_HANDLING_DIP.MD` - `?!`, `try`, `catch`, and why sentinels are refused
 - `BRIDGE_DIP.MD` - what a `bridge func` is and what each backend owes it
-- `MODULES_REALMS_DIP.MD` - `module std.filesystem`, `realm std`
+- `MODULES_REALMS_DIP.MD` - `module std.filesystem`, `scope std`
 - `VERSION_0_1_ROADMAP.MD` §4.4 - the gap this closes, and `std.io` next to it
 - `TESTING_TRACING_DIP.MD` - how the steps above get their tests

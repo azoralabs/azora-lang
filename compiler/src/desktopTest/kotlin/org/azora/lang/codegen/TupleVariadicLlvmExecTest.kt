@@ -14,7 +14,7 @@ class TupleVariadicLlvmExecTest {
         if (!LlvmExec.available) return
         assertEquals("1\n2", LlvmExec.run("""
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin x = tupleOf(1, 2)
                 println(x.0)
@@ -27,7 +27,7 @@ class TupleVariadicLlvmExecTest {
         if (!LlvmExec.available) return
         assertEquals("1\n2\n3", LlvmExec.run("""
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin t = tupleOf(1, 2, 3)
                 println(t.0)
@@ -41,7 +41,7 @@ class TupleVariadicLlvmExecTest {
         if (!LlvmExec.available) return
         val ir = LlvmExec.compile("""
             import std.io
-            import std.container.*
+            import std.container::*
             func main() {
                 fin x = tupleOf(1, 2)
                 println(x.0)

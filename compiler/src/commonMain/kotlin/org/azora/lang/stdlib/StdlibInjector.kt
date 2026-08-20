@@ -20,7 +20,7 @@ import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
-import org.azora.lang.frontend.IntraRealmRewriter
+import org.azora.lang.frontend.ScopeAccessRewriter
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.ModuleVisibility
 import org.azora.lang.frontend.ModuleQualifiedSymbol
@@ -41,12 +41,12 @@ import org.azora.lang.putIfAbsentCompat
  * Bundled-library symbols are **import-gated**: a file sees a module's names
  * only after importing it. With the bundled stdlib that looks like:
  *
- * - `import std.math` - access to that module while preserving its realm path (`math::abs(x)`),
+ * - `import std.math` - access to that module while preserving its scope path (`math::abs(x)`),
  * - `import std.*` / `import std.{math, concurrency}` - wildcard/grouped module imports,
  * - `import std.math.abs` - selective import of listed names,
  * - `import std.*` - every module below that namespace,
- * - importing a module never creates bare aliases for declarations inside a realm,
- * - compile-time type functions may instead use a complete module-plus-realm path,
+ * - importing a module never creates bare aliases for declarations inside a scope,
+ * - compile-time type functions may instead use a complete module-plus-scope path,
  *   such as `std.traits.promote!(Int, Double)`.
  *
  * The module root is derived from the loaded library modules; the frontend
@@ -68,7 +68,7 @@ class StdlibInjector private constructor(
     private val programs: List<Program> =
         org.azora.lang.frontend.MacroExpander.expandDeclarationNames(rawPrograms)
 
-    private data class RealmTypeExport(
+    private data class ScopeTypeExport(
         val shortName: String,
         val qualifier: String,
         val module: String,
@@ -101,10 +101,10 @@ class StdlibInjector private constructor(
             AzStdlib.loadPrograms()
             val typeListEnv = AzStdlib.comptimeLists.toMutableMap()
             val enumEnv = AzStdlib.declaredEnums.toMutableMap()
-            val listRealms = AzStdlib.comptimeListRealms.toMutableMap()
+            val listScopes = AzStdlib.comptimeListScopes.toMutableMap()
             val additionalPrograms = additionalSources.map { (path, source) ->
                 val program = try {
-                    Parser(Lexer(source).tokenize(), typeListEnv, enumEnv, typeListRealm = listRealms).parse()
+                    Parser(Lexer(source).tokenize(), typeListEnv, enumEnv, typeListScope = listScopes).parse()
                 } catch (error: Exception) {
                     throw IllegalArgumentException(
                         "Failed to parse library source '$path': ${error.message ?: error.toString()}",
@@ -213,9 +213,9 @@ class StdlibInjector private constructor(
         /** name → module that provides it, for import hints. */
         val moduleOfName = LinkedHashMap<String, String>()
         /** Source-level qualified type path → declaration and import metadata. */
-        val realmTypesByQualifiedName = LinkedHashMap<String, RealmTypeExport>()
-        /** Bare type name → every realm-scoped declaration with that short name. */
-        val realmTypesByShortName = LinkedHashMap<String, MutableList<RealmTypeExport>>()
+        val scopeTypesByQualifiedName = LinkedHashMap<String, ScopeTypeExport>()
+        /** Bare type name → every scope-scoped declaration with that short name. */
+        val scopeTypesByShortName = LinkedHashMap<String, MutableList<ScopeTypeExport>>()
         /** module → its declared visibility, for import gating. */
         val moduleVisibility = LinkedHashMap<String, ModuleVisibility>()
         /** Items from a library's conventional `<root>.core` module. */
@@ -224,7 +224,7 @@ class StdlibInjector private constructor(
          * Top-level items that must be injected into every unit unconditionally,
          * gathered from `exposed mod …` declarations (and the conventional
          * `<root>.core` module). Kept as raw items - in particular a `deepinline
-         * realm { … }` block is injected whole so CTCE flattens it downstream,
+         * scope { … }` block is injected whole so CTCE flattens it downstream,
          * exactly as it would inside its own module.
          */
         val alwaysInjectedItems = mutableListOf<TopLevel>()
@@ -251,7 +251,7 @@ class StdlibInjector private constructor(
     /** The bundled-library module providing [name] ("std.math"), or null - used for error hints. */
     fun moduleOf(name: String): String? = index.moduleOfName[name]
 
-    /** Returns the source-level qualified access path for an imported realm member. */
+    /** Returns the source-level qualified access path for an imported scope member. */
     fun qualifiedAccessOf(name: String, program: Program): String? {
         val item = index.items[name] ?: return null
         val visible = LinkedHashMap<String, TopLevel>().apply {
@@ -405,7 +405,7 @@ class StdlibInjector private constructor(
     /**
      * Validates source-level type qualification independently from declaration
      * injection. Importing a module makes a type visible, but a type declared in
-     * a named realm must still be written as `Realm::Type` outside that realm.
+     * a named scope must still be written as `Scope::Type` outside that scope.
      */
     fun validateTypeAccess(program: Program): List<String> {
         val visibleDeclarations = buildSet {
@@ -413,75 +413,75 @@ class StdlibInjector private constructor(
             addAll(importedItems(program).values)
         }
         val localGlobalTypes = program.items.mapNotNull(::typeDeclarationName)
-            .filterTo(mutableSetOf()) { it !in program.realmTypeNamespaces }
+            .filterTo(mutableSetOf()) { it !in program.scopeTypeNamespaces }
         val errors = linkedSetOf<String>()
 
         class Validator {
-            fun realmSymbol(
+            fun scopeSymbol(
                 name: String,
                 qualifier: String?,
                 line: Int,
-                currentRealm: String?,
+                currentScope: String?,
                 kind: String,
                 sigil: String = "",
             ) {
-                fun sourceName(realm: String?, symbol: String): String =
-                    sigil + (realm?.let { "$it::" } ?: "") + symbol
-                val localRealm = program.realmTypeNamespaces[name]
-                val exports = index.realmTypesByShortName[name].orEmpty()
+                fun sourceName(scope: String?, symbol: String): String =
+                    sigil + (scope?.let { "$it::" } ?: "") + symbol
+                val localScope = program.scopeTypeNamespaces[name]
+                val exports = index.scopeTypesByShortName[name].orEmpty()
                 val visibleExports = exports.filter { it.declaration in visibleDeclarations }
-                if (localRealm != null) {
+                if (localScope != null) {
                     when {
-                        qualifier == null && currentRealm != localRealm -> errors.add(
-                            "line $line: undefined $kind '${sourceName(null, name)}'; '$name' is part of realm " +
-                                "'$localRealm', use '${sourceName(localRealm, name)}' instead",
+                        qualifier == null && currentScope != localScope -> errors.add(
+                            "line $line: undefined $kind '${sourceName(null, name)}'; '$name' is part of scope " +
+                                "'$localScope', use '${sourceName(localScope, name)}' instead",
                         )
-                        qualifier != null && qualifier != localRealm -> errors.add(
-                            "line $line: undefined $kind '${sourceName(qualifier, name)}'; '$name' is part of realm '$localRealm'",
+                        qualifier != null && qualifier != localScope -> errors.add(
+                            "line $line: undefined $kind '${sourceName(qualifier, name)}'; '$name' is part of scope '$localScope'",
                         )
                     }
                 } else if (qualifier == null) {
                     visibleExports.firstOrNull()?.let { export ->
                         errors.add(
-                            "line $line: undefined $kind '${sourceName(null, name)}'; '$name' is part of realm " +
+                            "line $line: undefined $kind '${sourceName(null, name)}'; '$name' is part of scope " +
                                 "'${export.qualifier}', use '${sourceName(export.qualifier, name)}' instead",
                         )
                     }
                 } else {
                     val qualified = "$qualifier::$name"
-                    val export = index.realmTypesByQualifiedName[qualified]
+                    val export = index.scopeTypesByQualifiedName[qualified]
                     when {
                         export != null && export.declaration !in visibleDeclarations -> errors.add(
                             "line $line: undefined $kind '${sourceName(qualifier, name)}' - '$name' is provided by " +
                                 "'${export.module}': add 'import ${export.module}'",
                         )
                         export == null && visibleExports.isNotEmpty() -> errors.add(
-                            "line $line: undefined $kind '${sourceName(qualifier, name)}'; '$name' is part of realm " +
+                            "line $line: undefined $kind '${sourceName(qualifier, name)}'; '$name' is part of scope " +
                                 "'${visibleExports.first().qualifier}'",
                         )
                     }
                 }
             }
 
-            fun appliedAnnotation(annotation: Annotation, currentRealm: String?) {
-                realmSymbol(
+            fun appliedAnnotation(annotation: Annotation, currentScope: String?) {
+                scopeSymbol(
                     annotation.name,
                     annotation.qualifier,
                     annotation.line,
-                    currentRealm,
+                    currentScope,
                     "decorator",
                     "@",
                 )
-                annotation.args.forEach { expression(it, emptySet(), currentRealm) }
-                annotation.namedArgs.forEach { (_, value) -> expression(value, emptySet(), currentRealm) }
+                annotation.args.forEach { expression(it, emptySet(), currentScope) }
+                annotation.namedArgs.forEach { (_, value) -> expression(value, emptySet(), currentScope) }
             }
 
-            fun type(ref: TypeRef, line: Int, typeParams: Set<String>, currentRealm: String?) {
+            fun type(ref: TypeRef, line: Int, typeParams: Set<String>, currentScope: String?) {
                 when (ref) {
                     is TypeRef.Named -> {
                         // A synthesized reference was produced by the compiler, not
                         // written by an author - an untyped lambda parameter's `Any`
-                        // placeholder above all - so source-level rules like realm
+                        // placeholder above all - so source-level rules like scope
                         // qualification do not apply to it.
                         if (!ref.synthesized &&
                             !TypeFunctionCall.isCall(ref) &&
@@ -493,32 +493,32 @@ class StdlibInjector private constructor(
                             ref.name != Intrinsics.ARRAY &&
                             ref.name !in localGlobalTypes
                         ) {
-                            val localRealm = program.realmTypeNamespaces[ref.name]
-                            val exports = index.realmTypesByShortName[ref.name].orEmpty()
+                            val localScope = program.scopeTypeNamespaces[ref.name]
+                            val exports = index.scopeTypesByShortName[ref.name].orEmpty()
                             val visibleExports = exports.filter { it.declaration in visibleDeclarations }
-                            if (localRealm != null) {
+                            if (localScope != null) {
                                 when {
-                                    ref.qualifier == null && currentRealm != localRealm ->
+                                    ref.qualifier == null && currentScope != localScope ->
                                         errors.add(
                                             "line $line: undefined type '${ref.name}'; '${ref.name}' is part of " +
-                                                "realm '$localRealm', use '$localRealm::${ref.name}' instead",
+                                                "scope '$localScope', use '$localScope::${ref.name}' instead",
                                         )
-                                    ref.qualifier != null && ref.qualifier != localRealm ->
+                                    ref.qualifier != null && ref.qualifier != localScope ->
                                         errors.add(
                                             "line $line: undefined type '${ref.qualifier}::${ref.name}'; " +
-                                                "'${ref.name}' is part of realm '$localRealm'",
+                                                "'${ref.name}' is part of scope '$localScope'",
                                         )
                                 }
                             } else if (ref.qualifier == null) {
                                 visibleExports.firstOrNull()?.let { export ->
                                     errors.add(
                                         "line $line: undefined type '${ref.name}'; '${ref.name}' is part of " +
-                                            "realm '${export.qualifier}', use '${export.qualifiedName}' instead",
+                                            "scope '${export.qualifier}', use '${export.qualifiedName}' instead",
                                     )
                                 }
                             } else {
                                 val qualified = "${ref.qualifier}::${ref.name}"
-                                val export = index.realmTypesByQualifiedName[qualified]
+                                val export = index.scopeTypesByQualifiedName[qualified]
                                 when {
                                     export != null && export.declaration !in visibleDeclarations ->
                                         errors.add(
@@ -529,257 +529,257 @@ class StdlibInjector private constructor(
                                         val declared = visibleExports.first()
                                         errors.add(
                                             "line $line: undefined type '$qualified'; '${ref.name}' is part of " +
-                                                "realm '${declared.qualifier}'",
+                                                "scope '${declared.qualifier}'",
                                         )
                                     }
                                 }
                             }
                         }
-                        ref.args.forEach { type(it, line, typeParams, currentRealm) }
+                        ref.args.forEach { type(it, line, typeParams, currentScope) }
                     }
-                    is TypeRef.Array -> type(ref.element, line, typeParams, currentRealm)
+                    is TypeRef.Array -> type(ref.element, line, typeParams, currentScope)
                     is TypeRef.Map -> {
-                        type(ref.key, line, typeParams, currentRealm)
-                        type(ref.value, line, typeParams, currentRealm)
+                        type(ref.key, line, typeParams, currentScope)
+                        type(ref.value, line, typeParams, currentScope)
                     }
-                    is TypeRef.Set -> type(ref.element, line, typeParams, currentRealm)
+                    is TypeRef.Set -> type(ref.element, line, typeParams, currentScope)
                     is TypeRef.Function -> {
-                        ref.params.forEach { type(it, line, typeParams, currentRealm) }
-                        ref.receivers.forEach { type(it, line, typeParams, currentRealm) }
-                        type(ref.ret, line, typeParams, currentRealm)
+                        ref.params.forEach { type(it, line, typeParams, currentScope) }
+                        ref.receivers.forEach { type(it, line, typeParams, currentScope) }
+                        type(ref.ret, line, typeParams, currentScope)
                     }
-                    is TypeRef.Tuple -> ref.elements.forEach { type(it, line, typeParams, currentRealm) }
-                    is TypeRef.Nullable -> type(ref.inner, line, typeParams, currentRealm)
-                    is TypeRef.Failable -> type(ref.ok, line, typeParams, currentRealm)
-                    is TypeRef.Pointer -> type(ref.inner, line, typeParams, currentRealm)
-                    is TypeRef.Reference -> type(ref.inner, line, typeParams, currentRealm)
+                    is TypeRef.Tuple -> ref.elements.forEach { type(it, line, typeParams, currentScope) }
+                    is TypeRef.Nullable -> type(ref.inner, line, typeParams, currentScope)
+                    is TypeRef.Failable -> type(ref.ok, line, typeParams, currentScope)
+                    is TypeRef.Pointer -> type(ref.inner, line, typeParams, currentScope)
+                    is TypeRef.Reference -> type(ref.inner, line, typeParams, currentScope)
                     is TypeRef.Const -> {}
                 }
             }
 
-            fun annotation(value: TypeAnnotation, line: Int, typeParams: Set<String>, currentRealm: String?) {
-                if (value is TypeAnnotation.Explicit) type(value.ref, line, typeParams, currentRealm)
+            fun annotation(value: TypeAnnotation, line: Int, typeParams: Set<String>, currentScope: String?) {
+                if (value is TypeAnnotation.Explicit) type(value.ref, line, typeParams, currentScope)
             }
 
-            fun function(func: FuncDecl, currentRealm: String?) {
-                func.annotations.forEach { appliedAnnotation(it, currentRealm) }
+            fun function(func: FuncDecl, currentScope: String?) {
+                func.annotations.forEach { appliedAnnotation(it, currentScope) }
                 val typeParams = func.typeParams.toSet()
                 func.params.forEach {
-                    type(it.type, func.line, typeParams, currentRealm)
-                    it.defaultValue?.let { value -> expression(value, typeParams, currentRealm) }
+                    type(it.type, func.line, typeParams, currentScope)
+                    it.defaultValue?.let { value -> expression(value, typeParams, currentScope) }
                 }
-                annotation(func.returnType, func.line, typeParams, currentRealm)
-                func.body.forEach { statement(it, typeParams, currentRealm) }
+                annotation(func.returnType, func.line, typeParams, currentScope)
+                func.body.forEach { statement(it, typeParams, currentScope) }
             }
 
-            fun expression(expr: Expr, typeParams: Set<String>, currentRealm: String?) {
+            fun expression(expr: Expr, typeParams: Set<String>, currentScope: String?) {
                 when (expr) {
                     is Expr.Binary -> {
-                        expression(expr.left, typeParams, currentRealm)
-                        expression(expr.right, typeParams, currentRealm)
+                        expression(expr.left, typeParams, currentScope)
+                        expression(expr.right, typeParams, currentScope)
                     }
-                    is Expr.Unary -> expression(expr.operand, typeParams, currentRealm)
+                    is Expr.Unary -> expression(expr.operand, typeParams, currentScope)
                     is Expr.Call -> {
-                        expr.typeArgs.forEach { type(it, expr.line, typeParams, currentRealm) }
-                        expr.args.forEach { expression(it, typeParams, currentRealm) }
-                        expr.receiver?.let { expression(it, typeParams, currentRealm) }
+                        expr.typeArgs.forEach { type(it, expr.line, typeParams, currentScope) }
+                        expr.args.forEach { expression(it, typeParams, currentScope) }
+                        expr.receiver?.let { expression(it, typeParams, currentScope) }
                     }
-                    is Expr.Grouping -> expression(expr.expr, typeParams, currentRealm)
+                    is Expr.Grouping -> expression(expr.expr, typeParams, currentScope)
                     is Expr.Range -> {
-                        expression(expr.from, typeParams, currentRealm)
-                        expression(expr.to, typeParams, currentRealm)
+                        expression(expr.from, typeParams, currentScope)
+                        expression(expr.to, typeParams, currentScope)
                     }
-                    is Expr.ArrayLiteral -> expr.elements.forEach { expression(it, typeParams, currentRealm) }
-                    is Expr.SetLiteral -> expr.elements.forEach { expression(it, typeParams, currentRealm) }
+                    is Expr.ArrayLiteral -> expr.elements.forEach { expression(it, typeParams, currentScope) }
+                    is Expr.SetLiteral -> expr.elements.forEach { expression(it, typeParams, currentScope) }
                     is Expr.Index -> {
-                        expression(expr.target, typeParams, currentRealm)
-                        expression(expr.index, typeParams, currentRealm)
+                        expression(expr.target, typeParams, currentScope)
+                        expression(expr.index, typeParams, currentScope)
                     }
-                    is Expr.Member -> expression(expr.target, typeParams, currentRealm)
+                    is Expr.Member -> expression(expr.target, typeParams, currentScope)
                     is Expr.MethodCall -> {
-                        expression(expr.target, typeParams, currentRealm)
-                        expr.args.forEach { expression(it, typeParams, currentRealm) }
+                        expression(expr.target, typeParams, currentScope)
+                        expr.args.forEach { expression(it, typeParams, currentScope) }
                     }
                     is Expr.StringTemplate -> expr.parts.forEach {
                         if (it is Expr.StringTemplatePart.Expr) {
-                            expression(it.expr, typeParams, currentRealm)
+                            expression(it.expr, typeParams, currentScope)
                         }
                     }
-                    is Expr.TupleLit -> expr.elements.forEach { expression(it, typeParams, currentRealm) }
-                    is Expr.VariantLit -> expr.elements.forEach { expression(it, typeParams, currentRealm) }
-                    is Expr.TupleAccess -> expression(expr.target, typeParams, currentRealm)
+                    is Expr.TupleLit -> expr.elements.forEach { expression(it, typeParams, currentScope) }
+                    is Expr.VariantLit -> expr.elements.forEach { expression(it, typeParams, currentScope) }
+                    is Expr.TupleAccess -> expression(expr.target, typeParams, currentScope)
                     is Expr.CatchExpr -> {
-                        expression(expr.expr, typeParams, currentRealm)
-                        expression(expr.fallback, typeParams, currentRealm)
+                        expression(expr.expr, typeParams, currentScope)
+                        expression(expr.fallback, typeParams, currentScope)
                     }
-                    is Expr.TryPropagate -> expression(expr.expr, typeParams, currentRealm)
+                    is Expr.TryPropagate -> expression(expr.expr, typeParams, currentScope)
                     is Expr.IfExpr -> {
-                        expression(expr.condition, typeParams, currentRealm)
-                        expression(expr.thenExpr, typeParams, currentRealm)
-                        expression(expr.elseExpr, typeParams, currentRealm)
+                        expression(expr.condition, typeParams, currentScope)
+                        expression(expr.thenExpr, typeParams, currentScope)
+                        expression(expr.elseExpr, typeParams, currentScope)
                     }
                     is Expr.Lambda -> {
                         expr.params.forEach {
-                            type(it.type, expr.line, typeParams, currentRealm)
-                            it.defaultValue?.let { value -> expression(value, typeParams, currentRealm) }
+                            type(it.type, expr.line, typeParams, currentScope)
+                            it.defaultValue?.let { value -> expression(value, typeParams, currentScope) }
                         }
-                        expr.receivers.forEach { type(it.type, expr.line, typeParams, currentRealm) }
-                        expr.body.forEach { statement(it, typeParams, currentRealm) }
+                        expr.receivers.forEach { type(it.type, expr.line, typeParams, currentScope) }
+                        expr.body.forEach { statement(it, typeParams, currentScope) }
                     }
-                    is Expr.NamedArg -> expression(expr.value, typeParams, currentRealm)
+                    is Expr.NamedArg -> expression(expr.value, typeParams, currentScope)
                     is Expr.NullCoalesce -> {
-                        expression(expr.left, typeParams, currentRealm)
-                        expression(expr.right, typeParams, currentRealm)
+                        expression(expr.left, typeParams, currentScope)
+                        expression(expr.right, typeParams, currentScope)
                     }
-                    is Expr.SafeMember -> expression(expr.target, typeParams, currentRealm)
+                    is Expr.SafeMember -> expression(expr.target, typeParams, currentScope)
                     is Expr.Cast -> {
-                        expression(expr.expr, typeParams, currentRealm)
-                        type(expr.targetType, expr.line, typeParams, currentRealm)
+                        expression(expr.expr, typeParams, currentScope)
+                        type(expr.targetType, expr.line, typeParams, currentScope)
                     }
-                    is Expr.IsCheck -> expression(expr.expr, typeParams, currentRealm)
+                    is Expr.IsCheck -> expression(expr.expr, typeParams, currentScope)
                     is Expr.MapLit -> expr.entries.forEach { (key, value) ->
-                        expression(key, typeParams, currentRealm)
-                        expression(value, typeParams, currentRealm)
+                        expression(key, typeParams, currentScope)
+                        expression(value, typeParams, currentScope)
                     }
-                    is Expr.Alloc -> expression(expr.value, typeParams, currentRealm)
-                    is Expr.Deref -> expression(expr.target, typeParams, currentRealm)
-                    is Expr.Isolated -> expression(expr.value, typeParams, currentRealm)
-                    is Expr.Await -> expression(expr.value, typeParams, currentRealm)
-                    is Expr.Spread -> expression(expr.array, typeParams, currentRealm)
-                    is Expr.MetaInvoke -> expr.args.forEach { expression(it, typeParams, currentRealm) }
+                    is Expr.Alloc -> expression(expr.value, typeParams, currentScope)
+                    is Expr.Deref -> expression(expr.target, typeParams, currentScope)
+                    is Expr.Isolated -> expression(expr.value, typeParams, currentScope)
+                    is Expr.Await -> expression(expr.value, typeParams, currentScope)
+                    is Expr.Spread -> expression(expr.array, typeParams, currentScope)
+                    is Expr.MetaInvoke -> expr.args.forEach { expression(it, typeParams, currentScope) }
                     is Expr.Slice -> {
-                        expression(expr.target, typeParams, currentRealm)
-                        expr.start?.let { expression(it, typeParams, currentRealm) }
-                        expr.stop?.let { expression(it, typeParams, currentRealm) }
-                        expr.step?.let { expression(it, typeParams, currentRealm) }
+                        expression(expr.target, typeParams, currentScope)
+                        expr.start?.let { expression(it, typeParams, currentScope) }
+                        expr.stop?.let { expression(it, typeParams, currentScope) }
+                        expr.step?.let { expression(it, typeParams, currentScope) }
                     }
                     else -> {}
                 }
             }
 
-            fun statement(stmt: Stmt, typeParams: Set<String>, currentRealm: String?) {
+            fun statement(stmt: Stmt, typeParams: Set<String>, currentScope: String?) {
                 when (stmt) {
                     is Stmt.VarDecl -> {
-                        annotation(stmt.type, stmt.line, typeParams, currentRealm)
-                        expression(stmt.initializer, typeParams, currentRealm)
+                        annotation(stmt.type, stmt.line, typeParams, currentScope)
+                        expression(stmt.initializer, typeParams, currentScope)
                     }
                     is Stmt.FinDecl -> {
-                        annotation(stmt.type, stmt.line, typeParams, currentRealm)
-                        expression(stmt.initializer, typeParams, currentRealm)
+                        annotation(stmt.type, stmt.line, typeParams, currentScope)
+                        expression(stmt.initializer, typeParams, currentScope)
                     }
                     is Stmt.LetDecl -> {
-                        annotation(stmt.type, stmt.line, typeParams, currentRealm)
-                        expression(stmt.initializer, typeParams, currentRealm)
+                        annotation(stmt.type, stmt.line, typeParams, currentScope)
+                        expression(stmt.initializer, typeParams, currentScope)
                     }
                     is Stmt.InlineVar -> {
-                        annotation(stmt.type, stmt.line, typeParams, currentRealm)
-                        expression(stmt.initializer, typeParams, currentRealm)
+                        annotation(stmt.type, stmt.line, typeParams, currentScope)
+                        expression(stmt.initializer, typeParams, currentScope)
                     }
                     is Stmt.InlineFin -> {
-                        annotation(stmt.type, stmt.line, typeParams, currentRealm)
-                        expression(stmt.initializer, typeParams, currentRealm)
+                        annotation(stmt.type, stmt.line, typeParams, currentScope)
+                        expression(stmt.initializer, typeParams, currentScope)
                     }
                     is Stmt.InlineLet -> {
-                        annotation(stmt.type, stmt.line, typeParams, currentRealm)
-                        expression(stmt.initializer, typeParams, currentRealm)
+                        annotation(stmt.type, stmt.line, typeParams, currentScope)
+                        expression(stmt.initializer, typeParams, currentScope)
                     }
                     is Stmt.RemDecl -> {
-                        annotation(stmt.type, stmt.line, typeParams, currentRealm)
-                        expression(stmt.initializer, typeParams, currentRealm)
+                        annotation(stmt.type, stmt.line, typeParams, currentScope)
+                        expression(stmt.initializer, typeParams, currentScope)
                     }
-                    is Stmt.InlineAssignment -> expression(stmt.value, typeParams, currentRealm)
-                    is Stmt.Assignment -> expression(stmt.value, typeParams, currentRealm)
-                    is Stmt.Return -> stmt.value?.let { expression(it, typeParams, currentRealm) }
-                    is Stmt.ExprStmt -> expression(stmt.expr, typeParams, currentRealm)
+                    is Stmt.InlineAssignment -> expression(stmt.value, typeParams, currentScope)
+                    is Stmt.Assignment -> expression(stmt.value, typeParams, currentScope)
+                    is Stmt.Return -> stmt.value?.let { expression(it, typeParams, currentScope) }
+                    is Stmt.ExprStmt -> expression(stmt.expr, typeParams, currentScope)
                     is Stmt.If -> {
-                        expression(stmt.condition, typeParams, currentRealm)
-                        stmt.thenBranch.forEach { statement(it, typeParams, currentRealm) }
-                        stmt.elseBranch?.forEach { statement(it, typeParams, currentRealm) }
+                        expression(stmt.condition, typeParams, currentScope)
+                        stmt.thenBranch.forEach { statement(it, typeParams, currentScope) }
+                        stmt.elseBranch?.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.InlineIf -> {
-                        expression(stmt.condition, typeParams, currentRealm)
-                        stmt.thenBranch.forEach { statement(it, typeParams, currentRealm) }
-                        stmt.elseBranch?.forEach { statement(it, typeParams, currentRealm) }
+                        expression(stmt.condition, typeParams, currentScope)
+                        stmt.thenBranch.forEach { statement(it, typeParams, currentScope) }
+                        stmt.elseBranch?.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.DeepInlineIf -> {
-                        expression(stmt.condition, typeParams, currentRealm)
-                        stmt.thenBranch.forEach { statement(it, typeParams, currentRealm) }
-                        stmt.elseBranch?.forEach { statement(it, typeParams, currentRealm) }
+                        expression(stmt.condition, typeParams, currentScope)
+                        stmt.thenBranch.forEach { statement(it, typeParams, currentScope) }
+                        stmt.elseBranch?.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.Assert -> {
-                        expression(stmt.condition, typeParams, currentRealm)
-                        expression(stmt.message, typeParams, currentRealm)
+                        expression(stmt.condition, typeParams, currentScope)
+                        expression(stmt.message, typeParams, currentScope)
                     }
                     is Stmt.Trace -> {
-                        expression(stmt.message, typeParams, currentRealm)
-                        stmt.level?.let { expression(it, typeParams, currentRealm) }
+                        expression(stmt.message, typeParams, currentScope)
+                        stmt.level?.let { expression(it, typeParams, currentScope) }
                     }
                     is Stmt.InlineAssert -> {
-                        expression(stmt.condition, typeParams, currentRealm)
-                        expression(stmt.message, typeParams, currentRealm)
+                        expression(stmt.condition, typeParams, currentScope)
+                        expression(stmt.message, typeParams, currentScope)
                     }
                     is Stmt.InlineTrace -> {
-                        expression(stmt.message, typeParams, currentRealm)
-                        stmt.level?.let { expression(it, typeParams, currentRealm) }
+                        expression(stmt.message, typeParams, currentScope)
+                        stmt.level?.let { expression(it, typeParams, currentScope) }
                     }
                     is Stmt.While -> {
-                        expression(stmt.condition, typeParams, currentRealm)
-                        stmt.body.forEach { statement(it, typeParams, currentRealm) }
+                        expression(stmt.condition, typeParams, currentScope)
+                        stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.For -> {
-                        expression(stmt.iterable, typeParams, currentRealm)
-                        stmt.step?.let { expression(it, typeParams, currentRealm) }
-                        stmt.body.forEach { statement(it, typeParams, currentRealm) }
+                        expression(stmt.iterable, typeParams, currentScope)
+                        stmt.step?.let { expression(it, typeParams, currentScope) }
+                        stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.InlineFor -> {
-                        expression(stmt.iterable, typeParams, currentRealm)
-                        stmt.body.forEach { statement(it, typeParams, currentRealm) }
+                        expression(stmt.iterable, typeParams, currentScope)
+                        stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.Loop -> {
-                        stmt.iterable?.let { expression(it, typeParams, currentRealm) }
-                        stmt.body.forEach { statement(it, typeParams, currentRealm) }
+                        stmt.iterable?.let { expression(it, typeParams, currentScope) }
+                        stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.IndexAssign -> {
-                        expression(stmt.target, typeParams, currentRealm)
-                        expression(stmt.index, typeParams, currentRealm)
-                        expression(stmt.value, typeParams, currentRealm)
+                        expression(stmt.target, typeParams, currentScope)
+                        expression(stmt.index, typeParams, currentScope)
+                        expression(stmt.value, typeParams, currentScope)
                     }
                     is Stmt.MemberAssign -> {
-                        expression(stmt.target, typeParams, currentRealm)
-                        expression(stmt.value, typeParams, currentRealm)
+                        expression(stmt.target, typeParams, currentScope)
+                        expression(stmt.value, typeParams, currentScope)
                     }
                     is Stmt.When -> {
-                        expression(stmt.scrutinee, typeParams, currentRealm)
+                        expression(stmt.scrutinee, typeParams, currentScope)
                         stmt.branches.forEach { branch ->
-                            branch.patterns.forEach { expression(it, typeParams, currentRealm) }
-                            branch.body.forEach { statement(it, typeParams, currentRealm) }
+                            branch.patterns.forEach { expression(it, typeParams, currentScope) }
+                            branch.body.forEach { statement(it, typeParams, currentScope) }
                         }
-                        stmt.elseBranch?.forEach { statement(it, typeParams, currentRealm) }
+                        stmt.elseBranch?.forEach { statement(it, typeParams, currentScope) }
                     }
-                    is Stmt.Throw -> expression(stmt.value, typeParams, currentRealm)
-                    is Stmt.Panic -> expression(stmt.message, typeParams, currentRealm)
+                    is Stmt.Throw -> expression(stmt.value, typeParams, currentScope)
+                    is Stmt.Panic -> expression(stmt.message, typeParams, currentScope)
                     is Stmt.DerefAssign -> {
-                        expression(stmt.target, typeParams, currentRealm)
-                        expression(stmt.value, typeParams, currentRealm)
+                        expression(stmt.target, typeParams, currentScope)
+                        expression(stmt.value, typeParams, currentScope)
                     }
-                    is Stmt.Yield -> expression(stmt.value, typeParams, currentRealm)
+                    is Stmt.Yield -> expression(stmt.value, typeParams, currentScope)
                     is Stmt.Try -> {
-                        stmt.body.forEach { statement(it, typeParams, currentRealm) }
-                        stmt.catchBody?.forEach { statement(it, typeParams, currentRealm) }
+                        stmt.body.forEach { statement(it, typeParams, currentScope) }
+                        stmt.catchBody?.forEach { statement(it, typeParams, currentScope) }
                     }
-                    is Stmt.Defer -> stmt.body.forEach { statement(it, typeParams, currentRealm) }
-                    is Stmt.Scope -> stmt.body.forEach { statement(it, typeParams, currentRealm) }
-                    is Stmt.InlineBlock -> stmt.body.forEach { statement(it, typeParams, currentRealm) }
-                    is Stmt.DeepInlineBlock -> stmt.body.forEach { statement(it, typeParams, currentRealm) }
+                    is Stmt.Defer -> stmt.body.forEach { statement(it, typeParams, currentScope) }
+                    is Stmt.Scope -> stmt.body.forEach { statement(it, typeParams, currentScope) }
+                    is Stmt.InlineBlock -> stmt.body.forEach { statement(it, typeParams, currentScope) }
+                    is Stmt.DeepInlineBlock -> stmt.body.forEach { statement(it, typeParams, currentScope) }
                     is Stmt.Effect -> {
-                        stmt.dependencies?.forEach { expression(it, typeParams, currentRealm) }
-                        stmt.body.forEach { statement(it, typeParams, currentRealm) }
+                        stmt.dependencies?.forEach { expression(it, typeParams, currentScope) }
+                        stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.WithContext -> {
-                        stmt.values.forEach { expression(it, typeParams, currentRealm) }
-                        stmt.body.forEach { statement(it, typeParams, currentRealm) }
+                        stmt.values.forEach { expression(it, typeParams, currentScope) }
+                        stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
-                    is Stmt.NoInline -> statement(stmt.stmt, typeParams, currentRealm)
+                    is Stmt.NoInline -> statement(stmt.stmt, typeParams, currentScope)
                     else -> {}
                 }
             }
@@ -787,80 +787,80 @@ class StdlibInjector private constructor(
 
         val validator = Validator()
         for (item in program.items) {
-            val currentRealm = itemRealm(item)
-                ?: typeDeclarationName(item)?.let(program.realmTypeNamespaces::get)
+            val currentScope = itemScope(item)
+                ?: typeDeclarationName(item)?.let(program.scopeTypeNamespaces::get)
             when (item) {
-                is TopLevel.Func -> validator.function(item.decl, currentRealm)
+                is TopLevel.Func -> validator.function(item.decl, currentScope)
                 is TopLevel.FinDecl -> {
-                    item.type?.let { validator.type(it, item.line, emptySet(), currentRealm) }
-                    validator.expression(item.initializer, emptySet(), currentRealm)
+                    item.type?.let { validator.type(it, item.line, emptySet(), currentScope) }
+                    validator.expression(item.initializer, emptySet(), currentScope)
                 }
                 is TopLevel.LetDecl -> {
-                    item.type?.let { validator.type(it, item.line, emptySet(), currentRealm) }
-                    validator.expression(item.initializer, emptySet(), currentRealm)
+                    item.type?.let { validator.type(it, item.line, emptySet(), currentScope) }
+                    validator.expression(item.initializer, emptySet(), currentScope)
                 }
                 is TopLevel.VarDecl -> {
-                    item.type?.let { validator.type(it, item.line, emptySet(), currentRealm) }
-                    validator.expression(item.initializer, emptySet(), currentRealm)
+                    item.type?.let { validator.type(it, item.line, emptySet(), currentScope) }
+                    validator.expression(item.initializer, emptySet(), currentScope)
                 }
-                is TopLevel.Test -> item.body.forEach { validator.statement(it, emptySet(), currentRealm) }
+                is TopLevel.Test -> item.body.forEach { validator.statement(it, emptySet(), currentScope) }
                 is TopLevel.Pack -> {
-                    item.annotations.forEach { validator.appliedAnnotation(it, currentRealm) }
-                    item.nameMacro?.let { validator.expression(it, emptySet(), currentRealm) }
+                    item.annotations.forEach { validator.appliedAnnotation(it, currentScope) }
+                    item.nameMacro?.let { validator.expression(it, emptySet(), currentScope) }
                     val typeParams = item.typeParams.toSet()
                     item.fields.forEach {
-                        it.annotations.forEach { annotation -> validator.appliedAnnotation(annotation, currentRealm) }
-                        validator.type(it.type, item.line, typeParams, currentRealm)
-                        it.default?.let { value -> validator.expression(value, typeParams, currentRealm) }
+                        it.annotations.forEach { annotation -> validator.appliedAnnotation(annotation, currentScope) }
+                        validator.type(it.type, item.line, typeParams, currentScope)
+                        it.default?.let { value -> validator.expression(value, typeParams, currentScope) }
                     }
                 }
                 is TopLevel.Solo -> {
                     item.fields.forEach {
-                        validator.type(it.type, item.line, emptySet(), currentRealm)
-                        it.default?.let { value -> validator.expression(value, emptySet(), currentRealm) }
+                        validator.type(it.type, item.line, emptySet(), currentScope)
+                        it.default?.let { value -> validator.expression(value, emptySet(), currentScope) }
                     }
-                    item.methods.forEach { validator.function(it, currentRealm) }
+                    item.methods.forEach { validator.function(it, currentScope) }
                 }
                 is TopLevel.Impl -> {
-                    item.annotations.forEach { validator.appliedAnnotation(it, currentRealm) }
+                    item.annotations.forEach { validator.appliedAnnotation(it, currentScope) }
                     item.traitName?.let {
-                        validator.realmSymbol(it, item.traitQualifier, item.line, currentRealm, "spec or decorator")
+                        validator.scopeSymbol(it, item.traitQualifier, item.line, currentScope, "spec or decorator")
                     }
                     val typeParams = item.typeParams.toSet()
-                    item.traitArgs.forEach { validator.type(it, item.line, typeParams, currentRealm) }
-                    item.decoratorArgs.forEach { validator.expression(it, typeParams, currentRealm) }
+                    item.traitArgs.forEach { validator.type(it, item.line, typeParams, currentScope) }
+                    item.decoratorArgs.forEach { validator.expression(it, typeParams, currentScope) }
                     item.decoratorNamedArgs.forEach { (_, value) ->
-                        validator.expression(value, typeParams, currentRealm)
+                        validator.expression(value, typeParams, currentScope)
                     }
-                    item.methods.forEach { validator.function(it, currentRealm) }
+                    item.methods.forEach { validator.function(it, currentScope) }
                 }
                 is TopLevel.Spec -> {
-                    item.methods.forEach { validator.function(it, currentRealm) }
+                    item.methods.forEach { validator.function(it, currentScope) }
                 }
                 is TopLevel.Deco -> {
-                    item.annotations.forEach { validator.appliedAnnotation(it, currentRealm) }
-                    item.fields.forEach { validator.type(it.type, item.line, emptySet(), currentRealm) }
+                    item.annotations.forEach { validator.appliedAnnotation(it, currentScope) }
+                    item.fields.forEach { validator.type(it.type, item.line, emptySet(), currentScope) }
                 }
                 is TopLevel.Slot -> item.variants.forEach { variant ->
                     variant.payloadTypes.forEach {
-                        validator.type(it, item.line, emptySet(), currentRealm)
+                        validator.type(it, item.line, emptySet(), currentScope)
                     }
                 }
                 is TopLevel.TypeAlias ->
-                    validator.type(item.type, item.line, item.typeParams.toSet(), currentRealm)
+                    validator.type(item.type, item.line, item.typeParams.toSet(), currentScope)
                 is TopLevel.Bridge -> {
                     item.funcs.forEach { signature ->
                         val typeParams = signature.typeParams.toSet()
-                        signature.nameMacro?.let { validator.expression(it, typeParams, currentRealm) }
+                        signature.nameMacro?.let { validator.expression(it, typeParams, currentScope) }
                         signature.params.forEach {
-                            validator.type(it.type, signature.line, typeParams, currentRealm)
+                            validator.type(it.type, signature.line, typeParams, currentScope)
                         }
-                        validator.type(signature.returnType, signature.line, typeParams, currentRealm)
+                        validator.type(signature.returnType, signature.line, typeParams, currentScope)
                     }
                     item.values.forEach { value ->
-                        value.nameMacro?.let { validator.expression(it, emptySet(), currentRealm) }
-                        validator.type(value.type, value.line, emptySet(), currentRealm)
-                        validator.expression(value.initializer, emptySet(), currentRealm)
+                        value.nameMacro?.let { validator.expression(it, emptySet(), currentScope) }
+                        validator.type(value.type, value.line, emptySet(), currentScope)
+                        validator.expression(value.initializer, emptySet(), currentScope)
                     }
                 }
                 else -> {}
@@ -890,9 +890,9 @@ class StdlibInjector private constructor(
         else -> null
     }
 
-    private fun itemRealm(item: TopLevel): String? {
+    private fun itemScope(item: TopLevel): String? {
         if (item is TopLevel.Impl) {
-            return item.realmPrefix?.replace("__", "::")
+            return item.scopePrefix?.replace("__", "::")
         }
         val mangledName = when (item) {
             is TopLevel.Func -> item.decl.name
@@ -953,7 +953,7 @@ class StdlibInjector private constructor(
                     is TopLevel.FinDecl -> register(item.name, item)
                     is TopLevel.LetDecl -> register(item.name, item)
                     is TopLevel.VarDecl -> register(item.name, item)
-                    // Compile-time constants from `impl realm` / inline blocks (e.g.
+                    // Compile-time constants from `impl scope` / inline blocks (e.g.
                     // `Int::maxValue`). Folded away by CTCE once injected.
                     is TopLevel.InlineFin -> register(item.name, item)
                     is TopLevel.InlineLet -> register(item.name, item)
@@ -998,7 +998,7 @@ class StdlibInjector private constructor(
                             register(value.name, declaration)
                         }
                     }
-                    // `deepinline realm { … }` and similar compile-time blocks (e.g.
+                    // `deepinline scope { … }` and similar compile-time blocks (e.g.
                     // `std.config`) carry their declarations opaquely; inject them
                     // whole so CTCE flattens them downstream just as it would in
                     // the module itself, rather than lifting each nested constant.
@@ -1008,11 +1008,11 @@ class StdlibInjector private constructor(
                     else -> {}
                 }
             }
-            for ((shortName, qualifier) in program.realmTypeNamespaces) {
+            for ((shortName, qualifier) in program.scopeTypeNamespaces) {
                 val declaration = moduleItems[shortName] ?: continue
-                val export = RealmTypeExport(shortName, qualifier, module, declaration)
-                idx.realmTypesByQualifiedName.putIfAbsentCompat(export.qualifiedName, export)
-                idx.realmTypesByShortName.getOrPut(shortName) { mutableListOf() }.add(export)
+                val export = ScopeTypeExport(shortName, qualifier, module, declaration)
+                idx.scopeTypesByQualifiedName.putIfAbsentCompat(export.qualifiedName, export)
+                idx.scopeTypesByShortName.getOrPut(shortName) { mutableListOf() }.add(export)
             }
             // Record this module's `exposed import …` re-exports for transitive
             // import propagation, and (if always-on) the module name itself.
@@ -1237,11 +1237,11 @@ class StdlibInjector private constructor(
     /**
      * Returns [program] with every bundled-library item it references appended.
      *
-     * Visibility is granted only by explicit `import` declarations. Realm
+     * Visibility is granted only by explicit `import` declarations. Scope
      * members are name-mangled at parse time (`std.math::abs` → `std__math__abs`),
      * so [importedItems] returns the mangled items exported by imported
      * modules. A reference resolves only if it is both mangled (written as a
-     * qualified `Realm::name` path) and visible (its module was imported). Bare
+     * qualified `Scope::name` path) and visible (its module was imported). Bare
      * references never match a mangled name, so bare access to library symbols
      * is rejected. Returns the program unchanged when nothing is referenced.
      */
@@ -1270,7 +1270,7 @@ class StdlibInjector private constructor(
         val referenced = mutableSetOf<String>()
         for (item in program.items) {
             collectNamesFromItem(item, referenced)
-            // A user macro may expand directly to an imported realm macro. Its
+            // A user macro may expand directly to an imported scope macro. Its
             // template is part of the user's dependency graph even though
             // bundled macro templates remain lazy to avoid pulling every
             // possible expansion target into every compilation.
@@ -1368,10 +1368,10 @@ class StdlibInjector private constructor(
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         // Exported/core compile-time blocks are injected unconditionally.
         val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
-        val injectedRealmTypeNamespaces = buildMap {
+        val injectedScopeTypeNamespaces = buildMap {
             for (declaration in declarations + alwaysDeclarations) {
                 val name = typeDeclarationName(declaration) ?: continue
-                val qualifier = index.realmTypesByShortName[name]
+                val qualifier = index.scopeTypesByShortName[name]
                     ?.firstOrNull { it.declaration === declaration }
                     ?.qualifier
                     ?: continue
@@ -1385,13 +1385,13 @@ class StdlibInjector private constructor(
             !typeFunctionsChanged &&
             !typeMacrosChanged
         ) return program
-        return IntraRealmRewriter.rewrite(program.copy(
+        return ScopeAccessRewriter.rewrite(program.copy(
             items = program.items + declarations + externDeclarations + alwaysDeclarations,
             typeFunctions = typeFunctions,
             typeMacroRules = typeMacros,
             infixOperators = program.infixOperators + index.allInfixOperators,
             infixMacros = program.infixMacros + index.allInfixMacros,
-            realmTypeNamespaces = program.realmTypeNamespaces + injectedRealmTypeNamespaces,
+            scopeTypeNamespaces = program.scopeTypeNamespaces + injectedScopeTypeNamespaces,
         ))
     }
 
@@ -1493,15 +1493,15 @@ class StdlibInjector private constructor(
     /**
      * True when [name] is a private declaration.
      *
-     * Realm bindings arrive mangled, so inspect the member rather than the
+     * Scope bindings arrive mangled, so inspect the member rather than the
      * separator.
      */
     private fun isPrivateName(name: String): Boolean = memberSegmentOf(name).startsWith("_")
 
     /**
-     * The member part of a possibly realm-mangled name.
+     * The member part of a possibly scope-mangled name.
      *
-     * `realm Secret { fin _hidden = 1 }` mangles to `Secret___hidden` - a `__`
+     * `scope Secret { fin _hidden = 1 }` mangles to `Secret___hidden` - a `__`
      * separator immediately followed by the member's own underscore. Splitting on
      * the last `__` would swallow that underscore and report the member as
      * public, so the separator is the last `__` that is not itself preceded by
@@ -1910,7 +1910,7 @@ class StdlibInjector private constructor(
                 // has to be pulled in too, the same as for a `Type::member` call.
                 if ("__" in expr.name) {
                     names.add(expr.name.substringBeforeLast("__"))
-                    // A realm-qualified *type* keeps its bare name, so `SerialValue`
+                    // A scope-qualified *type* keeps its bare name, so `SerialValue`
                     // arrives as `std__SerialValue` while the declaration is `SerialValue`.
                     // Without the tail the type is never injected and the reference
                     // fails to resolve.
@@ -1931,12 +1931,12 @@ class StdlibInjector private constructor(
                 // fails on an enum with no variants.
                 BUILTIN_TYPE_DEPENDENCIES[expr.callee]?.let(names::add)
                 // A `Type::member` static call (e.g. `Array::fill`) mangles to
-                // `Type__member`. The member is provided by an `impl realm for Type`
+                // `Type__member`. The member is provided by an `impl scope for Type`
                 // block, which is only attached when the base type itself is pulled
                 // in - so also mark the base type as referenced.
                 if ("__" in expr.callee) {
                     names.add(expr.callee.substringBeforeLast("__"))
-                    // `SerialField(…)` constructs a realm-scoped pack, whose
+                    // `SerialField(…)` constructs a scope-scoped pack, whose
                     // declaration is the bare tail; see the identifier case above.
                     names.add(expr.callee.substringAfterLast("__"))
                 }

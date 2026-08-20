@@ -1,6 +1,6 @@
 package demo_website.pages
 
-import std.ui
+import std::ui
 import std
 
 react func AddPetPage(

@@ -124,10 +124,10 @@ internal object MacroExpander {
         if (item is TopLevel.Pack && item.nameMacro != null) {
             val (foreignName, expandedLocal) = expandDeclarationName(item.nameMacro, macros, item.line, isType = true)
             return listOf(item.copy(
-                name = item.localRealm?.let { "${it}__$expandedLocal" } ?: expandedLocal,
+                name = item.localScope?.let { "${it}__$expandedLocal" } ?: expandedLocal,
                 foreignName = foreignName,
                 nameMacro = null,
-                localRealm = null,
+                localScope = null,
             ))
         }
         if (item !is TopLevel.Bridge) return listOf(item)
@@ -138,7 +138,7 @@ internal object MacroExpander {
             val (foreignName, expandedLocal) =
                 expandDeclarationName(signature.nameMacro, macros, signature.line, isType = false)
             val localName = expandedLocal?.let { local ->
-                signature.localRealm?.let { "${it}__$local" } ?: local
+                signature.localScope?.let { "${it}__$local" } ?: local
             }
             if (localName != null && localName != foreignName) {
                 wrappers += bridgeWrapper(
@@ -146,17 +146,17 @@ internal object MacroExpander {
                     signature.typeParams, signature.line,
                 )
             }
-            signature.copy(name = foreignName, localName = null, nameMacro = null, localRealm = null)
+            signature.copy(name = foreignName, localName = null, nameMacro = null, localScope = null)
         }
         val values = item.values.map { value ->
             if (value.nameMacro == null) return@map value
             val (foreignName, expandedLocal) =
                 expandDeclarationName(value.nameMacro, macros, value.line, isType = false)
             value.copy(
-                name = value.localRealm?.let { "${it}__$expandedLocal" } ?: expandedLocal,
+                name = value.localScope?.let { "${it}__$expandedLocal" } ?: expandedLocal,
                 foreignName = foreignName,
                 nameMacro = null,
-                localRealm = null,
+                localScope = null,
             )
         }
         return listOf(item.copy(funcs = funcs, values = values)) + wrappers
@@ -204,7 +204,7 @@ internal object MacroExpander {
         return withInfix(program.copy(
             items = rewritten,
             localPackNames = program.localPackNames.mapTo(linkedSetOf()) { renamedTypes[it] ?: it },
-            realmTypeNamespaces = program.realmTypeNamespaces.mapKeys { (name, _) -> renamedTypes[name] ?: name },
+            scopeTypeNamespaces = program.scopeTypeNamespaces.mapKeys { (name, _) -> renamedTypes[name] ?: name },
         ))
     }
 
@@ -221,13 +221,13 @@ internal object MacroExpander {
     ): List<TopLevel> {
         if (item is TopLevel.Pack && item.nameMacro != null) {
             val (foreignName, expandedLocal) = expandDeclarationName(item.nameMacro, macros, item.line, isType = true)
-            val localName = item.localRealm?.let { "${it}__$expandedLocal" } ?: expandedLocal
+            val localName = item.localScope?.let { "${it}__$expandedLocal" } ?: expandedLocal
             renamedTypes[item.name] = localName
             return listOf(rewriteItem(item.copy(
                 name = localName,
                 foreignName = foreignName,
                 nameMacro = null,
-                localRealm = null,
+                localScope = null,
             ), macros, depth))
         }
         if (item !is TopLevel.Bridge) return listOf(rewriteItem(item, macros, depth))
@@ -240,7 +240,7 @@ internal object MacroExpander {
                 expandDeclarationName(signature.nameMacro, macros, signature.line, isType = false)
             }
             val localName = expandedLocal?.let { local ->
-                signature.localRealm?.let { "${it}__$local" } ?: local
+                signature.localScope?.let { "${it}__$local" } ?: local
             }
             if (localName != null && localName != foreignName) {
                 wrappers += bridgeWrapper(localName, foreignName, signature.params, signature.returnType, signature.typeParams, signature.line)
@@ -249,7 +249,7 @@ internal object MacroExpander {
                 name = foreignName,
                 localName = null,
                 nameMacro = null,
-                localRealm = null,
+                localScope = null,
                 params = signature.params.map { rewriteParam(it, macros, depth) },
             )
         }
@@ -259,12 +259,12 @@ internal object MacroExpander {
             } else {
                 expandDeclarationName(value.nameMacro, macros, value.line, isType = false)
             }
-            val localName = value.localRealm?.let { "${it}__$expandedLocal" } ?: expandedLocal
+            val localName = value.localScope?.let { "${it}__$expandedLocal" } ?: expandedLocal
             value.copy(
                 name = localName,
                 foreignName = foreignName,
                 nameMacro = null,
-                localRealm = null,
+                localScope = null,
                 initializer = rewriteExpr(value.initializer, macros, depth),
             )
         }
@@ -400,7 +400,7 @@ internal object MacroExpander {
         is TopLevel.Pack -> {
             val named = item.nameMacro?.let { invocation ->
                 val (foreignName, localName) = expandDeclarationName(invocation, macros, item.line, isType = true)
-                item.copy(name = localName, foreignName = foreignName, nameMacro = null, localRealm = null)
+                item.copy(name = localName, foreignName = foreignName, nameMacro = null, localScope = null)
             } ?: item
             named.copy(
                 fields = named.fields.map { rewriteField(it, macros, depth) },

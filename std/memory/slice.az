@@ -47,7 +47,7 @@ impl Slice<T> {
 
     /** Returns a sub-slice `[start, start+count)`; asserts bounds. */
     @Experimental(since: "0.1")
-    func sub(start: Int, count: Int): Slice<T> {
+    func sub[self: Self&](start: Int, count: Int): Slice<T> {
         assert start >= 0 { "Slice start must be non-negative" }
         assert count >= 0 { "Slice count must be non-negative" }
         assert start + count <= self.count { "Slice range out of bounds" }

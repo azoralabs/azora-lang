@@ -6,10 +6,10 @@ import org.azora.lang.backend.IrInterpreter
 import kotlin.test.*
 
 /**
- * `realm test { }` - declarations that exist only for tests, and the
+ * `test scope { }` - declarations that exist only for tests, and the
  * `exposed` / `protected` / `confined` ladder that bounds how far they reach.
  */
-class TestRealmTest {
+class TestScopeTest {
 
     private fun run(source: String): String {
         val result = Compiler().compile(source)
@@ -23,9 +23,9 @@ class TestRealmTest {
         return result.errors
     }
 
-    @Test fun aTestMayUseWhatATestRealmDeclares() {
+    @Test fun aTestMayUseWhatATestScopeDeclares() {
         assertEquals("", run("""
-            realm test {
+            test scope {
                 func fixture(): Int { return 7 }
             }
 
@@ -37,42 +37,42 @@ class TestRealmTest {
         """.trimIndent()))
     }
 
-    @Test fun theProgramMayNotUseWhatATestRealmDeclares() {
+    @Test fun theProgramMayNotUseWhatATestScopeDeclares() {
         val found = errors("""
-            realm test {
+            test scope {
                 func fixture(): Int { return 7 }
             }
 
             func main() { fin unused = fixture() }
         """.trimIndent())
         assertTrue(
-            found.any { "'fixture' is declared in a 'realm test'" in it && "only be used from a test" in it },
+            found.any { "'fixture' is declared in a 'test scope'" in it && "only be used from a test" in it },
             found.toString(),
         )
     }
 
-    @Test fun aTestRealmMemberMayUseItsSiblings() {
+    @Test fun aTestScopeMemberMayUseItsSiblings() {
         assertEquals("", run("""
-            realm test {
+            test scope {
                 func base(): Int { return 6 }
                 func fixture(): Int { return base() + 1 }
             }
 
             test "siblings compose" {
-                assert fixture() == 7 { "a test-realm member may call another" }
+                assert fixture() == 7 { "a test-scope member may call another" }
             }
 
             func main() { }
         """.trimIndent()))
     }
 
-    /** The reach a test realm names is reported back when it is violated. */
+    /** The reach a test scope names is reported back when it is violated. */
     @Test fun eachReachNamesItselfInTheDiagnostic() {
         val cases = mapOf(
-            "realm test" to "a test in this file",
-            "confined realm test" to "a test in this file",
-            "protected realm test" to "a test in this folder",
-            "exposed realm test" to "a test in any file",
+            "test scope" to "a test in this file",
+            "confined test scope" to "a test in this file",
+            "protected test scope" to "a test in this folder",
+            "exposed test scope" to "a test in any file",
         )
         for ((header, expected) in cases) {
             val found = errors("""
@@ -86,10 +86,10 @@ class TestRealmTest {
         }
     }
 
-    @Test fun aTestRealmMayNotNestInAnother() {
+    @Test fun aTestScopeMayNotNestInAnother() {
         val found = errors("""
-            realm test {
-                realm test {
+            test scope {
+                test scope {
                     func fixture(): Int { return 7 }
                 }
             }

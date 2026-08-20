@@ -31,12 +31,12 @@ package org.azora.lang.ir
  * in agreement across all backends.
  */
 /**
- * True when [symbol] denotes the declaration named [local], whatever realm it
+ * True when [symbol] denotes the declaration named [local], whatever scope it
  * was canonicalized into.
  *
- * A canonical symbol is `__<realm path>_<local>` (see `IrSymbolCanonicalizer`),
+ * A canonical symbol is `__<scope path>_<local>` (see `IrSymbolCanonicalizer`),
  * so matching on the tail lets a backend intercept a builtin without naming the
- * realm the standard library happens to declare it in. An unmangled symbol -
+ * scope the standard library happens to declare it in. An unmangled symbol -
  * a compiler intrinsic like `__dbg`, or a program's own function - matches only
  * itself.
  */
@@ -84,7 +84,7 @@ object Intrinsics {
 /**
  * [symbol] written the way the source writes it, for diagnostics.
  *
- * The frontend joins a realm path to a declaration with `__` (`std__println`);
+ * The frontend joins a scope path to a declaration with `__` (`std__println`);
  * that is an internal spelling, not one anyone typed, so it does not belong in a
  * message pointed at the author - `undefined function 'std__println'` names
  * something the language has no syntax for. It renders back as `println`.

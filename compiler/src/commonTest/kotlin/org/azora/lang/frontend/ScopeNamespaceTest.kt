@@ -204,11 +204,6 @@ class ScopeNamespaceTest {
             listOf("CompilerTarget"),
             block.body.filterIsInstance<TopLevel.Enum>().map { it.name },
         )
-        // The spelling being replaced produces exactly the same thing.
-        assertEquals(
-            parse(source.replaceFirst("scope", "realm")).map { it::class.simpleName },
-            parse(source).map { it::class.simpleName },
-        )
     }
 
     // -- `scope` keeps its statement meaning --------------------------------
@@ -227,24 +222,4 @@ class ScopeNamespaceTest {
         assertIs<Stmt.VarDecl>(assertIs<Stmt.Scope>(body.single()).body.single())
     }
 
-    // -- the spelling being replaced ----------------------------------------
-
-    @Test fun realmStillNamesTheSameThing() {
-        // `realm` is removed in its own step; until then both spellings declare
-        // the same namespace, so the replacement can be checked against it.
-        assertEquals(
-            listOf("concurrency__cancel"),
-            funcNames("realm concurrency {\n    func cancel(task: Any): Unit { }\n}"),
-        )
-    }
-
-    @Test fun realmIsNotHeldToTheFinOnlyRule() {
-        // The rule arrives with `scope`; `realm` keeps taking what it always took
-        // so that removing it stays a separate, reviewable change.
-        assertEquals(
-            listOf("math__seed"),
-            parse("realm math {\n    var seed: Int = 0\n}")
-                .filterIsInstance<TopLevel.VarDecl>().map { it.name },
-        )
-    }
 }

@@ -60,10 +60,10 @@ class Feature003SyntaxTest {
                 var value: Int
             }
             impl pack Counter {
-                func bump() {
+                func bump[self: Self!]() {
                     self.value = self.value + 1
                 }
-                func peek(): Int {
+                func peek[self: Self&](): Int {
                     return self.value
                 }
             }
@@ -264,7 +264,7 @@ class Feature003SyntaxTest {
     @Test fun implAsStringIsCastOnly() {
         assertEquals("cast:x", run("""
             import std.io
-            import std.convert
+            import std::convert
             pack Label {
                 var value: String
             }
@@ -283,7 +283,7 @@ class Feature003SyntaxTest {
     @Test fun implAsStringDoesNotCreateToString() {
         val result = compile("""
             import std.io
-            import std.convert
+            import std::convert
             pack Label {
                 var value: String
             }
@@ -301,10 +301,10 @@ class Feature003SyntaxTest {
         assertTrue(result.errors.any { "toString" in it }, "errors: ${result.errors}")
     }
 
-    @Test fun friendRealmAcceptsDoubleColonPath() {
+    @Test fun friendScopeAcceptsDoubleColonPath() {
         assertEquals("3", run("""
             import std.io
-            realm std {
+            scope std {
                 func abs(x: Int): Int {
                     if x < 0 { return -x }
                     return x
@@ -370,7 +370,7 @@ class Feature003SyntaxTest {
                 var value: Int
             }
             impl pack Counter {
-                func bump() {
+                func bump[self: Self!]() {
                     self.value = self.value + 1
                 }
             }

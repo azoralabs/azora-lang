@@ -185,7 +185,7 @@ at once, so the pointee is genuinely shared, not merely moved.
 ```azora
 module std.parallelism.thread
 
-realm std {
+scope std {
     /**
      * A running thread and the value it will produce.
      *
@@ -322,7 +322,7 @@ The single most important decision in this DIP: **a mutex owns its data.**
 ```azora
 module std.parallelism.mutex
 
-realm std {
+scope std {
     inline prop mutexCond<T>: Bool = T is Send
     
     /**

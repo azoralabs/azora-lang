@@ -1284,7 +1284,7 @@ sealed class TypeRef {
     /**
      * A named type, optionally generic.
      *
-     * [qualifier] preserves the source-level realm path (`std` in
+     * [qualifier] preserves the source-level scope path (`std` in
      * `Tuple<Int, String>`). Semantic passes still use [name] as the
      * canonical declaration name, while visibility checks can distinguish a
      * qualified type reference from a bare one.
@@ -1299,7 +1299,7 @@ sealed class TypeRef {
          *
          * An untyped lambda parameter (`{ x, y -> … }`) is given `Any` as a
          * placeholder until the expected callable type supplies its real type.
-         * Nobody wrote it, so source-level rules - realm qualification above all
+         * Nobody wrote it, so source-level rules - scope qualification above all
          * - must not be applied to it.
          */
         val synthesized: Boolean = false,
@@ -1617,7 +1617,7 @@ object NamedTypeMacroCall {
         ref.name.removePrefix(PREFIX).substringAfter(SEPARATOR).substringAfter(SEPARATOR)
 }
 
-/** Encodes a source path containing both an owning module and a realm-qualified symbol. */
+/** Encodes a source path containing both an owning module and a scope-qualified symbol. */
 object ModuleQualifiedSymbol {
     private const val PREFIX = "__azora_module_qualified__"
     private const val SEPARATOR = "::"
@@ -1726,17 +1726,17 @@ data class Visibility(
 enum class ModuleVisibility { PUBLIC, CONFINE }
 
 /**
- * Compile-time metadata for a declaration's enclosing realm, surfaced by
- * `(reflect X).realm`. The global (top-level) scope is a realm with [label]
+ * Compile-time metadata for a declaration's enclosing scope, surfaced by
+ * `(reflect X).scope`. The global (top-level) scope is a scope with [label]
  * `"global"`, [isInline] `false`, and no [parent].
  *
- * @property label the realm's string label (`realm "my realm" { … }`), or null for
- *   an unlabeled `realm { … }`; `"global"` for the top-level scope.
- * @property isInline whether the realm is `inline`/`deepinline`, or is nested in
- *   one (inline-ness is inherited by nested realms).
- * @property parent the enclosing realm, or null at the global scope.
+ * @property label the scope's string label (`scope "my scope" { … }`), or null for
+ *   an unlabeled `scope { … }`; `"global"` for the top-level scope.
+ * @property isInline whether the scope is `inline`/`deepinline`, or is nested in
+ *   one (inline-ness is inherited by nested scopes).
+ * @property parent the enclosing scope, or null at the global scope.
  */
-data class RealmMeta(val label: String?, val isInline: Boolean, val parent: RealmMeta? = null)
+data class ScopeMeta(val label: String?, val isInline: Boolean, val parent: ScopeMeta? = null)
 
 /**
  * Kind of a type cast ([Expr.Cast]).
@@ -2024,6 +2024,15 @@ data class FuncDecl(
     /** Receiver name for impl/extension methods (conventionally `self`, but arbitrary). */
     val receiverName: String = "self",
     /**
+     * Whether the declaration *wrote* a receiver (`func f[self: Self&]()`).
+     *
+     * [receiverModifier] and [receiverName] always hold a value, so they cannot
+     * answer this - and inside an `impl` the answer is what separates a member of
+     * a *value* from a member of the *type*: `func make(): Arena` is
+     * `Arena.make()`, `func size[self: Self&](): Int` is `arena.size()`.
+     */
+    val declaresReceiver: Boolean = true,
+    /**
      * Bracketed extension receiver: `func m()[self: Type&]: R`. When present, the
      * function is an extension method on the receiver's type (callable as
      * `value.m()` or inside `with value { m() }`). The param's type carries the
@@ -2228,7 +2237,7 @@ data class Annotation(
     val column: Int = 0,
     /** Named arguments `@name(key = value)` / `@name(key: value)`, in source order. */
     val namedArgs: List<Pair<String, Expr>> = emptyList(),
-    /** Source realm path (`std` in `@Serializable`), if explicitly qualified. */
+    /** Source scope path (`std` in `@Serializable`), if explicitly qualified. */
     val qualifier: String? = null,
 )
 
@@ -2550,8 +2559,8 @@ sealed class TopLevel {
         val foreignName: String? = null,
         /** Deferred declaration-name macro for a bridge pack. */
         val nameMacro: Expr.MetaInvoke? = null,
-        /** Realm enclosing a deferred local name. */
-        val localRealm: String? = null,
+        /** Scope enclosing a deferred local name. */
+        val localScope: String? = null,
     ) : TopLevel()
 
     /** `annot Name [binds Spec] { fields }` - an annotation type and optional derived spec contract. */
@@ -2581,8 +2590,8 @@ sealed class TopLevel {
         val localName: String? = null,
         /** Declaration-position macro whose string result supplies [name]. */
         val nameMacro: Expr.MetaInvoke? = null,
-        /** Realm enclosing a deferred local name. */
-        val localRealm: String? = null,
+        /** Scope enclosing a deferred local name. */
+        val localScope: String? = null,
     )
 
     /** An exported bridge global (`fin`, `let`, or `var`). */
@@ -2596,7 +2605,7 @@ sealed class TopLevel {
         val column: Int = 0,
         val foreignName: String? = null,
         val nameMacro: Expr.MetaInvoke? = null,
-        val localRealm: String? = null,
+        val localScope: String? = null,
     )
 
     /** `bridge <target> { func sigs }` - declares extern functions for active FFI targets (C/LLVM, Wasm). */
@@ -2771,8 +2780,8 @@ sealed class TopLevel {
         val typeParams: List<String> = emptyList(),
         /** Variadic implementation parameter from `impl<...T>`. */
         val variadicParam: String? = null,
-        /** Lexical realm containing this implementation, used for same-realm lookup. */
-        val realmPrefix: String? = null,
+        /** Lexical scope containing this implementation, used for same-scope lookup. */
+        val scopePrefix: String? = null,
         /**
          * The module that declares this, or null before the parser tags it.
          *
@@ -2780,7 +2789,7 @@ sealed class TopLevel {
          * the check needs to know where each side was written.
          */
         val declaringModule: String? = null,
-        /** Source realm path of the implemented spec/decorator, when qualified. */
+        /** Source scope path of the implemented spec/decorator, when qualified. */
         val traitQualifier: String? = null,
         /** Generated-conformance request written with `derive` or a declaration's `derives` clause. */
         val isDerived: Boolean = false,
@@ -2877,7 +2886,7 @@ sealed class TopLevel {
      * `meta Name { arm; arm; … }` - a pattern-driven macro declaration.
      *
      * Macros are top-level declarations. A local macro is called as `@name(…)`;
-     * an imported realm macro keeps its realm before the sigil, such as
+     * an imported scope macro keeps its scope before the sigil, such as
      * `@vec(…)`. [MacroExpander] collects every `Meta`
      * declaration, rewrites all matching [Expr.MetaInvoke] invocations into
      * their arm templates, and removes the `Meta` node itself - so it never
@@ -2950,11 +2959,11 @@ data class Program(
      */
     val exportCondition: Expr? = null,
     /**
-     * Declaration name → the realm it was declared in, for `(reflect X).realm`.
-     * Only declarations nested inside a `realm "label" { … }` (or an inline/
-     * deepinline realm) appear; a name absent here is global (see [RealmMeta]).
+     * Declaration name → the scope it was declared in, for `(reflect X).scope`.
+     * Only declarations nested inside a `scope "label" { … }` (or an inline/
+     * deepinline scope) appear; a name absent here is global (see [ScopeMeta]).
      */
-    val realms: Map<String, RealmMeta> = emptyMap(),
+    val scopes: Map<String, ScopeMeta> = emptyMap(),
     /** Compile-time `type name(...)` declarations owned by this unit. */
     val typeFunctions: List<TypeFunctionDecl> = emptyList(),
     /**
@@ -2978,19 +2987,19 @@ data class Program(
      */
     val usesMacros: Boolean = false,
     /**
-     * Named type declaration → source-level realm path for declarations inside
-     * `realm X`. Realm declarations are always qualified outside their realm;
+     * Named type declaration → source-level scope path for declarations inside
+     * `scope X`. Scope declarations are always qualified outside their scope;
      * this map preserves the source path while declarations remain flat in the AST.
      */
-    val realmTypeNamespaces: Map<String, String> = emptyMap(),
+    val scopeTypeNamespaces: Map<String, String> = emptyMap(),
     /**
-     * Declarations written inside a `realm test`, mapped to how far each reaches.
+     * Declarations written inside a `test scope`, mapped to how far each reaches.
      *
-     * A `realm test` is a visibility rule rather than a namespace, so its members
+     * A `scope test` is a visibility rule rather than a namespace, so its members
      * sit in [items] like any other declaration; this is what records that only
      * a test may refer to them.
      */
-    val testRealmMembers: Map<String, Visibility> = emptyMap(),
+    val testScopeMembers: Map<String, Visibility> = emptyMap(),
 ) {
     /** Convenience - returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

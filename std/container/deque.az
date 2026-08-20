@@ -24,7 +24,7 @@
  */
 module std.container.deque
 
-import std.serializer.Serializable
+import std.serializer::Serializable
 
 /**
  * A double-ended queue: elements can be added and removed from both ends in O(1) amortized.
@@ -67,7 +67,7 @@ impl Deque<T> {
 
     /** Inserts [value] at the back; O(1) amortized. */
     @Experimental(since: "0.1")
-    func pushBack(value: T): Unit {
+    func pushBack[self: Self!](value: T): Unit {
         if self.size >= self.capacity {
             self._growDeque()
         }
@@ -78,7 +78,7 @@ impl Deque<T> {
 
     /** Removes and returns the front element; O(1). */
     @Experimental(since: "0.1")
-    func popFront(): T {
+    func popFront[self: Self!](): T {
         var value: T = self.data[self.head]
         self.head = (self.head + 1) % self.capacity
         self.size -= 1
@@ -87,7 +87,7 @@ impl Deque<T> {
 
     /** Removes and returns the back element; O(1). */
     @Experimental(since: "0.1")
-    func popBack(): T {
+    func popBack[self: Self!](): T {
         self.tail = (self.tail - 1 + self.capacity) % self.capacity
         var value: T = self.data[self.tail]
         self.size -= 1
@@ -96,20 +96,20 @@ impl Deque<T> {
 
     /** Returns the front element without removing it. */
     @Experimental(since: "0.1")
-    func peekFront(): T {
+    func peekFront[self: Self&](): T {
         return self.data[self.head]
     }
 
     /** Returns the back element without removing it. */
     @Experimental(since: "0.1")
-    func peekBack(): T {
+    func peekBack[self: Self&](): T {
         var idx: Int = (self.tail - 1 + self.capacity) % self.capacity
         return self.data[idx]
     }
 
     /** Removes all elements (capacity is retained). */
     @Since("0.1")
-    func clear(): Unit {
+    func clear[self: Self!](): Unit {
         self.head = 0
         self.tail = 0
         self.size = 0
@@ -117,7 +117,7 @@ impl Deque<T> {
 
     /** Doubles the circular buffer's capacity and re-linearizes it. */
     @Experimental(since: "0.1")
-    func _growDeque(): Unit {
+    func _growDeque[self: Self!](): Unit {
         var newCap: Int = self.capacity * 2
         var newData: T* = alloc .() * newCap
         for i in 0..<self.size {
@@ -133,7 +133,7 @@ impl Deque<T> {
 
     /** Renders the deque as `Deque[e0, e1, …]` in front-to-back order. */
     @Experimental(since: "0.1")
-    func toString(): String {
+    func toString[self: Self&](): String {
         var result = "Deque["
         for i in 0..<self.size {
             if i > 0 {

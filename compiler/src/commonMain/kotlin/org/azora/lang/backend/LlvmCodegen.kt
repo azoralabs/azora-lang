@@ -210,7 +210,7 @@ class LlvmCodegen {
     /**
      * The string intrinsic [symbol] denotes, or null.
      *
-     * These are declared in `realm std`, so the symbol reaching IR is
+     * These are declared in `scope std`, so the symbol reaching IR is
      * `__std_substring` while the table above - and the bodies emitted by
      * [buildStringIntrinsics] - are keyed by the bare name. Comparing the two
      * verbatim silently matched nothing: every call was declared and none was
@@ -440,7 +440,7 @@ class LlvmCodegen {
         }
         for (item in externs) {
             if (stringIntrinsicOf(item.name) != null) continue
-            // `realm std { bridge func sqrt(…) }` mangles to `__std_math_sqrt`,
+            // `scope std { bridge func sqrt(…) }` mangles to `__std_math_sqrt`,
             // a symbol nothing provides. The compiler supplies these itself rather
             // than linking a hand-written C shim: declare the libm function and
             // define the mangled name as a call to it.
@@ -873,7 +873,7 @@ class LlvmCodegen {
             emit("  $sizeGep = getelementptr $ctxType, $ctxType* null, i32 1")
             emit("  $size = ptrtoint $ctxType* $sizeGep to i64")
             // The task entry releases its context explicitly. Keep runtime-owned
-            // bookkeeping outside a caller's active realm to avoid double frees.
+            // bookkeeping outside a caller's active scope to avoid double frees.
             emit("  $raw = call i8* @__azora_alloc_raw(i64 $size)")
             emit("  $ctx = bitcast i8* $raw to $ctxType*")
             for ((i, param) in func.params.withIndex()) {
@@ -981,7 +981,7 @@ class LlvmCodegen {
                 }
             }
             is IrStmt.ExprStmt -> emitExpr(stmt.expr)
-            is IrStmt.Scope -> emitRealm(stmt)
+            is IrStmt.Scope -> emitScope(stmt)
             is IrStmt.If -> emitIf(stmt)
             is IrStmt.Assert -> emitAssert(stmt)
             is IrStmt.Trace -> emitTrace(stmt)
@@ -1182,7 +1182,7 @@ class LlvmCodegen {
         return result
     }
 
-    private fun emitRealm(stmt: IrStmt.Scope) {
+    private fun emitScope(stmt: IrStmt.Scope) {
         emitStmts(stmt.body)
     }
 
@@ -1608,7 +1608,7 @@ class LlvmCodegen {
         fun def(name: String, body: String) {
             val symbol = neededIntrinsics[name] ?: return
             // The bodies are written against the bare name; the program calls the
-            // realm-mangled one.
+            // scope-mangled one.
             sb.appendLine(body.trimIndent().replace("@$name(", "@$symbol("))
             sb.appendLine()
         }
@@ -2109,7 +2109,7 @@ class LlvmCodegen {
         usesAllocatorRuntime = true
         val raw = nextTmp()
         // Joined task results are owned and released by the task runtime. They
-        // must not also be registered in an enclosing allocation realm.
+        // must not also be registered in an enclosing allocation scope.
         emit("  $raw = call i8* @__azora_alloc_raw(i64 ${sizeOfScalar(type)})")
         val ptrType = "${mapType(type)}*"
         val typed = nextTmp()
@@ -2868,7 +2868,7 @@ class LlvmCodegen {
      * ordinary extern.
      *
      * Matching is on the declaration's final name segment so both the bare
-     * spelling and the `realm std` mangling resolve, and only when the
+     * spelling and the `scope std` mangling resolve, and only when the
      * signature is all-`Double` - an unrelated user extern that happens to be
      * called `log` keeps its own linkage.
      */
@@ -4071,7 +4071,7 @@ class LlvmCodegen {
             val raw = emitExpr(stmt.value)
             val value = coerceNumeric(raw, stmt.value.type, tt.element)
             emit("  store $et $value, $et* $ep, align 1")
-            // The array can outlive the current `realm alloc`; root the element.
+            // The array can outlive the current `scope alloc`; root the element.
             return
         }
         if (tt is IrType.Pointer) {
@@ -4773,7 +4773,7 @@ class LlvmCodegen {
 
         buildStringIntrinsics(sb)
 
-        // Values created by language helpers follow the active allocation realm.
+        // Values created by language helpers follow the active allocation scope.
         // Runtime bookkeeping is handled separately with __azora_alloc_raw.
         if (usesStrConcat || usesStrRepeat || usesArrayGrow || usesMapGrow ||
             usesIntToStr || usesUintToStr || usesDoubleToStr || usesCharToStr

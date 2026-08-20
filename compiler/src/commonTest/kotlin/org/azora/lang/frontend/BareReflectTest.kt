@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
  * `reflect<T>` is written plain, everywhere.
  *
  * It used to need a qualifier in front of it outside a namespace, because
- * `reflect` lived in a realm. Realms are gone and with them that realm, so the
+ * `reflect` lived in a namespace of the library's. That namespace is gone, so the
  * qualifier has nothing left to name and the bare spelling is the only one the
  * language has.
  *

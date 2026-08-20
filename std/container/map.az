@@ -41,7 +41,7 @@
  */
 module std.container.map
 
-import std.container.[array.*, list.*]
+import std.container.[array::*, list::*]
 
 /**
  * One immutable key-value association.

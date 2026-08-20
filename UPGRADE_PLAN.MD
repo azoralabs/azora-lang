@@ -618,42 +618,75 @@ else. With `realm std` gone the qualifier names nothing.
   the old message text and was updated - message only, behaviour identical.
 - **Suite** 1609 / 1832, only the known `EnumWhenTest` accidental pass.
 
-### S3.2 `[DROP]` Remove the `realm` keyword
-- **Touch** `AzoraSyntaxVocabulary.kt:33`, `Token.kt:89`, `Parser.kt:199,219,370,395,
-  1204,1621,1633,1643,1799,1836,5859`
-- **Do** Delete `TokenType.REALM`. Legacy diagnostic: *"`realm X` was removed; use
-  `scope X` for a namespace, or a module + `import ... as X` for a namespace view"*.
-- **Accept** `realm X { }` errors; `func realm()` parses.
+### S3.2-S3.5 `[DROP]` `realm` is gone - **DONE 2026-08-19**
+One keyword for one concept. `realm` and `scope` had both worked since S3.1, which is
+the same duplication that let the `std__` spellings rot - two names, one of them dead
+but still compiling.
 
-### S3.3 `[FIX]` Rename the realm machinery to scope
-- **Touch** `frontend/IntraRealmRewriter.kt` -> `IntraScopeRewriter.kt`,
-  `semantic/RealmQualifiedImplTargets.kt` -> `ScopeQualifiedImplTargets.kt`,
-  `Ast.kt:1725 RealmMeta` -> `ScopeMeta`, `realmPrefix`/`localRealm`/`realmTypeNamespaces`/
-  `testRealmMembers`/`realms` fields, `Mangling.kt`, `IrSymbolCanonicalizer.kt`
-- **Do** Pure rename, no behaviour change. Reflection surface `(reflect X).realm` becomes
-  `.scope` (`DIPs/REFLECTION_DIP.MD`). **Watch the APFS case-insensitivity trap** when
-  renaming files ([[azora case-insensitive FS]]): `git mv` in two steps.
-- **Accept** full suite green; `grep -ri realm compiler/src` returns 0.
+- **The keyword.** `TokenType.REALM` and its vocabulary entry are deleted, along with
+  the `inline realm { … }` / `deepinline realm { … }` aliases and the `realm test`
+  spelling of `test scope`. `realm` is an ordinary word again.
+- **The machinery.** 679 occurrences renamed across 27 files in `commonMain`:
+  `IntraRealmRewriter` -> `IntraScopeRewriter`, `RealmQualifiedImplTargets` ->
+  `ScopeQualifiedImplTargets` (both files renamed), `RealmMeta` -> `ScopeMeta`,
+  `currentRealm`/`localRealm`/`realmPrefix`/`realmTypeNamespaces`/`testRealmMembers`
+  and the rest. Diagnostics say "scope" too - two tests were failing only on the word.
+- **The reflection surface** is `reflect<T>.enclosingScope`.
+- **Tests, docs and tooling.** 87 tokens across 17 test files, 80 across 15 docs,
+  63 in `azls/` (including its `"realm"` semantic-token role), 64 in the IntelliJ
+  plugin. `RealmTest` -> `ScopeTest`, `RealmQualifiedAccessTest` ->
+  `ScopeQualifiedAccessTest`, `TestRealmTest` -> `TestScopeTest`.
+- **Suite** 140 / 1937 - the failing set is *identical* to before the rename once the
+  renamed test names are normalised: nothing new, nothing lost.
 
-### S3.4 `[FIX]` `realm test` -> `scope test`
-- **Touch** `Ast.kt:2862 testRealmMembers`, `TestRealmTest.kt`
-- **Do** The test-visibility rule keeps working under the new spelling.
+**Two tests changed meaning rather than spelling**, and were rewritten against the new
+truth rather than renamed: one asserted `realm` was *not* held to the scope's `fin`-only
+rule (there is no `realm` to exempt), and `azls`'s
+`standardTypesAndReflectRequireRealmQualification` asserted an unqualified `Int` was
+*not* a type - which the earlier removal of the library qualifier had already made false.
 
-### S3.5 `[FIX]` Purge `realm` from docs and tooling
-- **Touch** 12 `DIPs/*.MD`, `README.md`, `ROADMAPs/VERSION_0_1_ROADMAP.MD`,
-  `azls/src/main/kotlin/org/azora/azls/{AzoraLanguageServer,Models,AzHighlighter}.kt`,
-  `azls/src/main/azora/AzoraLanguageServer.az`, plugin `AzoraLanguageFacts`
-- **Accept** `RealSourcesSmokeTest` in the plugin repo stays at zero lex errors.
+**Two slips the suite caught**, both from simplifying too eagerly while removing the
+second keyword: the scope's `fin`-only rule lost its flag and silently stopped
+enforcing, and the blanket rename turned the message `'realm test'` into `'scope test'`
+when the form is `test scope`.
 
----
-
-## Phase 4 - The `.` / `::` split
-
-### S4.1 `[ADD]` `.` for static access
+### S4.1 `[ADD]` `.` for static access — **DONE**
 - **Touch** `Parser.kt` (postfix `.`), `TypeResolver.kt` (member resolution)
 - **Do** `Type.staticMember` resolves statics. Resolution order on a `.`: value member of
   an expression first, then static member of a type name.
 - **Accept** `StaticAccessTest`: `Color.red`, `Alloc.create()` resolve.
+
+**Landed somewhere else than planned, and for a reason.** Neither the parser nor the
+type resolver can answer this on its own. The parser sees `math.PI` and `p.x` as the
+same text and has no program to consult; the resolver could answer it but would leave
+`IrGenerator` reading a `Member` node the resolver had quietly reinterpreted. The
+question - *does this name hold a value or a scope?* - is answered once, on the whole
+program, by `IntraScopeRewriter`, which already had the declaration set and the
+shadowing rules for the mirror-image job (bare sibling access from *inside* a scope).
+It now does both, and is called `ScopeAccessRewriter`.
+
+`X.member` becomes the declaration `X__member` when the program declares one and no
+parameter or local of that name shadows it. Everything else is left exactly as written,
+so `p.x` is still a field read and `nowhere.member` still fails naming `nowhere` rather
+than a mangled symbol the source never wrote.
+
+**Three things the pass did not previously walk** had to be opened up, each one a place
+a static access can legitimately appear: the body of an `impl` on an ordinary type (only
+scope-prefixed impls were walked), any top-level item that is not itself a scope member
+(`func main` above all), and `TopLevel.InlineFin` - which is what `impl Byte { inline
+fin limit = 7 }` hoists to, and therefore what `Byte.limit` has to find.
+
+**`Alloc.create()` is deferred to S5.1, not skipped.** A receiver-less `impl` member is
+not registered as a declaration under any name today: `Alloc::create()` fails too, with
+*"undefined function"*. S5.1 is the step that makes those statics exist; this step is
+the access path they will use. `StaticAccessTest` says so where a reader will find it.
+
+**`std.math.abs` is not this.** A dotted *module* path is not a scope, and reaching a
+module's symbol stays `std.math::abs` - one of the four jobs S4.2 keeps for `::`.
+
+Suite: **140 failures, an identical failure set** to before the change, verified by
+neutralising the new behaviour and diffing the names rather than the count.
+`StaticAccessTest` adds 13 passing tests.
 
 ### S4.2 `[DROP]` Restrict `::` to its four remaining jobs
 - **Touch** `Parser.kt` (32 `DOUBLE_COLON` sites), `TypeResolver.kt`
@@ -929,13 +962,17 @@ thing a second way and is now an error naming `alloc T*() * <count>`.
   even though the call is static. Same rule as S6.1's `alloc .()`.
 - **Accept** `ConstGenericArrayTest` case with an explicit element type.
 
-### S6.5 `[DROP]` Remove `fill` and `arrayOf`
+### S6.5 `[DROP]` Remove `fill`
 - **Touch** `IrGenerator.kt` / builtin tables, `stdlib` array zone (`Array::fill`),
   `ArrayStdlibTest`
-- **Do** `.() * N` replaces both. Note `arr![...]` (the always-on macro) desugars to
-  `arrayOf` today ([[azora always-on macro modules]]) - retarget the macro before
-  deleting the function, or `arr!` breaks.
+- **Do** `.() * N` replaces `Array::fill`.
 - **Accept** `ArrayTest`; `arr![1,2,3]` still compiles.
+
+**This step said "and `arrayOf`" and was wrong.** Counted against the tree: `arrayOf`
+(10 uses), `listOf` (7), `mapOf` (6) and `setOf` (9) are live functions `std/` calls
+itself, and `arr![…]` desugars to `arrayOf` ([[azora always-on macro modules]]).
+`Array::fill` is the only one `.() * N` actually replaces - 11 uses, every one of them
+in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
 
 ### S6.6 `[DROP]` Pointer deref is `p.*`, never `(*p)`
 - **Touch** `Parser.kt:9491-9494` (prefix `*` / `deref`), `9612` (postfix `.*`)

@@ -20,7 +20,7 @@ package org.azora.lang.ir
  * Converts frontend-qualified symbol identities to the canonical Azora IR ABI:
  * one `__` prefix followed by namespace and symbol segments separated by `_`.
  *
- * The frontend deliberately uses `__` between source realm segments. Keeping
+ * The frontend deliberately uses `__` between source scope segments. Keeping
  * that representation out of IR prevents generated symbols from accumulating
  * separators during specialization (`__std__tupleOf`), and gives every backend
  * one stable spelling to consume.

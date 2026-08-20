@@ -1,6 +1,6 @@
 This file is compiled to LLVM
 ```
-import std.dynamic
+import std::dynamic
 import std.io
 import std.time
 

@@ -299,7 +299,7 @@ class IrOptimizer {
                 }
                 is IrStmt.Scope -> {
                     val result = stmt.copy(body = propagateStmts(stmt.body, constants.toMutableMap()))
-                    // Reassignments to outer variables inside the realm persist.
+                    // Reassignments to outer variables inside the scope persist.
                     invalidate(constants, collectAssigned(stmt.body))
                     result
                 }

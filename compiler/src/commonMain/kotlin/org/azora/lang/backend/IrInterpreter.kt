@@ -45,7 +45,7 @@ import kotlinx.coroutines.sync.Mutex
 /**
  * Backend - interprets [IrProgram] directly instead of generating code.
  *
- * Uses a scope stack so that `realm { }` blocks introduce new scopes and
+ * Uses a scope stack so that `scope { }` blocks introduce new scopes and
  * `::` / `::::` can resolve variables at the correct depth.
  */
 /**
@@ -124,7 +124,7 @@ class IrInterpreter {
     /**
      * The intrinsic behind a `bridge func`, found by name.
      *
-     * `realm std` mangles its members (`sqrt` → `__std_math_sqrt`), and the
+     * `scope std` mangles its members (`sqrt` → `__std_math_sqrt`), and the
      * table is keyed by the mathematical name, so a mangled call falls back to
      * its final segment. Nothing outside `externImpls` matches, so an ordinary
      * user function with an underscore in its name is unaffected.
@@ -237,9 +237,9 @@ class IrInterpreter {
     /**
      * True when this name denotes the intrinsic [local].
      *
-     * A builtin reaches the interpreter canonicalized, so the realm it was
+     * A builtin reaches the interpreter canonicalized, so the scope it was
      * declared in is part of the symbol. [symbolDenotes] answers the question
-     * without naming that realm here.
+     * without naming that scope here.
      */
     private fun String.isIntrinsic(local: String): Boolean = symbolDenotes(this, local)
 

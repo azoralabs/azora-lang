@@ -9,12 +9,12 @@ import kotlin.test.assertIs
 
 class IrSymbolCanonicalizerTest {
     @Test
-    fun nestedRealmSymbolsUseOneCanonicalIrSeparatorConvention() {
+    fun nestedScopeSymbolsUseOneCanonicalIrSeparatorConvention() {
         val result = Compiler().compile(
             """
             module naming
 
-            realm acme::math {
+            scope acme::math {
                 pack Point {
                     fin x: Int
                 }
@@ -57,7 +57,7 @@ class IrSymbolCanonicalizerTest {
     fun generatedAndCompilerOwnedSymbolsUseTheSameCanonicalForm() {
         val result = Compiler().compile(
             """
-            realm acme::ops {
+            scope acme::ops {
                 func choose<...T>(...values: ...T): Int {
                     return 7
                 }
@@ -87,7 +87,7 @@ class IrSymbolCanonicalizerTest {
     fun namespacedSingletonFactoriesUseTheCanonicalTypeIdentity() {
         val result = Compiler().compile(
             """
-            realm acme::config {
+            scope acme::config {
                 solo pack Settings {
                     fin value: Int = 9
                 }

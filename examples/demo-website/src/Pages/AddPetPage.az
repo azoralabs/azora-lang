@@ -28,7 +28,7 @@ react func AddPetPage(
             "Register a new furry friend.",
             modifier: Modifier()
                 .fontSize(15)
-                .color("#64748b")
+                .color("#64748")
         )
 
         Spacer(height: 32)
@@ -219,7 +219,7 @@ react func PetTypeOption(
                 label,
                 modifier: Modifier()
                     .fontSize(12)
-                    .color(if selected == label { "#f97316" } else { "#64748b" })
+                    .color(if selected == label { "#f97316" } else { "#64748" })
                     .bold()
             )
         }

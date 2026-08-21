@@ -30,8 +30,8 @@ macro @arr[...$items] => std.container.array::Array(...$items) // generic will i
  * @2 `@vec![1, 2, 3]` expands to `std.container.list::MutableArrayList<Int>(1, 2, 3)`.
  */
 macro @vec {
-    [...$items] => std.container.list::ArrayList(...$items) // generic will infer from first item type
-    ![...$items] => std.container.list::MutableArrayList(...$items) // generic will infer from first item type
+    [...$items] => std.container.list::ArrayList(...$items)
+    //![...$items] => std.container.list::MutableArrayList(...$items)
 }
 
 /**

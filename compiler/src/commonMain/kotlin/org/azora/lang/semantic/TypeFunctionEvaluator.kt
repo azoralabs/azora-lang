@@ -34,10 +34,11 @@ internal object TypeFunctionEvaluator {
         "USize" to 8,
         "Cent" to 9,
         "UCent" to 10,
-        "Float" to 11,
-        "Double" to 12,
-        "Decimal" to 13,
-        "String" to 14,
+        "Half" to 11,
+        "Float" to 12,
+        "Double" to 13,
+        "Quad" to 14,
+        "String" to 15,
     )
 
     /**

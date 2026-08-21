@@ -65,8 +65,8 @@ class EngineArchitectureSyntaxTest {
         }
 
         enum SystemPhase { Update }
-        annot Component for [.Pack, .Enum]
-        annot System for .Func {
+        annot @Component for [.Pack, .Enum]
+        annot @System for .Func {
             fin phase: SystemPhase
         }
         """.trimIndent(),

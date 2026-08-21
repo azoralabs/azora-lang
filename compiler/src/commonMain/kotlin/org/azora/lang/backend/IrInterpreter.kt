@@ -981,7 +981,12 @@ class IrInterpreter {
 
     private suspend fun evalExpr(expr: IrExpr): Any? {
         return when (expr) {
-            is IrExpr.IntLiteral -> expr.value
+            is IrExpr.IntLiteral -> expr.text?.let {
+                // The interpreter's integers are `Long`s. A 128-bit literal is
+                // not one, and quietly handing back its low 64 bits would be a
+                // wrong answer rather than a missing one.
+                error("a ${'$'}{expr.type} literal '${'$'}it' is wider than this backend evaluates")
+            } ?: expr.value
             is IrExpr.DoubleLiteral -> expr.value
             is IrExpr.StringLiteral -> expr.value
             is IrExpr.EnumLiteral -> expr.variant
@@ -1160,7 +1165,7 @@ class IrInterpreter {
                     IrType.Short, IrType.UShort -> n.toShort().toLong()
                     IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> n.toLong()
                     IrType.Float -> n.toFloat()
-                    IrType.Double, IrType.Decimal -> n.toDouble()
+                    IrType.Double, IrType.Quad -> n.toDouble()
                     IrType.Char -> n.toInt().toChar()
                     else -> v
                 }
@@ -1495,7 +1500,7 @@ class IrInterpreter {
             val typeName = args[1] as String
             val result = when (typeName) {
                 "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent", "ISize", "USize" -> value is Long
-                "Double", "Float", "Decimal" -> value is Double
+                "Double", "Float", "Quad" -> value is Double
                 "String" -> value is String
                 "Bool" -> value is Boolean
                 "Char" -> value is Char
@@ -1512,7 +1517,7 @@ class IrInterpreter {
             val typeName = args[1] as String
             val matches = when (typeName) {
                 "Int", "UInt", "Byte", "UByte", "Short", "UShort", "Long", "ULong", "Cent", "UCent", "ISize", "USize" -> value is Long
-                "Double", "Float", "Decimal" -> value is Double
+                "Double", "Float", "Quad" -> value is Double
                 "String" -> value is String
                 "Bool" -> value is Boolean
                 "Char" -> value is Char

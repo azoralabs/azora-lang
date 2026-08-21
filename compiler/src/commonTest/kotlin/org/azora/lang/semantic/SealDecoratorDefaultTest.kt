@@ -53,7 +53,7 @@ class SealDecoratorDefaultTest {
     private val declaration = """
         enum Level { Error, Info }
 
-        annot Log for .Pack {
+        annot @Log for .Pack {
             fin level: Level = .Info
             fin prefix: String = when level {
                 .Error -> seal "!! "

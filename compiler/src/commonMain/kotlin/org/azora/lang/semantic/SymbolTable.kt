@@ -142,6 +142,13 @@ data class StructType(
     val isBridge: Boolean = false,
     /** True for a `union`: the members share one storage slot (see `TopLevel.Pack.isUnion`). */
     val isUnion: Boolean = false,
+    /**
+     * The literal this type is written as, from `bridge pack Byte(IntLiteral)`.
+     *
+     * Non-null makes `Byte(4)` the literal `4` read at this width rather than a
+     * call - see `Literals`.
+     */
+    val literalKind: String? = null,
 ) {
     /** Looks up a field by name. */
     fun field(name: String): StructField? = fields.find { it.name == name }

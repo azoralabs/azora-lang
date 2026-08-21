@@ -124,7 +124,7 @@ lines).
 ### 2.1 Types and declarations
 
 - ✅ Primitives: `Int` `UInt` `Long` `ULong` `Byte` `UByte` `Short` `UShort`
-  `Cent` `UCent` `Float` `Double` `Decimal` `Bool` `Char` `String` `Unit`
+  `Cent` `UCent` `Float` `Double` `Quad` `Bool` `Char` `String` `Unit`
 - ✅ `pack` (structs), empty packs without a body
 - ✅ `enum`, `variant enum`, `variant error`, `error` sets
 - ✅ `unsafe union` - C-style overlapping storage

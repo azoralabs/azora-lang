@@ -126,7 +126,7 @@ class TraitsTest {
 
     @Test fun decoratorCanBeImplementedAsMarkerTrait() {
         assertEquals("", run("""
-            annot Serializable {}
+            annot @Serializable {}
             pack UserId {
                 fin value: Long
             }
@@ -137,7 +137,7 @@ class TraitsTest {
 
     @Test fun decoratorImplementationRequiresAnExplicitBody() {
         val errors = expectFailure("""
-            annot Serializable {}
+            annot @Serializable {}
             pack UserId { fin value: Long }
             impl Serializable for UserId
             func main() {}
@@ -147,7 +147,7 @@ class TraitsTest {
 
     @Test fun decoratorMarkerImplementationCannotDeclareMethods() {
         val errors = expectFailure("""
-            annot Serializable {}
+            annot @Serializable {}
             pack UserId {
                 fin value: Long
             }
@@ -163,7 +163,7 @@ class TraitsTest {
 
     @Test fun duplicateDecoratorImplementationFails() {
         val errors = expectFailure("""
-            annot Serializable {}
+            annot @Serializable {}
             pack UserId {
                 fin value: Long
             }

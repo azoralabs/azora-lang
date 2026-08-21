@@ -175,7 +175,7 @@ initializer are versioned, a write invalidates the cache, and the next read
 recomputes it.
 
 ```azora
-react func invoice(): Decimal {
+react func invoice(): Quad {
     remember var subtotal = 100.0
     remember var taxRate = 0.19
     lazy fin total = subtotal + subtotal * taxRate

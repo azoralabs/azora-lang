@@ -25,7 +25,17 @@
  *
  * @since 0.1
  */
-module std.char
+exposed module std.char
+
+/**
+ * A Unicode code point.
+ *
+ * Ordered by code point, which is an order and not a collation - a
+ * locale-aware comparison is a function with a locale parameter and never what
+ * `<` does.
+ */
+@Since("0.1")
+bridge pack Char derives [PartialEqual, Equal, Order, Hash]
 
 /**
  * Returns the Unicode code point of a character.

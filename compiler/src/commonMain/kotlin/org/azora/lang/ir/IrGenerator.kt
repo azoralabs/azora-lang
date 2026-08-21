@@ -25,6 +25,7 @@ import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.BindingKind
 import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.Literals
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.TypeRef
@@ -326,7 +327,7 @@ class IrGenerator(private val table: SymbolTable) {
     /** The method-table key a primitive receiver uses (`impl Int { … }`). */
     private fun primitiveOwnerName(type: IrType): String? = when (type) {
         IrType.Int, IrType.UInt, IrType.Long, IrType.ULong, IrType.Byte, IrType.UByte,
-        IrType.Short, IrType.UShort, IrType.Float, IrType.Double, IrType.Decimal,
+        IrType.Short, IrType.UShort, IrType.Float, IrType.Double, IrType.Quad,
         IrType.String, IrType.Char, IrType.Bool -> type.toString()
         else -> null
     }
@@ -1120,7 +1121,8 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.VarDecl -> {
                 val init = withImplicitCopy(
                     stmt.initializer,
-                    coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
+                    literalAtDeclaredType(stmt.initializer, typeAnnotationOrNull(stmt.type))
+                        ?: coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
                 )
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
@@ -1131,7 +1133,8 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.FinDecl -> {
                 val init = withImplicitCopy(
                     stmt.initializer,
-                    coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
+                    literalAtDeclaredType(stmt.initializer, typeAnnotationOrNull(stmt.type))
+                        ?: coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
                 )
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
@@ -1143,7 +1146,8 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.LetDecl -> {
                 val init = withImplicitCopy(
                     stmt.initializer,
-                    coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
+                    literalAtDeclaredType(stmt.initializer, typeAnnotationOrNull(stmt.type))
+                        ?: coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
                 )
                 val type = resolveTypeAnnotation(stmt.type, init)
                 val mangled = registerName(stmt.name)
@@ -1473,6 +1477,33 @@ class IrGenerator(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * `Byte(4)` and `Double(2.5)` - the literal, at the width the type names.
+     *
+     * The named type has to be one written as a literal (`bridge pack
+     * Byte(IntLiteral)`) and the single argument has to be that literal.
+     * Anything else is an ordinary call and is lowered as one.
+     */
+    private fun literalAtWidth(expr: Expr.Call): IrExpr? {
+        if (expr.receiver != null || expr.args.size != 1) return null
+        // The name may be an alias: `Long` is `Int<64>`, and what says it is
+        // written as a literal is the type the alias names.
+        val named = IrType.aliases[expr.callee] as? TypeRef.Named
+        val kind = table.lookupStruct(named?.name ?: expr.callee)?.literalKind ?: return null
+        val type = IrType.aliases[expr.callee]?.let { IrType.resolve(it) }
+            ?: if (IrType.isPrimitiveName(expr.callee)) IrType.fromName(expr.callee) else return null
+        return when (val argument = expr.args.single()) {
+            is Expr.IntLiteral ->
+                if (kind == Literals.INT || kind == Literals.UINT) {
+                    IrExpr.IntLiteral(argument.value, type, argument.text)
+                } else {
+                    null
+                }
+            is Expr.DoubleLiteral -> if (kind == Literals.REAL) IrExpr.DoubleLiteral(argument.value, type, argument.text) else null
+            else -> null
+        }
+    }
+
     private fun suffixToIntType(suffix: NumericSuffix): IrType = when (suffix) {
         NumericSuffix.NONE -> IrType.Int
         NumericSuffix.BYTE -> IrType.Byte
@@ -1485,12 +1516,12 @@ class IrGenerator(private val table: SymbolTable) {
         NumericSuffix.CENT -> IrType.Cent
         NumericSuffix.UCENT -> IrType.UCent
         NumericSuffix.FLOAT -> IrType.Float
-        NumericSuffix.DECIMAL -> IrType.Decimal
+        NumericSuffix.QUAD -> IrType.Quad
     }
 
     private fun suffixToFloatType(suffix: NumericSuffix): IrType = when (suffix) {
         NumericSuffix.FLOAT -> IrType.Float
-        NumericSuffix.DECIMAL -> IrType.Decimal
+        NumericSuffix.QUAD -> IrType.Quad
         else -> IrType.Double
     }
 
@@ -1876,8 +1907,8 @@ class IrGenerator(private val table: SymbolTable) {
                 "line ${expr.line}: 'key: value' is only an argument of a macro that takes " +
                     "'[...\${key: value}]' - no macro arm matched this invocation",
             )
-            is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, suffixToIntType(expr.suffix))
-            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, suffixToFloatType(expr.suffix))
+            is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, suffixToIntType(expr.suffix), expr.text)
+            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, suffixToFloatType(expr.suffix), expr.text)
             is Expr.StringLiteral -> IrExpr.StringLiteral(expr.value)
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(expr.value)
             is Expr.NullLiteral -> IrExpr.Var("__null", IrType.Any)
@@ -2198,6 +2229,10 @@ class IrGenerator(private val table: SymbolTable) {
                 if (expr.callee == Intrinsics.ARRAY && expr.receiver == null) {
                     return lowerExpr(Expr.ArrayLiteral(expr.args, expr.line, expr.column, expr.length))
                 }
+                // `Byte(4)` - a literal read at a width. The type says it is
+                // written as a literal, so what comes out is that literal, at
+                // that width, and no call is made at all.
+                literalAtWidth(expr)?.let { return it }
                 // Value call `receiver(args)` - lower the receiver (a function value)
                 // and emit an indirect call carrying it.
                 expr.receiver?.let { recv ->
@@ -2402,7 +2437,7 @@ class IrGenerator(private val table: SymbolTable) {
                         ?.takeIf { it.name in func.typeParams }
                         ?.let { element ->
                             val typeParamIndex = func.typeParams.indexOf(element.name)
-                            expr.typeArgs.getOrNull(typeParamIndex)?.let(::resolveType)
+                            expr.typeArgs.getOrNull(typeParamIndex)?.takeUnless { it.isHole }?.let(::resolveType)
                                 ?: args.getOrNull(func.params.size - 1)?.type
                         }
                     // Variadic: pack extra args into an array for the last param.
@@ -2443,7 +2478,11 @@ class IrGenerator(private val table: SymbolTable) {
                         func.isTask -> IrType.Task(func.returnType)
                         homogeneousVariadicType != null && func.returnType is IrType.Array ->
                             IrType.Array(homogeneousVariadicType)
+                        // A hole was never a type argument: `add<Short, _, Long>`
+                        // said two of three, and the return type follows only
+                        // when every one of them was said.
                         funcDecl != null && expr.typeArgs.isNotEmpty() &&
+                            expr.typeArgs.none { it.isHole } &&
                             expr.typeArgs.none { typeRefMentionsAny(it, currentGenericTypeParams) } -> {
                             val returnRef = (funcDecl.returnType as? TypeAnnotation.Explicit)?.ref
                             if (returnRef == null) {
@@ -3196,7 +3235,7 @@ class IrGenerator(private val table: SymbolTable) {
         if (a == b) return a
         if (a !in IrType.numericTypes || b !in IrType.numericTypes) return a
         if (a in IrType.floatTypes || b in IrType.floatTypes) {
-            if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
+            if (a == IrType.Quad || b == IrType.Quad) return IrType.Quad
             if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
@@ -3360,7 +3399,7 @@ class IrGenerator(private val table: SymbolTable) {
         }
         val value = when (initializer) {
             is Expr.IntLiteral -> IrExpr.IntLiteral(initializer.value)
-            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(initializer.value)
+            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(initializer.value, text = initializer.text)
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(initializer.value)
             is Expr.CharLiteral -> IrExpr.CharLiteral(initializer.value)
             is Expr.StringLiteral -> IrExpr.StringLiteral(initializer.value)
@@ -3372,23 +3411,51 @@ class IrGenerator(private val table: SymbolTable) {
         return name to value
     }
 
+    /**
+     * A literal lowered at the width its declaration states, or null.
+     *
+     * `var x: Cent = 170…727` is an `IntLiteral` read as a `Cent`. Lowering it
+     * as an `Int` and widening afterwards is a different program - and for a
+     * value wider than 64 bits it is not even the same number, because the
+     * `Int` it went through cannot hold one.
+     */
+    private fun literalAtDeclaredType(expr: Expr, declared: IrType?): IrExpr? {
+        val type = declared ?: return null
+        return when {
+            expr is Expr.IntLiteral && expr.suffix == NumericSuffix.NONE && type in IrType.integerTypes ->
+                IrExpr.IntLiteral(expr.value, type, expr.text)
+            expr is Expr.DoubleLiteral && expr.suffix == NumericSuffix.NONE && type in IrType.floatTypes ->
+                IrExpr.DoubleLiteral(expr.value, type, expr.text)
+            expr is Expr.Unary && expr.op == TokenType.MINUS ->
+                when (val inner = literalAtDeclaredType(expr.operand, type)) {
+                    is IrExpr.IntLiteral -> IrExpr.IntLiteral(-inner.value, type, inner.text?.let { "-$it" })
+                    is IrExpr.DoubleLiteral -> IrExpr.DoubleLiteral(-inner.value, type, inner.text?.let { "-$it" })
+                    else -> null
+                }
+            else -> null
+        }
+    }
+
     /** `-<literal>` folded to a literal, or null when it is anything else. */
     private fun negatedLiteral(expr: Expr.Unary): IrExpr? {
         if (expr.op != TokenType.MINUS) return null
         return when (val operand = expr.operand) {
-            is Expr.IntLiteral -> IrExpr.IntLiteral(-operand.value)
-            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(-operand.value)
+            // A 128-bit literal is negated on its digits: the value beside them
+            // is only the low 64 bits, and negating that would fold `Cent`'s
+            // minimum into a different number entirely.
+            is Expr.IntLiteral -> IrExpr.IntLiteral(
+                -operand.value,
+                text = operand.text?.let { "-$it" },
+            )
+            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(-operand.value, text = operand.text?.let { "-$it" })
             else -> null
         }
     }
 
     private fun defaultValueForType(type: IrType): IrExpr = when (type) {
-        is IrType.Int -> IrExpr.IntLiteral(0, type)
-        is IrType.Long -> IrExpr.IntLiteral(0, type)
-        is IrType.Byte -> IrExpr.IntLiteral(0, type)
-        is IrType.Short -> IrExpr.IntLiteral(0, type)
-        is IrType.UInt -> IrExpr.IntLiteral(0, type)
-        is IrType.ULong, is IrType.ISize, is IrType.USize -> IrExpr.IntLiteral(0, type)
+        // Every integer starts at zero, whatever its width.
+        is IrType.Integer -> IrExpr.IntLiteral(0, type)
+        is IrType.ISize, is IrType.USize -> IrExpr.IntLiteral(0, type)
         is IrType.Double -> IrExpr.DoubleLiteral(0.0, type)
         is IrType.Float -> IrExpr.DoubleLiteral(0.0, type)
         is IrType.String -> IrExpr.StringLiteral("")

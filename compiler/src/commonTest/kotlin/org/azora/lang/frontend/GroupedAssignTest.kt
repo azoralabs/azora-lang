@@ -25,9 +25,10 @@ import kotlin.test.assertTrue
 /**
  * `receiver.[a, b, c] = …` assigns several members of one receiver at once.
  *
- * The bracket on the right is what tells the two forms apart: one value fans out
- * to every member, a bracketed list gives one value per member. Both desugar to
- * ordinary member assignments, so nothing past the parser learns a new node.
+ * The bracket on the right is what tells the two forms apart: one expression is
+ * written to every member, a bracketed list gives one value per member. Both
+ * desugar to ordinary member assignments, so nothing past the parser learns a
+ * new node - a group is the lines it stands for.
  *
  * These are parser tests because the bundled stdlib does not parse yet (see the
  * Baseline section of UPGRADE_PLAN.MD).
@@ -49,26 +50,25 @@ class GroupedAssignTest {
     @Test fun oneValueReachesEveryMember() {
         // `self.[offset, allocCount] = 0` - the form the allocators reset with.
         val stmts = group("self.[offset, allocCount] = 0")
-        val temp = assertIs<Stmt.FinDecl>(stmts[0], "the value is bound once")
-        assertEquals(0L, assertIs<Expr.IntLiteral>(temp.initializer).value)
-        assertEquals(listOf("offset", "allocCount"), stmts.drop(1).map { assigned(it).first })
-        // Every member reads the same binding, so the value is evaluated once.
-        assertTrue(stmts.drop(1).all { assertIs<Expr.Identifier>(assigned(it).second).name == temp.name })
+        assertEquals(listOf("offset", "allocCount"), stmts.map { assigned(it).first })
+        assertTrue(stmts.all { assertIs<Expr.IntLiteral>(assigned(it).second).value == 0L })
     }
 
-    @Test fun theValueIsEvaluatedOnceEvenWhenItIsACall() {
-        // The whole point of the temporary: `= next()` is written once, so it
-        // must run once, however many members it lands in.
-        val stmts = group("self.[a, b, c] = next()")
-        assertIs<Expr.Call>(assertIs<Stmt.FinDecl>(stmts[0]).initializer)
-        assertEquals(3, stmts.size - 1)
+    @Test fun theExpressionIsWrittenToEveryMember() {
+        // A group is the lines it stands for, so each member gets the
+        // expression - not one shared result. `alloc .() * n` asks for a buffer
+        // per member, and handing both the same one would alias them.
+        val stmts = group("self.[keys, values, hashes] = next()")
+        assertEquals(3, stmts.size)
+        assertTrue(stmts.none { it is Stmt.FinDecl }, "nothing is bound in between")
+        assertTrue(stmts.all { assigned(it).second is Expr.Call })
     }
 
     @Test fun fourMembersTakeTheSameValue() {
         val stmts = group("self.[offset, allocCount, peakUsage, totalAllocated] = 0")
         assertEquals(
             listOf("offset", "allocCount", "peakUsage", "totalAllocated"),
-            stmts.drop(1).map { assigned(it).first },
+            stmts.map { assigned(it).first },
         )
     }
 
@@ -101,7 +101,7 @@ class GroupedAssignTest {
             ] = 0
             """.trimIndent(),
         )
-        assertEquals(listOf("offset", "allocCount", "peakUsage"), stmts.drop(1).map { assigned(it).first })
+        assertEquals(listOf("offset", "allocCount", "peakUsage"), stmts.map { assigned(it).first })
     }
 
     @Test fun valuesMayBeSeparatedByNewlinesAlone() {
@@ -120,21 +120,20 @@ class GroupedAssignTest {
 
     @Test fun theReceiverIsWhateverWasWritten() {
         val stmts = group("config.[width, height] = 0")
-        assertEquals("config", assertIs<Expr.Identifier>(assertIs<Stmt.MemberAssign>(stmts[1]).target).name)
+        assertEquals("config", assertIs<Expr.Identifier>(assertIs<Stmt.MemberAssign>(stmts[0]).target).name)
     }
 
     @Test fun aNestedReceiverWorks() {
         val stmts = group("self.window.[width, height] = 0")
-        assertIs<Expr.Member>(assertIs<Stmt.MemberAssign>(stmts[1]).target)
+        assertIs<Expr.Member>(assertIs<Stmt.MemberAssign>(stmts[0]).target)
     }
 
     // -- successive groups stay independent ---------------------------------
 
-    @Test fun twoGroupsInOneBodyBindDistinctTemporaries() {
+    @Test fun twoGroupsInOneBodyStayApart() {
         val stmts = body("self.[a, b] = 0\nself.[c, d] = 1")
-        val first = assertIs<Stmt.FinDecl>(assertIs<Stmt.Scope>(stmts[0]).body[0]).name
-        val second = assertIs<Stmt.FinDecl>(assertIs<Stmt.Scope>(stmts[1]).body[0]).name
-        assertTrue(first != second, "two groups collided on '$first'")
+        assertEquals(listOf("a", "b"), assertIs<Stmt.Scope>(stmts[0]).body.map { assigned(it).first })
+        assertEquals(listOf("c", "d"), assertIs<Stmt.Scope>(stmts[1]).body.map { assigned(it).first })
     }
 
     // -- what is rejected ---------------------------------------------------

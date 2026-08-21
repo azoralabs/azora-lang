@@ -116,11 +116,22 @@ class Parser(
      */
     private var allowMemberGroup: Boolean = false
 
-    /** The names of a grouped target just read, handed to the statement parser. */
-    private var pendingMemberGroup: List<String>? = null
+    /**
+     * The targets of a grouped assignment just read, handed to the statement
+     * parser. Each is written as it would be after the receiver: `keys`, or
+     * `keys[i]`.
+     */
+    private var pendingMemberGroup: List<Expr>? = null
 
-    /** Distinguishes the temporaries successive grouped assignments bind. */
-    private var memberGroupTempCount = 0
+    /**
+     * The rest of the statements one source statement stood for.
+     *
+     * `fin [a, b] = …` is two declarations, and they belong to the block the
+     * group was written in - not to a scope of their own, which is where the
+     * names would then die. The statement parser returns the first and leaves
+     * the rest here for the block to take.
+     */
+    private val pendingStmts = mutableListOf<Stmt>()
 
     /**
      * What a repeated ctor calls its repetition: `ctor[…]() * count`.
@@ -305,6 +316,15 @@ class Parser(
         var isExported = false
         var moduleVisibility = ModuleVisibility.PUBLIC
         var exportCondition: Expr? = null
+        // A decorator above the header decorates the *module* - the `.Module`
+        // target. The same rows above anything else belong to the declaration
+        // that follows, so they are read here only when a header really does
+        // follow; otherwise the scan is rewound and the ordinary top-level
+        // parse sees them where it expects to.
+        val beforeAnnotations = current
+        val leadingAnnotations = if (check(TokenType.AT)) parseAnnotations() else emptyList()
+        val moduleAnnotations = if (isModuleHeaderAhead()) leadingAnnotations else emptyList()
+        if (leadingAnnotations.isNotEmpty() && moduleAnnotations.isEmpty()) current = beforeAnnotations
         val moduleName = if (isModuleHeaderAhead()) {
             // `exposed module x` - auto-imported everywhere, rather than only where
             // it is asked for. It says nothing about visibility: a module is
@@ -379,6 +399,7 @@ class Parser(
                 usesMacros = usedMetaInvoke,
                 scopeTypeNamespaces = scopeTypeNamespaces.toMap(),
                 testScopeMembers = testScopeMembers.toMap(),
+                moduleAnnotations = moduleAnnotations,
             )
         )
         val rewritten = ScopeAccessRewriter.rewrite(normalized)
@@ -870,7 +891,7 @@ class Parser(
                 consume(TokenType.ARROW, "Expected '->' after in-brace receiver")
                 skipNewlines()
             }
-            while (!check(TokenType.R_BRACE) && !isAtEnd()) { body.add(parseStmt()); skipNewlines() }
+            while (!check(TokenType.R_BRACE) && !isAtEnd()) { body.addAll(parseStmts()); skipNewlines() }
             consume(TokenType.R_BRACE, "Expected '}' after body")
         }
         return Triple(receiverModifier, params, body)
@@ -1172,7 +1193,16 @@ class Parser(
                 } else if (check(TokenType.IDENTIFIER) && peekNext()?.type in setOf(TokenType.COLON, TokenType.EQUAL)) {
                     val key = advance().lexeme
                     advance() // ':' or '='
-                    named.add(key to parseExpr())
+                    // A named argument takes the same shorthand its positional
+                    // twin does: the field states the type, so `.Unused` names
+                    // the case without repeating it.
+                    if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
+                        val dot = advance()
+                        val member = advance().lexeme
+                        named.add(key to Expr.Identifier(".$member", dot.line, dot.column))
+                    } else {
+                        named.add(key to parseExpr())
+                    }
                 } else {
                     positional.add(parseExpr())
                 }
@@ -1184,6 +1214,14 @@ class Parser(
 
     private fun parseDecoTargets(): Set<DecoTarget> {
         val targets = linkedSetOf<DecoTarget>()
+        // `for .*` is every target, which is what a decorator with no `for`
+        // already means: an empty set. Spelling it out is allowed because a
+        // reader may want to see the intent, and it says the same thing.
+        if (check(TokenType.DOT) && peekNext()?.type == TokenType.STAR) {
+            advance()
+            advance()
+            return emptySet()
+        }
         fun parseOne() {
             consume(TokenType.DOT, "Expected '.' before decorator target")
             val token = advance()
@@ -1213,8 +1251,16 @@ class Parser(
     /** Parses every `deco` target/binding combination into a normalized declaration. */
     private fun parseDeco(annotations: List<Annotation>, isBridge: Boolean = false): TopLevel.Deco {
         val start = peek()
-        consume(TokenType.ANNOT, "Expected 'deco'")
-        val name = consume(TokenType.IDENTIFIER, "Expected decorator name").lexeme
+        consume(TokenType.ANNOT, "Expected 'annot'")
+        // A decorator is declared as it is written. `annot Serializable` named
+        // one thing at its declaration and another at every use site, and the
+        // `@` is what tells a reader which of the two a name is.
+        if (!check(TokenType.AT)) {
+            val written = peek()
+            error("Decorator declarations carry their '@': use 'annot @${written.lexeme}' at line ${written.line}")
+        }
+        advance()
+        val name = consume(TokenType.IDENTIFIER, "Expected decorator name after '@'").lexeme
         if (name.firstOrNull()?.isUpperCase() != true) {
             error("Decorator names must start with an uppercase letter: use '${name.replaceFirstChar { it.uppercase() }}' at line ${start.line}")
         }
@@ -1368,6 +1414,7 @@ class Parser(
                 var folded: List<Token> = inner
                 for ((name, value) in bindings) folded = substituteBareIdentifier(folded, name, value)
                 folded = foldListIndexing(folded)
+                folded = foldConstantArithmetic(folded)
                 result.addAll(folded)
                 k = j + 1
             } else {
@@ -1386,6 +1433,100 @@ class Parser(
             if (t.type == TokenType.IDENTIFIER && t.lexeme == name) result.addAll(valueTokens) else result.add(t)
         }
         return result
+    }
+
+    /**
+     * Folds a splice that is arithmetic over integers into the number it is.
+     *
+     * `${8 << index}` is a width, and a width has to arrive as one: a type
+     * argument, a doc line and a field count all want the value, not three
+     * tokens that would add up to it. Anything that is not integer arithmetic
+     * is left exactly as written - a splice may name something instead.
+     */
+    private fun foldConstantArithmetic(tokens: List<Token>): List<Token> {
+        val value = ConstantFolder(tokens).evaluate() ?: return tokens
+        val first = tokens.first()
+        return listOf(
+            Token(
+                TokenType.INT_LITERAL,
+                value.toString(),
+                first.line,
+                first.column,
+                NumericLiteral(value),
+            ),
+        )
+    }
+
+    /**
+     * The one arithmetic expression a splice may hold, read by precedence.
+     *
+     * Shifts bind loosest, then `+`/`-`, then `*`/`/`/`%` - the order every
+     * language with these operators uses, and the order a reader of
+     * `${8 << index + 1}` expects.
+     */
+    private class ConstantFolder(private val tokens: List<Token>) {
+        private var at = 0
+
+        fun evaluate(): Long? {
+            val value = shift() ?: return null
+            return if (at == tokens.size) value else null
+        }
+
+        private fun shift(): Long? {
+            var left = sum() ?: return null
+            while (true) {
+                val op = peek()?.type
+                if (op != TokenType.SHIFT_LEFT && op != TokenType.SHIFT_RIGHT) return left
+                at++
+                val right = sum() ?: return null
+                left = if (op == TokenType.SHIFT_LEFT) left shl right.toInt() else left shr right.toInt()
+            }
+        }
+
+        private fun sum(): Long? {
+            var left = product() ?: return null
+            while (true) {
+                val op = peek()?.type
+                if (op != TokenType.PLUS && op != TokenType.MINUS) return left
+                at++
+                val right = product() ?: return null
+                left = if (op == TokenType.PLUS) left + right else left - right
+            }
+        }
+
+        private fun product(): Long? {
+            var left = atom() ?: return null
+            while (true) {
+                val op = peek()?.type
+                if (op != TokenType.STAR && op != TokenType.SLASH && op != TokenType.PERCENT) return left
+                at++
+                val right = atom() ?: return null
+                if ((op == TokenType.SLASH || op == TokenType.PERCENT) && right == 0L) return null
+                left = when (op) {
+                    TokenType.STAR -> left * right
+                    TokenType.SLASH -> left / right
+                    else -> left % right
+                }
+            }
+        }
+
+        private fun atom(): Long? {
+            val token = peek() ?: return null
+            return when (token.type) {
+                TokenType.MINUS -> { at++; atom()?.let { -it } }
+                TokenType.INT_LITERAL -> { at++; (token.literal as? NumericLiteral)?.value as? Long }
+                TokenType.L_PAREN -> {
+                    at++
+                    val inner = shift() ?: return null
+                    if (peek()?.type != TokenType.R_PAREN) return null
+                    at++
+                    inner
+                }
+                else -> null
+            }
+        }
+
+        private fun peek(): Token? = tokens.getOrNull(at)
     }
 
     /** Folds `list[<int>]` on a compile-time list variable into the element value. */
@@ -1555,10 +1696,11 @@ class Parser(
             if (!check(TokenType.R_BRACKET)) {
                 do {
                     values.add(when {
-                        // Plain `[…]` groups *types* only; string/int value lists must
-                        // be written `@arr[…]`.
+                        // A bracket is a group of whatever is written in it: a
+                        // list of types, or a list of values. `@arr[…]` builds
+                        // an array at run time; a compile-time list needs no
+                        // macro to say what it plainly is.
                         check(TokenType.STRING_LITERAL) || check(TokenType.INT_LITERAL) -> {
-                            if (!isMacro) error("value lists must use '@arr[…]'; plain '[…]' only groups types at line ${peek().line}")
                             if (check(TokenType.STRING_LITERAL)) advance().literal as String
                             else (advance().literal as NumericLiteral).value.toString()
                         }
@@ -1979,8 +2121,33 @@ class Parser(
         val name = parsedBridgeName?.localName ?: parsedBridgeName?.backendName
             ?: consume(TokenType.IDENTIFIER, "Expected $keyword name").lexeme
         val tp = parseTypeParams()
+        // `bridge pack Byte(IntLiteral)` - the literal this type is written as.
+        // A primitive is written rather than built, and this says which literal
+        // writes it. Only a bridge pack may: these are the compiler's own
+        // types, and nothing a library declares is a literal.
+        val literalKind = if (check(TokenType.L_PAREN)) {
+            if (!isBridge) {
+                error(
+                    "'$keyword $name(…)' is a bridge form at line ${start.line}: " +
+                        "only the compiler's own types are written as literals",
+                )
+            }
+            advance()
+            val written = advance()
+            val kind = written.lexeme
+            if (kind !in Literals.KINDS) {
+                error(
+                    "'$kind' is not a literal at line ${start.line}: " +
+                        "write ${Literals.KINDS.joinToString(" or ") { "'$it'" }}",
+                )
+            }
+            consume(TokenType.R_PAREN, "Expected ')' after the literal a bridge pack is written as")
+            kind
+        } else {
+            null
+        }
         constParamEnums = tp.constEnums
-        val derives = if (matchContextual("derives")) parseDeriveHeads() else emptyList()
+        val derives = if (matchContinuedContextual("derives")) parseDeriveHeads() else emptyList()
         if (isUnion && derives.isNotEmpty()) {
             error("an unsafe union cannot derive field-wise implementations at line ${start.line}")
         }
@@ -2004,6 +2171,7 @@ class Parser(
                 constParams = tp.constParams,
                 fieldTemplate = null,
                 isBridge = isBridge,
+                literalKind = literalKind,
                 isUnion = isUnion,
                 foreignName = parsedBridgeName?.backendName?.takeIf { parsedBridgeName.localName != null },
                 nameMacro = parsedBridgeName?.macro,
@@ -2703,13 +2871,13 @@ class Parser(
                 NumericSuffix.CENT -> "Cent"
                 NumericSuffix.UCENT -> "UCent"
                 NumericSuffix.FLOAT -> "Float"
-                NumericSuffix.DECIMAL -> "Decimal"
+                NumericSuffix.QUAD -> "Quad"
             },
         )
         is Expr.DoubleLiteral -> TypeRef.Named(
             when (expr.suffix) {
                 NumericSuffix.FLOAT -> "Float"
-                NumericSuffix.DECIMAL -> "Decimal"
+                NumericSuffix.QUAD -> "Quad"
                 else -> "Double"
             },
         )
@@ -2914,6 +3082,14 @@ class Parser(
         check(TokenType.STAR) -> {
             advance()
             TypeRef.Named("*")
+        }
+        // `add<Short, _, Long>(1, 2, 3)` - a hole says "work this one out",
+        // which is what an unwritten list says about every position. Writing
+        // some of them is how a caller pins the ones that matter and leaves
+        // the rest to the arguments.
+        check(TokenType.IDENTIFIER) && peek().lexeme == TypeRef.HOLE -> {
+            advance()
+            TypeRef.Named(TypeRef.HOLE)
         }
         // `tupleOf<Int, ...T>(…)` - a type pack spread among the type
         // arguments. A call whose element types cannot be read back off its
@@ -3196,6 +3372,19 @@ class Parser(
         }
         // `impl oper<OP> for Type(…)` was removed; see the note on the bracketed
         // form below. Both are caught there, so nothing is needed here.
+        // `impl ctor() for T { self! -> … }` named its type from the outside and
+        // its receiver inside the braces - the last form that did either. A
+        // constructor is a member, so it is written where every other member
+        // is, and the error says so rather than only that this is wrong.
+        if (check(TokenType.CTOR) || check(TokenType.DTOR)) {
+            val removed = peek()
+            val member = if (removed.type == TokenType.CTOR) "ctor" else "dtor"
+            val replacement = if (member == "ctor") "ctor[self: Self!](…)" else "dtor[self: Self!]"
+            error(
+                "'impl $member(…) for T' was removed at line ${removed.line}: " +
+                    "write '$replacement' inside 'impl T { … }'",
+            )
+        }
         if (check(TokenType.CTOR)) {
             val ctorStart = advance()
             val ctorParams = if (match(TokenType.L_PAREN)) {
@@ -3229,7 +3418,7 @@ class Parser(
             }
             val body = mutableListOf<Stmt>()
             while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                body.add(parseStmt())
+                body.addAll(parseStmts())
                 skipNewlines()
             }
             consume(TokenType.R_BRACE, "Expected '}' after ctor impl body")
@@ -3271,7 +3460,7 @@ class Parser(
             }
             val body = mutableListOf<Stmt>()
             while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                body.add(parseStmt())
+                body.addAll(parseStmts())
                 skipNewlines()
             }
             consume(TokenType.R_BRACE, "Expected '}' after dtor impl body")
@@ -3512,6 +3701,16 @@ class Parser(
                     val propName = consume(TokenType.IDENTIFIER, "Expected property name").lexeme
                     val propReceiver = parsePropReceiver()
                     val propTypeDeclared = check(TokenType.COLON)
+                    // A property is part of its type's surface: a caller writes
+                    // `value.isLess` and has to know what comes back without
+                    // reading the body. A local binding may infer, because its
+                    // initializer is right beside it; a member may not.
+                    if (!propTypeDeclared) {
+                        error(
+                            "property '$propName' must declare its type at line ${methodStart.line}: " +
+                                "write 'prop $propName[…]: T = …'",
+                        )
+                    }
                     val propType: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
                     // A property may carry its own constraint, as an operator or a
                     // function does - `prop normalized[…]: Self ?! E where T is …`.
@@ -3880,7 +4079,7 @@ class Parser(
         skipNewlines()
         val body = mutableListOf<Stmt>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            body.add(parseStmt())
+            body.addAll(parseStmts())
             skipNewlines()
         }
         consume(TokenType.R_BRACE, "Expected '}' after oper body")
@@ -4548,6 +4747,12 @@ class Parser(
      * [parseExpr] - `$name` is a normal identifier, `...$name` a normal spread.
      */
     companion object {
+        /** The receiver's name, everywhere it is written. */
+        const val SELF_RECEIVER = "self"
+
+        /** `[&]` - a receiver the member takes and does not use. */
+        const val IGNORED_RECEIVER = "_"
+
         /**
          * `macro @name => inline "…"` fragments, by name.
          *
@@ -5297,6 +5502,11 @@ class Parser(
         }
         consume(TokenType.L_BRACE, "Expected '{' after spec name")
         skipNewlines()
+        // Inside a spec, `Self` is the type that will implement it - as settled
+        // a meaning as it has inside an `impl`, so a member may write `[self&]`
+        // here too and leave the type to the one place that already says it.
+        val savedImplTypeName = currentImplTypeName
+        currentImplTypeName = name
         val methods = mutableListOf<FuncDecl>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
@@ -5482,6 +5692,7 @@ class Parser(
             ))
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
+        currentImplTypeName = savedImplTypeName
         consumeNewline()
         return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, isDirect = isDirect, typeDefaults = typeParams.typeDefaults, assocNames = assocNames)
     }
@@ -5579,7 +5790,7 @@ class Parser(
      */
     private fun parseWhenStatementBody(): List<Stmt> {
         if (!check(TokenType.L_BRACE)) {
-            return listOf(parseStmt())
+            return parseStmts()
         }
         consume(TokenType.L_BRACE, "Expected '{' after '->'")
         skipNewlines()
@@ -5848,7 +6059,7 @@ class Parser(
             }
             val stmts = mutableListOf<Stmt>()
             while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                stmts.add(parseStmt())
+                stmts.addAll(parseStmts())
                 skipNewlines()
             }
             consume(TokenType.R_BRACE, "Expected '}' after function body")
@@ -6740,6 +6951,11 @@ class Parser(
      */
     private fun parseTypeAtom(): TypeRef {
         return when {
+            // `__int`, `__uint`, `__float` - the compiler's own primitives. A
+            // pack cannot describe them: `Int<N: __uint>` needs a width before
+            // there is an `Int` to state one with.
+            check(TokenType.PRIM_INT) || check(TokenType.PRIM_UINT) || check(TokenType.PRIM_FLOAT) ->
+                TypeRef.Named(advance().lexeme)
             check(TokenType.BANG) -> {
                 if (peekNext()?.type == TokenType.L_BRACKET) {
                     error("Set type syntax '![T]' was removed; use 'Set<T>' at line ${peek().line}")
@@ -7012,6 +7228,31 @@ class Parser(
     // Statements
     // -----------------------------------------------------------------------
 
+    /**
+     * One statement, plus whatever a group written in it stood for.
+     *
+     * Every list of statements is built with this: a group is the lines it
+     * stands for, and those lines belong to the block it was written in.
+     */
+    private fun parseStmts(): List<Stmt> {
+        val first = parseStmt()
+        if (pendingStmts.isEmpty()) return listOf(first)
+        val rest = pendingStmts.toList()
+        pendingStmts.clear()
+        return listOf(first) + rest
+    }
+
+    /** One statement, where the grammar has room for exactly one. */
+    private fun parseSingleStmt(what: String): Stmt {
+        val line = peek().line
+        val stmt = parseStmt()
+        if (pendingStmts.isNotEmpty()) {
+            pendingStmts.clear()
+            error("a grouped binding declares several names, and $what has room for one, at line $line")
+        }
+        return stmt
+    }
+
     private fun parseStmt(): Stmt {
         // A fragment macro stands for source, and a statement is one of the
         // places it can stand for: `@compose world { … }` becomes the `with`
@@ -7023,6 +7264,8 @@ class Parser(
             check(TokenType.VAR) && peekNext()?.type == TokenType.L_PAREN -> parseExprStmt()
             check(TokenType.VAR) || check(TokenType.VAL) -> parseVarDecl()
             check(TokenType.FIN) -> parseFinDecl()
+            check(TokenType.LET) && peekNext()?.type == TokenType.L_BRACKET ->
+                parseGroupBinding(advance(), keyword = "let")
             check(TokenType.LET) -> parseLetDecl()
             check(TokenType.LAZY) -> parseLazyDecl()
             check(TokenType.RETURN) -> parseReturn()
@@ -7057,7 +7300,21 @@ class Parser(
             check(TokenType.RETAIN) -> parseReactiveDecl(ReactiveKind.RETAIN)
             check(TokenType.PRESERVE) -> parseReactiveDecl(ReactiveKind.PRESERVE)
             check(TokenType.EFFECT) -> parseEffect()
+            // A test opens with what it needs: reading `reflect` is that
+            // test's business and nothing else's in the file, so the import
+            // that brings it in is written beside the use. It is still an
+            // import, so it leaves here for the top level, where imports are
+            // resolved.
+            check(TokenType.IMPORT) || check(TokenType.USE) -> {
+                val at = peek()
+                pendingTopLevels.add(parseUse())
+                Stmt.Scope(emptyList(), at.line, at.column)
+            }
             check(TokenType.WITH) -> parseWithContext()
+            // `[a[i], b[i]] = …` - a group of targets this scope owns, rather
+            // than members of a receiver. Nothing else opens a statement with a
+            // bracket: a value written on its own does nothing.
+            check(TokenType.L_BRACKET) -> parseBareGroupAssignment()
             else -> parseExprStmt()
         }
     }
@@ -7473,10 +7730,36 @@ class Parser(
     private fun parsePurge(): Stmt {
         val start = peek()
         consume(TokenType.PURGE, "Expected 'purge'")
-        val value = parseExpr()
+        if (!check(TokenType.L_BRACKET)) {
+            val value = parseExpr()
+            consumeNewline()
+            return Stmt.ExprStmt(purgeCall(value, start), start.line, start.column)
+        }
+        // `purge [a, b, c]` - releasing what one value owns is one act, and one
+        // statement says it. The list is read here because a bare `[…]` is not
+        // an expression anywhere else in the language.
+        consume(TokenType.L_BRACKET, "Expected '[' after 'purge'")
+        skipNewlines()
+        val values = mutableListOf<Expr>()
+        if (!check(TokenType.R_BRACKET)) {
+            do {
+                skipNewlines()
+                values.add(parseExpr())
+                skipNewlines()
+            } while (match(TokenType.COMMA))
+        }
+        consume(TokenType.R_BRACKET, "Expected ']' after purge list")
         consumeNewline()
-        return Stmt.ExprStmt(Expr.Call("__purge", listOf(value), start.line, start.column, start.lexeme.length), start.line, start.column)
+        if (values.isEmpty()) {
+            error("'purge []' releases nothing at line ${start.line}; name what to release")
+        }
+        val purges = values.map { Stmt.ExprStmt(purgeCall(it, start), start.line, start.column) }
+        return purges.singleOrNull()
+            ?: Stmt.Scope(purges, start.line, start.column, shared = true)
     }
+
+    private fun purgeCall(value: Expr, start: Token): Expr =
+        Expr.Call("__purge", listOf(value), start.line, start.column, start.lexeme.length)
 
     /** `yield <expr>` - emit a value from a `flow` generator. */
     private fun parseDefer(): Stmt.Defer {
@@ -7626,6 +7909,18 @@ class Parser(
             allowTrailingLambda = false
             values.add(parseExpr())
             allowTrailingLambda = savedTrailing
+        }
+        // One statement on the same line needs no braces: `with self purge [a, b]`
+        // reads as one sentence, and wrapping it would only add two lines around
+        // the one that says something.
+        if (!check(TokenType.L_BRACE)) {
+            if (check(TokenType.NEWLINE) || isAtEnd()) {
+                error(
+                    "Expected '{' or a statement after 'with' at line ${start.line}; " +
+                        "write 'with <value> { … }' or 'with <value> <statement>'"
+                )
+            }
+            return Stmt.WithContext(values, parseStmts(), start.line, start.column)
         }
         consume(TokenType.L_BRACE, "Expected '{' after contextual values")
         skipNewlines()
@@ -7891,15 +8186,27 @@ class Parser(
      * receiver is actually in scope.
      */
     private fun parseReceiverList(): Pair<PropReceiver, List<Param>> {
-        val name = consumeIdentifierLike("Expected receiver name in '[…]'")
-        if (!check(TokenType.COLON)) {
-            error(
-                "a receiver must name its type: write '[$name: Self&]' inside an impl, " +
-                    "or '[$name: Type&]' on an extension, at line ${peek().line}",
-            )
+        val shorthand = parseSelfReceiverShorthand()
+        val name: String
+        val type: TypeRef
+        val modifier: ParamModifier
+        if (shorthand != null) {
+            name = shorthand.name
+            type = shorthand.type ?: TypeRef.Named("Self")
+            modifier = shorthand.modifier
+        } else {
+            name = consumeIdentifierLike("Expected receiver name in '[…]'")
+            if (!check(TokenType.COLON)) {
+                error(
+                    "a receiver must name its type: write '[$name: Self&]' inside an impl, " +
+                        "or '[$name: Type&]' on an extension, at line ${peek().line}",
+                )
+            }
+            advance() // ':'
+            val parsed = parseReceiverTypeAndModifier()
+            type = parsed.first
+            modifier = parsed.second
         }
-        advance() // ':'
-        val (type, modifier) = parseReceiverTypeAndModifier()
         val extra = mutableListOf<Param>()
         while (match(TokenType.COMMA)) {
             skipNewlines()
@@ -7913,6 +8220,37 @@ class Parser(
         }
         consume(TokenType.R_BRACKET, "Expected ']' after receiver")
         return PropReceiver(name, type, modifier) to extra
+    }
+
+    /**
+     * `[self&]`, `[self!]`, `[self]`, `[&]`, `[!]` - the receiver, without its type.
+     *
+     * Inside a body that knows what `Self` is - an `impl`, or a `spec`, whose
+     * members are written against whatever implements it - the type is never in
+     * question, and the sigil is the only thing that varies. `[&]` and `[!]`
+     * name no receiver at all: the member takes one and does not use it.
+     *
+     * Returns null where `Self` is not settled, which leaves the long form as
+     * the only way to write a receiver on a free function.
+     */
+    private fun parseSelfReceiverShorthand(): PropReceiver? {
+        if (currentImplTypeName == null) return null
+        val named = check(TokenType.IDENTIFIER) && peek().lexeme == SELF_RECEIVER
+        val sigilAt = if (named) 1 else 0
+        val modifier = when (tokens.getOrNull(current + sigilAt)?.type) {
+            TokenType.AMP -> ParamModifier.SHARED
+            TokenType.BANG -> ParamModifier.EXCLUSIVE
+            // `[self]` alone consumes; `[]` names no receiver at all.
+            else -> if (named) ParamModifier.NONE else return null
+        }
+        val after = tokens.getOrNull(current + sigilAt + if (modifier == ParamModifier.NONE) 0 else 1)?.type
+        if (after != TokenType.R_BRACKET && after != TokenType.COMMA) return null
+        repeat(sigilAt + if (modifier == ParamModifier.NONE) 0 else 1) { advance() }
+        return PropReceiver(
+            if (named) SELF_RECEIVER else IGNORED_RECEIVER,
+            TypeRef.Named("Self"),
+            modifier,
+        )
     }
 
     /**
@@ -7954,7 +8292,7 @@ class Parser(
             skipNewlines()
             val body = mutableListOf<Stmt>()
             while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                body.add(parseStmt())
+                body.addAll(parseStmts())
                 skipNewlines()
             }
             consume(TokenType.R_BRACE, "Expected '}' to close prop body")
@@ -8674,7 +9012,7 @@ class Parser(
     private fun parseNoInline(): Stmt.NoInline {
         val start = peek()
         consume(TokenType.NOINLINE, "Expected 'noinline'")
-        val inner = parseStmt()
+        val inner = parseSingleStmt("'noinline'")
         return Stmt.NoInline(inner, start.line, start.column)
     }
 
@@ -8914,7 +9252,7 @@ class Parser(
         skipNewlines()
         val stmts = mutableListOf<Stmt>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-            stmts.add(parseStmt())
+            stmts.addAll(parseStmts())
             skipNewlines()
         }
         return stmts
@@ -8972,10 +9310,124 @@ class Parser(
     private fun parseInitializer(type: TypeAnnotation): Expr =
         parseInitializer((type as? TypeAnnotation.Explicit)?.ref)
 
+    /**
+     * `fin [a, b, c] = …` - one declaration per name, written once.
+     *
+     * A group is the lines it stands for. What the names take depends on what
+     * is on the right, and the bracket is what tells the two apart:
+     *
+     * ```
+     * fin [a, b] = with self { [x, y] }   // a = self.x, b = self.y
+     * fin [a, b] = [1, 2]                 // a = 1,      b = 2
+     * fin [a, b] = next()                 // a = next(), b = next()
+     * ```
+     *
+     * The `with` form is the one worth having: five fields of one value, read
+     * under names of this scope's choosing, without writing the receiver five
+     * times. Every form desugars here into ordinary declarations, so nothing
+     * downstream learns a new node - see [pendingStmts] for how several
+     * statements leave a parser that returns one.
+     */
+    private fun parseGroupBinding(start: Token, keyword: String): Stmt {
+        val names = mutableListOf<String>()
+        val types = mutableListOf<TypeAnnotation>()
+        consume(TokenType.L_BRACKET, "Expected '[' to open a grouped binding")
+        skipNewlines()
+        while (!check(TokenType.R_BRACKET) && !isAtEnd()) {
+            names.add(consumeIdentifierLike("Expected a binding name inside '$keyword […]'"))
+            // Each name may state its own type, exactly as it would on its own
+            // line: `let [ keys: K*, values: V* ] = alloc .() * n`.
+            types.add(
+                if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred,
+            )
+            skipNewlines()
+            if (match(TokenType.COMMA)) skipNewlines()
+        }
+        consume(TokenType.R_BRACKET, "Expected ']' after a grouped binding's names")
+        // `fin [a, b, c]: Int = 0` - one type for the whole group, where every
+        // name would otherwise say the same thing. A name that states its own
+        // keeps it; saying both is saying one thing twice.
+        if (match(TokenType.COLON)) {
+            val shared = TypeAnnotation.Explicit(parseTypeName())
+            val stated = types.indices.filter { types[it] is TypeAnnotation.Explicit }
+            if (stated.isNotEmpty()) {
+                error(
+                    "a grouped binding states its type once at line ${start.line}: " +
+                        "${names[stated.first()]} already names one",
+                )
+            }
+            types.indices.forEach { types[it] = shared }
+        }
+        if (names.isEmpty()) {
+            error("'$keyword []' binds nothing at line ${start.line}; name what it binds")
+        }
+        if (names.size != names.distinct().size) {
+            val repeated = names.groupBy { it }.filterValues { it.size > 1 }.keys
+            error("a grouped binding names ${repeated.joinToString(", ")} more than once at line ${start.line}")
+        }
+        consume(TokenType.EQUAL, "Expected '=' after a grouped binding's names")
+        skipNewlines()
+
+        val values = parseGroupBindingValues(names, start, keyword)
+        val declarations = names.mapIndexed { index, name ->
+            val type = types[index]
+            val value = values[index]
+            when (keyword) {
+                "var" -> Stmt.VarDecl(name, type, value, start.line, start.column, valueMutable = true)
+                "val" -> Stmt.VarDecl(name, type, value, start.line, start.column, valueMutable = false)
+                "let" -> Stmt.LetDecl(name, type, value, start.line, start.column)
+                else -> Stmt.FinDecl(name, type, value, start.line, start.column)
+            }
+        }
+        consumeNewline()
+        pendingStmts.addAll(declarations.drop(1))
+        return declarations.first()
+    }
+
+    /** One value per name in a grouped binding, from whichever form was written. */
+    private fun parseGroupBindingValues(names: List<String>, start: Token, keyword: String): List<Expr> {
+        fun expect(count: Int) {
+            if (count == names.size) return
+            error(
+                "a grouped binding needs one value per name at line ${start.line}: " +
+                    "${names.size} named (${names.joinToString(", ")}), $count given",
+            )
+        }
+
+        // `with <receiver> { [x, y, z] }` - the members of one value, in order.
+        parseWithGroupValues()?.let { values ->
+            expect(values.size)
+            return values
+        }
+
+        // `[v1, v2, v3]` - one value per name, positionally.
+        if (check(TokenType.L_BRACKET)) {
+            advance()
+            val values = mutableListOf<Expr>()
+            skipNewlines()
+            while (!check(TokenType.R_BRACKET) && !isAtEnd()) {
+                values.add(parseExpr())
+                skipNewlines()
+                if (match(TokenType.COMMA)) skipNewlines()
+            }
+            consume(TokenType.R_BRACKET, "Expected ']' after a grouped binding's values")
+            expect(values.size)
+            return values
+        }
+
+        // One expression, written once per name - as the lines it stands for
+        // would have written it.
+        val value = parseExpr()
+        return names.map { value }
+    }
+
     /** `var name = …` (mutable value) or `val name = …` (immutable value). */
-    private fun parseVarDecl(): Stmt.VarDecl {
+    private fun parseVarDecl(): Stmt {
         val start = peek()
         val valueMutable = advance().type == TokenType.VAR // 'var' or 'val'
+        if (check(TokenType.L_BRACKET)) {
+            return parseGroupBinding(start, keyword = if (valueMutable) "var" else "val")
+        }
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in declaration")
@@ -8984,9 +9436,10 @@ class Parser(
         return Stmt.VarDecl(name, type, init, start.line, start.column, valueMutable = valueMutable)
     }
 
-    private fun parseFinDecl(): Stmt.FinDecl {
+    private fun parseFinDecl(): Stmt {
         val start = peek()
         advance() // consume 'fin'
+        if (check(TokenType.L_BRACKET)) return parseGroupBinding(start, keyword = "fin")
         val name = consumeIdentifierLike("Expected variable name")
         val type: TypeAnnotation = if (match(TokenType.COLON)) TypeAnnotation.Explicit(parseTypeName()) else TypeAnnotation.Inferred
         consume(TokenType.EQUAL, "Expected '=' in declaration")
@@ -9010,7 +9463,14 @@ class Parser(
     private fun parseLazyDecl(): Stmt {
         val start = advance() // lazy
         return when {
-            check(TokenType.FIN) -> parseFinDecl().copy(line = start.line, column = start.column, lazy = true)
+            // A lazy binding is one name and one initializer: what "evaluated
+            // once, on first read" means is a question about a single value.
+            check(TokenType.FIN) && peekNext()?.type == TokenType.L_BRACKET ->
+                error("'lazy' takes a single binding at line ${start.line}, not a group")
+            check(TokenType.LET) && peekNext()?.type == TokenType.L_BRACKET ->
+                error("'lazy' takes a single binding at line ${start.line}, not a group")
+            check(TokenType.FIN) -> (parseFinDecl() as Stmt.FinDecl)
+                .copy(line = start.line, column = start.column, lazy = true)
             check(TokenType.LET) -> parseLetDecl().copy(line = start.line, column = start.column, lazy = true)
             check(TokenType.VAR) || check(TokenType.VAL) -> error(
                 "'lazy' requires 'fin' or 'let' at line ${start.line}; " +
@@ -9049,7 +9509,11 @@ class Parser(
      * `when` arm, an `if` branch - accepts the shorthand on the same terms.
      */
     private fun parseReturnedValue(start: Token): Stmt {
-        if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
+        // `return .Variant` fails the function - but only where the signature
+        // says it can. A `prop next[…]: Colour` declares no error set, so its
+        // `.Green` is a value of the type it returns, read from context like
+        // every other bare case.
+        if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER && currentFailSets.isNotEmpty()) {
             advance() // '.'
             val variant = consume(TokenType.IDENTIFIER, "Expected error variant after 'return .'").lexeme
             // `return .OutOfBounds(i, n)` - an error variant carrying data. The error
@@ -9609,19 +10073,94 @@ class Parser(
      * Commas separate names on one line and are unnecessary across lines, so a
      * group reads the same as the field block it usually mirrors.
      */
-    private fun parseMemberGroupNames(): List<String> {
-        val names = mutableListOf<String>()
+    private fun parseMemberGroupNames(): List<Expr> {
+        val targets = mutableListOf<Expr>()
         skipNewlines()
         if (check(TokenType.R_BRACKET)) {
             error("Expected at least one member name inside '.[…]' at line ${peek().line}")
         }
         while (!check(TokenType.R_BRACKET) && !isAtEnd()) {
-            names.add(consumeMemberName("Expected a member name inside '.[…]'"))
+            targets.add(parseGroupTarget())
             skipNewlines()
             if (match(TokenType.COMMA)) skipNewlines()
         }
         consume(TokenType.R_BRACKET, "Expected ']' after a grouped assignment target")
-        return names
+        return targets
+    }
+
+    /**
+     * One target inside `.[…]`, written as it would be after the receiver.
+     *
+     * `keys` is a member and `keys[i]` an element of one; both are places a
+     * value can go. Read by shape rather than as a general expression, because
+     * members here are separated by newlines as readily as by commas, and an
+     * expression parser reads two names on two lines as one infix call.
+     */
+    private fun parseGroupTarget(): Expr {
+        val start = peek()
+        val name = consumeMemberName("Expected a member name inside '.[…]'")
+        var target: Expr = Expr.Identifier(name, start.line, start.column, name.length)
+        while (true) {
+            when {
+                check(TokenType.L_BRACKET) -> {
+                    advance()
+                    val index = parseExpr()
+                    consume(TokenType.R_BRACKET, "Expected ']' after an index inside '.[…]'")
+                    target = Expr.Index(target, index, start.line, start.column)
+                }
+                check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER -> {
+                    advance()
+                    val member = consumeMemberName("Expected a member name after '.' inside '.[…]'")
+                    target = Expr.Member(target, member, start.line, start.column)
+                }
+                else -> return target
+            }
+        }
+    }
+
+    /**
+     * An expression written inside a group, moved onto the receiver it is read
+     * from: `keys[i + 1]` under `self` is `self.keys[i + 1]`.
+     *
+     * Only the head of the chain moves. The `i + 1` is an expression of the
+     * scope the group was written in, and qualifying it would change what it
+     * names.
+     */
+    private fun onReceiver(expr: Expr, receiver: Expr): Expr = when (expr) {
+        is Expr.Identifier -> Expr.Member(receiver, expr.name, expr.line, expr.column, expr.length)
+        is Expr.Index -> expr.copy(target = onReceiver(expr.target, receiver))
+        is Expr.Member -> expr.copy(target = onReceiver(expr.target, receiver))
+        is Expr.MethodCall -> expr.copy(target = onReceiver(expr.target, receiver))
+        else -> expr
+    }
+
+    /**
+     * `with <receiver> { [ a, b, c ] }` - a group of values read from one value.
+     *
+     * Returns null when the next token opens something else, so a caller can
+     * offer the form alongside the others it accepts.
+     */
+    private fun parseWithGroupValues(): List<Expr>? {
+        if (!check(TokenType.WITH)) return null
+        advance()
+        val savedTrailing = allowTrailingLambda
+        allowTrailingLambda = false
+        val receiver = parseExpr()
+        allowTrailingLambda = savedTrailing
+        consume(TokenType.L_BRACE, "Expected '{' after the value a group reads from")
+        skipNewlines()
+        consume(TokenType.L_BRACKET, "Expected '[' to open the values a group reads")
+        val values = mutableListOf<Expr>()
+        skipNewlines()
+        while (!check(TokenType.R_BRACKET) && !isAtEnd()) {
+            values.add(onReceiver(parseExpr(), receiver))
+            skipNewlines()
+            if (match(TokenType.COMMA)) skipNewlines()
+        }
+        consume(TokenType.R_BRACKET, "Expected ']' after the values a group reads")
+        skipNewlines()
+        consume(TokenType.R_BRACE, "Expected '}' after the values a group reads")
+        return values
     }
 
     /**
@@ -9630,7 +10169,7 @@ class Parser(
      * Two forms, and the bracket on the right is what tells them apart:
      *
      * ```
-     * self.[offset, allocCount] = 0              // one value, to each member
+     * self.[offset, allocCount] = 0              // the expression, to each member
      * self.[a, b, c] = [1, "2", true]            // one value per member
      * ```
      *
@@ -9640,9 +10179,24 @@ class Parser(
      * is stored several times. That temporary is why the result is wrapped in a
      * scope - two grouped assignments in one body must not collide on it.
      */
-    private fun parseGroupedAssignment(receiver: Expr, names: List<String>, start: Token): Stmt {
-        if (names.size != names.distinct().size) {
-            val repeated = names.groupBy { it }.filterValues { it.size > 1 }.keys
+    /**
+     * `[a, b] = …` - a group of targets this scope owns.
+     *
+     * The receiver form's twin: `self.[keys, values] = …` names members of one
+     * value, and this names whatever is written in it. Both stand for the lines
+     * they would have been.
+     */
+    private fun parseBareGroupAssignment(): Stmt {
+        val start = peek()
+        consume(TokenType.L_BRACKET, "Expected '[' to open a grouped assignment target")
+        val targets = parseMemberGroupNames()
+        return parseGroupedAssignment(receiver = null, targets = targets, start = start)
+    }
+
+    private fun parseGroupedAssignment(receiver: Expr?, targets: List<Expr>, start: Token): Stmt {
+        val named = targets.filterIsInstance<Expr.Identifier>().map { it.name }
+        if (named.size != named.distinct().size) {
+            val repeated = named.groupBy { it }.filterValues { it.size > 1 }.keys
             error(
                 "a grouped assignment names ${repeated.joinToString(", ")} more than once " +
                     "at line ${start.line}",
@@ -9651,8 +10205,30 @@ class Parser(
         consume(TokenType.EQUAL, "Expected '=' after a grouped assignment target")
         skipNewlines()
 
-        fun assign(name: String, value: Expr): Stmt =
-            Stmt.MemberAssign(receiver, name, value, start.line, start.column)
+        fun assign(target: Expr, value: Expr): Stmt =
+            buildAssignment(
+                if (receiver == null) target else onReceiver(target, receiver),
+                value, start.line, start.column,
+            )
+
+        fun expect(count: Int) {
+            if (count == targets.size) return
+            error(
+                "a grouped assignment needs one value per member at line ${start.line}: " +
+                    "${targets.size} named, $count given",
+            )
+        }
+
+        // `= with other { [a, b] }` - the same members of another value, or any
+        // expressions read from it.
+        parseWithGroupValues()?.let { values ->
+            consumeNewline()
+            expect(values.size)
+            return Stmt.Scope(
+                targets.mapIndexed { i, target -> assign(target, values[i]) },
+                start.line, start.column,
+            )
+        }
 
         // `= [v1, v2, v3]` - positional. A bare bracket list is not an expression
         // in its own right (array values are `arr![…]`), so it is read here.
@@ -9667,26 +10243,20 @@ class Parser(
             }
             consume(TokenType.R_BRACKET, "Expected ']' after grouped assignment values")
             consumeNewline()
-            if (values.size != names.size) {
-                error(
-                    "a grouped assignment needs one value per member at line ${start.line}: " +
-                        "${names.size} named (${names.joinToString(", ")}), ${values.size} given",
-                )
-            }
+            expect(values.size)
             return Stmt.Scope(
-                names.mapIndexed { i, name -> assign(name, values[i]) },
+                targets.mapIndexed { i, target -> assign(target, values[i]) },
                 start.line, start.column,
             )
         }
 
         val value = parseExpr()
         consumeNewline()
-        val temp = "__group${memberGroupTempCount++}"
-        val body = mutableListOf<Stmt>(
-            Stmt.FinDecl(temp, TypeAnnotation.Inferred, value, start.line, start.column),
-        )
-        names.forEach { body.add(assign(it, Expr.Identifier(temp, start.line, start.column))) }
-        return Stmt.Scope(body, start.line, start.column)
+        // Written out, one member per line - which is what the group stands for.
+        // Each member gets the expression, not the result of running it once:
+        // `self.[keys, values] = alloc .() * n` asks for a buffer per member,
+        // and handing both the same one would alias them.
+        return Stmt.Scope(targets.map { assign(it, value) }, start.line, start.column)
     }
 
     /**
@@ -10779,12 +11349,12 @@ class Parser(
             TokenType.INT_LITERAL -> {
                 advance()
                 val numLit = tok.literal as NumericLiteral
-                Expr.IntLiteral(numLit.value as Long, tok.line, tok.column, tok.lexeme.length, numLit.suffix)
+                Expr.IntLiteral(numLit.value as Long, tok.line, tok.column, tok.lexeme.length, numLit.suffix, numLit.text)
             }
             TokenType.DOUBLE_LITERAL -> {
                 advance()
                 val numLit = tok.literal as NumericLiteral
-                Expr.DoubleLiteral(numLit.value as Double, tok.line, tok.column, tok.lexeme.length, numLit.suffix)
+                Expr.DoubleLiteral(numLit.value as Double, tok.line, tok.column, tok.lexeme.length, numLit.suffix, numLit.text ?: tok.lexeme)
             }
             TokenType.STRING_LITERAL -> { advance(); Expr.StringLiteral(tok.literal as String, tok.line, tok.column, tok.lexeme.length) }
             TokenType.INTERPOLATED_STRING -> {
@@ -11258,6 +11828,25 @@ class Parser(
     private fun matchContextual(word: String): Boolean {
         if (!check(TokenType.IDENTIFIER) || peek().lexeme != word) return false
         advance()
+        return true
+    }
+
+    /**
+     * [matchContextual], allowing the word to open the following line.
+     *
+     * A long declaration puts its clause underneath itself rather than off the
+     * right edge, so the newline that would have ended the declaration is only
+     * a break in it. Newlines are consumed when the word is there and left
+     * alone when it is not, so a declaration that simply ended still ends.
+     */
+    private fun matchContinuedContextual(word: String): Boolean {
+        if (matchContextual(word)) return true
+        var ahead = current
+        while (ahead < tokens.size && tokens[ahead].type == TokenType.NEWLINE) ahead++
+        if (ahead == current) return false
+        val next = tokens.getOrNull(ahead) ?: return false
+        if (next.type != TokenType.IDENTIFIER || next.lexeme != word) return false
+        current = ahead + 1
         return true
     }
 

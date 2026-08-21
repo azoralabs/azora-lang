@@ -382,7 +382,7 @@ UInt
 ULong
 Float
 Double
-Decimal
+Quad
 small value packs containing only Copy fields
 ```
 

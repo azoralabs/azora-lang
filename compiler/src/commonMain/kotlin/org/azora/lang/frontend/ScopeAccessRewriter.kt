@@ -318,6 +318,13 @@ internal object ScopeAccessRewriter {
             val static = if (e.nameExpr == null) staticPath(target, e.name, mangled, shadowed) else null
             static?.let { Expr.Identifier(it, e.line, e.column, e.length) } ?: e.copy(target = target)
         }
+        // `.(args)` - the type is written where the value goes, but the
+        // arguments are ordinary expressions and are rewritten as any call's
+        // are. Left alone, a static read inside one (`.(x, Decimal.maxScale)`)
+        // kept its `Type.member` shape and resolved against a *variable* named
+        // for the type, which there is none of.
+        is Expr.InferredMember ->
+            e.ctorArgs?.let { args -> e.copy(ctorArgs = args.map { expr(it, prefix, mangled, shadowed) }) } ?: e
         is Expr.Call -> {
             val args = e.args.map { expr(it, prefix, mangled, shadowed) }
             val calleeQual = maybe(e.callee, prefix, mangled, shadowed)

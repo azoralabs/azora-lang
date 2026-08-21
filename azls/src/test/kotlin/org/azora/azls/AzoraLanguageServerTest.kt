@@ -140,6 +140,23 @@ class AzoraLanguageServerTest {
     }
 
     @Test
+    fun derivesFollowsALiteralPackAndMayOpenItsOwnLine() {
+        // `std/primitive.az` writes every width this way: the declaration says
+        // which literal it is written as, and the clause is too long to follow
+        // on the same line.
+        val source = """
+            bridge pack Int<N: __uint = 32>(__int)
+            derives [Integer, SignedInteger]
+            bridge pack Bool derives [Equal]
+        """.trimIndent()
+        val kinds = spans(source)
+            .filter { source.substring(it.start, it.end) == "derives" }
+            .map { it.type }
+
+        assertEquals(listOf("keyword", "keyword"), kinds)
+    }
+
+    @Test
     fun genericParametersLoopLabelsAndScopePathsHaveDistinctSemanticRoles() {
         val source = """
             scope ide::editor {
@@ -169,7 +186,7 @@ class AzoraLanguageServerTest {
             graph App replace Base includes Shared {
                 solo Service binds Runnable
             }
-            annot Routed binds Serializable
+            annot @Routed binds Serializable
             spec Worker requires Send
             fin callback: escaping (Int) -> Int
             fin borrowed = lend value

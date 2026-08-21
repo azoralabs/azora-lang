@@ -393,7 +393,7 @@ private class MonoContext(
             "Cent" -> NumericSuffix.CENT
             "UCent" -> NumericSuffix.UCENT
             "Float" -> NumericSuffix.FLOAT
-            "Decimal" -> NumericSuffix.DECIMAL
+            "Quad" -> NumericSuffix.QUAD
             else -> return default
         }
         return literal.copy(suffix = suffix)
@@ -1762,7 +1762,7 @@ private class MonoContext(
             "UCent" to 4,
             "Float" to 5,
             "Double" to 6,
-            "Decimal" to 7,
+            "Quad" to 7,
         )
         val leftRank = rank[left.name] ?: return null
         val rightRank = rank[right.name] ?: return null

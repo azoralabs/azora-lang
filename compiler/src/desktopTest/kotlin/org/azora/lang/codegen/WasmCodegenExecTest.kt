@@ -184,7 +184,7 @@ class WasmCodegenExecTest {
 
     @Test fun interpolatesRealAndLong() = check(
         "r=1.5 g=7",
-        main("var r = 1.5\nvar g: Long = 7L\nprintln(\"r=${'$'}{r} g=${'$'}{g}\")")
+        main("var r = 1.5\nvar g: Long = Long(7)\nprintln(\"r=${'$'}{r} g=${'$'}{g}\")")
     )
 
     @Test fun integerDivisionTruncates() = check(

@@ -35,7 +35,7 @@ import std.container.array::*
  * @return The same value.
  */
 @Experimental(since: "0.1")
-func identity<T>(x: T): T = x
+func identity<T>(x: T): T { return x }
 
 /**
  * Applies a transformation to each element of an array.

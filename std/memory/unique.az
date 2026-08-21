@@ -45,21 +45,21 @@ impl Unique<T> {
     /** Returns the owned value (panics if already released). */
     @Experimental(since: "0.1")
     prop get[self: Self&]: T {
-        assert active { "Unique pointer was released" }
+        assert self.active { "Unique pointer was released" }
         return self._raw.*
     }
 
     /** Overwrites the owned value (panics if already released). */
     @Experimental(since: "0.1")
     func set[self: Self!](value: T) {
-        assert active { "Unique pointer was released" }
+        assert self.active { "Unique pointer was released" }
         self._raw[0] = value
     }
 
     /** Returns the raw `T*` without relinquishing ownership. */
     @Experimental(since: "0.1")
     prop ptr[self: Self&]: T* {
-        assert active { "Unique pointer was released" }
+        assert self.active { "Unique pointer was released" }
         return self._raw
     }
 
@@ -69,7 +69,7 @@ impl Unique<T> {
      */
     @Experimental(since: "0.1")
     func release[self: Self!](): T* {
-        assert active { "Unique pointer was already released" }
+        assert self.active { "Unique pointer was already released" }
         self.active = false
         return self._raw
     }
@@ -77,7 +77,7 @@ impl Unique<T> {
     /** Frees the owned value now (a no-op if already released/disposed). */
     @Experimental(since: "0.1")
     func dispose[self: Self!]() {
-        if active {
+        if self.active {
             purge self._raw
             self.active = false
         }

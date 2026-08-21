@@ -557,7 +557,7 @@ class LlvmCodegenExecTest {
 
     @Test fun longArithmetic() = check(
         "10000000002",
-        main("let big: Long = 10000000000L\nprintln(big + 2L)")
+        main("let big: Long = Long(10000000000)\nprintln(big + Long(2))")
     )
 
     @Test fun realArithmetic() =

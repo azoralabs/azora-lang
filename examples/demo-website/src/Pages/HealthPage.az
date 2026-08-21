@@ -58,7 +58,7 @@ react func HealthEntry(
                 note,
                 modifier: Modifier()
                     .fontSize(14)
-                    .color("#64748b")
+                    .color("#64748")
                     .lineHeight(1.5)
             )
         }
@@ -94,7 +94,7 @@ react func HealthPage(
             "Recent vet visits, vaccinations, and notes.",
             modifier: Modifier()
                 .fontSize(15)
-                .color("#64748b")
+                .color("#64748")
         )
 
         Spacer(height: 24)

@@ -33,7 +33,7 @@ class TimeStdlibTest {
             import std::*
 
             func main() {
-                fin value = parseIsoInstant("1970-01-01T00:00:00Z") catch Instant(-1L)
+                fin value = parseIsoInstant("1970-01-01T00:00:00Z") catch Instant(-Long(1))
                 println(value.epochSecond)
             }
         """.trimIndent())

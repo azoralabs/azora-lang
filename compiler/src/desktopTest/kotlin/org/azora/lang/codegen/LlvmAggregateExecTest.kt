@@ -584,14 +584,14 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var array = @arr[1c, 2c]
-            array.add(3c)
+            var array = @arr[Cent(1), Cent(2)]
+            array.add(Cent(3))
             println(array[2])
-            var map = ["value": 4c]
+            var map = ["value": Cent(4)]
             println(map["value"])
-            var set = ![1c, 1c, 2c]
+            var set = ![Cent(1), Cent(1), Cent(2)]
             println(set.size)
-            println(set.contains(2c))
+            println(set.contains(Cent(2)))
         }
         """.trimIndent()
     )

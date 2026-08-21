@@ -266,12 +266,12 @@ class FilesystemStdlibTest {
                 fin file = dir.join("data.bin")
                 writeText(file, "12345") catch { }
 
-                fin info = fileInfo(file) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
+                fin info = fileInfo(file) catch FileInfo(FileKind.Other, Long(0), Instant(Long(0), 0))
                 println(info.size)
                 println(info.isFile)
                 println(info.isDirectory)
 
-                fin about = fileInfo(dir) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
+                fin about = fileInfo(dir) catch FileInfo(FileKind.Other, Long(0), Instant(Long(0), 0))
                 println(about.isDirectory)
 
                 removeAll(dir) catch { }

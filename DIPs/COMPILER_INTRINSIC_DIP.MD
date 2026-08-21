@@ -199,7 +199,7 @@ knowing a library's module paths or decorator names:
     providerModule: "std.serializer",
     deferGeneric: true
 )
-annot Serializable for .Pack bind [Serializer, AzonSerializer] { … }
+annot @Serializable for .Pack bind [Serializer, AzonSerializer] { … }
 ```
 
 `generator` selects an installed generator; `role` says how this decorator
@@ -230,9 +230,9 @@ implementation:
 | `bridge enum DecoTarget`                                        | what a decorator may be applied to    |
 | `bridge enum TestMethod`                                        | `This` / `All` test aggregation       |
 | `bridge enum LogLevel`                                          | `inline trace` levels                 |
-| `bridge annot Stable` / `Experimental` / `Since` / `Deprecated` | stability metadata the compiler reads |
-| `bridge annot EnforceNumFields`                                 | a checked field-count constraint      |
-| `bridge annot Derive`                                           | §4.1                                  |
+| `bridge annot @Stable` / `Experimental` / `Since` / `Deprecated` | stability metadata the compiler reads |
+| `bridge annot @EnforceNumFields`                                 | a checked field-count constraint      |
+| `bridge annot @Derive`                                           | §4.1                                  |
 
 None can be constructed directly, and none is auto-derived over: a bridge pack
 has no fields the compiler owns, so field-wise reasoning would be a guess.

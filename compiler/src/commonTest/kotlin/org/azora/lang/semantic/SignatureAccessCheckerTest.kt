@@ -39,7 +39,7 @@ class SignatureAccessCheckerTest {
 
     private val declarations = """
         @DeclaresAccess
-        annot Task for .Func
+        annot @Task for .Func
 
         pack Bag { var value: Int }
 

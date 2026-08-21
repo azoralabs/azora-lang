@@ -1033,12 +1033,39 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
   empty parameter list. The impl-body `dtor` parser reads a receiver and then demands the
   body brace. Small, and adjacent to the S5.5 code.
 
-### S7.2 `[FIX]` `self.` is mandatory on both sides
+### S7.2 `[FIX]` `self.` is mandatory on both sides - **DONE 2026-08-20**
 - **Touch** `TypeResolver.kt` (identifier resolution inside methods)
 - **Do** Bug: `self.offset = offset - size` currently resolves the bare `offset` to the
   field. A bare name inside a method must resolve to params/locals only; an unqualified
   field read errors *"write `self.offset`"*.
 - **Accept** `SelfQualificationTest`; **expect stdlib fallout in Phase 9**.
+- **Did** Two sites in `TypeResolver.kt`, both in the fallbacks a bare name reaches when
+  no local answers it. The `Expr.Identifier` branch stopped resolving to
+  `currentReceiverType`'s field and now errors *"'count' is a field of Slice - write
+  'self.count'"*. The bare-call branch in `Expr.Call` did the same for a member reached
+  through the implicit receiver: **a method is the receiver's as much as a field is**, so
+  the step covers both halves rather than only the field read the plan names.
+- **The write side was already right.** `Stmt.Assignment` looks the name up as a variable
+  and errors when it finds none, so `offset = 1` never reached the field. Only reads were
+  lenient - the bug in the plan is one word doing two things on *one* line, and it took
+  only the read half to make that happen.
+- **`with` is the exception, and had to be.** `with self purge [keys, values, hashes]`
+  (S7.1) resolves those names as bare identifiers, and the first cut of this step rejected
+  every one of them in `map.az`. A `with` names its receiver *on purpose* - that is what
+  the form is for - so both branches now let a `prefersMembers` frame answer and reject
+  only the implicit self. A member delegating to a free function of its own name
+  (`func atOffset[self](…) { return atOffset(self, offset) }`, 3 sites in `time.az`) was
+  already exempt through the "a member does not shadow itself" rule and still is.
+- **Stdlib fallout was 25 sites in 4 files**, not the wide diff the plan expected:
+  `container/queue.az` (16), `memory/unique.az` (5), `parallelism/sync.az` (2),
+  `memory/slice.az` (2). Found by compiling each `std/` file on its own and collecting the
+  new error, then cross-checked by a static scan of every `impl` block against its pack's
+  field and method names - the scan's only other hits were the `with` lines, the
+  self-delegating calls, and parameters that legitimately shadow a field (`sub(start,
+  count)` in `slice.az`). `examples/`, `app/` and `azls/` scanned clean.
+- **Accepted** new `semantic/SelfQualificationTest.kt`, 5 tests. Suite 1989 tests / 140
+  failures; the failing-test **name set is identical to the 140-failure baseline** - no
+  new failures, none swapped.
 
 ### S7.3 `[FIX]` `x++` / `x--` - **DONE 2026-08-18**
 - **Touched** `Parser.kt` `parseExprStmt` only. No IR, semantic or backend change.

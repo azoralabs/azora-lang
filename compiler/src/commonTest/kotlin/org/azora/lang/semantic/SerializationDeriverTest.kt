@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 class SerializationDeriverTest {
     private fun derive(body: String): SerializationDeriver.Result {
         val prelude = """
-            annot Derive for .Annot {
+            annot @Derive for .Annot {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""
@@ -33,21 +33,21 @@ class SerializationDeriverTest {
                 fin conversionModule: String = ""
             }
             @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "convert")
-            annot Serializable for .Pack {
+            annot @Serializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "convert")
-            annot AzonSerializable for .Pack {
+            annot @AzonSerializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            annot SerialName for .Field { fin value: String = "" }
+            annot @SerialName for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
-            annot SerialIgnore for .Field
+            annot @SerialIgnore for .Field
             @Derive(generator: "serializer", role: "required")
-            annot SerialRequired for .Field
+            annot @SerialRequired for .Field
         """.trimIndent()
         val program = Parser(Lexer("$prelude\n$body").tokenize()).parse()
         return SerializationDeriver.derive(program)
@@ -148,7 +148,7 @@ class SerializationDeriverTest {
 
     @Test fun deriveRolesDoNotDependOnDecoratorNames() {
         val source = """
-            annot Derive for .Annot {
+            annot @Derive for .Annot {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""
@@ -157,16 +157,16 @@ class SerializationDeriverTest {
                 fin conversionModule: String = ""
             }
             @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "convert")
-            annot WireModel for .Pack {
+            annot @WireModel for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            annot WireKey for .Field { fin value: String = "" }
+            annot @WireKey for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
-            annot SkipWire for .Field
+            annot @SkipWire for .Field
             @Derive(generator: "serializer", role: "required")
-            annot NeedWire for .Field
+            annot @NeedWire for .Field
 
             @WireModel pack User {
                 @WireKey("display_name") fin name: String = ""
@@ -184,7 +184,7 @@ class SerializationDeriverTest {
 
     @Test fun generatedPrimitiveCodecBodiesPassSemanticAnalysis() {
         val source = """
-            annot Derive for .Annot {
+            annot @Derive for .Annot {
                 fin generator: String
                 fin role: String
                 fin provider: String = ""
@@ -193,21 +193,21 @@ class SerializationDeriverTest {
                 fin conversionModule: String = ""
             }
             @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "convert")
-            annot Serializable for .Pack {
+            annot @Serializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "convert")
-            annot AzonSerializable for .Pack {
+            annot @AzonSerializable for .Pack {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }
             @Derive(generator: "serializer", role: "name")
-            annot SerialName for .Field { fin value: String = "" }
+            annot @SerialName for .Field { fin value: String = "" }
             @Derive(generator: "serializer", role: "ignore")
-            annot SerialIgnore for .Field
+            annot @SerialIgnore for .Field
             @Derive(generator: "serializer", role: "required")
-            annot SerialRequired for .Field
+            annot @SerialRequired for .Field
 
             error SerializationError {
                 InvalidNumber,
@@ -300,7 +300,7 @@ class SerializationDeriverTest {
                 }
             }
             func std__serialAsChar(value: SerialValue&): Char ?! SerializationError { return 'x' }
-            func std__serialAsLong(value: SerialValue&): Long ?! SerializationError { return 7L }
+            func std__serialAsLong(value: SerialValue&): Long ?! SerializationError { return Long(7) }
             func std__serialAsInt(value: SerialValue&): Int ?! SerializationError { return 7 }
             func std__serialAsDouble(value: SerialValue&): Double ?! SerializationError { return 0.0 }
             func std__convert__toString(value: Any): String { return "" }

@@ -647,6 +647,9 @@ class StdlibInjector private constructor(
                     is Expr.Await -> expression(expr.value, typeParams, currentScope)
                     is Expr.Spread -> expression(expr.array, typeParams, currentScope)
                     is Expr.MetaInvoke -> expr.args.forEach { expression(it, typeParams, currentScope) }
+                    // `.(args)` - the constructor's arguments are expressions
+                    // and are checked as any other call's are.
+                    is Expr.InferredMember -> expr.ctorArgs?.forEach { expression(it, typeParams, currentScope) }
                     is Expr.Slice -> {
                         expression(expr.target, typeParams, currentScope)
                         expr.start?.let { expression(it, typeParams, currentScope) }
@@ -1889,13 +1892,13 @@ class StdlibInjector private constructor(
                     org.azora.lang.frontend.NumericSuffix.CENT -> "Cent"
                     org.azora.lang.frontend.NumericSuffix.UCENT -> "UCent"
                     org.azora.lang.frontend.NumericSuffix.FLOAT -> "Float"
-                    org.azora.lang.frontend.NumericSuffix.DECIMAL -> "Decimal"
+                    org.azora.lang.frontend.NumericSuffix.QUAD -> "Quad"
                 },
             )
             is Expr.DoubleLiteral -> names.add(
                 when (expr.suffix) {
                     org.azora.lang.frontend.NumericSuffix.FLOAT -> "Float"
-                    org.azora.lang.frontend.NumericSuffix.DECIMAL -> "Decimal"
+                    org.azora.lang.frontend.NumericSuffix.QUAD -> "Quad"
                     else -> "Double"
                 },
             )
@@ -1974,6 +1977,11 @@ class StdlibInjector private constructor(
                 collectNamesFromExpr(k, names)
                 collectNamesFromExpr(v, names)
             }
+            // `.(args)` - the expected type's constructor. Its arguments are
+            // references like any other call's, and may be the only place a
+            // declaration is named: a private helper called only from inside a
+            // `.()` was never pulled in, and its own module could not resolve it.
+            is Expr.InferredMember -> expr.ctorArgs?.forEach { collectNamesFromExpr(it, names) }
             is Expr.TupleLit -> expr.elements.forEach { collectNamesFromExpr(it, names) }
             is Expr.VariantLit -> expr.elements.forEach { collectNamesFromExpr(it, names) }
             is Expr.TupleAccess -> collectNamesFromExpr(expr.target, names)

@@ -1,0 +1,571 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * @file std/decimal.az
+ *
+ * Exact base-ten arithmetic.
+ *
+ * `Half`, `Float`, `Double` and `Quad` are binary floating point: they store a
+ * significand times a power of *two*, so `0.1` is not a value any of them has,
+ * however many bits they are given. A price is base ten, and so is every rule
+ * about how a price rounds, which is why money belongs here and not there.
+ *
+ * A [Decimal] is `coefficient × 10^-scale` - an integer and how far to move its
+ * point. `19.99` is `1999` at scale `2`, exactly, and stays exact through every
+ * addition. It is built out of a `Cent`, so this is a library type: no backend
+ * has a base-ten number, and none is asked for one.
+ *
+ * Two values that are numerically equal need not be identical: `1.5` is scale
+ * `1` and `1.50` is scale `2`. [compareTo] and `==` compare the numbers;
+ * [trimmed] is how a value drops the zeroes it does not need.
+ *
+ * @since 0.1
+ */
+module std.decimal
+
+import std.[
+    char::*
+    string::*
+]
+
+/** What exact arithmetic refuses to do rather than answer approximately. */
+@Experimental(since: "0.1")
+error DecimalError {
+    /** The result needs more than the 38 digits a `Cent` holds. */
+    Overflow
+
+    /** A division whose divisor is zero. */
+    DivideByZero
+
+    /** A scale past [Decimal.maxScale], which no coefficient could carry. */
+    ScaleOutOfRange
+
+    /** Text that is not a decimal number. */
+    InvalidText
+}
+
+/**
+ * How a value that does not fit a scale reaches one that does.
+ *
+ * The `Half*` modes differ only in where they send an exact half, which is the
+ * only case anyone argues about. [Rounding.HalfEven] is the default everywhere
+ * here: it is the one mode that does not drift upward over many roundings,
+ * which is what makes it the accountants' rule.
+ */
+@Experimental(since: "0.1")
+enum Rounding {
+    /** Toward zero. */
+    Down
+
+    /** Away from zero. */
+    Up
+
+    /** Toward negative infinity. */
+    Floor
+
+    /** Toward positive infinity. */
+    Ceiling
+
+    /** To the nearest, an exact half going away from zero. */
+    HalfUp
+
+    /** To the nearest, an exact half going toward zero. */
+    HalfDown
+
+    /** To the nearest, an exact half going to the even neighbour. */
+    HalfEven
+}
+
+/**
+ * A base-ten number: [coefficient] with its point [scale] digits from the right.
+ *
+ * `Decimal(1999, 2)` is `19.99`. The scale is part of the value and is not
+ * normalised away: a price written to the cent stays written to the cent, and
+ * `2.50` prints as `2.50`.
+ */
+@Experimental(since: "0.1")
+pack Decimal {
+    fin coefficient: Cent = 0
+    fin scale: Int = 0
+}
+
+/**
+ * The limits of the representation.
+ *
+ * @member maxScale The most digits a scale may name, `38` - what a `Cent` holds.
+ * @member divisionScale The scale `/` divides to when the operands ask for less.
+ */
+@Experimental(since: "0.1")
+impl Decimal {
+    inline fin maxScale: Int = 38
+    inline fin divisionScale: Int = 16
+}
+
+// ── Building ────────────────────────────────────────────────────────
+
+/** [coefficient] with its point [scale] digits from the right. */
+@Experimental(since: "0.1")
+func decimal(coefficient: Cent, scale: Int = 0): Decimal ?! DecimalError {
+    if scale < 0 || scale > Decimal.maxScale {
+        return .ScaleOutOfRange
+    }
+    return .(coefficient, scale)
+}
+
+/**
+ * [text] as the number it spells, exactly.
+ *
+ * `"19.99"` is scale `2` and `"19.990"` is scale `3` - the zeroes a caller
+ * wrote are digits they meant. Accepts a sign and a point, and nothing else:
+ * an exponent would say a scale the digits do not, and `1E-40` has no
+ * coefficient here to hold it.
+ */
+@Experimental(since: "0.1")
+func decimalOf(text: String): Decimal ?! DecimalError {
+    var body = strTrim(text)
+    if strIsEmpty(body) {
+        return .InvalidText
+    }
+
+    var negative = false
+    if strStartsWith(body, "-") {
+        negative = true
+        body = strSlice(body, 1, strLength(body))
+    } else if strStartsWith(body, "+") {
+        body = strSlice(body, 1, strLength(body))
+    }
+
+    var digits = body
+    var scale = 0
+    fin point = strIndexOf(body, ".")
+    if point >= 0 {
+        fin fraction = strSlice(body, point + 1, strLength(body))
+        digits = strSlice(body, 0, point) + fraction
+        scale = strLength(fraction)
+    }
+    if !strIsNumeric(digits) {
+        return .InvalidText
+    }
+    if scale > Decimal.maxScale {
+        return .ScaleOutOfRange
+    }
+
+    fin characters = strToChars(digits)
+    var coefficient: Cent = 0
+    for i in 0..<characters.length {
+        coefficient = try _checkedMultiply(coefficient, 10)
+        coefficient = try _checkedAdd(coefficient, digitToInt(characters[i]) as Cent)
+    }
+    if negative {
+        coefficient = -coefficient
+    }
+    return .(coefficient, scale)
+}
+
+// ── Reading ─────────────────────────────────────────────────────────
+
+@Experimental(since: "0.1")
+impl Decimal {
+
+    /** Whether the value is zero, at whatever scale it is written. */
+    prop isZero[self&]: Bool = self.coefficient == 0
+
+    /** `-1`, `0` or `1` as the value is negative, zero or positive. */
+    prop signum[self&]: Int {
+        if self.coefficient < 0 {
+            return -1
+        }
+        if self.coefficient > 0 {
+            return 1
+        }
+        return 0
+    }
+
+    /** The same magnitude with the other sign, at the same scale. */
+    func negated[self&](): Decimal {
+        return .(-self.coefficient, self.scale)
+    }
+
+    /** The magnitude, at the same scale. */
+    func absolute[self&](): Decimal {
+        return .(_magnitude(self.coefficient), self.scale)
+    }
+
+    /**
+     * The same value with its trailing zeroes dropped.
+     *
+     * `2.500` becomes `2.5`; `200` at scale `0` is left alone, because those
+     * zeroes are digits of the number rather than of its scale.
+     */
+    func trimmed[self&](): Decimal {
+        var coefficient = self.coefficient
+        var scale = self.scale
+        while scale > 0 && coefficient % 10 == 0 {
+            coefficient /= 10
+            scale--
+        }
+        return .(coefficient, scale)
+    }
+
+    /**
+     * The same number at [scale], rounding what no longer fits.
+     *
+     * Widening is exact or it overflows; narrowing rounds by [rounding].
+     */
+    func rescaled[self&](scale: Int, rounding: Rounding): Decimal ?! DecimalError {
+        if scale < 0 || scale > Decimal.maxScale {
+            return .ScaleOutOfRange
+        }
+        if scale == self.scale {
+            return self
+        }
+        if scale > self.scale {
+            return .(try _shifted(self.coefficient, scale - self.scale), scale)
+        }
+        fin divisor = try _powerOfTen(self.scale - scale)
+        return .(try _roundedQuotient(self.coefficient, divisor, rounding), scale)
+    }
+
+    /**
+     * `-1`, `0` or `1` as this value is below, equal to or above [rhs].
+     *
+     * Compares the numbers, not the fields: `1.5` and `1.50` are equal here
+     * and are two different [Decimal]s.
+     */
+    func compareTo[self&](rhs: Decimal&): Int ?! DecimalError {
+        var scale = self.scale
+        if rhs.scale > scale {
+            scale = rhs.scale
+        }
+        fin left = try _shifted(self.coefficient, scale - self.scale)
+        fin right = try _shifted(rhs.coefficient, scale - rhs.scale)
+        if left < right {
+            return -1
+        }
+        if left > right {
+            return 1
+        }
+        return 0
+    }
+
+    /**
+     * The number as text, with exactly [scale] digits after the point.
+     *
+     * `Decimal(1999, 2)` is `"19.99"` and `Decimal(5, 3)` is `"0.005"`.
+     */
+    func text[self&](): String {
+        fin digits = "${_magnitude(self.coefficient)}"
+        var sign = ""
+        if self.coefficient < 0 {
+            sign = "-"
+        }
+        if self.scale == 0 {
+            return "${sign}${digits}"
+        }
+        fin width = self.scale + 1
+        fin padded = strPadLeft(digits, width, "0")
+        fin cut = strLength(padded) - self.scale
+        return "${sign}${strSlice(padded, 0, cut)}.${strSlice(padded, cut, strLength(padded))}"
+    }
+}
+
+// ── Arithmetic ──────────────────────────────────────────────────────
+
+@Experimental(since: "0.1")
+impl Decimal {
+
+    /** The sum, at the wider of the two scales. Exact. */
+    func plus[self&](rhs: Decimal&): Decimal ?! DecimalError {
+        var scale = self.scale
+        if rhs.scale > scale {
+            scale = rhs.scale
+        }
+        fin left = try _shifted(self.coefficient, scale - self.scale)
+        fin right = try _shifted(rhs.coefficient, scale - rhs.scale)
+        return .(try _checkedAdd(left, right), scale)
+    }
+
+    /** The difference, at the wider of the two scales. Exact. */
+    func minus[self&](rhs: Decimal&): Decimal ?! DecimalError {
+        return try self.plus(rhs.negated())
+    }
+
+    /**
+     * The product, at the sum of the two scales.
+     *
+     * Two prices multiplied are exact to every digit either of them carried,
+     * which is why the scales add. A product past [Decimal.maxScale] digits is
+     * rounded to it, half to even - the alternative is refusing to multiply
+     * two ordinary numbers.
+     */
+    func times[self&](rhs: Decimal&): Decimal ?! DecimalError {
+        fin coefficient = try _checkedMultiply(self.coefficient, rhs.coefficient)
+        fin scale = self.scale + rhs.scale
+        if scale <= Decimal.maxScale {
+            return .(coefficient, scale)
+        }
+        fin divisor = try _powerOfTen(scale - Decimal.maxScale)
+        return .(try _roundedQuotient(coefficient, divisor, Rounding.HalfEven), Decimal.maxScale)
+    }
+
+    /**
+     * The quotient at [scale], rounded by [rounding].
+     *
+     * Division is the one operation with no exact scale of its own - `1 / 3`
+     * has no last digit - so the caller says how far to take it.
+     */
+    func dividedBy[self&](rhs: Decimal&, scale: Int, rounding: Rounding): Decimal ?! DecimalError {
+        if rhs.coefficient == 0 {
+            return .DivideByZero
+        }
+        if scale < 0 || scale > Decimal.maxScale {
+            return .ScaleOutOfRange
+        }
+        // The quotient of the coefficients is already scaled by the difference
+        // of the scales, so only the rest of the way has to be made up.
+        fin shift = scale + rhs.scale - self.scale
+        var numerator = self.coefficient
+        var denominator = rhs.coefficient
+        if shift >= 0 {
+            numerator = try _shifted(numerator, shift)
+        } else {
+            denominator = try _shifted(denominator, -shift)
+        }
+        return .(try _roundedQuotient(numerator, denominator, rounding), scale)
+    }
+
+    /**
+     * The remainder of the truncating division, at the wider of the two scales.
+     *
+     * `a % b` is what `a` has left after taking away every whole `b`, so it
+     * carries `a`'s sign and satisfies `a == (a / b truncated) * b + a % b`.
+     */
+    func remainder[self&](rhs: Decimal&): Decimal ?! DecimalError {
+        if rhs.coefficient == 0 {
+            return .DivideByZero
+        }
+        var scale = self.scale
+        if rhs.scale > scale {
+            scale = rhs.scale
+        }
+        fin left = try _shifted(self.coefficient, scale - self.scale)
+        fin right = try _shifted(rhs.coefficient, scale - rhs.scale)
+        return .(left % right, scale)
+    }
+}
+
+// ── Operators ───────────────────────────────────────────────────────
+
+/** The sum. See [Decimal.plus]. */
+@Experimental(since: "0.1")
+oper+ [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+    return try self.plus(rhs)
+}
+
+/** The difference. See [Decimal.minus]. */
+@Experimental(since: "0.1")
+oper- [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+    return try self.minus(rhs)
+}
+
+/** The product. See [Decimal.times]. */
+@Experimental(since: "0.1")
+oper* [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+    return try self.times(rhs)
+}
+
+/**
+ * The quotient, half to even.
+ *
+ * Taken to the wider of the two scales, or to [Decimal.divisionScale] when
+ * that is wider still - so `1 / 3` answers sixteen digits rather than none.
+ * A division that needs to say where to stop uses [Decimal.dividedBy].
+ */
+@Experimental(since: "0.1")
+oper/ [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+    var scale = Decimal.divisionScale
+    if self.scale > scale {
+        scale = self.scale
+    }
+    if rhs.scale > scale {
+        scale = rhs.scale
+    }
+    return try self.dividedBy(rhs, scale, Rounding.HalfEven)
+}
+
+/** The remainder. See [Decimal.remainder]. */
+@Experimental(since: "0.1")
+oper% [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+    return try self.remainder(rhs)
+}
+
+/** The same magnitude with the other sign. */
+@Experimental(since: "0.1")
+oper- [self: Decimal&]: Decimal {
+    return self.negated()
+}
+
+// ── Internals ───────────────────────────────────────────────────────
+
+/** The magnitude of [value]. */
+func _magnitude(value: Cent): Cent {
+    if value < 0 {
+        return -value
+    }
+    return value
+}
+
+/**
+ * `10^exponent` as a `Cent`.
+ *
+ * `10^38` is the largest power of ten a `Cent` holds, which is what makes
+ * [Decimal.maxScale] the scale it is.
+ */
+func _powerOfTen(exponent: Int): Cent ?! DecimalError {
+    if exponent < 0 || exponent > Decimal.maxScale {
+        return .Overflow
+    }
+    var result: Cent = 1
+    var remaining = exponent
+    while remaining > 0 {
+        result *= 10
+        remaining--
+    }
+    return result
+}
+
+/** [value] moved [places] digits up, or an overflow if it no longer fits. */
+func _shifted(value: Cent, places: Int): Cent ?! DecimalError {
+    if places == 0 {
+        return value
+    }
+    return try _checkedMultiply(value, try _powerOfTen(places))
+}
+
+/**
+ * `left + right`, or an overflow.
+ *
+ * A sum that wrapped landed on the wrong side of the operand it was added to,
+ * which is the whole test: adding a positive cannot decrease a value.
+ */
+func _checkedAdd(left: Cent, right: Cent): Cent ?! DecimalError {
+    fin sum = left + right
+    if right > 0 && sum < left {
+        return .Overflow
+    }
+    if right < 0 && sum > left {
+        return .Overflow
+    }
+    return sum
+}
+
+/**
+ * `left * right`, or an overflow.
+ *
+ * Checked by dividing back out: a product that wrapped no longer divides to
+ * the operand it came from. `minValue * -1` is the one case that has no
+ * product at all and so is refused before the multiply.
+ */
+func _checkedMultiply(left: Cent, right: Cent): Cent ?! DecimalError {
+    if left == 0 || right == 0 {
+        return 0
+    }
+    // Negating the most negative `Cent` has no answer, and is the one product
+    // dividing back out cannot catch - the wrapped value divides to the
+    // operand it came from. A value equal to its own negation is that value.
+    if right == -1 {
+        fin negated = -left
+        if negated == left {
+            return .Overflow
+        }
+        return negated
+    }
+    if left == -1 {
+        fin negated = -right
+        if negated == right {
+            return .Overflow
+        }
+        return negated
+    }
+    fin product = left * right
+    if product / right != left {
+        return .Overflow
+    }
+    return product
+}
+
+/**
+ * `numerator / denominator`, rounded by [rounding] rather than truncated.
+ *
+ * Done on magnitudes with the sign put back afterwards, so every mode means
+ * what it says about the *number* - [Rounding.Floor] goes toward negative
+ * infinity, which for a negative value is away from zero.
+ */
+func _roundedQuotient(numerator: Cent, denominator: Cent, rounding: Rounding): Cent ?! DecimalError {
+    if denominator == 0 {
+        return .DivideByZero
+    }
+    fin negative = (numerator < 0) != (denominator < 0)
+    fin left = _magnitude(numerator)
+    fin right = _magnitude(denominator)
+    fin quotient = left / right
+    fin remainder = left % right
+
+    var away = false
+    if remainder != 0 {
+        away = when rounding {
+            .Down -> false
+            .Up -> true
+            .Floor -> negative
+            .Ceiling -> !negative
+            else -> _beyondHalf(remainder, right, quotient, rounding)
+        }
+    }
+
+    var magnitude = quotient
+    if away {
+        magnitude = try _checkedAdd(magnitude, 1)
+    }
+    if negative {
+        return -magnitude
+    }
+    return magnitude
+}
+
+/**
+ * Whether a remainder is past the half that decides a `Half*` mode.
+ *
+ * Compared as `remainder` against `right / 2` rather than `remainder * 2`
+ * against `right`, because doubling a remainder that is already most of a
+ * `Cent` would overflow. An odd divisor has no exact half, so its floor is
+ * strictly below one and a remainder equal to it is below the half.
+ */
+func _beyondHalf(remainder: Cent, right: Cent, quotient: Cent, rounding: Rounding): Bool {
+    fin half = right / 2
+    fin exact = right % 2 == 0 && remainder == half
+    if remainder > half {
+        return true
+    }
+    if !exact {
+        return false
+    }
+    return when rounding {
+        .HalfUp -> true
+        .HalfDown -> false
+        else -> quotient % 2 != 0
+    }
+}

@@ -181,6 +181,13 @@ enum class TokenType {
     // `annot Name [binds Spec] { fields }` - decorator/annotation declaration.
     ANNOT, BIND,
 
+    // The compiler's own primitives, written `__int`, `__uint` and `__float`.
+    // A pack cannot describe them: `Int<N: __uint>` needs a width before there
+    // is an `Int` to state one with, and a literal needs a kind before there is
+    // a type written as it. Reserved by their `__`, which no user symbol may
+    // start with.
+    PRIM_INT, PRIM_UINT, PRIM_FLOAT,
+
     // Delimiters
     L_PAREN, R_PAREN, L_BRACE, R_BRACE,
     L_BRACKET, R_BRACKET,
@@ -208,14 +215,19 @@ enum class NumericSuffix {
     CENT,      // c
     UCENT,     // uc
     FLOAT,     // f
-    DECIMAL    // D
+    QUAD    // D
 }
 
 /**
  * Pairs a numeric value with its suffix so the parser/IR generator can
  * produce the correct typed literal node.
  */
-data class NumericLiteral(val value: Any, val suffix: NumericSuffix = NumericSuffix.NONE)
+data class NumericLiteral(
+    val value: Any,
+    val suffix: NumericSuffix = NumericSuffix.NONE,
+    /** The exact digits, when they are wider than [value] can carry (a 128-bit literal). */
+    val text: String? = null,
+)
 
 /**
  * One segment of an interpolated string literal.

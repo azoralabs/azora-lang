@@ -98,14 +98,14 @@ impl CountDownLatch<T> {
      */
     @Experimental(since: "0.1")
     func countDown[self: Self!]() {
-        atomic.add(1)
+        self.atomic.add(1)
     }
 
     /**
      * Whether the latch count has been reached.
      */
     @Experimental(since: "0.1")
-    prop isReached[self: Self&]: Bool = atomic.load() >= count
+    prop isReached[self: Self&]: Bool = self.atomic.load() >= self.count
 }
 
 /**

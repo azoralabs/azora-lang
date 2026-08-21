@@ -107,7 +107,7 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun short_suffixLiteral() {
-        val result = compile("import std.io\nfunc main() { var x: Short = 42s }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Short = Short(42) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Short" in ir, "Type should be Short, got:\n$ir")
     }
@@ -117,8 +117,8 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
         val result = compile("""
             import std.io
             func main() {
-                var a: Short = 10s
-                var b: Short = 20s
+                var a: Short = Short(10)
+                var b: Short = Short(20)
                 println(a + b)
             }
         """.trimIndent())
@@ -131,7 +131,7 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun ushort_suffixLiteral() {
-        val result = compile("import std.io\nfunc main() { var x: UShort = 42us }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: UShort = UShort(42) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("UShort" in ir, "Type should be UShort, got:\n$ir")
     }
@@ -142,14 +142,14 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun long_suffixLiteral() {
-        val result = compile("import std.io\nfunc main() { var x: Long = 42L }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Long = Long(42) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Long" in ir, "Type should be Long, got:\n$ir")
     }
 
     @Test
     fun long_llvmEmit() {
-        val result = compile("import std.io\nfunc main() { var x: Long = 42L }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Long = Long(42) }".trimIndent())
         assertTrue("i64" in result.llvm, "LLVM should use i64 for Long, got:\n${result.llvm}")
     }
 
@@ -159,7 +159,7 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun ulong_suffixLiteral() {
-        val result = compile("import std.io\nfunc main() { var x: ULong = 42uL }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: ULong = ULong(42) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("ULong" in ir, "Type should be ULong, got:\n$ir")
     }
@@ -170,14 +170,14 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun cent_suffixLiteral() {
-        val result = compile("import std.io\nfunc main() { var x: Cent = 42c }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Cent = Cent(42) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Cent" in ir, "Type should be Cent, got:\n$ir")
     }
 
     @Test
     fun cent_llvmEmit() {
-        val result = compile("import std.io\nfunc main() { var x: Cent = 42c }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Cent = Cent(42) }".trimIndent())
         assertTrue("i128" in result.llvm, "LLVM should use i128 for Cent, got:\n${result.llvm}")
     }
 
@@ -187,7 +187,7 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun ucent_suffixLiteral() {
-        val result = compile("import std.io\nfunc main() { var x: UCent = 42uc }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: UCent = UCent(42) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("UCent" in ir, "Type should be UCent, got:\n$ir")
     }
@@ -198,14 +198,14 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun float_suffixLiteral() {
-        val result = compile("import std.io\nfunc main() { var x: Float = 3.14f }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Float = Float(3.14) }".trimIndent())
         val ir = result.ir.prettyPrint()
         assertTrue("Float" in ir, "Type should be Float, got:\n$ir")
     }
 
     @Test
     fun float_llvmEmit() {
-        val result = compile("import std.io\nfunc main() { var x: Float = 3.14f }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Float = Float(3.14) }".trimIndent())
         assertTrue("float" in result.llvm, "LLVM should use float for Float, got:\n${result.llvm}")
     }
 
@@ -227,20 +227,20 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
     }
 
     // -----------------------------------------------------------------------
-    // Decimal (128-bit, suffix: D)
+    // Quad (128-bit, suffix: D)
     // -----------------------------------------------------------------------
 
     @Test
     fun decimal_suffixLiteral() {
-        val result = compile("import std.io\nfunc main() { var x: Decimal = 3.14D }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Quad = Quad(3.14) }".trimIndent())
         val ir = result.ir.prettyPrint()
-        assertTrue("Decimal" in ir, "Type should be Decimal, got:\n$ir")
+        assertTrue("Quad" in ir, "Type should be Quad, got:\n$ir")
     }
 
     @Test
     fun decimal_llvmEmit() {
-        val result = compile("import std.io\nfunc main() { var x: Decimal = 3.14D }".trimIndent())
-        assertTrue("fp128" in result.llvm, "LLVM should use fp128 for Decimal, got:\n${result.llvm}")
+        val result = compile("import std.io\nfunc main() { var x: Quad = Quad(3.14) }".trimIndent())
+        assertTrue("fp128" in result.llvm, "LLVM should use fp128 for Quad, got:\n${result.llvm}")
     }
 
     // -----------------------------------------------------------------------
@@ -249,17 +249,17 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun hex_withLongSuffix() {
-        val result = compile("import std.io\nfunc main() { var x: Long = 0xFFL }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Long = Long(0xFF) }".trimIndent())
         val ir = result.ir.prettyPrint()
-        assertTrue("Long" in ir, "0xFFL should be Long, got:\n$ir")
+        assertTrue("Long" in ir, "Long(0xFF) should be Long, got:\n$ir")
         assertTrue("255" in ir, "0xFF should be 255, got:\n$ir")
     }
 
     @Test
     fun hex_withShortSuffix() {
-        val result = compile("import std.io\nfunc main() { var x: Short = 0xFFs }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x: Short = Short(0xFF) }".trimIndent())
         val ir = result.ir.prettyPrint()
-        assertTrue("Short" in ir, "0xFFs should be Short, got:\n$ir")
+        assertTrue("Short" in ir, "Short(0xFF) should be Short, got:\n$ir")
     }
 
     @Test
@@ -299,20 +299,29 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
     // -----------------------------------------------------------------------
 
     @Test
-    fun typeMismatch_intToShort() {
-        val errors = expectFailure("import std.io\nfunc main() { var x: Short = 42 }".trimIndent())
+    fun aLiteralIsReadAtTheWidthItIsGiven() {
+        // `42` is an `IntLiteral`; the declared type is what says which width to
+        // read it at. Nothing is converted - the literal was never an `Int`.
+        compile("import std.io\nfunc main() { var x: Short = 42 }".trimIndent())
+        compile("import std.io\nfunc main() { var x: Long = 42 }".trimIndent())
+        compile("import std.io\nfunc main() { var x: Byte = 42 }".trimIndent())
+    }
+
+    @Test
+    fun typeMismatch_textToShort() {
+        val errors = expectFailure("import std.io\nfunc main() { var x: Short = \"forty two\" }".trimIndent())
         assertTrue(errors.any { "type mismatch" in it }, "Should get type mismatch, got: $errors")
     }
 
     @Test
     fun typeMismatch_longToInt() {
-        val errors = expectFailure("import std.io\nfunc main() { var x: Int = 42L }".trimIndent())
+        val errors = expectFailure("import std.io\nfunc main() { var x: Int = Long(42) }".trimIndent())
         assertTrue(errors.any { "type mismatch" in it }, "Should get type mismatch, got: $errors")
     }
 
     @Test
     fun typeMismatch_floatToReal() {
-        val errors = expectFailure("import std.io\nfunc main() { var x: Double = 3.14f }".trimIndent())
+        val errors = expectFailure("import std.io\nfunc main() { var x: Double = Float(3.14) }".trimIndent())
         assertTrue(errors.any { "type mismatch" in it }, "Should get type mismatch, got: $errors")
     }
 
@@ -328,23 +337,23 @@ func main() { var c: Char = '\u0041' }""".trimIndent())
 
     @Test
     fun inference_shortFromSuffix() {
-        val result = compile("import std.io\nfunc main() { var x = 42s\n println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = Short(42)\n println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
-        assertTrue("Short" in ir, "Should infer Short from 42s, got:\n$ir")
+        assertTrue("Short" in ir, "Should infer Short from Short(42), got:\n$ir")
     }
 
     @Test
     fun inference_longFromSuffix() {
-        val result = compile("import std.io\nfunc main() { var x = 42L\n println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = Long(42)\n println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
-        assertTrue("Long" in ir, "Should infer Long from 42L, got:\n$ir")
+        assertTrue("Long" in ir, "Should infer Long from Long(42), got:\n$ir")
     }
 
     @Test
     fun inference_floatFromSuffix() {
-        val result = compile("import std.io\nfunc main() { var x = 3.14f\n println(x) }".trimIndent())
+        val result = compile("import std.io\nfunc main() { var x = Float(3.14)\n println(x) }".trimIndent())
         val ir = result.ir.prettyPrint()
-        assertTrue("Float" in ir, "Should infer Float from 3.14f, got:\n$ir")
+        assertTrue("Float" in ir, "Should infer Float from Float(3.14), got:\n$ir")
     }
 
     @Test

@@ -53,7 +53,7 @@ class ReflectDecoExpanderTest {
     }
 
     private val marked = """
-        annot Marked for [.Pack, .Func] {
+        annot @Marked for [.Pack, .Func] {
             fin order: Int = 0
             fin tag: String = "none"
         }
@@ -145,7 +145,7 @@ class ReflectDecoExpanderTest {
                 Update
                 Render
             }
-            annot Staged for .Func {
+            annot @Staged for .Func {
                 fin phase: Phase = Phase.Update
             }
 
@@ -167,7 +167,7 @@ class ReflectDecoExpanderTest {
         assertEquals("true false", run("""
             import std.io
             $marked
-            annot Other for .Func
+            annot @Other for .Func
 
             @Marked
             @Other
@@ -243,7 +243,7 @@ class ReflectDecoExpanderTest {
     @Test fun aDecoratorNothingCarriesUnrollsToNothing() {
         assertEquals("done", run("""
             import std.io
-            annot Unused for .Func
+            annot @Unused for .Func
 
             func main() {
                 inline for S in reflect<*>.withAnnot<Unused> {

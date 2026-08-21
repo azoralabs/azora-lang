@@ -10,7 +10,7 @@ and deletes, so a program that reflects heavily emits exactly the same code as
 one that wrote the answers out by hand.
 
 ```azora
-annot System
+annot @System
 
 @System func movement() { … }
 @System func physics()  { … }
@@ -62,7 +62,7 @@ Folds to a boolean.
 ### 2.2 `annotMeta<D>` - what did it write on the decorator?
 
 ```azora
-annot Tagged { fin label: String = "none" }
+annot @Tagged { fin label: String = "none" }
 
 @Tagged(label: "alpha")
 pack P { … }

@@ -1274,7 +1274,24 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun foldExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
         return when (expr) {
-            is Expr.InferredMember -> expr to false
+            // `.Name` folds to nothing on its own, but `.(args)` carries
+            // ordinary expressions and they fold as any call's arguments do.
+            // Left unfolded, a constant read there (`.(x, Decimal.maxScale)`)
+            // reached the resolver as a member of an undeclared variable.
+            is Expr.InferredMember -> {
+                val args = expr.ctorArgs
+                if (args == null) {
+                    expr to false
+                } else {
+                    var changed = false
+                    val folded = args.map { argument ->
+                        val (result, foldedHere) = foldExpr(argument, program)
+                        changed = changed || foldedHere
+                        result
+                    }
+                    if (changed) expr.copy(ctorArgs = folded) to true else expr to false
+                }
+            }
             is Expr.MapEntryArg -> expr to false
             is Expr.InlineForArgs -> expr to false
             is Expr.InCheck -> {
@@ -1697,7 +1714,15 @@ class CtfeEvaluator(private val table: SymbolTable) {
         // `-1L` into a bare `-1` would retype it as `Int` and break the very
         // assignment it was written for.
         if (op == TokenType.MINUS && operand is Expr.IntLiteral) {
-            return Expr.IntLiteral(-operand.value, line, suffix = operand.suffix)
+            // A 128-bit literal is negated on its digits: the value beside them
+            // holds the low 64 bits, and negating *that* turns `Cent`'s
+            // minimum into a different number.
+            return Expr.IntLiteral(
+                -operand.value,
+                line,
+                suffix = operand.suffix,
+                text = operand.text?.let { "-$it" },
+            )
         }
         if (op == TokenType.MINUS && operand is Expr.DoubleLiteral) {
             return Expr.DoubleLiteral(-operand.value, line, suffix = operand.suffix)
@@ -1720,7 +1745,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      */
     private fun asDeclaredLiteral(arg: Expr, declared: TypeRef): Expr {
         val name = (declared as? TypeRef.Named)?.name ?: return arg
-        if (name != "Double" && name != "Float" && name != "Decimal") return arg
+        if (name != "Double" && name != "Float" && name != "Quad") return arg
         return when (arg) {
             is Expr.IntLiteral -> Expr.DoubleLiteral(arg.value.toDouble(), arg.line)
             is Expr.Unary ->

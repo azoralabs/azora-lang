@@ -45,7 +45,7 @@ import org.azora.lang.ir.IrUnaryOp
  *   Cent/UCent      → i128
  *   Double            → double
  *   Float           → float
- *   Decimal         → fp128
+ *   Quad         → fp128
  *   Bool            → i1
  *   Char            → i8
  *   String          → i8* (null-terminated C string)
@@ -577,8 +577,10 @@ class LlvmCodegen {
     private fun emitGlobalVar(name: String, type: IrType, initializer: IrExpr) {
         val llvmType = mapType(type)
         val value = when (initializer) {
-            is IrExpr.IntLiteral -> "${initializer.value}"
-            is IrExpr.DoubleLiteral -> floatConst(initializer.value, type)
+            // A 128-bit literal is wider than a Long, so its digits travel
+            // with it and are what LLVM is given: `i128` holds them.
+            is IrExpr.IntLiteral -> initializer.text ?: "${initializer.value}"
+            is IrExpr.DoubleLiteral -> floatConst(initializer.value, type, initializer.text)
             is IrExpr.CharLiteral -> "${initializer.value.code}"
             is IrExpr.BoolLiteral -> if (initializer.value) "1" else "0"
             is IrExpr.StringLiteral -> {
@@ -1860,9 +1862,9 @@ class LlvmCodegen {
 
     /** Emits LLVM IR for an expression and returns the register/value. */
     private fun emitExpr(expr: IrExpr): String = when (expr) {
-        is IrExpr.IntLiteral -> "${expr.value}"
+        is IrExpr.IntLiteral -> expr.text ?: "${expr.value}"
         is IrExpr.CharLiteral -> "${expr.value.code}"
-        is IrExpr.DoubleLiteral -> floatConst(expr.value, expr.type)
+        is IrExpr.DoubleLiteral -> floatConst(expr.value, expr.type, expr.text)
         is IrExpr.BoolLiteral -> if (expr.value) "1" else "0"
         is IrExpr.StringLiteral -> {
             val ref = addStringConstant(expr.value)
@@ -2555,7 +2557,7 @@ class LlvmCodegen {
         val aFloat = a in IrType.floatTypes
         val bFloat = b in IrType.floatTypes
         if (aFloat || bFloat) {
-            if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
+            if (a == IrType.Quad || b == IrType.Quad) return IrType.Quad
             if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
@@ -2747,7 +2749,7 @@ class LlvmCodegen {
         return when {
             type in IrType.integerTypes || type == IrType.Char -> coerceNumeric(value, type, IrType.Long)
             type == IrType.Bool -> { emit("  $t = zext i1 $value to i64"); t }
-            type == IrType.Double || type == IrType.Decimal -> { emit("  $t = bitcast double $value to i64"); t }
+            type == IrType.Double || type == IrType.Quad -> { emit("  $t = bitcast double $value to i64"); t }
             type == IrType.Float -> {
                 val b = nextTmp(); emit("  $b = bitcast float $value to i32")
                 emit("  $t = zext i32 $b to i64"); t
@@ -2762,7 +2764,7 @@ class LlvmCodegen {
         return when {
             type in IrType.integerTypes || type == IrType.Char -> coerceNumeric(value, IrType.Long, type)
             type == IrType.Bool -> { emit("  $t = trunc i64 $value to i1"); t }
-            type == IrType.Double || type == IrType.Decimal -> { emit("  $t = bitcast i64 $value to double"); t }
+            type == IrType.Double || type == IrType.Quad -> { emit("  $t = bitcast i64 $value to double"); t }
             type == IrType.Float -> {
                 val tr = nextTmp(); emit("  $tr = trunc i64 $value to i32")
                 emit("  $t = bitcast i32 $tr to float"); t
@@ -2797,7 +2799,7 @@ class LlvmCodegen {
         IrType.Bool, IrType.Byte, IrType.UByte -> 1
         IrType.Short, IrType.UShort -> 2
         IrType.Int, IrType.UInt, IrType.Float, IrType.Char -> 4
-        IrType.Long, IrType.ULong, IrType.ISize, IrType.USize, IrType.Double, IrType.Decimal -> 8
+        IrType.Long, IrType.ULong, IrType.ISize, IrType.USize, IrType.Double, IrType.Quad -> 8
         IrType.Cent, IrType.UCent -> 16
         // Everything else is passed as a pointer.
         else -> 8
@@ -4599,7 +4601,7 @@ class LlvmCodegen {
                 emit("  $ext = fpext float $v to double")
                 printDouble(ext, nl)
             }
-            IrType.Decimal -> {
+            IrType.Quad -> {
                 val v = emitExpr(arg)
                 val d = nextTmp()
                 emit("  $d = fptrunc fp128 $v to double")
@@ -4704,7 +4706,7 @@ class LlvmCodegen {
                 emit("  $tmp = call i8* @__azora_char_to_str(i32 $v)")
                 tmp
             }
-            IrType.Double, IrType.Float, IrType.Decimal -> {
+            IrType.Double, IrType.Float, IrType.Quad -> {
                 usesDoubleToStr = true; usesSnprintf = true; usesMalloc = true; usesTrunc = true
                 val raw = emitExpr(expr)
                 val d = when (expr.type) {
@@ -5203,8 +5205,12 @@ class LlvmCodegen {
     // -----------------------------------------------------------------------
 
     private fun mapType(type: IrType): String = when (type) {
-        IrType.Int -> "i32"
-        IrType.UInt -> "i32"
+        // An integer's width *is* its LLVM type: `Int<7>` is `i7` and `Byte` is
+        // `i8`, because `Byte` is `Int<8>`. Signedness is not part of the type
+        // in LLVM - it belongs to the instructions - so both read the same.
+        is IrType.Integer -> "i${type.bits}"
+        IrType.Half -> "half"
+        IrType.Quad -> "fp128"
         IrType.Double -> "double"
         IrType.Bool -> "i1"
         IrType.String -> "i8*"
@@ -5223,7 +5229,7 @@ class LlvmCodegen {
         IrType.Cent -> "i128"
         IrType.UCent -> "i128"
         IrType.Float -> "float"
-        IrType.Decimal -> "fp128"
+        IrType.Quad -> "fp128"
         IrType.Any -> "i8*"
         is IrType.Array -> "i8*"
         is IrType.Map, is IrType.Set -> "i8*"
@@ -5264,8 +5270,20 @@ class LlvmCodegen {
     }
 
     /** Formats a floating-point constant in the exact LLVM hex form. */
-    private fun floatConst(value: Double, type: IrType): String {
-        if (type == IrType.Decimal) return fp128Const(value)
+    /**
+     * A float constant in LLVM's text form.
+     *
+     * A `Quad` is converted from [text] when there is one: 113 significand bits
+     * is more than the `Double` in hand ever held, and past `Double`'s range
+     * the value in hand is already infinity. Narrower types are exactly the
+     * `Double`, which is what parsing produced and what they store.
+     */
+    private fun floatConst(value: Double, type: IrType, text: String? = null): String {
+        if (type == IrType.Quad) {
+            val exact = text?.let(Binary128::encode)
+            if (exact != null) return fp128Hex(exact.high, exact.low)
+            return fp128Const(value)
+        }
         // LLVM accepts the 64-bit IEEE-754 hex for both float and double
         // constants (for float it must be exactly representable, which holds
         // because the value originated from a float).
@@ -5317,11 +5335,13 @@ class LlvmCodegen {
             }
         }
 
-        val high = sign or (quadExponent.toLong() shl 48) or quadHighFraction
-        val highHex = high.toULong().toString(16).uppercase().padStart(16, '0')
-        val lowHex = quadLowFraction.toULong().toString(16).uppercase().padStart(16, '0')
-        // LLVM's fp128 text form writes the low 64-bit word before the high word.
-        return "0xL$lowHex$highHex"
+        return fp128Hex(sign or (quadExponent.toLong() shl 48) or quadHighFraction, quadLowFraction)
+    }
+
+    /** The two words of a binary128 as LLVM writes them: the low word first. */
+    private fun fp128Hex(high: Long, low: Long): String {
+        fun word(value: Long) = value.toULong().toString(16).uppercase().padStart(16, '0')
+        return "0xL${word(low)}${word(high)}"
     }
 
     private fun gepString(ref: StringRef): String {

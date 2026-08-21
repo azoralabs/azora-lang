@@ -6,9 +6,9 @@ compile-time metadata, drive derive generators, and are queried via reflection.
 ## Grammar
 
 ```
-DECL  ::= @[DECORATORS] VISIBILITY [bridge] annot NAME [for TARGETS] [bind BINDINGS] [{ FIELDS }]
+DECL  ::= @[DECORATORS] VISIBILITY [bridge] annot @NAME [for TARGETS] [bind BINDINGS] [{ FIELDS }]
 
-TARGETS  ::= .Target | [.Target, .Target, …]
+TARGETS  ::= .Target | [.Target, .Target, …] | .*
 BINDINGS ::= Spec | [Spec, …] | [Spec for .Target, …]
 FIELDS   ::= (fin | var) NAME : Type [= default]         // decorator arguments
 
@@ -28,9 +28,9 @@ Targets (`DecoTarget`, declared in `std/core.az`): `.Pack`, `.Func`,
 ## 1. Declaring a decorator
 
 ```azora
-annot Component                                    // marker, any target
-annot SerialIgnore for .Field                       // restricted to fields
-annot SerialName for [.Pack, .Enum, .Field] {       // with fields (arguments)
+annot @Component                                    // marker, any target
+annot @SerialIgnore for .Field                       // restricted to fields
+annot @SerialName for [.Pack, .Enum, .Field] {       // with fields (arguments)
     fin value: String = ""
 }
 ```
@@ -68,7 +68,7 @@ func moveSystem(world: World&) { … }
 route bindings by target:
 
 ```azora
-annot A for [.Pack, .Func] bind [X for .Pack, Y for .Func]
+annot @A for [.Pack, .Func] bind [X for .Pack, Y for .Func]
 ```
 
 ## 4. Binding to specs (derives)
@@ -76,7 +76,7 @@ annot A for [.Pack, .Func] bind [X for .Pack, Y for .Func]
 `bind` connects a decorator to spec conformances it implies:
 
 ```azora
-annot Serializable for .Pack bind [Serializer, AzonSerializer] {
+annot @Serializable for .Pack bind [Serializer, AzonSerializer] {
     fin ignoreUnknownFields: Bool = false
     fin encodeDefaults: Bool = true
 }

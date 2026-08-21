@@ -426,6 +426,6 @@ class DecoratorResolver {
         val integerTypes = setOf(
             "Byte", "UByte", "Short", "UShort", "Cent", "UCent", "Int", "UInt", "Long", "ULong"
         )
-        val floatingTypes = setOf("Float", "Double", "Decimal")
+        val floatingTypes = setOf("Float", "Double", "Quad")
     }
 }

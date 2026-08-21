@@ -79,9 +79,9 @@ enum FileKind {
 pack FileInfo {
     var kind: FileKind = .Other
     /** Size in bytes; 0 for a directory. */
-    var size: Long = 0L
+    var size: Long = 0
     /** Last modification time. */
-    var modified: Instant = .(0L, 0)
+    var modified: Instant = .(0, 0)
 }
 
 impl FileInfo {
@@ -564,14 +564,14 @@ func exists(target: Path): Bool {
 /** Whether [target] is an ordinary file. */
 @Experimental(since: "0.1")
 func isFile(target: Path): Bool {
-    fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
+    fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0, Instant(0, 0))
     return info.kind == FileKind.File
 }
 
 /** Whether [target] is a directory. */
 @Experimental(since: "0.1")
 func isDirectory(target: Path): Bool {
-    fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0L, Instant(0L, 0))
+    fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0, Instant(0, 0))
     return info.kind == FileKind.Directory
 }
 
@@ -616,14 +616,14 @@ func _pathQuery(op: String, argument: String): String ?! FileError {
 /** A non-negative decimal, or 0. Kept here so metadata parsing has no dependency. */
 @Experimental(since: "0.1")
 func _digits(text: String): Long {
-    var value = 0L
+    var value: Long = 0
     var index = 0
     while index < stringLength(text) {
         fin digit = charAt(text, index)
         if !isDigit(digit) {
             return value
         }
-        value = value * 10L + ((ord(digit) - ord('0')) as Long)
+        value = value * 10 + ((ord(digit) - ord('0')) as Long)
         index += 1
     }
     return value

@@ -353,7 +353,10 @@ class SymbolCollector {
                     }
                     reportDuplicateFields(item.name, item.fields, item.line, errors)
                     table.defineStruct(
-                        StructType(item.name, fields, item.typeParams, item.visibility, item.isBridge, item.isUnion),
+                        StructType(
+                            item.name, fields, item.typeParams, item.visibility,
+                            item.isBridge, item.isUnion, item.literalKind,
+                        ),
                     )
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
@@ -1015,10 +1018,10 @@ class SymbolCollector {
             NumericSuffix.CENT -> IrType.Cent
             NumericSuffix.UCENT -> IrType.UCent
             NumericSuffix.FLOAT -> IrType.Float
-            NumericSuffix.DECIMAL -> IrType.Decimal
+            NumericSuffix.QUAD -> IrType.Quad
         }
         is Expr.DoubleLiteral -> when (expr.suffix) {
-            NumericSuffix.DECIMAL -> IrType.Decimal
+            NumericSuffix.QUAD -> IrType.Quad
             NumericSuffix.FLOAT -> IrType.Float
             else -> IrType.Double // unsuffixed real literals default to Double
         }

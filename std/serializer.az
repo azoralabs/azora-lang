@@ -40,7 +40,11 @@
  */
 module std.serializer
 
-import std.[container.list::*, char::*, string::*]
+import std.[
+    container.list::*
+    char::*
+    string::*
+]
 
 /** Failures reported by text decoders and typed serializers. */
 @Experimental(since: "0.1")
@@ -77,7 +81,7 @@ error SerializationError {
     listModule: "std.container.list",
     deferGeneric: true
 )
-annot Serializable for .Pack binds [Serializer, AzonSerializer] {
+annot @Serializable for .Pack binds [Serializer, AzonSerializer] {
     /** Accepts object members which do not map to an exposed pack field. */
     fin ignoreUnknownFields: Bool = false
 
@@ -97,7 +101,7 @@ annot Serializable for .Pack binds [Serializer, AzonSerializer] {
     listModule: "std.container.list",
     deferGeneric: true
 )
-annot AzonSerializable for .Pack binds AzonSerializer {
+annot @AzonSerializable for .Pack binds AzonSerializer {
     /** Accepts AZON object members which do not map to an exposed pack field. */
     fin ignoreUnknownFields: Bool = false
 
@@ -108,7 +112,7 @@ annot AzonSerializable for .Pack binds AzonSerializer {
 /** Overrides the serialized name of a field or type. */
 @Experimental(since: "0.1")
 @Derive(generator: "serializer", role: "name")
-annot SerialName for [.Pack, .Enum, .Field] {
+annot @SerialName for [.Pack, .Enum, .Field] {
     /**
      * Name written to and read from the serialized representation.
      *
@@ -122,12 +126,12 @@ annot SerialName for [.Pack, .Enum, .Field] {
 /** Excludes a field from generated serialization and deserialization. */
 @Experimental(since: "0.1")
 @Derive(generator: "serializer", role: "ignore")
-annot SerialIgnore for .Field
+annot @SerialIgnore for .Field
 
 /** Requires a field to be present even when its Azora field has a default. */
 @Experimental(since: "0.1")
 @Derive(generator: "serializer", role: "required")
-annot SerialRequired for .Field
+annot @SerialRequired for .Field
 
 /**
  * Resource and formatting limits for untrusted serialized input.
@@ -214,7 +218,9 @@ func serializerOptions(): SerializerOptions {
 /** Creates an exact number node after validating the number token. */
 @Experimental(since: "0.1")
 func serialNumber(value: String): SerialValue ?! SerializationError {
-    if !isValidSerialNumber(value) { return .InvalidNumber }
+    if !isValidSerialNumber(value) {
+        return .InvalidNumber
+    }
     return SerialValue.Number(value)
 }
 
@@ -224,11 +230,13 @@ func serialField(value: SerialValue&, name: String): SerialValue ?! Serializatio
     when value {
         SerialValue.Object(fields) -> {
             for i in 0..<fields.size {
-                if fields[i].name == name { return fields[i].value }
+                if fields[i].name == name {
+                    return fields[i].value
+                }
             }
             return .MissingField
         }
-        else -> { return .UnexpectedType }
+        else -> return .UnexpectedType
     }
 }
 
@@ -245,18 +253,18 @@ func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
 /** Extracts a text value or reports an incompatible serialized type. */
 @Experimental(since: "0.1")
 func serialAsText(value: SerialValue&): String ?! SerializationError {
-    when value {
-        SerialValue.Text(text) -> { return text }
-        else -> { return .UnexpectedType }
+    return when value {
+        .Text(text) -> text
+        else -> .UnexpectedType
     }
 }
 
 /** Extracts a Boolean value or reports an incompatible serialized type. */
 @Experimental(since: "0.1")
 func serialAsBool(value: SerialValue&): Bool ?! SerializationError {
-    when value {
-        SerialValue.Bool(boolean) -> { return boolean }
-        else -> { return .UnexpectedType }
+    return when value {
+        .Bool(boolean) -> boolean
+        else -> .UnexpectedType
     }
 }
 
@@ -264,7 +272,9 @@ func serialAsBool(value: SerialValue&): Bool ?! SerializationError {
 @Experimental(since: "0.1")
 func serialAsChar(value: SerialValue&): Char ?! SerializationError {
     fin text = try serialAsText(value)
-    if stringLength(text) != 1 { return .UnexpectedType }
+    if stringLength(text) != 1 {
+        return .UnexpectedType
+    }
     return charAt(text, 0)
 }
 
@@ -278,10 +288,12 @@ func serialAsChar(value: SerialValue&): Char ?! SerializationError {
 func serialAsLong(value: SerialValue&): Long ?! SerializationError {
     when value {
         SerialValue.Number(text) -> {
-            if stringLength(text) == 0 { return .InvalidNumber }
+            if stringLength(text) == 0 {
+                return .InvalidNumber
+            }
             if text == "-9223372036854775808" {
-                fin minimum = 0L - 9223372036854775807L
-                return minimum - 1L
+                fin minimum: Long = -9223372036854775807
+                return minimum - 1
             }
             var index = 0
             var negative = false
@@ -289,57 +301,67 @@ func serialAsLong(value: SerialValue&): Long ?! SerializationError {
                 negative = true
                 index += 1
             }
-            if index >= stringLength(text) { return .InvalidNumber }
-            var result = 0L
+            if index >= stringLength(text) {
+                return .InvalidNumber
+            }
+            var result: Long = 0
             while index < stringLength(text) {
                 fin c = charAt(text, index)
-                if !charIsDigit(c) { return .InvalidNumber }
-                fin digit = (charToCode(c) - 48) as Long
-                if result > 922337203685477580L ||
-                    (result == 922337203685477580L && digit > 7L) {
+                if !charIsDigit(c) {
                     return .InvalidNumber
                 }
-                result = result * 10L + digit
+                fin digit = (charToCode(c) - 48) as Long
+                if result > 922337203685477580 ||
+                    (result == 922337203685477580 && digit > 7) {
+                    return .InvalidNumber
+                }
+                result = result * 10 + digit
                 index += 1
             }
-            return if negative { 0L - result } else { result }
+            return if negative { 0 - result } else { result }
         }
-        else -> { return .UnexpectedType }
+        else -> return .UnexpectedType
     }
 }
 
 /** Extracts a range-checked signed byte. */
 func serialAsByte(value: SerialValue&): Byte ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < -128L || parsed > 127L { return .InvalidNumber }
+    if parsed < -128 || parsed > 127 { return .InvalidNumber }
     return parsed as Byte
 }
 
 /** Extracts a range-checked unsigned byte. */
 func serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < 0L || parsed > 255L { return .InvalidNumber }
+    if parsed < 0 || parsed > 255 {
+        return .InvalidNumber
+    }
     return parsed as UByte
 }
 
 /** Extracts a range-checked signed short. */
 func serialAsShort(value: SerialValue&): Short ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < -32768L || parsed > 32767L { return .InvalidNumber }
+    if parsed < -32768 || parsed > 32767 {
+        return .InvalidNumber
+    }
     return parsed as Short
 }
 
 /** Extracts a range-checked unsigned short. */
 func serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < 0L || parsed > 65535L { return .InvalidNumber }
+    if parsed < 0 || parsed > 65535 {
+        return .InvalidNumber
+    }
     return parsed as UShort
 }
 
 /** Extracts a range-checked signed integer. */
 func serialAsInt(value: SerialValue&): Int ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if (parsed < 0L && parsed + 2147483648L < 0L) || parsed > 2147483647L {
+    if (parsed < 0 && parsed + 2147483648 < 0) || parsed > 2147483647 {
         return .InvalidNumber
     }
     return parsed as Int
@@ -348,14 +370,16 @@ func serialAsInt(value: SerialValue&): Int ?! SerializationError {
 /** Extracts a range-checked unsigned integer. */
 func serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < 0L || parsed > 4294967295L { return .InvalidNumber }
+    if parsed < 0 || parsed > 4294967295 {
+        return .InvalidNumber
+    }
     return parsed as UInt
 }
 
 /** Extracts a non-negative value representable by the current ULong runtime. */
 func serialAsULong(value: SerialValue&): ULong ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < 0L { return .InvalidNumber }
+    if parsed < 0 { return .InvalidNumber }
     return parsed as ULong
 }
 
@@ -367,7 +391,7 @@ func serialAsCent(value: SerialValue&): Cent ?! SerializationError {
 /** Extracts an unsigned 128-bit value from the supported integer token range. */
 func serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < 0L { return .InvalidNumber }
+    if parsed < 0 { return .InvalidNumber }
     return parsed as UCent
 }
 
@@ -376,7 +400,9 @@ func serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
 func serialAsReal(value: SerialValue&): Double ?! SerializationError {
     when value {
         SerialValue.Number(text) -> {
-            if !isValidSerialNumber(text) { return .InvalidNumber }
+            if !isValidSerialNumber(text) {
+                return .InvalidNumber
+            }
             var index = 0
             var sign = 1.0
             if charAt(text, index) == '-' {
@@ -394,7 +420,7 @@ func serialAsReal(value: SerialValue&): Double ?! SerializationError {
                 while index < stringLength(text) && charIsDigit(charAt(text, index)) {
                     fin digit: Double = (charToCode(charAt(text, index)) - 48) as Double
                     result = result + digit / divisor
-                    divisor = divisor * 10.0
+                    divisor *= 10.0
                     index += 1
                 }
             }
@@ -402,7 +428,9 @@ func serialAsReal(value: SerialValue&): Double ?! SerializationError {
                 (charAt(text, index) == 'e' || charAt(text, index) == 'E') {
                 index += 1
                 var exponentNegative = false
-                if index < stringLength(text) && charAt(text, index) == '+' { index += 1 }
+                if index < stringLength(text) && charAt(text, index) == '+' {
+                    index += 1
+                }
                 else if index < stringLength(text) && charAt(text, index) == '-' {
                     exponentNegative = true
                     index += 1
@@ -414,21 +442,20 @@ func serialAsReal(value: SerialValue&): Double ?! SerializationError {
                 }
                 var factor = 1.0
                 for power in 0..<exponent {
-                    factor = factor * 10.0
+                    factor *= 10.0
                 }
-                if exponentNegative { result = result / factor }
-                else { result = result * factor }
+                result = if exponentNegative { result / factor } else { result * factor }
             }
             return sign * result
         }
-        else -> { return .UnexpectedType }
+        else -> return .UnexpectedType
     }
 }
 
 /** Encodes a value tree as canonical compact AZON. */
 @Experimental(since: "0.1")
 func encodeSerialValue(
-    value: SerialValue&,
+    value: SerialValue&
     options: SerializerOptions&
 ): String ?! SerializationError {
     return try _encodeSerialValueAtDepth(value, options, 0)
@@ -443,14 +470,18 @@ func encodeSerialValue(
  */
 @Experimental(since: "0.1")
 func decodeSerialValue(
-    input: String,
+    input: String
     options: SerializerOptions&
 ): SerialValue ?! SerializationError {
-    if stringLength(input) > options.maxInputLength { return .InputTooLarge }
+    if stringLength(input) > options.maxInputLength {
+        return .InputTooLarge
+    }
     var reader = _SerialReader(input, 0, options)
     fin value = try reader.readValue(0)
     reader.skipWhitespace()
-    if !reader.isAtEnd { return .TrailingContent }
+    if !reader.isAtEnd {
+        return .TrailingContent
+    }
     return value
 }
 
@@ -462,36 +493,52 @@ pack _SerialReader {
 }
 
 impl _SerialReader {
-    prop isAtEnd[self: Self&]: Bool = self.index >= stringLength(self.input)
+    prop isAtEnd[self&]: Bool = self.index >= stringLength(self.input)
 
-    func skipWhitespace[self: Self!](): Unit {
+    func skipWhitespace[self!](): Unit {
         while !self.isAtEnd {
             fin c = charAt(self.input, self.index)
-            if c != ' ' && c != '\n' && c != '\r' && c != '\t' { return }
+            if c != ' ' && c != '\n' && c != '\r' && c != '\t' {
+                return
+            }
             self.index += 1
         }
     }
 
-    func take[self: Self!](): Char ?! SerializationError {
-        if self.isAtEnd { return .UnexpectedEnd }
+    func take[self!](): Char ?! SerializationError {
+        if self.isAtEnd {
+            return .UnexpectedEnd
+        }
         fin c = charAt(self.input, self.index)
         self.index += 1
         return c
     }
 
-    func expect[self: Self!](expected: Char): Unit ?! SerializationError {
+    func expect[self&](expected: Char): Unit ?! SerializationError {
         fin actual = try self.take()
-        if actual != expected { return .InvalidSyntax }
+        if actual != expected {
+            return .InvalidSyntax
+        }
     }
 
-    func readValue[self: Self!](depth: Int): SerialValue ?! SerializationError {
-        if depth > self.options.maxDepth { return .MaxDepthExceeded }
+    func readValue[self!](depth: Int): SerialValue ?! SerializationError {
+        if depth > self.options.maxDepth {
+            return .MaxDepthExceeded
+        }
         self.skipWhitespace()
-        if self.isAtEnd { return .UnexpectedEnd }
+        if self.isAtEnd {
+            return .UnexpectedEnd
+        }
         fin c = charAt(self.input, self.index)
-        if c == '"' { return SerialValue.Text(try self.readString()) }
-        if c == '[' { return try self.readArray(depth + 1) }
-        if c == '{' { return try self.readObject(depth + 1) }
+        if c == '"' {
+            return SerialValue.Text(try self.readString())
+        }
+        if c == '[' {
+            return try self.readArray(depth + 1)
+        }
+        if c == '{' {
+            return try self.readObject(depth + 1)
+        }
         if c == 't' {
             try self.readLiteral("true")
             return SerialValue.Bool(true)
@@ -510,13 +557,13 @@ impl _SerialReader {
         return .InvalidSyntax
     }
 
-    func readLiteral[self: Self!](expected: String): Unit ?! SerializationError {
+    func readLiteral[self!](expected: String): Unit ?! SerializationError {
         for i in 0..<stringLength(expected) {
             if try self.take() != charAt(expected, i) { return .InvalidSyntax }
         }
     }
 
-    func readString[self: Self!](): String ?! SerializationError {
+    func readString[self!](): String ?! SerializationError {
         try self.expect('"')
         var result = ""
         while !self.isAtEnd {
@@ -556,7 +603,7 @@ impl _SerialReader {
         return value
     }
 
-    func readEscapedCodePoint[self: Self!](): Int ?! SerializationError {
+    func readEscapedCodePoint[self!](): Int ?! SerializationError {
         fin first = try self.readHexUnit()
         if first >= 56320 && first <= 57343 { return .InvalidEscape }
         if first < 55296 || first > 56319 { return first }
@@ -568,7 +615,7 @@ impl _SerialReader {
         return 65536 + (first - 55296) * 1024 + (second - 56320)
     }
 
-    func readNumber[self: Self!](): String ?! SerializationError {
+    func readNumber[self!](): String ?! SerializationError {
         fin start = self.index
         if charAt(self.input, self.index) == '-' { self.index += 1 }
         if self.isAtEnd { return .InvalidNumber }
@@ -1022,27 +1069,27 @@ test "serial char extraction requires exactly one character" {
 }
 
 test "serial long extraction accepts signed integers" {
-    fin positive = serialAsLong(SerialValue.Number("42")) catch -1L
-    fin negative = serialAsLong(SerialValue.Number("-17")) catch 0L
-    assert positive == 42L { "serialAsLong must parse positive integers" }
-    assert negative == -17L { "serialAsLong must parse negative integers" }
+    fin positive = serialAsLong(SerialValue.Number("42")) catch -1
+    fin negative = serialAsLong(SerialValue.Number("-17")) catch 0
+    assert positive == 42 { "serialAsLong must parse positive integers" }
+    assert negative == -17 { "serialAsLong must parse negative integers" }
 }
 
 test "serial long extraction rejects real syntax" {
-    fin fraction = serialAsLong(SerialValue.Number("1.5")) catch -1L
-    fin exponent = serialAsLong(SerialValue.Number("1e2")) catch -2L
-    assert fraction == -1L { "integral decoding must reject fractions" }
-    assert exponent == -2L { "integral decoding must reject exponents" }
+    fin fraction = serialAsLong(SerialValue.Number("1.5")) catch -1
+    fin exponent = serialAsLong(SerialValue.Number("1e2")) catch -2
+    assert fraction == -1 { "integral decoding must reject fractions" }
+    assert exponent == -2 { "integral decoding must reject exponents" }
 }
 
 test "serial long extraction rejects overflow" {
-    fin overflow = serialAsLong(SerialValue.Number("9223372036854775808")) catch -1L
-    assert overflow == -1L { "integral decoding must reject values above Long" }
+    fin overflow = serialAsLong(SerialValue.Number("9223372036854775808")) catch -1
+    assert overflow == -1 { "integral decoding must reject values above Long" }
 }
 
 test "serial long extraction accepts the minimum value" {
-    fin minimum = serialAsLong(SerialValue.Number("-9223372036854775808")) catch 0L
-    assert minimum == 0L - 9223372036854775807L - 1L {
+    fin minimum = serialAsLong(SerialValue.Number("-9223372036854775808")) catch 0
+    assert minimum == 0 - 9223372036854775807 - 1 {
         "serialAsLong must preserve the full signed Long range"
     }
 }

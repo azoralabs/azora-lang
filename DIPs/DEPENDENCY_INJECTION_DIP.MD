@@ -223,7 +223,7 @@ fin api: Api = inject Api        // resolves to the HttpClient
 HttpClient(inject Config) bind [Api, Closeable]
 ```
 
-`bind` is already a keyword and already means this. `annot Serializable bind
+`bind` is already a keyword and already means this. `annot @Serializable bind
 [Serializer, AzonSerializer]` says a decorator implies those conformances; a
 definition binding to a spec says the same thing about a value. Reusing it costs
 no new vocabulary.

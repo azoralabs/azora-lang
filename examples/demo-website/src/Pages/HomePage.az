@@ -48,7 +48,7 @@ react func HomePage(
             "Keep your furry friends happy, healthy, and always accounted for.",
             modifier: Modifier()
                 .fontSize(19)
-                .color("#64748b")
+                .color("#64748")
                 .lineHeight(1.6)
         )
 
@@ -206,7 +206,7 @@ react func FeatureCard(
                 description,
                 modifier: Modifier()
                     .fontSize(14)
-                    .color("#64748b")
+                    .color("#64748")
                     .lineHeight(1.5)
             )
         }

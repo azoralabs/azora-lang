@@ -30,6 +30,10 @@ exposed module std.string
 
 import std.container.array::*
 
+/** A string of Unicode code points, ordered lexicographically by code point. */
+@Since("0.1")
+bridge pack String derives [PartialEqual, Equal, Order, Hash]
+
 /**
  *
  */
@@ -63,7 +67,9 @@ func strCharAt(s: String, index: Int): Char ?! StringError
 in {
     assert index >= 0 { "Index must be non-negative" }
 } scope {
-    if index >= stringLength(s) { return .IndexOutOfBounds }
+    if index >= stringLength(s) {
+        return .IndexOutOfBounds
+    }
     return charAt(s, index)
 }
 
@@ -274,10 +280,14 @@ in {
  */
 @Experimental(since: "0.1")
 func strIsNumeric(s: String): Bool {
-    if stringLength(s) == 0 { return false }
+    if stringLength(s) == 0 {
+        return false
+    }
     fin chars = toChars(s)
     for i in 0..<chars.length {
-        if !isDigit(chars[i]) { return false }
+        if !isDigit(chars[i]) {
+            return false
+        }
     }
     return true
 }
@@ -290,10 +300,14 @@ func strIsNumeric(s: String): Bool {
  */
 @Experimental(since: "0.1")
 func strIsAlpha(s: String): Bool {
-    if stringLength(s) == 0 { return false }
+    if stringLength(s) == 0 {
+        return false
+    }
     fin chars = toChars(s)
     for i in 0..<chars.length {
-        if !isAlpha(chars[i]) { return false }
+        if !isAlpha(chars[i]) {
+            return false
+        }
     }
     return true
 }
@@ -375,7 +389,7 @@ func strParseReal(s: String): Double ?! ParseError {
                 return .InvalidFormat
             }
             fracPart = fracPart + digitToInt(chars[i]) / divisor
-            divisor = divisor * 10.0
+            divisor *= 10.0
             i += 1
         }
     }
@@ -416,10 +430,10 @@ impl StringBuilder {
      * Builds the final concatenated string.
      */
     @Experimental(since: "0.1")
-    func build[self: Self&](): String {
+    func build[self&](): String {
         var result: String = ""
         for i in 0..<self.count {
-            result = result + self.parts[i]
+            result += self.parts[i]
         }
         return result
     }
@@ -428,15 +442,14 @@ impl StringBuilder {
      * Returns the number of parts.
      */
     @Since("0.1")
-    prop length[self: Self&]: Int = self.count
+    prop length[self&]: Int = self.count
 
     /**
      * Clears the builder.
      */
     @Since("0.1")
-    func clear[self: Self!](): Unit {
-        self.parts = .() * 16
-        self.count = 0
+    func clear[self!](): Unit {
+        self.[parts, count] = [.() * 16, 0]
     }
 }
 
@@ -480,7 +493,7 @@ func strPadLeft(s: String, targetLength: Int, padChar: String): String {
 func strPadRight(s: String, targetLength: Int, padChar: String): String {
     var result: String = s
     while strLength(result) < targetLength {
-        result = result + padChar
+        result += padChar
     }
     return result
 }

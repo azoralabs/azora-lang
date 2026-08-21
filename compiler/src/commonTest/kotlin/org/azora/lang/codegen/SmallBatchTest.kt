@@ -51,7 +51,7 @@ class SmallBatchTest {
     }
 
     @Test fun integerPromotionMixed() {
-        assertEquals("10", run("import std.io\nfunc main() { println(5L + 5) }"))
+        assertEquals("10", run("import std.io\nfunc main() { println(Long(5) + 5) }"))
     }
 
     @Test fun earlyReturnCondition() {

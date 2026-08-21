@@ -390,7 +390,7 @@ class Lexer(private val source: String) {
             else -> while (!isAtEnd() && (peek().isDigit() || peek() == '_')) advance()
         }
 
-        // Decimal point (only for base-10). In member-access position (`obj.0.0`)
+        // Quad point (only for base-10). In member-access position (`obj.0.0`)
         // the previous token is DOT - scan an integer so the `.0` splits into two
         // tuple accesses instead of being swallowed as a DOUBLE_LITERAL `0.0`.
         var isFloat = false
@@ -416,14 +416,25 @@ class Lexer(private val source: String) {
             while (!isAtEnd() && (peek().isDigit() || peek() == '_')) advance()
         }
 
-        // Scan type suffix
+        // Scan type suffix. The language has no width suffixes: a literal is
+        // an `IntLiteral` or a `FloatLiteral` and is read at whatever width the
+        // place it lands in states. They are still *scanned* so the one that
+        // used to be written can be named in the error.
         val suffix = scanNumericSuffix(isHex)
+        if (suffix != NumericSuffix.NONE) {
+            val written = source.substring(start, current)
+            val bare = written.substringBefore(suffixLexeme(suffix, isHex))
+            error(
+                "a width suffix is not part of a literal at line $line: write '$bare', " +
+                    "or name the width - '${widthOf(suffix)}($bare)'",
+            )
+        }
 
         val text = source.substring(start, current)
         // Strip the suffix characters from the numeric text for parsing
         val numText = text.substringBefore(suffixLexeme(suffix, isHex)).replace("_", "")
 
-        if (isFloat || suffix == NumericSuffix.FLOAT || suffix == NumericSuffix.DECIMAL) {
+        if (isFloat || suffix == NumericSuffix.FLOAT || suffix == NumericSuffix.QUAD) {
             // Parse as floating-point
             val numericText = numText.replace("_", "")
             val value = numericText.toDouble()
@@ -433,16 +444,45 @@ class Lexer(private val source: String) {
             // MAX_VALUE literal) don't fit a signed Long, so fall back to parsing
             // them as ULong and reinterpreting the bit pattern.
             val numericText = numText.replace("_", "")
-            fun parseBits(digits: String, radix: Int): Long =
-                digits.toLongOrNull(radix) ?: digits.toULong(radix).toLong()
+            // Values in [Long.MAX+1, ULong.MAX] (a `ULong` maximum, say) do not
+            // fit a signed Long, and are carried as the bit pattern. Wider
+            // still - a 128-bit `Cent` - fits nothing here at all, so the exact
+            // digits travel with the literal and the value carries the low 64
+            // bits for the readers that only ever look at small numbers.
+            var digits: String? = null
+            fun parseBits(text: String, radix: Int): Long =
+                text.toLongOrNull(radix)
+                    ?: text.toULongOrNull(radix)?.toLong()
+                    ?: run {
+                        digits = numericText
+                        text.fold(0L) { acc, c -> acc * radix + c.digitToInt(radix) }
+                    }
             val value = when (base) {
                 16 -> parseBits(numericText.removePrefix("0x").removePrefix("0X"), 16)
                 8 -> parseBits(numericText.removePrefix("0o").removePrefix("0O"), 8)
                 2 -> parseBits(numericText.removePrefix("0b").removePrefix("0B"), 2)
                 else -> parseBits(numericText, 10)
             }
-            tokens.add(Token(TokenType.INT_LITERAL, text, line, startColumn, NumericLiteral(value, suffix)))
+            tokens.add(
+                Token(TokenType.INT_LITERAL, text, line, startColumn, NumericLiteral(value, suffix, digits)),
+            )
         }
+    }
+
+    /** The type the removed suffix used to mean, for the error that replaced it. */
+    private fun widthOf(suffix: NumericSuffix): String = when (suffix) {
+        NumericSuffix.NONE -> "Int"
+        NumericSuffix.BYTE -> "Byte"
+        NumericSuffix.UBYTE -> "UByte"
+        NumericSuffix.SHORT -> "Short"
+        NumericSuffix.USHORT -> "UShort"
+        NumericSuffix.UINT -> "UInt"
+        NumericSuffix.LONG -> "Long"
+        NumericSuffix.ULONG -> "ULong"
+        NumericSuffix.CENT -> "Cent"
+        NumericSuffix.UCENT -> "UCent"
+        NumericSuffix.FLOAT -> "Float"
+        NumericSuffix.QUAD -> "Quad"
     }
 
     private fun scanNumericSuffix(isHex: Boolean): NumericSuffix {
@@ -469,7 +509,7 @@ class Lexer(private val source: String) {
         when {
             !isAtEnd() && peek() == 's' -> { advance(); return NumericSuffix.SHORT }
             !isAtEnd() && peek() == 'L' -> { advance(); return NumericSuffix.LONG }
-            !isAtEnd() && peek() == 'D' -> { advance(); return NumericSuffix.DECIMAL }
+            !isAtEnd() && peek() == 'D' -> { advance(); return NumericSuffix.QUAD }
             // 'b', 'c' and 'f' only in non-hex mode (they are hex digits)
             !isHex && !isAtEnd() && peek() == 'b' -> { advance(); return NumericSuffix.BYTE }
             !isHex && !isAtEnd() && peek() == 'c' -> { advance(); return NumericSuffix.CENT }
@@ -490,7 +530,7 @@ class Lexer(private val source: String) {
         NumericSuffix.CENT -> "c"
         NumericSuffix.UCENT -> "uc"
         NumericSuffix.FLOAT -> "f"
-        NumericSuffix.DECIMAL -> "D"
+        NumericSuffix.QUAD -> "D"
     }
 
     private fun Char.isHexDigit(): Boolean =

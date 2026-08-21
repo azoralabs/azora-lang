@@ -101,7 +101,7 @@ text ~= suffix           // ~= appends a stringified value
 | `Short` / `UShort` | 16-bit |
 | `Long` / `ULong` | 64-bit |
 | `Cent` / `UCent` | 128-bit |
-| `Float` / `Double` / `Decimal` | 32-bit / 64-bit / 128-bit floating point |
+| `Float` / `Double` / `Quad` | 32-bit / 64-bit / 128-bit floating point |
 | `Bool` | `true` / `false` |
 | `Char` | a character |
 | `String` | UTF-8 text |

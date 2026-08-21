@@ -247,7 +247,9 @@ internal object SourceSymbolValidator {
 
     private fun expression(expression: Expr) {
         when (expression) {
-            is Expr.InferredMember -> {}
+            // `.Name` names nothing on its own; `.(args)` carries expressions
+            // that name whatever any other call's arguments would.
+            is Expr.InferredMember -> expression.ctorArgs?.forEach(::expression)
             is Expr.MapEntryArg -> {
                 expression(expression.key)
                 expression(expression.value)
@@ -333,7 +335,22 @@ internal object SourceSymbolValidator {
         // User-written `__` was rejected from the original token stream. A name
         // that appears only now was synthesized by parser lowering.
         if (name.startsWith("__")) return
+        // `int`, `uint` and `float` are the compiler's own primitives written
+        // without their `__`. Nothing may be called one, or called the same
+        // with a single underscore: a reader seeing `_int` beside `__int`
+        // should not have to work out which is which.
+        if (name.trimStart('_') in PRIMITIVE_WORDS) {
+            sourceError(
+                line,
+                "'$name' is too close to the compiler's own '__${name.trimStart('_')}'; " +
+                    "a $kind cannot be called that",
+            )
+        }
         if (!name.startsWith('_')) return
+        // `[&]` and `func f(_: Int)` - a receiver or parameter the declaration
+        // takes and deliberately does not use. `_` is the name for that, and
+        // the only place a name may be one.
+        if (name == "_" && kind in NAMELESS_KINDS) return
         when {
             name == "_" -> sourceError(line, "'_' is not a declaration name")
             !privateAllowed -> sourceError(
@@ -342,6 +359,12 @@ internal object SourceSymbolValidator {
             )
         }
     }
+
+    /** What may be called `_`: something taken and deliberately not used. */
+    private val NAMELESS_KINDS = setOf("receiver", "parameter")
+
+    /** The compiler's own primitives, minus the `__` that reserves them. */
+    private val PRIMITIVE_WORDS = setOf("int", "uint", "float")
 
     private fun sourceMember(name: String): String {
         for (index in name.length - 2 downTo 1) {

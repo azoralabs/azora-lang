@@ -33,7 +33,7 @@ import org.azora.lang.ir.IrUnaryOp
  *
  * Value representation (single WASM value per Azora value):
  *  - `Int`/`Bool`/`Char`/sized ints ≤ 32-bit → `i32`
- *  - `Long`/`ULong`/`Cent`/`UCent` → `i64`     `Double`/`Decimal` → `f64`   `Float` → `f32`
+ *  - `Long`/`ULong`/`Cent`/`UCent` → `i64`     `Double`/`Quad` → `f64`   `Float` → `f32`
  *  - `String`/`arr[T]`/pack → `i32` pointer into linear memory. Strings and arrays
  *    are laid out as `[len: i32][payload…]`; packs as packed `i32` fields.
  *
@@ -624,7 +624,11 @@ class WasmCodegen {
     // ── Expressions (return a folded S-expression) ────────────────────────
 
     private fun emitExpr(expr: IrExpr): String = when (expr) {
-        is IrExpr.IntLiteral -> "(${wasmType(expr.type)}.const ${expr.value})"
+        // WebAssembly's widest integer is 64 bits, so a 128-bit literal has
+        // nowhere to go and says so rather than arriving truncated.
+        is IrExpr.IntLiteral -> expr.text
+            ?.let { error("a ${expr.type} literal '$it' is wider than WebAssembly's integers") }
+            ?: "(${wasmType(expr.type)}.const ${expr.value})"
         is IrExpr.DoubleLiteral -> "(${wasmType(expr.type)}.const ${expr.value})"
         is IrExpr.BoolLiteral -> "(i32.const ${if (expr.value) 1 else 0})"
         is IrExpr.CharLiteral -> "(i32.const ${expr.value.code})"
@@ -729,7 +733,7 @@ class WasmCodegen {
     private fun commonNumericWasm(a: IrType, b: IrType): IrType {
         if (a == b) return a
         if (a in IrType.floatTypes || b in IrType.floatTypes) {
-            if (a == IrType.Double || b == IrType.Double || a == IrType.Decimal || b == IrType.Decimal) return IrType.Double
+            if (a == IrType.Double || b == IrType.Double || a == IrType.Quad || b == IrType.Quad) return IrType.Double
             return IrType.Float
         }
         // Widen ints: i64 types win over i32 types.
@@ -1320,7 +1324,7 @@ class WasmCodegen {
 
     private fun wasmType(type: IrType): String = when (type) {
         IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> "i64"
-        IrType.Double, IrType.Decimal -> "f64"
+        IrType.Double, IrType.Quad -> "f64"
         IrType.Float -> "f32"
         is IrType.Task -> wasmType(type.result)
         else -> "i32"

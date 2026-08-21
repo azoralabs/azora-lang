@@ -164,4 +164,38 @@ class ImplAndDeriveFormsTest {
         )
         assertEquals(2, impls.size)
     }
+
+    // -- a `derives` clause on the declaration itself ------------------------
+
+    @Test fun aDeclarationCarriesItsOwnConformances() {
+        val impls = impls("bridge pack Char derives [PartialEqual, Equal, Order, Hash]")
+        assertEquals(listOf("PartialEqual", "Equal", "Order", "Hash"), impls.map { it.traitName })
+        assertTrue(impls.all { it.typeName == "Char" })
+    }
+
+    @Test fun aLongDeclarationPutsTheClauseOnTheNextLine() {
+        // Too long for one line, so the clause opens the next one at the
+        // declaration's own indent. `std/primitive.az` writes every width so.
+        val impls = impls(
+            """
+            bridge pack Int<N: UInt = 32>(__int)
+            derives [Integer, SignedInteger, SignedNumber]
+            """.trimIndent(),
+        )
+        assertEquals(listOf("Integer", "SignedInteger", "SignedNumber"), impls.map { it.traitName })
+    }
+
+    @Test fun aDeclarationThatSimplyEndedStillEnds() {
+        // The newline is only a break when `derives` follows it; here the word
+        // below is a declaration of its own and stays one.
+        val items = parse(
+            """
+            bridge pack Char
+
+            pack derives
+            """.trimIndent(),
+        )
+        assertEquals(listOf("Char", "derives"), items.filterIsInstance<TopLevel.Pack>().map { it.name })
+        assertTrue(items.filterIsInstance<TopLevel.Impl>().isEmpty())
+    }
 }

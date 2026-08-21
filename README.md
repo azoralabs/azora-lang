@@ -75,7 +75,7 @@ Ground truth for this section is the compiler: 76 reserved keywords, listed in
 ## Types
 
 - **Primitives**: `Int` `UInt` `Long` `ULong` `Byte` `UByte` `Short` `UShort`
-  `Cent` `UCent` `Float` `Double` `Decimal` `Bool` `Char` `String` `Unit`
+  `Cent` `UCent` `Float` `Double` `Quad` `Bool` `Char` `String` `Unit`
 - **Numeric literals** carry an optional suffix: `3L` `7u` `1.5f` `9D` `2c`
 - **Compound**: `Array<T, N>`, `List<T>` / `Set<T>` / `Map<K, V>` and their
   mutable forms, `Tuple<A, B>`, function types `(A) -> B`. Types are always
@@ -121,6 +121,27 @@ fin limit: Int = 10    // fixed, frozen
 ```
 
 `threadlocal var` and `threadlocal fin` give per-thread storage.
+
+### Grouping
+
+A bracketed list stands for the lines it would have been written as. It works
+on either side, and nothing past the parser knows about it.
+
+```azora
+fin [oldKeys, oldValues] = with self { [keys, values] }   // read members of one value
+let [keys: K*, values: V*] = alloc .() * capacity         // each name may state its type
+fin [a, b] = [1, 2]                                       // one value per name
+
+self.[keys, values] = alloc .() * capacity                // the expression, per member
+self.[capacity, size] = [newCapacity, 0]                  // one value per member
+self.[keys[i], values[i]] = with self { [keys[i + 1], values[i + 1]] }
+[newKeys[i], newValues[i]] = with self { [keys[i], values[i]] }
+purge [oldKeys, oldValues]                                // release several at once
+```
+
+One expression on the right is *written* to each target rather than evaluated
+once and shared: `alloc .() * n` allocates per member, which is the only reading
+under which four buffers are four buffers.
 
 ## Functions
 
@@ -457,7 +478,7 @@ Constant folding, constant propagation and dead-code elimination run on the IR.
 
 ## Decorators
 
-- `annot Name { fields }` declares an annotation, optionally `binds` it to a spec
+- `annot @Name { fields }` declares an annotation, optionally `binds` it to a spec
 - `@Name`, `@Name(args)`, `@target:Name`
 - Decorator applications may target fields individually, as a list, or with a wildcard;
   target lists form a cross-product

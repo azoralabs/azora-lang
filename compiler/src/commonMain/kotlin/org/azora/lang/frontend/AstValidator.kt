@@ -174,11 +174,17 @@ class AstValidator {
         }
     }
 
+    /** The name that says "this value arrives and is deliberately ignored". */
+    private val IGNORED_NAME = "_"
+
     private fun validateFunction(func: FuncDecl, errors: MutableList<String>) {
         validateStability(func.annotations + func.params.flatMap { it.annotations }, errors)
-        // Duplicate parameter names
+        // Duplicate parameter names. `_` is not a name: it says the value
+        // arrives and is deliberately not used, and a signature may say that
+        // about as many parameters as it likes.
         val paramNames = mutableSetOf<String>()
         for (param in func.params) {
+            if (param.name == IGNORED_NAME) continue
             if (!paramNames.add(param.name)) {
                 errors.add("line ${func.line}: duplicate parameter '${param.name}' in function '${func.name}'")
             }

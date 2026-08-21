@@ -252,9 +252,9 @@ class LlvmRegressionExecTest {
             import std.io
             import std.container.core
             func main() {
-                var array = @arr[1.5D, 2.5D]
-                var map = @map["value": 3.5D]
-                var set = @set[1.5D, 2.5D]
+                var array = @arr[Quad(1.5), Quad(2.5)]
+                var map = @map["value": Quad(3.5)]
+                var set = @set[Quad(1.5), Quad(2.5)]
             }
             """.trimIndent()
         )
@@ -297,8 +297,8 @@ class LlvmRegressionExecTest {
         "4294967295",
         main(
             """
-            var x: UInt = 5u
-            x = x - 6u
+            var x: UInt = UInt(5)
+            x = x - UInt(6)
             println(x)
             """.trimIndent()
         )
@@ -309,8 +309,8 @@ class LlvmRegressionExecTest {
         "18446744073709551615",
         main(
             """
-            var y: ULong = 0uL
-            y = y - 1uL
+            var y: ULong = ULong(0)
+            y = y - ULong(1)
             println(y)
             """.trimIndent()
         )
@@ -321,8 +321,8 @@ class LlvmRegressionExecTest {
         "v = 4294967295",
         main(
             $$"""
-            var x: UInt = 0u
-            x = x - 1u
+            var x: UInt = UInt(0)
+            x = x - UInt(1)
             println("v = $x")
             """.trimIndent()
         )

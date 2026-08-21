@@ -93,7 +93,16 @@ sealed class Expr {
      * @property column 1-based source column
      * @property length source text length
      */
-    data class IntLiteral(val value: Long, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE) : Expr()
+    /**
+     * Integer literal.
+     *
+     * [text] is the exact digits, and is set only when they do not fit
+     * [value]: a `Cent` or `UCent` literal is up to 128 bits wide, and the
+     * value it stands for cannot be carried in a `Long`. The backends that
+     * have a 128-bit integer write [text] out; the ones that do not say so
+     * rather than truncating.
+     */
+    data class IntLiteral(val value: Long, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE, val text: String? = null) : Expr()
 
     /**
      * Floating-point literal expression (e.g. `3.14`, `3.14f`, `3.14D`).
@@ -103,8 +112,9 @@ sealed class Expr {
      * @property line 1-based source line
      * @property column 1-based source column
      * @property length source text length
+     * @property text the digits as written, which a `Double` cannot always hold
      */
-    data class DoubleLiteral(val value: Double, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE) : Expr()
+    data class DoubleLiteral(val value: Double, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE, val text: String? = null) : Expr()
 
     /**
      * Character literal expression (e.g. `'a'`, `'\n'`).
@@ -357,7 +367,7 @@ sealed class Expr {
      * Written on the branch of a `when` that computes the default, so the seal
      * belongs to the case rather than to the field:
      *
-     *     annot Log for .Func {
+     *     annot @Log for .Func {
      *         fin level: LogLevel = .Info
      *         fin prefix: String = when level {
      *             .Error -> seal "!! "
@@ -1270,6 +1280,23 @@ sealed class Stmt {
  * - [Nullable] -- `T?`
  */
 sealed class TypeRef {
+
+    companion object {
+        /**
+         * `add<Short, _, Long>(…)` - the argument the caller left to inference.
+         *
+         * A hole says about one position what an unwritten list says about
+         * every position: work it out from the argument. It is a [Named] rather
+         * than a shape of its own because nothing may ever *resolve* it - every
+         * reader of a type-argument list drops it first, and a hole that
+         * reached a backend would be a bug with a name.
+         */
+        const val HOLE = "_"
+    }
+
+    /** Whether this is the hole `_`, which stands for an argument not written. */
+    val isHole: Boolean get() = this is Named && name == HOLE
+
     enum class RefKind(val spelling: String) {
         BORROWED("ref"),
         MUTABLE("mut ref"),
@@ -2255,7 +2282,7 @@ data class Annotation(
 enum class DecoTarget {
     Pack, Func, AsyncFunc, Prop, AsyncProp, Enum, VariantEnum, EnumValue,
     Error, VariantError, ErrorValue, UnsafeUnion, UnionValue, Annot,
-    Field, Param, Var, Let, Val, Fin, Test,
+    Field, Param, Var, Let, Val, Fin, Test, Module,
     Ctor, Dtor, TypeAlias, Bridge, Oper,
 }
 
@@ -2539,6 +2566,17 @@ sealed class TopLevel {
          */
         val isBridge: Boolean = false,
         /**
+         * `bridge pack Byte(IntLiteral)` - the literal this type is written as.
+         *
+         * A primitive is not built, it is *written*: `4` is already an
+         * `IntLiteral`, and `Byte`, `Int` and `Long` are the widths that
+         * literal can be read at. Naming one - `Byte(4)` - says which, and
+         * means exactly what the bare literal means. Only a `bridge pack` may
+         * say this: it is how the compiler's own types are declared, and
+         * nothing a library writes is a literal.
+         */
+        val literalKind: String? = null,
+        /**
          * `union X { … }` - a C-style untagged union.
          *
          * Every field starts at offset 0 and the whole thing is as wide as its
@@ -2563,7 +2601,7 @@ sealed class TopLevel {
         val localScope: String? = null,
     ) : TopLevel()
 
-    /** `annot Name [binds Spec] { fields }` - an annotation type and optional derived spec contract. */
+    /** `annot @Name [binds Spec] { fields }` - an annotation type and optional derived spec contract. */
     data class Deco(
         val name: String,
         val fields: List<PackField>,
@@ -3000,6 +3038,14 @@ data class Program(
      * a test may refer to them.
      */
     val testScopeMembers: Map<String, Visibility> = emptyMap(),
+    /**
+     * Decorators written above the `module` header - the `.Module` target.
+     *
+     * A module is a declaration like any other, and this is what lets one say
+     * something about the whole unit: `@Supress(kind: .Unused)` above
+     * `module std.core` answers for every declaration the module makes.
+     */
+    val moduleAnnotations: List<Annotation> = emptyList(),
 ) {
     /** Convenience - returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

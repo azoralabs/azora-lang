@@ -29,6 +29,7 @@ import org.azora.lang.frontend.Capture
 import org.azora.lang.frontend.CaptureMode
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.Literals
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.NumericSuffix
@@ -1807,6 +1808,38 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * The width `Byte(4)` reads its literal at, or null when the call is a call.
+     *
+     * The named type has to *be* written as a literal - `bridge pack
+     * Byte(IntLiteral)` - and the one argument has to be that literal. Anything
+     * else is an ordinary constructor call and resolves as one.
+     */
+    private fun literalWidthOf(expr: Expr.Call): IrType? {
+        if (expr.receiver != null || expr.args.size != 1) return null
+        // The name may be an alias: `Long` is `Int<64>`, and what says it is
+        // written as a literal is the type the alias names.
+        val named = IrType.aliases[expr.callee] as? TypeRef.Named
+        val kind = table.lookupStruct(named?.name ?: expr.callee)?.literalKind ?: return null
+        val matches = when (expr.args.single()) {
+            // `4` is an integer literal; whether the width that reads it is
+            // signed is the width's business, not the literal's.
+            is Expr.IntLiteral -> kind == Literals.INT || kind == Literals.UINT
+            is Expr.DoubleLiteral -> kind == Literals.REAL
+            else -> return null
+        }
+        val width = IrType.aliases[expr.callee]?.let { IrType.resolve(it) }
+            ?: if (IrType.isPrimitiveName(expr.callee)) IrType.fromName(expr.callee)
+            else IrType.Named(expr.callee)
+        if (!matches) {
+            errors.add(
+                "line ${expr.line}: '${expr.callee}' is written as a $kind, " +
+                    "and this is not one",
+            )
+        }
+        return width
+    }
+
     private fun suffixToIntType(suffix: NumericSuffix): IrType = when (suffix) {
         NumericSuffix.NONE -> IrType.Int
         NumericSuffix.BYTE -> IrType.Byte
@@ -1819,7 +1852,7 @@ class TypeResolver(private val table: SymbolTable) {
         NumericSuffix.CENT -> IrType.Cent
         NumericSuffix.UCENT -> IrType.UCent
         NumericSuffix.FLOAT -> IrType.Float
-        NumericSuffix.DECIMAL -> IrType.Decimal
+        NumericSuffix.QUAD -> IrType.Quad
     }
 
     private fun defaultTraceLevel(line: Int): Expr {
@@ -1829,7 +1862,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun suffixToFloatType(suffix: NumericSuffix): IrType = when (suffix) {
         NumericSuffix.FLOAT -> IrType.Float
-        NumericSuffix.DECIMAL -> IrType.Decimal
+        NumericSuffix.QUAD -> IrType.Quad
         else -> IrType.Double
     }
 
@@ -1966,12 +1999,36 @@ class TypeResolver(private val table: SymbolTable) {
                 val sym = table.lookupVariable(expr.name)
                     ?: throughTypeAlias(expr.name)?.let { table.lookupVariable(it) }
                 if (sym == null) {
-                    // Implicit self: bare field name in an impl method → self.field
+                    // `with self purge [keys, values]` names its receiver once
+                    // and reaches into it for the rest of the form - that is
+                    // the whole point of `with`, and the names inside it are
+                    // already qualified by the line they are written on.
+                    val opened = contextualValues.asReversed()
+                        .filter { it.prefersMembers }
+                        .firstNotNullOfOrNull { frame ->
+                            frame.values.firstNotNullOfOrNull { (_, type) ->
+                                (type as? IrType.Named)?.let { table.lookupStruct(it.name)?.field(expr.name) }
+                            }
+                        }
+                    // Otherwise a bare name inside a member resolves to
+                    // parameters and locals only. A field belongs to the
+                    // receiver, and reading it as though it stood on its own is
+                    // what let `self.offset = offset - size` mean two different
+                    // things by the same word on one line.
                     val receiverField = currentReceiverType?.let { table.lookupStruct(it)?.field(expr.name) }
-                    if (receiverField != null) receiverField.type
-                    else {
-                        errors.add("line ${expr.line}: undefined variable '${sourceSymbol(expr.name)}'")
-                        null
+                    when {
+                        opened != null -> opened.type
+                        receiverField != null -> {
+                            errors.add(
+                                "line ${expr.line}: '${sourceSymbol(expr.name)}' is a field of " +
+                                    "$currentReceiverType - write 'self.${sourceSymbol(expr.name)}'",
+                            )
+                            null
+                        }
+                        else -> {
+                            errors.add("line ${expr.line}: undefined variable '${sourceSymbol(expr.name)}'")
+                            null
+                        }
                     }
                 } else sym.type
             }
@@ -2069,6 +2126,11 @@ class TypeResolver(private val table: SymbolTable) {
                 if (expr.callee == Intrinsics.ARRAY && expr.receiver == null) {
                     return resolveExpr(Expr.ArrayLiteral(expr.args, expr.line, expr.column, expr.length))
                 }
+                // `Byte(4)` - a literal read at a width, not a call. The type
+                // says it is written as a literal (`bridge pack Byte(IntLiteral)`),
+                // and `4` is already one, so naming the width is the whole
+                // difference between this and writing `4`.
+                literalWidthOf(expr)?.let { return it }
                 // `delay <ms>` parses as a call; it suspends like an `await`.
                 if (expr.callee == "__delay") noteSuspension()
                 // Value call `receiver(args)` - the receiver must be a function value.
@@ -2120,6 +2182,17 @@ class TypeResolver(private val table: SymbolTable) {
                     // not what a call with arguments was reaching for.
                     val member = table.lookupFunction(mangled) ?: continue
                     if (member.isBodyless || member.memberCallStyle == MemberCallStyle.PROPERTY) continue
+                    // The receiver a `with` opened was named to be reached into,
+                    // and that is what `with` is for. `self` was not: a method is
+                    // the receiver's as much as a field is, so calling one bare
+                    // reads as a free function and hides which object it acts on.
+                    if (!frame.prefersMembers) {
+                        errors.add(
+                            "line ${expr.line}: '$contextualCallee' is a member of " +
+                                "${ctxType.name} - write 'self.$contextualCallee(…)'",
+                        )
+                        return null
+                    }
                     return resolveExpr(
                         Expr.MethodCall(ctxExpr, contextualCallee, expr.args, expr.line, expr.column),
                     )
@@ -2404,7 +2477,12 @@ class TypeResolver(private val table: SymbolTable) {
                 // needed here is the shape the author wrote.
                 val statedDecl = if (expr.typeArgs.isEmpty() || func.typeParams.isEmpty()) null
                 else program?.functions?.find { it.name == expr.callee }
-                val stated = statedDecl?.let { func.typeParams.zip(expr.typeArgs).toMap() } ?: emptyMap()
+                // A hole is an argument the caller did not write, so it states
+                // nothing: `add<Short, _, Long>(…)` pins two and leaves one to
+                // the argument at that position.
+                val stated = statedDecl
+                    ?.let { func.typeParams.zip(expr.typeArgs).filterNot { (_, arg) -> arg.isHole }.toMap() }
+                    ?: emptyMap()
                 val argTypes = mutableListOf<IrType>()
                 for (i in effectiveArgs.indices) {
                     val arg = effectiveArgs[i]
@@ -2449,7 +2527,9 @@ class TypeResolver(private val table: SymbolTable) {
                     if (funcDecl != null) {
                         val bindings = mutableMapOf<String, List<TypeRef>>()
                         for ((index, typeParam) in func.typeParams.withIndex()) {
-                            expr.typeArgs.getOrNull(index)?.let { bindings[typeParam] = listOf(it) }
+                            expr.typeArgs.getOrNull(index)
+                                ?.takeUnless { it.isHole }
+                                ?.let { bindings[typeParam] = listOf(it) }
                         }
                         for (i in funcDecl.params.indices) {
                             val paramRef = funcDecl.params[i].type
@@ -3692,16 +3772,16 @@ class TypeResolver(private val table: SymbolTable) {
     private fun promote(a: IrType, b: IrType): IrType? {
         if (a == b) return a
         if (a in IrType.floatTypes || b in IrType.floatTypes) {
-            // Float promotion: Float < Double < Decimal
-            if (a == IrType.Decimal || b == IrType.Decimal) return IrType.Decimal
+            // Float promotion: Float < Double < Quad
+            if (a == IrType.Quad || b == IrType.Quad) return IrType.Quad
             if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
         // Integer promotion: Byte < Short < Int < Long < Cent
-        val rank = mapOf(IrType.Byte to 0, IrType.UByte to 0, IrType.Short to 1, IrType.UShort to 1,
-            IrType.Int to 2, IrType.UInt to 2, IrType.Long to 3, IrType.ULong to 3,
-            IrType.ISize to 3, IrType.USize to 3,
-            IrType.Cent to 4, IrType.UCent to 4)
+        // A rank grows with width, and a signed and an unsigned width of the
+        // same size share one: promotion is about how much room a value needs.
+        val rank = IrType.NAMED_WIDTHS.keys.associateWith { it.bits } +
+            mapOf(IrType.ISize to 64, IrType.USize to 64)
         val ra = rank[a] ?: return null
         val rb = rank[b] ?: return null
         return if (ra >= rb) a else b
@@ -3709,8 +3789,9 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Converts an inferred IR type back to the source type form used by type functions. */
     private fun typeRefOf(type: IrType): TypeRef = when (type) {
-        IrType.Int -> TypeRef.Named("Int")
-        IrType.UInt -> TypeRef.Named("UInt")
+        // A width writes itself: a named one by its name, an unnamed one as the
+        // `Int<N>` it is.
+        is IrType.Integer -> TypeRef.Named(type.toString())
         IrType.Double -> TypeRef.Named("Double")
         IrType.String -> TypeRef.Named("String")
         IrType.Bool -> TypeRef.Named("Bool")
@@ -3727,8 +3808,11 @@ class TypeResolver(private val table: SymbolTable) {
         IrType.USize -> TypeRef.Named("USize")
         IrType.Cent -> TypeRef.Named("Cent")
         IrType.UCent -> TypeRef.Named("UCent")
+        // The floats added beside the integers: each is written as it is
+        // named, so the name is the whole conversion.
+        IrType.Half -> TypeRef.Named("Half")
         IrType.Float -> TypeRef.Named("Float")
-        IrType.Decimal -> TypeRef.Named("Decimal")
+        IrType.Quad -> TypeRef.Named("Quad")
         IrType.Any -> TypeRef.Named("Any", synthesized = true)
         is IrType.Array -> TypeRef.Array(typeRefOf(type.element))
         is IrType.Map -> TypeRef.Map(typeRefOf(type.key), typeRefOf(type.value))
@@ -3977,9 +4061,11 @@ class TypeResolver(private val table: SymbolTable) {
         if (own in IrType.floatTypes && wanted in IrType.floatTypes && isUntypedDoubleLiteral(expr)) return wanted
         if (own !in IrType.integerTypes || wanted !in IrType.numericTypes) return own
         untypedIntLiteral(expr) ?: return own
-        // Only a floating-point target adopts an integer literal. A sized integer
-        // keeps the language's rule that its width is stated, by suffix or by cast.
-        return if (wanted in IrType.floatTypes) wanted else own
+        // `4` is an `IntLiteral` until something says which width to read it
+        // at. A declared type, a parameter, a cast or a named width all say so;
+        // where nothing does, it is an `Int`, which is what `add(4, 5)` means
+        // by `add<Int, Int>`.
+        return wanted
     }
 
     /** True for a real literal written without a width suffix. */
@@ -4476,7 +4562,7 @@ class TypeResolver(private val table: SymbolTable) {
     private fun conformanceName(type: IrType): String? = when (type) {
         is IrType.Named -> type.name
         IrType.Int, IrType.UInt, IrType.Long, IrType.ULong, IrType.Byte, IrType.UByte,
-        IrType.Short, IrType.UShort, IrType.Float, IrType.Double, IrType.Decimal,
+        IrType.Short, IrType.UShort, IrType.Float, IrType.Double, IrType.Quad,
         IrType.String, IrType.Char, IrType.Bool, IrType.Unit -> type.toString()
         else -> null
     }

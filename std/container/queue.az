@@ -34,37 +34,29 @@ pack Queue<T> {
     var capacity: Int = 8
 }
 
-/** Constructs an empty `Queue<T>` with default capacity. */
-@Experimental(since: "0.1")
-impl ctor() for Queue<T> { self! ->
-    self.data = alloc .() * 8
-    self.size = 0
-    self.capacity = 8
-}
-
 /** Queue operations: enqueue, dequeue, peek, clear, and string conversion. */
 impl Queue<T> {
     // --- Properties ---
 
     /** Whether the queue contains no elements. */
     @Since("0.1")
-    prop isEmpty[self: Self&]: Bool = size == 0
+    prop isEmpty[self&]: Bool = self.size == 0
 
     /** Whether the queue contains at least one element. */
     @Since("0.1")
-    prop isNotEmpty[self: Self&]: Bool = size > 0
+    prop isNotEmpty[self&]: Bool = self.size > 0
 
     // --- Internal ---
 
     /** Doubles the backing buffer's capacity, copying existing elements. */
     @Experimental(since: "0.1")
-    func growQueue[self: Self!]() {
-        fin newCap = capacity * 2
+    func growQueue[self!]() {
+        fin newCap = self.capacity * 2
         let newData: T* = alloc .() * newCap
-        for i in 0..<size {
-            newData[i] = data[i]
+        for i in 0..<self.size {
+            newData[i] = self.data[i]
         }
-        fin oldData = data
+        fin oldData = self.data
         self.data = newData
         self.capacity = newCap
         purge oldData
@@ -78,10 +70,12 @@ impl Queue<T> {
      * @param element The element to enqueue.
      */
     @Experimental(since: "0.1")
-    func enqueue[self: Self!](element: T) {
-        if size >= capacity { self.growQueue() }
-        data[size] = element
-        self.size = size + 1
+    func enqueue[self!](element: T) {
+        if self.size >= self.capacity {
+            self.growQueue()
+        }
+        self.data[self.size] = element
+        self.size++
     }
 
     /**
@@ -91,13 +85,15 @@ impl Queue<T> {
      * @throws AssertionError if the queue is empty.
      */
     @Experimental(since: "0.1")
-    func dequeue[self: Self!](): T {
-        assert size > 0 { "Queue is empty" }
-        fin front = data[0]
-        for i in 0..<size - 1 {
-            data[i] = data[i + 1]
+    func dequeue[self&](): T
+    in {
+        assert self.size > 0 { "Queue is empty" }
+    } scope {
+        fin front = self.data[0]
+        for i in 0..<self.size - 1 {
+            self.data[i] = self.data[i + 1]
         }
-        self.size = size - 1
+        self.size--
         return front
     }
 
@@ -108,15 +104,14 @@ impl Queue<T> {
      * @throws AssertionError if the queue is empty.
      */
     @Experimental(since: "0.1")
-    func peek[self: Self&](): T {
-        assert size > 0 { "Queue is empty" }
-        return data[0]
+    func peek[self&](): T {
+        return self.data[0]
     }
 
     /** Removes all elements from the queue. */
     @Experimental(since: "0.1")
-    func clear[self: Self!]() {
-        fin oldData = data
+    func clear[self!]() {
+        fin oldData = self.data
         self.data = alloc .() * 8
         self.size = 0
         self.capacity = 8
@@ -131,11 +126,13 @@ impl Queue<T> {
      * @return A string in the format "[front, ..., back]".
      */
     @Experimental(since: "0.1")
-    func toString[self: Self&](): String {
+    func toString[self&](): String {
         var s = "["
-        for i in 0..<size {
-            if i > 0 { s = s + ", " }
-            s = s + data[i] as String
+        for i in 0..<self.size {
+            if i > 0 {
+                s += ", "
+            }
+            s += self.data[i] as String
         }
         return s + "]"
     }
@@ -147,7 +144,7 @@ test "queue starts empty" {
 }
 
 test "queue is FIFO" {
-    var value = Queue<Int>()
+    var value: Queue<Int> = .()
     value.enqueue(1)
     value.enqueue(2)
     value.enqueue(3)
@@ -157,7 +154,7 @@ test "queue is FIFO" {
 }
 
 test "queue grows without losing order" {
-    var value = Queue<Int>()
+    var value: Queue<Int> = .()
     var i = 0
     while i < 20 {
         value.enqueue(i)
@@ -171,7 +168,7 @@ test "queue grows without losing order" {
 }
 
 test "queue clear permits reuse" {
-    var value = Queue<Int>()
+    var value: Queue<Int> = .()
     value.enqueue(1)
     value.enqueue(2)
     value.clear()
@@ -180,7 +177,12 @@ test "queue clear permits reuse" {
 }
 
 test "queue serialization metadata is declared" {
-    inline assert reflect<Queue>.hasAnnot<Serializable> { "Queue must carry Serializable metadata" }
+    import std.[
+        reflection::reflect // still not blue - and with this comment here "Serializable" looses color too
+        serializer::Serializable // cannot find the definition to go
+    ]
+    inline assert reflect<Queue>.hasAnnot<Serializable> { "Queue must carry Serializable metadata" } // missing reflect Serializable color, and hasAnnot underline and italic, cannot find the definition to go on reflect and hasAnnot
 }
 
 test .All "queue"
+    import std.error

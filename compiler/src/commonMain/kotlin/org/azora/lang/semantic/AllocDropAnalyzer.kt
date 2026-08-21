@@ -22,6 +22,7 @@ import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
+import org.azora.lang.frontend.Suppressions
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.ir.sourceSymbol
@@ -71,6 +72,16 @@ class AllocDropAnalyzer {
         return errors
     }
 
+    /**
+     * Whether [func] may report locals nothing reads.
+     *
+     * `@Supress(kind: .Unused)` on the function answers for its body. On the
+     * `module` header it does not: a module-wide sweep is for the names the
+     * module publishes, and a local nobody reads stays the author's business
+     * (see [Suppressions]).
+     */
+    private fun reportsUnused(func: FuncDecl): Boolean = !Suppressions.suppressesUnused(func.annotations)
+
     private fun analyzeFunction(func: FuncDecl, errors: MutableList<String>, globalNames: Set<String>) {
         val defined = mutableSetOf<String>()
         val used = mutableSetOf<String>()
@@ -91,7 +102,7 @@ class AllocDropAnalyzer {
             if (stmt is Stmt.FinDecl) declaredLocals.add(stmt.name)
         }
         for (local in declaredLocals) {
-            if (local !in used) {
+            if (local !in used && reportsUnused(func)) {
                 errors.add("warning: variable '$local' in function '${func.name}' is never used")
             }
         }

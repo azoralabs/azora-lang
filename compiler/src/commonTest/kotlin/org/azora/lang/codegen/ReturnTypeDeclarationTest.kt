@@ -203,7 +203,7 @@ class ReturnTypeDeclarationTest {
                 return self.n * 2
             }
         }
-    """, "declares no return type")
+    """, "must declare its type")
 
     @Test fun aDeclaredPropIsAccepted() = assertEquals("10", run("""
         import std.io

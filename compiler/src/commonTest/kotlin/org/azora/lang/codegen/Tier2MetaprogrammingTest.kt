@@ -97,7 +97,7 @@ class Tier2MetaprogrammingTest {
     @Test fun decoDeclarationAndAnnotatedFunc() {
         assertEquals("hi", run("""
             import std.io
-            annot Log {
+            annot @Log {
                 fin msg: String
             }
             @Log("entry")
@@ -113,8 +113,8 @@ class Tier2MetaprogrammingTest {
     @Test fun annotationOnVarAndPack() {
         assertEquals("3\n5", run("""
             import std.io
-            annot Cached { }
-            annot Deprecated { }
+            annot @Cached { }
+            annot @Deprecated { }
             @Cached
             fin PI = 3
             @Deprecated
@@ -132,8 +132,8 @@ class Tier2MetaprogrammingTest {
     @Test fun multipleAnnotationsOnOneDecl() {
         assertEquals("done", run("""
             import std.io
-            annot A { }
-            annot B { }
+            annot @A { }
+            annot @B { }
             @A
             @B
             func run(): String {

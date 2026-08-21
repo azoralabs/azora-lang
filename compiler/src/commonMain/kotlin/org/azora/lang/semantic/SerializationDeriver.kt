@@ -69,7 +69,7 @@ object SerializationDeriver {
     private val integerTypes = setOf(
         "Byte", "UByte", "Short", "UShort", "Int", "UInt", "Long", "ULong", "Cent", "UCent"
     )
-    private val floatingTypes = setOf("Float", "Double", "Decimal")
+    private val floatingTypes = setOf("Float", "Double", "Quad")
     fun derive(program: Program): Result {
         val roles = discoverRoles(program)
         if (roles.roots.isEmpty()) return Result(program, emptyList())
@@ -595,12 +595,12 @@ object SerializationDeriver {
         NumericSuffix.ULONG -> "uL"
         NumericSuffix.CENT -> "c"
         NumericSuffix.UCENT -> "uc"
-        NumericSuffix.FLOAT, NumericSuffix.DECIMAL -> ""
+        NumericSuffix.FLOAT, NumericSuffix.QUAD -> ""
     }
 
     private fun doubleSuffix(suffix: NumericSuffix): String = when (suffix) {
         NumericSuffix.FLOAT -> "f"
-        NumericSuffix.DECIMAL -> "D"
+        NumericSuffix.QUAD -> "D"
         else -> ""
     }
 

@@ -41,26 +41,37 @@ class LlvmTypeOperationMatrixExecTest(
     }
 
     companion object {
-        private data class NumericType(val name: String, val suffix: String)
+        /**
+         * A numeric type, and how a literal of it is written.
+         *
+         * There are no width suffixes: a literal is an `IntLiteral` or a
+         * `FloatLiteral`, and naming the type is what reads it at that width -
+         * `Byte(10)`. `Int` and `Double` need no name at all, being what a bare
+         * literal is read as.
+         */
+        private data class NumericType(val name: String, val bare: Boolean = false) {
+            /** [value] written as a literal of this type. */
+            fun literal(value: String): String = if (bare) value else "$name($value)"
+        }
         private data class Case(val name: String, val expected: String, val source: String)
 
         private val integerTypes = listOf(
-            NumericType("Int", ""),
-            NumericType("Byte", "b"),
-            NumericType("UByte", "ub"),
-            NumericType("Short", "s"),
-            NumericType("UShort", "us"),
-            NumericType("UInt", "u"),
-            NumericType("Long", "L"),
-            NumericType("ULong", "uL"),
-            NumericType("Cent", "c"),
-            NumericType("UCent", "uc"),
+            NumericType("Int", bare = true),
+            NumericType("Byte"),
+            NumericType("UByte"),
+            NumericType("Short"),
+            NumericType("UShort"),
+            NumericType("UInt"),
+            NumericType("Long"),
+            NumericType("ULong"),
+            NumericType("Cent"),
+            NumericType("UCent"),
         )
 
         private val floatTypes = listOf(
-            NumericType("Double", ""),
-            NumericType("Float", "f"),
-            NumericType("Decimal", "D"),
+            NumericType("Double", bare = true),
+            NumericType("Float"),
+            NumericType("Quad"),
         )
 
         private fun program(body: String): String = "import std.io\nfunc main() {\n$body\n}"
@@ -85,7 +96,7 @@ class LlvmTypeOperationMatrixExecTest(
                     cases += expressionCase(
                         "${type.name}_$name",
                         expected,
-                        "20${type.suffix} $operator 6${type.suffix}",
+                        "${type.literal("20")} $operator ${type.literal("6")}",
                     )
                 }
             }
@@ -103,7 +114,7 @@ class LlvmTypeOperationMatrixExecTest(
                     cases += expressionCase(
                         "${type.name}_$name",
                         expected,
-                        "20${type.suffix} $operator 6${type.suffix}",
+                        "${type.literal("20")} $operator ${type.literal("6")}",
                     )
                 }
             }
@@ -117,11 +128,11 @@ class LlvmTypeOperationMatrixExecTest(
             )
             for (type in integerTypes) {
                 for ((name, operator, expected) in bitwise) {
-                    val right = if (operator == "<<" || operator == ">>") "2${type.suffix}" else "6${type.suffix}"
+                    val right = if (operator == "<<" || operator == ">>") type.literal("2") else type.literal("6")
                     cases += expressionCase(
                         "${type.name}_$name",
                         expected,
-                        "10${type.suffix} $operator $right",
+                        "${type.literal("10")} $operator $right",
                     )
                 }
             }
@@ -138,49 +149,49 @@ class LlvmTypeOperationMatrixExecTest(
                     cases += expressionCase(
                         "${type.name}_$name",
                         expected,
-                        "7.5${type.suffix} $operator 2.5${type.suffix}",
+                        "${type.literal("7.5")} $operator ${type.literal("2.5")}",
                     )
                 }
                 for ((name, operator, expected) in comparisons) {
                     cases += expressionCase(
                         "${type.name}_$name",
                         expected,
-                        "7.5${type.suffix} $operator 2.5${type.suffix}",
+                        "${type.literal("7.5")} $operator ${type.literal("2.5")}",
                     )
                 }
             }
 
             val casts = listOf(
-                Triple("Byte_to_Int", "42b as Int", "42"),
-                Triple("UByte_to_Int", "200ub as Int", "200"),
-                Triple("Short_to_Long", "32000s as Long", "32000"),
-                Triple("UShort_to_Long", "60000us as Long", "60000"),
+                Triple("Byte_to_Int", "Byte(42) as Int", "42"),
+                Triple("UByte_to_Int", "UByte(200) as Int", "200"),
+                Triple("Short_to_Long", "Short(32000) as Long", "32000"),
+                Triple("UShort_to_Long", "UShort(60000) as Long", "60000"),
                 Triple("Int_to_Long", "123 as Long", "123"),
-                Triple("UInt_to_ULong", "123u as ULong", "123"),
-                Triple("Long_to_Int", "123L as Int", "123"),
-                Triple("ULong_to_UInt", "123uL as UInt", "123"),
+                Triple("UInt_to_ULong", "UInt(123) as ULong", "123"),
+                Triple("Long_to_Int", "Long(123) as Int", "123"),
+                Triple("ULong_to_UInt", "ULong(123) as UInt", "123"),
                 Triple("Int_to_Byte", "127 as Byte", "127"),
                 Triple("Int_to_UByte", "255 as UByte", "255"),
                 Triple("Int_to_Short", "32000 as Short", "32000"),
                 Triple("Int_to_UShort", "60000 as UShort", "60000"),
                 Triple("Int_to_UInt", "123 as UInt", "123"),
-                Triple("Long_to_ULong", "123L as ULong", "123"),
+                Triple("Long_to_ULong", "Long(123) as ULong", "123"),
                 Triple("Int_to_Cent", "123 as Cent", "123"),
-                Triple("UInt_to_UCent", "123u as UCent", "123"),
-                Triple("Cent_to_Int", "123c as Int", "123"),
-                Triple("UCent_to_UInt", "123uc as UInt", "123"),
+                Triple("UInt_to_UCent", "UInt(123) as UCent", "123"),
+                Triple("Cent_to_Int", "Cent(123) as Int", "123"),
+                Triple("UCent_to_UInt", "UCent(123) as UInt", "123"),
                 Triple("Int_to_Real", "42 as Double", "42.0"),
-                Triple("UInt_to_Real", "42u as Double", "42.0"),
+                Triple("UInt_to_Real", "UInt(42) as Double", "42.0"),
                 Triple("Int_to_Float", "42 as Float", "42.0"),
-                Triple("Int_to_Decimal", "42 as Decimal", "42.0"),
+                Triple("Int_to_Decimal", "42 as Quad", "42.0"),
                 Triple("Real_to_Int", "3.75 as Int", "3"),
                 Triple("Real_to_UInt", "3.75 as UInt", "3"),
-                Triple("Float_to_Int", "3.75f as Int", "3"),
-                Triple("Decimal_to_Int", "3.75D as Int", "3"),
-                Triple("Float_to_Real", "3.5f as Double", "3.5"),
+                Triple("Float_to_Int", "Float(3.75) as Int", "3"),
+                Triple("Decimal_to_Int", "Quad(3.75) as Int", "3"),
+                Triple("Float_to_Real", "Float(3.5) as Double", "3.5"),
                 Triple("Real_to_Float", "3.5 as Float", "3.5"),
-                Triple("Real_to_Decimal", "3.5 as Decimal", "3.5"),
-                Triple("Decimal_to_Real", "3.5D as Double", "3.5"),
+                Triple("Real_to_Decimal", "3.5 as Quad", "3.5"),
+                Triple("Decimal_to_Real", "Quad(3.5) as Double", "3.5"),
                 Triple("Int_to_Char", "65 as Char", "A"),
                 Triple("Char_to_Int", "'A' as Int", "65"),
             )
@@ -189,7 +200,7 @@ class LlvmTypeOperationMatrixExecTest(
             }
 
             for (type in integerTypes) {
-                val value = "42${type.suffix}"
+                val value = type.literal("42")
                 cases += Case(
                     "interpolate_${type.name}",
                     "value=42",
@@ -200,7 +211,7 @@ class LlvmTypeOperationMatrixExecTest(
                 cases += Case(
                     "interpolate_${type.name}",
                     "value=3.5",
-                    program("let value: ${type.name} = 3.5${type.suffix}\nprintln(\"value=${'$'}value\")"),
+                    program("let value: ${type.name} = ${type.literal("3.5")}\nprintln(\"value=${'$'}value\")"),
                 )
             }
 

@@ -47,16 +47,24 @@ import org.azora.lang.frontend.CallableKind
  * - [Cent] -- 128-bit signed integer
  * - [UCent] -- 128-bit unsigned integer
  * - [Float] -- 32-bit single-precision floating point
- * - [Decimal] -- 128-bit decimal floating point
+ * - [Quad] -- 128-bit decimal floating point
  */
 sealed class IrType {
-    /** 32-bit signed integer type. */
-    object Int : IrType() { override fun toString() = "Int" }
-    /** 32-bit unsigned integer type. */
-    object UInt : IrType() { override fun toString() = "UInt" }
-    /** 64-bit double-precision floating-point type. */
-    object Double : IrType() { override fun toString() = "Double" }
-    /** UTF-8 string type. */
+    /**
+     * An integer of a stated width.
+     *
+     * `Int<7>` is seven bits and `Int<10000>` is ten thousand: a width is a
+     * number, not a member of a list somebody thought of in advance. The
+     * familiar names are values of this - `Byte` is `Int<8>`, `Long` is
+     * `Int<64>` - so a width that has a name reads by it and one that does not
+     * reads as what it is.
+     */
+    data class Integer(val bits: kotlin.Int, val signed: Boolean) : IrType() {
+        override fun toString(): kotlin.String =
+            NAMED_WIDTHS[this] ?: "${if (signed) "Int" else "UInt"}<$bits>"
+    }
+
+    /** String type. */
     object String : IrType() { override fun toString() = "String" }
     /** Boolean type. */
     object Bool : IrType() { override fun toString() = "Bool" }
@@ -73,38 +81,27 @@ sealed class IrType {
     object Nothing : IrType() { override fun toString() = "Nothing" }
     /** Character type (stored as Long char code). */
     object Char : IrType() { override fun toString() = "Char" }
-    /** 8-bit signed integer type. */
-    object Byte : IrType() { override fun toString() = "Byte" }
-    /** 8-bit unsigned integer type. */
-    object UByte : IrType() { override fun toString() = "UByte" }
-    /** 16-bit signed integer type. */
-    object Short : IrType() { override fun toString() = "Short" }
-    /** 16-bit unsigned integer type. */
-    object UShort : IrType() { override fun toString() = "UShort" }
-    /** 64-bit signed integer type. */
-    object Long : IrType() { override fun toString() = "Long" }
-    /** 64-bit unsigned integer type. */
-    object ULong : IrType() { override fun toString() = "ULong" }
 
     /**
      * A signed integer as wide as a pointer on the target.
      *
      * Sizes, offsets and alignments are pointer-width by definition, so they get
      * their own type rather than borrowing `Long` and being wrong on a 32-bit
-     * target.
+     * target. It is not an [Integer]: its width is the target's to decide.
      */
     object ISize : IrType() { override fun toString() = "ISize" }
 
     /** An unsigned integer as wide as a pointer on the target. */
     object USize : IrType() { override fun toString() = "USize" }
-    /** 128-bit signed integer type. */
-    object Cent : IrType() { override fun toString() = "Cent" }
-    /** 128-bit unsigned integer type. */
-    object UCent : IrType() { override fun toString() = "UCent" }
+
+    /** 64-bit double-precision floating-point type. The default real. */
+    object Double : IrType() { override fun toString() = "Double" }
+    /** 16-bit half-precision floating-point type. */
+    object Half : IrType() { override fun toString() = "Half" }
     /** 32-bit single-precision floating-point type. */
     object Float : IrType() { override fun toString() = "Float" }
-    /** 128-bit decimal floating-point type. */
-    object Decimal : IrType() { override fun toString() = "Decimal" }
+    /** 128-bit binary floating-point type (IEEE-754 binary128). */
+    object Quad : IrType() { override fun toString() = "Quad" }
 
     /**
      * Internal fixed-array type for `[T]` annotations and array literals.
@@ -230,14 +227,50 @@ sealed class IrType {
     companion object {
         /** Type aliases registered by the compiler (cleared per compilation). */
         val aliases = mutableMapOf<kotlin.String, TypeRef>()
+
+        // The widths that have a name. `Byte` is `Int<8>` and reads as `Byte`;
+        // any other width reads as the `Int<N>` it is, which is why the names
+        // stop at 128: a program that wants 256 bits writes `Int<256>`.
+        val Int = Integer(32, signed = true)
+        val UInt = Integer(32, signed = false)
+        val Byte = Integer(8, signed = true)
+        val UByte = Integer(8, signed = false)
+        val Short = Integer(16, signed = true)
+        val UShort = Integer(16, signed = false)
+        val Long = Integer(64, signed = true)
+        val ULong = Integer(64, signed = false)
+        val Cent = Integer(128, signed = true)
+        val UCent = Integer(128, signed = false)
+
+        /** Each named width, and the name it is written by. */
+        val NAMED_WIDTHS: kotlin.collections.Map<Integer, kotlin.String> = mapOf(
+            Byte to "Byte", UByte to "UByte", Short to "Short", UShort to "UShort",
+            Int to "Int", UInt to "UInt", Long to "Long", ULong to "ULong",
+            Cent to "Cent", UCent to "UCent",
+        )
         /** The set of all numeric types (integer + floating-point). */
-        val numericTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Double, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, ISize, USize, Float, Decimal)
+        val numericTypes: kotlin.collections.Set<IrType> get() = integerTypes + floatTypes
 
         /** The set of all integer numeric types. */
-        val integerTypes: kotlin.collections.Set<IrType> = setOf(Int, UInt, Byte, UByte, Short, UShort, Long, ULong, Cent, UCent, ISize, USize)
+        val integerTypes: kotlin.collections.Set<IrType>
+            get() = NAMED_WIDTHS.keys + setOf(ISize, USize)
 
         /** The set of all floating-point numeric types. */
-        val floatTypes: kotlin.collections.Set<IrType> = setOf(Double, Float, Decimal)
+        val floatTypes: kotlin.collections.Set<IrType> = setOf(Half, Float, Double, Quad)
+
+        /**
+         * How wide each integer is, in bits.
+         *
+         * The widths past 64 have no hardware behind them: LLVM has the type,
+         * and everything else works them out in software. A width absent here
+         * is pointer-wide, which the target decides.
+         */
+        val integerWidths: kotlin.collections.Map<IrType, kotlin.Int>
+            get() = NAMED_WIDTHS.keys.associate { it as IrType to it.bits }
+
+        /** Integers wider than the widest a machine word holds. */
+        val wideIntegerTypes: kotlin.collections.Set<IrType>
+            get() = NAMED_WIDTHS.keys.filterTo(mutableSetOf()) { it.bits > 64 }
 
         /**
          * Resolves a type name string to its corresponding [IrType].
@@ -247,6 +280,11 @@ sealed class IrType {
          * @throws IllegalStateException if the name does not match any known type
          */
         fun fromName(name: kotlin.String): IrType = when (name) {
+            // The compiler's own primitives - what a width and a literal are
+            // written with before there is a type written as one.
+            "__int" -> Int
+            "__uint" -> UInt
+            "__float" -> Double
             "Int" -> Int
             "UInt" -> UInt
             "Double" -> Double
@@ -265,8 +303,9 @@ sealed class IrType {
             "USize" -> USize
             "Cent" -> Cent
             "UCent" -> UCent
+            "Half" -> Half
             "Float" -> Float
-            "Decimal" -> Decimal
+            "Quad" -> Quad
             "Any" -> Any
             else -> error("Unknown type: $name")
         }
@@ -296,6 +335,14 @@ sealed class IrType {
                 // forever. The concrete branch below (e.g. the `Array` builtin) handles it.
                 else if (ref.name in aliases && (aliases[ref.name] as? TypeRef.Named)?.name != ref.name)
                     resolve(aliases[ref.name]!!, typeParams)
+                // `Int<7>` / `UInt<10000>` - a width stated as a number. The
+                // named widths are aliases of these, so `Byte` arrives here as
+                // `Int<8>` and comes out the same `Integer` either way.
+                else if ((ref.name == "Int" || ref.name == "UInt") && ref.args.size == 1) {
+                    val width = (ref.args[0] as? TypeRef.Const)?.value?.toInt()
+                    if (width == null || width <= 0) Integer(32, ref.name == "Int")
+                    else Integer(width, ref.name == "Int")
+                }
                 else if (ref.name == "Array") {
                     // `Array<T>` (unsized) or `Array<T, N>` (const-generic size; the
                     // second arg is a [TypeRef.Const] carrying the element count).
@@ -442,15 +489,28 @@ sealed class IrExpr {
      * @property value the 64-bit integer value
      * @property type the resolved integer type (defaults to [IrType.Int])
      */
-    data class IntLiteral(val value: Long, override val type: IrType = IrType.Int) : IrExpr()
+    /**
+     * Integer literal. [text] is the exact digits when they are wider than
+     * [value] can hold - a 128-bit `Cent` or `UCent`.
+     */
+    data class IntLiteral(val value: Long, override val type: IrType = IrType.Int, val text: String? = null) : IrExpr()
 
     /**
-     * Floating-point literal (covers Double, Float, Decimal).
+     * Floating-point literal (covers Half, Float, Double, Quad).
+     *
+     * A `Quad` holds 113 significand bits and a `Double` 53, so [value] is the
+     * literal only up to `Double`'s width. [text] is what was written, which is
+     * what a backend wider than a `Double` reads instead.
      *
      * @property value the double-precision value
      * @property type the resolved float type (defaults to [IrType.Double])
+     * @property text the digits as written, when they came from a literal
      */
-    data class DoubleLiteral(val value: Double, override val type: IrType = IrType.Double) : IrExpr()
+    data class DoubleLiteral(
+        val value: Double,
+        override val type: IrType = IrType.Double,
+        val text: String? = null,
+    ) : IrExpr()
 
     /**
      * String literal.

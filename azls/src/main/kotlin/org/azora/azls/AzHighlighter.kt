@@ -305,16 +305,39 @@ object AzHighlighter {
         }
     }
 
-    /** `derives` is grammar only after a pack name and optional type parameters. */
+    /** A pack declaration, whole, that a `derives` clause may follow. */
+    private val DERIVES_DECLARATION = Regex(
+        """^\s*(?:(?:exposed|protected|confined|bridge)\s+)*pack\s+[A-Za-z_$][A-Za-z0-9_$]*""" +
+            """(?:\s*<[^>{}\n]*>)?(?:\s*\([^)\n]*\))?\s*$""",
+    )
+
+    /**
+     * `derives` is grammar only after a pack or union declaration.
+     *
+     * The declaration is named, optionally generic, and may say which literal
+     * it is written as - `bridge pack Int<N: __uint = 32>(__int)` is all three
+     * at once. A long one puts the clause on the next line, so an empty prefix
+     * looks at the line above.
+     */
     private fun isContextualDerives(source: String, start: Int, end: Int): Boolean {
         var next = end
         while (next < source.length && source[next] in setOf(' ', '\t', '\r')) next++
         if (next >= source.length || (!source[next].isIdentStart() && source[next] != '[')) return false
-        val lineStart = source.lastIndexOf('\n', start - 1) + 1
-        val prefix = source.substring(lineStart, start)
-        return Regex(
-            """^\s*(?:(?:exposed|protected|confined|bridge)\s+)*pack\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}\n]*>)?\s*$""",
-        ).matches(prefix)
+        return DERIVES_DECLARATION.matches(headPrefix(source, start))
+    }
+
+    /** The declaration head a clause at [start] continues; see [isContextualDerives]. */
+    private fun headPrefix(source: String, start: Int): String {
+        var lineStart = source.lastIndexOf('\n', start - 1) + 1
+        if (source.substring(lineStart, start).isNotBlank()) return source.substring(lineStart, start)
+        while (lineStart > 0) {
+            val aboveEnd = lineStart - 1
+            val aboveStart = source.lastIndexOf('\n', aboveEnd - 1) + 1
+            val above = source.substring(aboveStart, aboveEnd)
+            if (above.isNotBlank()) return above.trimEnd()
+            lineStart = aboveStart
+        }
+        return ""
     }
 
     /** `escaping` is contextual only directly before a callable type. */
@@ -343,7 +366,7 @@ object AzHighlighter {
         if (isAfterMemberSeparator(source, start)) return false
         val prefix = linePrefix(source, start)
         val annotation = Regex(
-            """^\s*(?:(?:exposed|protected|confined|bridge)\s+)*annot\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+for\s+.+)?\s*$""",
+            """^\s*(?:(?:exposed|protected|confined|bridge)\s+)*annot\s+@[A-Za-z_][A-Za-z0-9_]*(?:\s+for\s+.+)?\s*$""",
         ).matches(prefix)
         val registration = Regex(
             """^\s*(?:solo|factory|scope)\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*\([^\n]*\))?\s*$""",
@@ -550,7 +573,9 @@ object AzHighlighter {
         val properties = linkedSetOf<String>()
         val propertyDeclarations = linkedSetOf<Int>()
         val typeDeclaration = Regex(
-            """\b(?:pack|enum|error|spec|annot|union|typealias)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<([^>{}\n]*)>)?""",
+            // `annot @Name` carries its sigil into the declaration, so the
+            // name a decorator declares sits one character further on.
+            """\b(?:pack|enum|error|spec|annot|union|typealias)\s+@?([A-Za-z_][A-Za-z0-9_]*)(?:\s*<([^>{}\n]*)>)?""",
         )
 
         for (match in callable.findAll(declarationsSource)) {

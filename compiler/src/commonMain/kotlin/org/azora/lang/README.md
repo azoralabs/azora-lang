@@ -99,7 +99,7 @@ not reference kinds in the grammar.
 ### Types
 
 - **Primitives**: `Int UInt Long ULong Byte UByte Short UShort Cent UCent
-  Float Double Decimal Bool Char String Unit`.
+  Float Double Quad Bool Char String Unit`.
 - **Compound**: `Array<T, N>`, `List<T>`/`Set<T>`/`Map<K, V>` and their
   `Mutable…` counterparts, `Tuple<A, B>`, function types `(A) -> B`. Types are
   always written with generics - type macros are gone, so a type's spelling
@@ -142,12 +142,12 @@ checking; `break`/`continue`.
 | `spec Name requires Other { }` | a capability the implementor must already have |
 | `typealias T = U` | type alias |
 | `error ErrSet { V1, V2 }` | error-set declaration |
-| `annot Name { fin field: Type }` | annotation type; metadata fields are immutable |
+| `annot @Name { fin field: Type }` | annotation type; metadata fields are immutable |
 | `impl Annot for Type {}` | marker conformance with an explicit empty body |
 | `impl Annot(field: value) for Type {}` | conformance with compile-time metadata |
 | `impl Annot for Type::field {}` / `Type::* {}` | decorates one field / every field |
 | `impl [A, B] for [Type::x, Type::y] {}` | the decorator/target cross-product |
-| `annot Name binds Spec { fields }` | binds an annotation to a spec |
+| `annot @Name binds Spec { fields }` | binds an annotation to a spec |
 | `solo pack Name { }` | a type there is one of |
 | `graph Graph { solo\|factory\|scope Type(args) [binds Spec] }` | a dependency graph; the first word is the provider's lifetime |
 | `graph Graph includes [A, B]` | graph composition |
@@ -279,7 +279,7 @@ field value. Both properties are compile-time-only and must occur in an
 `inline` expression:
 
 ```azora
-annot Persisted for .Pack {
+annot @Persisted for .Pack {
     fin ignoreUnknownFields: Bool = false
 }
 

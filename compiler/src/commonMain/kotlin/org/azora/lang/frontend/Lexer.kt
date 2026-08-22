@@ -43,6 +43,20 @@ class Lexer(private val source: String) {
     private val enclosingBracketDepths = ArrayDeque<Int>()
 
     companion object {
+        /** Longest first, so `uL` is never read as `u` followed by a name. */
+        private val WIDTH_SUFFIXES = listOf(
+            WidthSuffix("ub", "UByte", hexDigit = true),
+            WidthSuffix("us", "UShort"),
+            WidthSuffix("uL", "ULong"),
+            WidthSuffix("uc", "UCent", hexDigit = true),
+            WidthSuffix("u", "UInt"),
+            WidthSuffix("b", "Byte", hexDigit = true),
+            WidthSuffix("s", "Short"),
+            WidthSuffix("L", "Long"),
+            WidthSuffix("c", "Cent", hexDigit = true),
+            WidthSuffix("f", "Float", hexDigit = true),
+            WidthSuffix("D", "Quad"),
+        )
         private val keywords = AzoraSyntaxVocabulary.reservedKeywords
     }
 
@@ -420,25 +434,23 @@ class Lexer(private val source: String) {
         // an `IntLiteral` or a `FloatLiteral` and is read at whatever width the
         // place it lands in states. They are still *scanned* so the one that
         // used to be written can be named in the error.
-        val suffix = scanNumericSuffix(isHex)
-        if (suffix != NumericSuffix.NONE) {
+        scanWidthSuffix(isHex)?.let { suffix ->
             val written = source.substring(start, current)
-            val bare = written.substringBefore(suffixLexeme(suffix, isHex))
+            val bare = written.removeSuffix(suffix.lexeme)
             error(
                 "a width suffix is not part of a literal at line $line: write '$bare', " +
-                    "or name the width - '${widthOf(suffix)}($bare)'",
+                    "or name the width - '${suffix.width}($bare)'",
             )
         }
 
         val text = source.substring(start, current)
-        // Strip the suffix characters from the numeric text for parsing
-        val numText = text.substringBefore(suffixLexeme(suffix, isHex)).replace("_", "")
+        val numText = text.replace("_", "")
 
-        if (isFloat || suffix == NumericSuffix.FLOAT || suffix == NumericSuffix.QUAD) {
+        if (isFloat) {
             // Parse as floating-point
             val numericText = numText.replace("_", "")
             val value = numericText.toDouble()
-            tokens.add(Token(TokenType.DOUBLE_LITERAL, text, line, startColumn, NumericLiteral(value, suffix)))
+            tokens.add(Token(TokenType.DOUBLE_LITERAL, text, line, startColumn, NumericLiteral(value)))
         } else {
             // Parse as integer. Values in [Long.MAX+1, ULong.MAX] (e.g. a ULong
             // MAX_VALUE literal) don't fit a signed Long, so fall back to parsing
@@ -464,73 +476,48 @@ class Lexer(private val source: String) {
                 else -> parseBits(numericText, 10)
             }
             tokens.add(
-                Token(TokenType.INT_LITERAL, text, line, startColumn, NumericLiteral(value, suffix, digits)),
+                Token(TokenType.INT_LITERAL, text, line, startColumn, NumericLiteral(value, digits)),
             )
         }
     }
 
-    /** The type the removed suffix used to mean, for the error that replaced it. */
-    private fun widthOf(suffix: NumericSuffix): String = when (suffix) {
-        NumericSuffix.NONE -> "Int"
-        NumericSuffix.BYTE -> "Byte"
-        NumericSuffix.UBYTE -> "UByte"
-        NumericSuffix.SHORT -> "Short"
-        NumericSuffix.USHORT -> "UShort"
-        NumericSuffix.UINT -> "UInt"
-        NumericSuffix.LONG -> "Long"
-        NumericSuffix.ULONG -> "ULong"
-        NumericSuffix.CENT -> "Cent"
-        NumericSuffix.UCENT -> "UCent"
-        NumericSuffix.FLOAT -> "Float"
-        NumericSuffix.QUAD -> "Quad"
+
+    /**
+     * A suffix the language used to have, and what it used to mean.
+     *
+     * Only for the error: a literal takes its width from where it lands, so
+     * `4L` is `4` and the `Long` is stated by the binding it goes into.
+     */
+    private class WidthSuffix(val lexeme: String, val width: String, val hexDigit: Boolean = false)
+
+    /**
+     * The width suffix written after a number, or null when there is none.
+     *
+     * The language has none: a literal is an `__int` or a `__float` and is read
+     * at whatever width the place it lands in states. They are still recognised
+     * so the one that was written can be named in the error, which is the only
+     * reason this knows them.
+     *
+     * `b`, `c` and `f` are hex digits, so in a hex literal they are part of the
+     * number rather than a suffix.
+     */
+    private fun scanWidthSuffix(isHex: Boolean): WidthSuffix? {
+        val found = WIDTH_SUFFIXES.firstOrNull { candidate ->
+            if (isHex && candidate.hexDigit) return@firstOrNull false
+            if (!matchesAhead(candidate.lexeme)) return@firstOrNull false
+            // `4uL` ends the number; `4until` is `4` and a name.
+            val after = current + candidate.lexeme.length
+            after >= source.length || !source[after].isLetterOrDigit()
+        } ?: return null
+        repeat(found.lexeme.length) { advance() }
+        column += found.lexeme.length - 1
+        return found
     }
 
-    private fun scanNumericSuffix(isHex: Boolean): NumericSuffix {
-        if (isAtEnd()) return NumericSuffix.NONE
-        // Order matters - check multi-char suffixes first
-        // 'us' and 'uL' and 'uc' and 'ub'
-        if (!isAtEnd() && peek() == 'u') {
-            if (!isAtEnd(1)) {
-                val next = source[current + 1]
-                if (next == 's') { advance(); advance(); column++; return NumericSuffix.USHORT }
-                if (next == 'L') { advance(); advance(); column++; return NumericSuffix.ULONG }
-                // 'uc' only in non-hex mode (c is a hex digit)
-                if (!isHex && next == 'c') { advance(); advance(); column++; return NumericSuffix.UCENT }
-                // 'ub' only in non-hex mode (b is a hex digit)
-                if (!isHex && next == 'b') { advance(); advance(); column++; return NumericSuffix.UBYTE }
-            }
-            // Standalone 'u' - must check after multi-char suffixes starting with 'u'
-            // Only match if next char is NOT a letter/digit (i.e. end of number token)
-            if (isAtEnd(1) || !source[current + 1].isLetterOrDigit()) {
-                advance(); return NumericSuffix.UINT
-            }
-        }
-        // Single char suffixes
-        when {
-            !isAtEnd() && peek() == 's' -> { advance(); return NumericSuffix.SHORT }
-            !isAtEnd() && peek() == 'L' -> { advance(); return NumericSuffix.LONG }
-            !isAtEnd() && peek() == 'D' -> { advance(); return NumericSuffix.QUAD }
-            // 'b', 'c' and 'f' only in non-hex mode (they are hex digits)
-            !isHex && !isAtEnd() && peek() == 'b' -> { advance(); return NumericSuffix.BYTE }
-            !isHex && !isAtEnd() && peek() == 'c' -> { advance(); return NumericSuffix.CENT }
-            !isHex && !isAtEnd() && peek() == 'f' -> { advance(); return NumericSuffix.FLOAT }
-        }
-        return NumericSuffix.NONE
-    }
-
-    private fun suffixLexeme(suffix: NumericSuffix, isHex: Boolean): String = when (suffix) {
-        NumericSuffix.NONE -> "\u0000NONE" // sentinel that won't match
-        NumericSuffix.BYTE -> "b"
-        NumericSuffix.UBYTE -> "ub"
-        NumericSuffix.SHORT -> "s"
-        NumericSuffix.USHORT -> "us"
-        NumericSuffix.UINT -> "u"
-        NumericSuffix.LONG -> "L"
-        NumericSuffix.ULONG -> "uL"
-        NumericSuffix.CENT -> "c"
-        NumericSuffix.UCENT -> "uc"
-        NumericSuffix.FLOAT -> "f"
-        NumericSuffix.QUAD -> "D"
+    private fun matchesAhead(lexeme: String): Boolean {
+        if (current + lexeme.length > source.length) return false
+        for (i in lexeme.indices) if (source[current + i] != lexeme[i]) return false
+        return true
     }
 
     private fun Char.isHexDigit(): Boolean =

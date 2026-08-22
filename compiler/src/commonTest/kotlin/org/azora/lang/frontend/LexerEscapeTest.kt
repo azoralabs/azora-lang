@@ -50,4 +50,23 @@ class LexerEscapeTest {
             tokens.map(Token::type),
         )
     }
+
+    @Test fun everyGrammarKeywordHasADedicatedToken() {
+        val words = listOf(
+            "module", "union", "async", "where", "escaping",
+            "derives", "includes", "binds", "requires", "assoc", "lend", "seal",
+        )
+        val expected = listOf(
+            TokenType.MODULE, TokenType.UNION, TokenType.ASYNC, TokenType.WHERE,
+            TokenType.ESCAPING, TokenType.DERIVES, TokenType.INCLUDES,
+            TokenType.BINDS, TokenType.REQUIRES, TokenType.ASSOC, TokenType.LEND,
+            TokenType.SEAL, TokenType.EOF,
+        )
+
+        assertEquals(expected, Lexer(words.joinToString(" ")).tokenize().map(Token::type))
+    }
+
+    @Test fun replaceRemainsAnIdentifier() {
+        assertEquals(TokenType.IDENTIFIER, Lexer("replace").tokenize().first().type)
+    }
 }

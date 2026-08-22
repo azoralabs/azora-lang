@@ -771,16 +771,6 @@ class OwnershipTest {
         }
     """))
 
-    // `lend` only means the operator when a name follows it, so it stays an
-    // ordinary identifier everywhere else.
-    @Test fun lendIsStillAUsableName() = assertEquals("5", run("""
-        import std.io
-        func main() {
-            var lend = 5
-            println(lend)
-        }
-    """))
-
     // -- optionals (§17) -----------------------------------------------------
 
     // Moving out of an optional leaves it empty rather than pointing at a

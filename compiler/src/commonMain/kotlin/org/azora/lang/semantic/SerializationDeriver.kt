@@ -18,7 +18,6 @@ package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.Lexer
-import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.PackField
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.Program
@@ -529,9 +528,26 @@ object SerializationDeriver {
         is TypeRef.Const -> type.value.toString()
     }
 
+    private fun quote(value: String): String = buildString {
+        append('"')
+        value.forEach { char ->
+            append(
+                when (char) {
+                    '\\' -> "\\\\"
+                    '"' -> "\\\""
+                    '\n' -> "\\n"
+                    '\r' -> "\\r"
+                    '\t' -> "\\t"
+                    else -> char
+                }
+            )
+        }
+        append('"')
+    }
+
     private fun renderExpr(expr: Expr): String? = when (expr) {
-        is Expr.IntLiteral -> expr.value.toString() + integerSuffix(expr.suffix)
-        is Expr.DoubleLiteral -> expr.value.toString() + doubleSuffix(expr.suffix)
+        is Expr.IntLiteral -> expr.value.toString()
+        is Expr.DoubleLiteral -> expr.value.toString()
         is Expr.StringLiteral -> quote(expr.value)
         is Expr.CharLiteral -> "'${escapeChar(expr.value)}'"
         is Expr.BoolLiteral -> expr.value.toString()
@@ -582,43 +598,6 @@ object SerializationDeriver {
         TokenType.OR_OR -> "||"
         TokenType.BANG -> "!"
         else -> error("unsupported source operator $type")
-    }
-
-    private fun integerSuffix(suffix: NumericSuffix): String = when (suffix) {
-        NumericSuffix.NONE -> ""
-        NumericSuffix.BYTE -> "b"
-        NumericSuffix.UBYTE -> "ub"
-        NumericSuffix.SHORT -> "s"
-        NumericSuffix.USHORT -> "us"
-        NumericSuffix.UINT -> "u"
-        NumericSuffix.LONG -> "L"
-        NumericSuffix.ULONG -> "uL"
-        NumericSuffix.CENT -> "c"
-        NumericSuffix.UCENT -> "uc"
-        NumericSuffix.FLOAT, NumericSuffix.QUAD -> ""
-    }
-
-    private fun doubleSuffix(suffix: NumericSuffix): String = when (suffix) {
-        NumericSuffix.FLOAT -> "f"
-        NumericSuffix.QUAD -> "D"
-        else -> ""
-    }
-
-    private fun quote(value: String): String = buildString {
-        append('"')
-        value.forEach { char ->
-            append(
-                when (char) {
-                    '\\' -> "\\\\"
-                    '"' -> "\\\""
-                    '\n' -> "\\n"
-                    '\r' -> "\\r"
-                    '\t' -> "\\t"
-                    else -> char
-                }
-            )
-        }
-        append('"')
     }
 
     private fun escapeChar(value: Char): String = when (value) {

@@ -569,7 +569,7 @@ compiler/src/commonMain/kotlin/org/azora/lang/
 ├── Platform.kt                  Target/platform helpers
 │
 ├── frontend/
-│   ├── Token.kt                 TokenType, NumericSuffix, Token
+│   ├── Token.kt                 TokenType, NumericLiteral, Token
 │   ├── Lexer.kt                 Source → tokens
 │   ├── Ast.kt                   Expr, Stmt, TopLevel, FuncDecl, TypeRef, Program
 │   ├── Parser.kt                Tokens → AST (recursive descent + desugaring)

@@ -451,8 +451,8 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             dumpExpr(sb, expr.key, "$indent  ")
             dumpExpr(sb, expr.value, "$indent  ")
         }
-        is Expr.IntLiteral -> sb.appendLine("${indent}IntLiteral(${expr.value}, suffix=${expr.suffix})")
-        is Expr.DoubleLiteral -> sb.appendLine("${indent}DoubleLiteral(${expr.value}, suffix=${expr.suffix})")
+        is Expr.IntLiteral -> sb.appendLine("${indent}IntLiteral(${expr.value})")
+        is Expr.DoubleLiteral -> sb.appendLine("${indent}DoubleLiteral(${expr.value})")
         is Expr.StringLiteral -> sb.appendLine("${indent}StringLiteral(\"${expr.value}\")")
         is Expr.BoolLiteral -> sb.appendLine("${indent}BoolLiteral(${expr.value})")
         is Expr.CharLiteral -> sb.appendLine("${indent}CharLiteral('${expr.value}')")

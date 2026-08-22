@@ -25,6 +25,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 exposed module std.char
 
 /**
@@ -197,11 +198,15 @@ func charIsHexDigit(c: Char): Bool {
 @Experimental(since: "0.1")
 func hexDigitToInt(c: Char): Int
 in {
-    assert (charIsHexDigit(c)) { "Character must be a hex digit" }
+    assert charIsHexDigit(c) { "Character must be a hex digit" }
 } scope {
     fin code = ord(c)
-    if code >= 48 && code <= 57 { return code - 48 }
-    if code >= 65 && code <= 70 { return code - 55 }
+    if code >= 48 && code <= 57 {
+        return code - 48
+    }
+    if code >= 65 && code <= 70 {
+        return code - 55
+    }
     return code - 87
 }
 
@@ -214,7 +219,7 @@ in {
 @Experimental(since: "0.1")
 func digitToInt(c: Char): Int
 in {
-    assert (isDigit(c)) { "Character must be a digit" }
+    assert isDigit(c) { "Character must be a digit" }
 } scope {
     return ord(c) - 48
 }

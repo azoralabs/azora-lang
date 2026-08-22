@@ -134,6 +134,15 @@ class Parser(
     private val pendingStmts = mutableListOf<Stmt>()
 
     /**
+     * Statements that must run before the statement being parsed.
+     *
+     * A `for` used as a value is a loop that writes a binding, and both have to
+     * happen before the value is read. [pendingStmts] appends after the
+     * statement, which is the other direction and the wrong one for this.
+     */
+    private val pendingPrelude = mutableListOf<Stmt>()
+
+    /**
      * What a repeated ctor calls its repetition: `ctor[…]() * count`.
      *
      * Fixed rather than chosen, so a reader who knows the form knows the name and
@@ -329,7 +338,7 @@ class Parser(
             // `exposed module x` - auto-imported everywhere, rather than only where
             // it is asked for. It says nothing about visibility: a module is
             // reachable by default, and `confined` is what narrows it.
-            if (match(TokenType.EXPOSE)) isExported = true
+            if (match(TokenType.EXPOSED)) isExported = true
             if (check(TokenType.IF)) {
                 // `exposed if COND \n module …` - comptime-conditional auto-import.
                 advance() // 'if'
@@ -337,10 +346,10 @@ class Parser(
                 consume(TokenType.NEWLINE, "Expected a newline after 'exposed if <condition>'")
             } else {
                 moduleVisibility = when {
-                    match(TokenType.CONFINE) -> ModuleVisibility.CONFINE
+                    match(TokenType.CONFINED) -> ModuleVisibility.CONFINED
                     else -> ModuleVisibility.PUBLIC
                 }
-                if (isExported && moduleVisibility == ModuleVisibility.CONFINE) {
+                if (isExported && moduleVisibility == ModuleVisibility.CONFINED) {
                     error("'exposed confined module' is contradictory: a confined module is package-private and cannot be auto-imported everywhere")
                 }
             }
@@ -851,7 +860,7 @@ class Parser(
         // own constraints: `impl Vec<T, N>:: where T is SignedNumber { … }`.
         val after = tokens.getOrNull(i + 1) ?: return false
         return after.type == TokenType.L_BRACE ||
-            (after.type == TokenType.IDENTIFIER && after.lexeme == "where")
+            after.type == TokenType.WHERE
     }
 
     /**
@@ -924,23 +933,23 @@ class Parser(
      * way a module does.
      */
     private fun parseVisibility(): Visibility = when {
-        match(TokenType.CONFINE) -> Visibility.CONFINE
-        match(TokenType.PROTECT) -> Visibility.PROTECT
+        match(TokenType.CONFINED) -> Visibility.CONFINED
+        match(TokenType.PROTECTED) -> Visibility.PROTECTED
         // `exposed confined` / `exposed protected` - the two axes together. `exposed`
         // publishes the declaration without an explicit import; the reach that
         // follows bounds how far that publication travels.
-        check(TokenType.EXPOSE) && peekNext()?.type == TokenType.CONFINE -> {
+        check(TokenType.EXPOSED) && peekNext()?.type == TokenType.CONFINED -> {
             advance(); advance()
-            Visibility(Visibility.Reach.CONFINE, isExposed = true)
+            Visibility(Visibility.Reach.CONFINED, isExposed = true)
         }
-        check(TokenType.EXPOSE) && peekNext()?.type == TokenType.PROTECT -> {
+        check(TokenType.EXPOSED) && peekNext()?.type == TokenType.PROTECTED -> {
             advance(); advance()
-            Visibility(Visibility.Reach.PROTECT, isExposed = true)
+            Visibility(Visibility.Reach.PROTECTED, isExposed = true)
         }
         // `exposed` states the default. It is only a visibility modifier when a
         // declaration follows: `exposed import`, `exposed if` and `exposed module`
         // are their own forms and are parsed further down.
-        check(TokenType.EXPOSE) && !exposeStartsAnotherForm() -> {
+        check(TokenType.EXPOSED) && !exposeStartsAnotherForm() -> {
             advance()
             Visibility(Visibility.Reach.PUBLIC, isExposed = true)
         }
@@ -956,7 +965,7 @@ class Parser(
         val next = peekNext() ?: return false
         return next.type == TokenType.IMPORT ||
             next.type == TokenType.IF ||
-            (next.type == TokenType.IDENTIFIER && next.lexeme == "module")
+            next.type == TokenType.MODULE
     }
 
     // -----------------------------------------------------------------------
@@ -1096,13 +1105,13 @@ class Parser(
             // `exposed import …` - the import travels on to whoever imports this
             // module, so a package can offer one entry point instead of making
             // every caller name its internals (e.g. std.macro and std.container).
-            check(TokenType.EXPOSE) && peekNext()?.type == TokenType.IMPORT -> {
+            check(TokenType.EXPOSED) && peekNext()?.type == TokenType.IMPORT -> {
                 advance() // 'exposed'
                 parseUse(exported = true)
             }
             // `exposed if COND \n use …` - comptime-conditional. The newline
             // before `use` is mandatory.
-            check(TokenType.EXPOSE) && peekNext()?.type == TokenType.IF -> {
+            check(TokenType.EXPOSED) && peekNext()?.type == TokenType.IF -> {
                 advance() // 'exposed'
                 advance() // 'if'
                 val cond = parseExpr()
@@ -1265,7 +1274,7 @@ class Parser(
             error("Decorator names must start with an uppercase letter: use '${name.replaceFirstChar { it.uppercase() }}' at line ${start.line}")
         }
         val targets = if (match(TokenType.FOR)) parseDecoTargets() else emptySet()
-        val bindings = if (matchContextual("binds")) {
+        val bindings = if (match(TokenType.BINDS)) {
             if (match(TokenType.L_BRACKET)) {
                 val result = mutableListOf<DecoratorBinding>()
                 if (check(TokenType.R_BRACKET)) error("Expected at least one decorator binding at line ${peek().line}")
@@ -1965,7 +1974,7 @@ class Parser(
      */
     private fun isTestScopeAhead(): Boolean {
         var i = indexAfterAnnotations(current)
-        while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSE, TokenType.PROTECT, TokenType.CONFINE)) i++
+        while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSED, TokenType.PROTECTED, TokenType.CONFINED)) i++
         // `test scope { … }`, and the `scope test` it replaces.
         return when (tokens.getOrNull(i)?.type) {
             TokenType.TEST -> tokens.getOrNull(i + 1)?.type == TokenType.SCOPE
@@ -1983,7 +1992,7 @@ class Parser(
      *
      * Reach is the ordinary ladder, and it bounds which tests can see it:
      *
-     * - `test scope` (the default, [Visibility.Reach.CONFINE]) - tests in this file.
+     * - `test scope` (the default, [Visibility.Reach.CONFINED]) - tests in this file.
      * - `exposed test scope` - tests in any file, with no import.
      *
      * The members are returned flattened: a test scope is a visibility rule, not
@@ -1991,17 +2000,17 @@ class Parser(
      */
     private fun parseTestScope(): List<TopLevel> {
         val annotations = parseAnnotations()
-        // A bare `scope test` is file-local, so the default reach is CONFINE
+        // A bare `scope test` is file-local, so the default reach is CONFINED
         // rather than the PUBLIC that an ordinary declaration defaults to.
         val visibility = when {
-            match(TokenType.PROTECT) -> Visibility(Visibility.Reach.PROTECT)
-            match(TokenType.CONFINE) -> Visibility(Visibility.Reach.CONFINE)
-            match(TokenType.EXPOSE) -> when {
-                match(TokenType.PROTECT) -> Visibility(Visibility.Reach.PROTECT, isExposed = true)
-                match(TokenType.CONFINE) -> Visibility(Visibility.Reach.CONFINE, isExposed = true)
+            match(TokenType.PROTECTED) -> Visibility(Visibility.Reach.PROTECTED)
+            match(TokenType.CONFINED) -> Visibility(Visibility.Reach.CONFINED)
+            match(TokenType.EXPOSED) -> when {
+                match(TokenType.PROTECTED) -> Visibility(Visibility.Reach.PROTECTED, isExposed = true)
+                match(TokenType.CONFINED) -> Visibility(Visibility.Reach.CONFINED, isExposed = true)
                 else -> Visibility(Visibility.Reach.PUBLIC, isExposed = true)
             }
-            else -> Visibility(Visibility.Reach.CONFINE)
+            else -> Visibility(Visibility.Reach.CONFINED)
         }
         consume(TokenType.TEST, "Expected 'test'")
         consume(TokenType.SCOPE, "Expected 'scope' after 'test'")
@@ -2065,24 +2074,20 @@ class Parser(
     /**
      * True when a `union` declaration begins here.
      *
-     * `union` is contextual, not reserved: `Set.union(other)` and `fin union = …`
-     * mean what they say. A declaration is the one place the word is followed by
-     * a type name and then a body or type parameters.
+     * `union` has its own token. A declaration is recognized when it is followed
+     * by a type name and then a body or type parameters.
      */
     /**
      * True when a union declaration begins here: `unsafe union Name {`.
      *
-     * `union` is **contextual**, not reserved - `Set.union(other)` and
-     * `fin union = …` mean what they say - so it only opens a declaration when a
-     * type name and a body follow. The `unsafe` prefix is required (see
+     * The `unsafe` prefix is required (see
      * [parsePack]); a bare `union Name {` is matched here too so it can be
      * rejected with that explanation rather than a parse error.
      */
     private fun isUnionDeclAhead(): Boolean {
         var i = current
         if (tokens.getOrNull(i)?.type == TokenType.UNSAFE) i++
-        val word = tokens.getOrNull(i) ?: return false
-        if (word.type != TokenType.IDENTIFIER || word.lexeme != "union") return false
+        if (tokens.getOrNull(i)?.type != TokenType.UNION) return false
         if (tokens.getOrNull(i + 1)?.type != TokenType.IDENTIFIER) return false
         val after = tokens.getOrNull(i + 2)?.type
         return after == TokenType.L_BRACE || after == TokenType.LESS
@@ -2107,7 +2112,7 @@ class Parser(
                         "declare it 'unsafe union ${peekNext()?.lexeme ?: ""}' at line ${peek().line}",
                 )
             }
-            advance() // contextual `union`
+            consume(TokenType.UNION, "Expected 'union'")
         } else {
             consume(TokenType.PACK, "Expected 'pack'")
         }
@@ -2147,7 +2152,7 @@ class Parser(
             null
         }
         constParamEnums = tp.constEnums
-        val derives = if (matchContinuedContextual("derives")) parseDeriveHeads() else emptyList()
+        val derives = if (matchContinued(TokenType.DERIVES)) parseDeriveHeads() else emptyList()
         if (isUnion && derives.isNotEmpty()) {
             error("an unsafe union cannot derive field-wise implementations at line ${start.line}")
         }
@@ -2858,29 +2863,11 @@ class Parser(
      * local and ask for an explicit field type.
      */
     private fun inferPackFieldType(expr: Expr): TypeRef? = when (expr) {
-        is Expr.IntLiteral -> TypeRef.Named(
-            when (expr.suffix) {
-                NumericSuffix.NONE -> "Int"
-                NumericSuffix.BYTE -> "Byte"
-                NumericSuffix.UBYTE -> "UByte"
-                NumericSuffix.SHORT -> "Short"
-                NumericSuffix.USHORT -> "UShort"
-                NumericSuffix.UINT -> "UInt"
-                NumericSuffix.LONG -> "Long"
-                NumericSuffix.ULONG -> "ULong"
-                NumericSuffix.CENT -> "Cent"
-                NumericSuffix.UCENT -> "UCent"
-                NumericSuffix.FLOAT -> "Float"
-                NumericSuffix.QUAD -> "Quad"
-            },
-        )
-        is Expr.DoubleLiteral -> TypeRef.Named(
-            when (expr.suffix) {
-                NumericSuffix.FLOAT -> "Float"
-                NumericSuffix.QUAD -> "Quad"
-                else -> "Double"
-            },
-        )
+        // A literal states no width, so a field inferred from one takes the
+        // default. `fin small: Byte = 4` states `Byte`, and the literal is read
+        // at that width; nothing about `4` alone says so.
+        is Expr.IntLiteral -> TypeRef.Named("Int")
+        is Expr.DoubleLiteral -> TypeRef.Named("Double")
         is Expr.StringLiteral, is Expr.StringTemplate -> TypeRef.Named("String")
         is Expr.BoolLiteral -> TypeRef.Named("Bool")
         is Expr.CharLiteral -> TypeRef.Named("Char")
@@ -3700,6 +3687,7 @@ class Parser(
                     advance()
                     val propName = consume(TokenType.IDENTIFIER, "Expected property name").lexeme
                     val propReceiver = parsePropReceiver()
+                    requireObservingReceiver(propReceiver, propName, start.line)
                     val propTypeDeclared = check(TokenType.COLON)
                     // A property is part of its type's surface: a caller writes
                     // `value.isLess` and has to know what comes back without
@@ -3774,6 +3762,7 @@ class Parser(
                             val propName = consumeIdentifierLike("Expected property name after 'bridge prop'")
                             val tp = parseTypeParams()
                             val bridgeReceiver = parsePropReceiver()
+                            requireObservingReceiver(bridgeReceiver, propName, peek().line)
                             // A computed type can be long enough to want its own
                             // line; a `:` is never the end of a declaration, so
                             // what follows the break can only be the type.
@@ -4313,7 +4302,7 @@ class Parser(
                 macro = Expr.MetaInvoke(macroName, args, at.line, at.column, macroName.length + 1),
             )
         }
-        val declared = StringBuilder(consume(TokenType.IDENTIFIER, "Expected bridge declaration name").lexeme)
+        val declared = StringBuilder(consumeIdentifierLike("Expected bridge declaration name"))
         while (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
             advance()
             declared.append('.').append(advance().lexeme)
@@ -4596,22 +4585,10 @@ class Parser(
     private fun parseGraph(): TopLevel.Graph {
         val start = consume(TokenType.GRAPH, "Expected 'graph'")
         val name = consume(TokenType.IDENTIFIER, "Expected graph name").lexeme
-        // `graph TestGraph replace AppGraph { … }` - substitution. `replace` is
-        // contextual, not reserved: `replace` is the string function, and a
-        // keyword would take that name from every program.
-        val replaces = if (check(TokenType.IDENTIFIER) && peek().lexeme == "replace" &&
-            peekNext()?.type == TokenType.IDENTIFIER
-        ) {
-            advance()
-            advance().lexeme
-        } else null
         // `graph AppGraph includes [NetworkGraph, DataGraph] { … }` - composition.
-        // An included graph's definitions are part of this one. `includes` is
-        // contextual for the same reason `replace` is: it is an ordinary word
-        // that programs already use as a name, and reserving it would take that
-        // name from every one of them.
+        // An included graph's definitions are part of this one.
         val included = mutableListOf<String>()
-        if (matchContextual("includes")) {
+        if (match(TokenType.INCLUDES)) {
             if (match(TokenType.L_BRACKET)) {
                 do {
                     included.add(consume(TokenType.IDENTIFIER, "Expected a graph name in the includes list").lexeme)
@@ -4657,7 +4634,7 @@ class Parser(
             } else emptyList()
             // `binds Spec` / `binds [A, B]` - the specs this definition also answers.
             val bindSpecs = mutableListOf<String>()
-            if (matchContextual("binds")) {
+            if (match(TokenType.BINDS)) {
                 if (match(TokenType.L_BRACKET)) {
                     do {
                         bindSpecs.add(consume(TokenType.IDENTIFIER, "Expected a spec name in the binds list").lexeme)
@@ -4674,7 +4651,7 @@ class Parser(
         }
         consume(TokenType.R_BRACE, "Expected '}' after graph body")
         consumeNewline()
-        return TopLevel.Graph(name, registrations, start.line, start.column, included, replaces)
+        return TopLevel.Graph(name, registrations, start.line, start.column, included)
     }
 
     /** `slot Name { Variant(Type); Variant2(Type1, Type2); Variant3 }` - a tagged union. */
@@ -5468,10 +5445,8 @@ class Parser(
         // implementor must also carry. A precondition on the `impl`, not
         // inheritance: it adds no members and implies nothing on its own.
         val requiredSpecs = mutableListOf<TypeRef>()
-        // `requires` is contextual: it opens the capability clause only here, in a
-        // spec header. Everywhere else it is an ordinary name. One capability is
-        // written bare (`requires Clone`); several take a list.
-        if (check(TokenType.IDENTIFIER) && peek().lexeme == "requires" &&
+        // One capability is written bare (`requires Clone`); several take a list.
+        if (check(TokenType.REQUIRES) &&
             peekNext()?.type in setOf(TokenType.L_BRACKET, TokenType.IDENTIFIER)
         ) {
             advance()
@@ -5618,6 +5593,7 @@ class Parser(
                 } else {
                     PropReceiver("self", null, ParamModifier.SHARED)
                 }
+                requireObservingReceiver(preceiver, pname, start.line)
                 consume(TokenType.COLON, "Expected ':' after spec property name")
                 val ptype = parseTypeName()
                 // A property's call-site alias is declared at its own name
@@ -5636,7 +5612,7 @@ class Parser(
                 continue
             }
             consume(TokenType.FUNC, "Expected 'func' or 'prop' in spec")
-            val mname = consume(TokenType.IDENTIFIER, "Expected method name").lexeme
+            val mname = consumeIdentifierLike("Expected method name")
             // `func from<T>(value: T): Self` - the member's own type parameters,
             // read before the receiver exactly as on a `prop`.
             val mtypeParams = parseTypeParams()
@@ -5699,7 +5675,7 @@ class Parser(
 
     /** `assoc Item` / `assoc [Scalar, Rows, Columns]` on a spec. */
     private fun parseAssocNames(): List<String> {
-        if (!(check(TokenType.IDENTIFIER) && peek().lexeme == "assoc")) return emptyList()
+        if (!check(TokenType.ASSOC)) return emptyList()
         advance()
         if (!match(TokenType.L_BRACKET)) {
             return listOf(consume(TokenType.IDENTIFIER, "Expected an associated type name after 'assoc'").lexeme)
@@ -5716,7 +5692,7 @@ class Parser(
 
     /** `assoc Item = String` / `assoc [Scalar = T, Rows = Int]` on an implementation. */
     private fun parseAssocBindings(): Map<String, TypeRef> {
-        if (!(check(TokenType.IDENTIFIER) && peek().lexeme == "assoc")) return emptyMap()
+        if (!check(TokenType.ASSOC)) return emptyMap()
         advance()
         val bindings = mutableMapOf<String, TypeRef>()
         fun one() {
@@ -5897,15 +5873,10 @@ class Parser(
     /**
      * True when [index] holds a `module` that opens a module declaration.
      *
-     * `module` is contextual, not reserved: it lexes as an ordinary identifier,
-     * so `func module()` and `var module = 7` mean what they say. A module
-     * header is the one place the word is followed by another name, which is
-     * what distinguishes it - and it is only ever looked for at the top of a
-     * file, where a bare identifier could not begin a declaration anyway.
+     * `module` has its own token; a header is followed by its module name.
      */
     private fun isModuleWordAt(index: Int): Boolean {
-        val word = tokens.getOrNull(index) ?: return false
-        if (word.type != TokenType.IDENTIFIER || word.lexeme != "module") return false
+        if (tokens.getOrNull(index)?.type != TokenType.MODULE) return false
         val next = tokens.getOrNull(index + 1) ?: return false
         return next.type == TokenType.IDENTIFIER
     }
@@ -5917,7 +5888,7 @@ class Parser(
      */
     private fun isModuleHeaderAhead(): Boolean {
         var i = current
-        if (tokens.getOrNull(i)?.type == TokenType.EXPOSE) i++
+        if (tokens.getOrNull(i)?.type == TokenType.EXPOSED) i++
         // `exposed if COND \n module …` - the newline before `module` is mandatory.
         if (tokens.getOrNull(i)?.type == TokenType.IF) {
             var j = i + 1
@@ -5925,12 +5896,12 @@ class Parser(
             // exactly one newline, then `module`
             return tokens.getOrNull(j)?.type == TokenType.NEWLINE && isModuleWordAt(j + 1)
         }
-        if (tokens.getOrNull(i)?.type == TokenType.CONFINE) i++
+        if (tokens.getOrNull(i)?.type == TokenType.CONFINED) i++
         return isModuleWordAt(i)
     }
 
     private fun parseModule(): String {
-        consume(TokenType.IDENTIFIER, "Expected 'module'")
+        consume(TokenType.MODULE, "Expected 'module'")
         // Qualified names are allowed: `module std.math`. Segments use
         // [consumeIdentifierLike] so soft keywords (e.g. `weak`) are accepted.
         val name = StringBuilder(consumeIdentifierLike("Expected module name"))
@@ -5957,7 +5928,7 @@ class Parser(
         // `async func name(…)` - `async` qualifies `func` rather than replacing
         // it, so an asynchronous declaration still reads as a function.
         if (isTask) {
-            consume(TokenType.IDENTIFIER, "Expected 'async'")
+            consume(TokenType.ASYNC, "Expected 'async'")
             consume(TokenType.FUNC, "Expected 'func' after 'async'")
         } else {
             val keyword = TokenType.FUNC
@@ -6388,13 +6359,10 @@ class Parser(
     /**
      * True when [index] starts `async func` - an asynchronous declaration.
      *
-     * `async` is contextual, not reserved: on its own it is the builtin that
-     * spawns a task (`async { … }`), and it only qualifies a declaration when a
-     * `func` follows it.
+     * `async` has its own token and qualifies a declaration when `func` follows.
      */
     private fun isAsyncFuncAt(index: Int): Boolean {
-        val word = tokens.getOrNull(index) ?: return false
-        if (word.type != TokenType.IDENTIFIER || word.lexeme != "async") return false
+        if (tokens.getOrNull(index)?.type != TokenType.ASYNC) return false
         return tokens.getOrNull(index + 1)?.type == TokenType.FUNC
     }
 
@@ -6406,8 +6374,7 @@ class Parser(
      * may suspend.
      */
     private fun isAsyncPropAt(index: Int): Boolean {
-        val word = tokens.getOrNull(index) ?: return false
-        if (word.type != TokenType.IDENTIFIER || word.lexeme != "async") return false
+        if (tokens.getOrNull(index)?.type != TokenType.ASYNC) return false
         return tokens.getOrNull(index + 1)?.type == TokenType.PROP
     }
 
@@ -6422,6 +6389,9 @@ class Parser(
             // `func take(…)` / `self.take()` - `take` names a stdlib operation
             // as well as the ownership-transfer prefix.
             t.type == TokenType.TAKE ||
+            // Dedicated keyword tokens that are also established API or module
+            // path spellings in unambiguous name positions.
+            t.type == TokenType.UNION || t.type == TokenType.ASYNC ||
             // `module std.error` - a module path segment is a plain name, and
             // `error` reads best as the name of the module that declares the
             // error sets.
@@ -6668,7 +6638,7 @@ class Parser(
         // A clause may sit on its own line, after a signature or a spliced fragment.
         val at = nextMeaningfulIndex()
         val token = tokens.getOrNull(at) ?: return null
-        if (token.type != TokenType.IDENTIFIER || token.lexeme != "where") return null
+        if (token.type != TokenType.WHERE) return null
         while (current < at) advance()
         advance() // 'where'
         val savedTrailing = allowTrailingLambda
@@ -6973,8 +6943,7 @@ class Parser(
                     ?: error("'inline' must be followed by a callable type at line ${peek().line}")
             }
             // `async (A) -> R` / `async [Ctx](A) -> R` - the callable an `async
-            // func` produces. `async` is contextual, so it only reads as a prefix
-            // when a callable type actually follows.
+            // func` produces.
             isAsyncCallableTypeAhead() -> {
                 advance() // 'async'
                 parseCallableType(CallableKind.TASK)
@@ -6984,7 +6953,7 @@ class Parser(
             // reads as a prefix when a callable type actually follows.
             isReactCallableTypeAhead() -> {
                 advance() // 'react'
-                if (check(TokenType.IDENTIFIER) && peek().lexeme == "async") {
+                if (check(TokenType.ASYNC)) {
                     advance()
                     parseCallableType(CallableKind.REACT_TASK)
                 } else {
@@ -6993,7 +6962,7 @@ class Parser(
             }
             // `escaping (Event) -> Unit` - contextual, exactly as `async` is above:
             // it only reads as a prefix when a callable type actually follows.
-            check(TokenType.IDENTIFIER) && peek().lexeme == "escaping" &&
+            check(TokenType.ESCAPING) &&
                 (peekNext()?.type == TokenType.L_PAREN || peekNext()?.type == TokenType.L_BRACKET) ->
                 parseCallableType()
             check(TokenType.L_BRACKET) && isCallableTypeAhead() -> parseCallableType()
@@ -7138,9 +7107,9 @@ class Parser(
      * apart by what follows the matching `]`: a callable type continues with its
      * parameter list or directly with `->`.
      */
-    /** True when `async` here prefixes a callable type rather than naming a value. */
+    /** True when `async` here prefixes a callable type. */
     private fun isAsyncCallableTypeAhead(): Boolean {
-        if (!check(TokenType.IDENTIFIER) || peek().lexeme != "async") return false
+        if (!check(TokenType.ASYNC)) return false
         return when (peekNext()?.type) {
             TokenType.L_PAREN -> true
             TokenType.L_BRACKET -> isCallableTypeAhead(current + 1)
@@ -7151,7 +7120,7 @@ class Parser(
     private fun isReactCallableTypeAhead(): Boolean {
         if (!check(TokenType.REACT)) return false
         var next = current + 1
-        if (tokens.getOrNull(next)?.type == TokenType.IDENTIFIER && tokens[next].lexeme == "async") next++
+        if (tokens.getOrNull(next)?.type == TokenType.ASYNC) next++
         return when (tokens.getOrNull(next)?.type) {
             TokenType.L_PAREN -> true
             TokenType.L_BRACKET -> isCallableTypeAhead(next)
@@ -7189,11 +7158,9 @@ class Parser(
      * required, including the empty `()` after a receiver list.
      */
     private fun parseCallableType(kind: CallableKind = CallableKind.FUNC): TypeRef {
-        // `escaping (Event) -> Unit` - contextual, so it only means anything
-        // directly before a callable type and nothing has to be renamed to adopt
-        // it. A callable is non-escaping by default: most higher-order functions
-        // call their callable and are done with it.
-        val escaping = check(TokenType.IDENTIFIER) && peek().lexeme == "escaping" &&
+        // A callable is non-escaping by default: most higher-order functions call
+        // their callable and are done with it.
+        val escaping = check(TokenType.ESCAPING) &&
             (peekNext()?.type == TokenType.L_PAREN || peekNext()?.type == TokenType.L_BRACKET)
         if (escaping) advance()
         val receivers = mutableListOf<TypeRef>()
@@ -7236,10 +7203,12 @@ class Parser(
      */
     private fun parseStmts(): List<Stmt> {
         val first = parseStmt()
-        if (pendingStmts.isEmpty()) return listOf(first)
+        val before = pendingPrelude.toList()
+        pendingPrelude.clear()
+        if (pendingStmts.isEmpty()) return before + first
         val rest = pendingStmts.toList()
         pendingStmts.clear()
-        return listOf(first) + rest
+        return before + first + rest
     }
 
     /** One statement, where the grammar has room for exactly one. */
@@ -7250,7 +7219,12 @@ class Parser(
             pendingStmts.clear()
             error("a grouped binding declares several names, and $what has room for one, at line $line")
         }
-        return stmt
+        if (pendingPrelude.isEmpty()) return stmt
+        // Room for one statement is room for one *scope*, and what runs first
+        // belongs inside it rather than beside it.
+        val before = pendingPrelude.toList()
+        pendingPrelude.clear()
+        return Stmt.Scope(before + stmt, stmt.line, stmt.column)
     }
 
     private fun parseStmt(): Stmt {
@@ -7471,7 +7445,7 @@ class Parser(
         else -> stmt
     }
 
-    private fun parseFor(reverse: Boolean = false, label: String? = null): Stmt {
+    private fun parseFor(reverse: Boolean = false, label: String? = null, allowElse: Boolean = true): Stmt {
         val start = peek()
         if (reverse) consume(TokenType.REVERSE, "Expected 'reverse'")
         consume(TokenType.FOR, "Expected 'for'")
@@ -7498,8 +7472,8 @@ class Parser(
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}' after for body")
         skipNewlines()
-        val elseBranch = parseLoopElse()
-        consumeNewline()
+        val elseBranch = if (allowElse) parseLoopElse() else null
+        if (allowElse) consumeNewline()
         val loop = Stmt.For(
             name,
             iterable,
@@ -8148,6 +8122,14 @@ class Parser(
         val type: TypeRef?,
         val modifier: ParamModifier,
         val declared: Boolean = true,
+        /**
+         * Whether a borrow sigil was written.
+         *
+         * A bare `Self` borrows for reading like `Self&` does, so the modifier
+         * alone cannot tell the two apart - and a `prop` accepts only the one
+         * that says so.
+         */
+        val borrowWritten: Boolean = true,
     )
 
     /**
@@ -8158,6 +8140,28 @@ class Parser(
      * borrows it, in one place, whether the member extends a type or sits inside
      * its `impl` - so every member reads the same way.
      */
+    /**
+     * A `prop` is observational, so `[self&]` is the only receiver it takes.
+     *
+     * `[self!]` says that reading the property writes to what it was read from,
+     * and `[self]` says that reading it ends the value. Neither is a thing a
+     * property does - both are what a `func` is for - and a reader who cannot
+     * tell which of the three a `prop` is has to check every one of them.
+     */
+    private fun requireObservingReceiver(receiver: PropReceiver, name: String, line: Int) {
+        if (!receiver.declared) return
+        if (receiver.modifier == ParamModifier.SHARED && receiver.borrowWritten) return
+        val written = when {
+            receiver.modifier == ParamModifier.EXCLUSIVE -> "!"
+            else -> ""
+        }
+        val does = if (receiver.modifier == ParamModifier.EXCLUSIVE) "writes through" else "consumes"
+        error(
+            "a 'prop' only observes, so '$name' takes '[self&]' rather than " +
+                "'[self$written]' at line $line: declare a 'func' for one that $does its receiver",
+        )
+    }
+
     private fun parsePropReceiver(): PropReceiver {
         // A member that writes no receiver belongs to the *type*, not to a value
         // of it - `func make(): Arena` is `Arena.make()`. The shared borrow of
@@ -8190,10 +8194,12 @@ class Parser(
         val name: String
         val type: TypeRef
         val modifier: ParamModifier
+        var sigilWritten = true
         if (shorthand != null) {
             name = shorthand.name
             type = shorthand.type ?: TypeRef.Named("Self")
             modifier = shorthand.modifier
+            sigilWritten = shorthand.borrowWritten
         } else {
             name = consumeIdentifierLike("Expected receiver name in '[…]'")
             if (!check(TokenType.COLON)) {
@@ -8206,6 +8212,7 @@ class Parser(
             val parsed = parseReceiverTypeAndModifier()
             type = parsed.first
             modifier = parsed.second
+            sigilWritten = parsed.third
         }
         val extra = mutableListOf<Param>()
         while (match(TokenType.COMMA)) {
@@ -8215,11 +8222,11 @@ class Parser(
                 error("a receiver must name its type: write '[$extraName: Type&]', at line ${peek().line}")
             }
             advance() // ':'
-            val (extraType, extraModifier) = parseReceiverTypeAndModifier()
+            val (extraType, extraModifier, _) = parseReceiverTypeAndModifier()
             extra.add(Param(extraName, extraType, modifier = extraModifier))
         }
         consume(TokenType.R_BRACKET, "Expected ']' after receiver")
-        return PropReceiver(name, type, modifier) to extra
+        return PropReceiver(name, type, modifier, borrowWritten = sigilWritten) to extra
     }
 
     /**
@@ -8250,6 +8257,7 @@ class Parser(
             if (named) SELF_RECEIVER else IGNORED_RECEIVER,
             TypeRef.Named("Self"),
             modifier,
+            borrowWritten = modifier != ParamModifier.NONE,
         )
     }
 
@@ -8259,12 +8267,12 @@ class Parser(
      * `Self&` reads, `Self!` mutates; a bare `Self` still borrows for reading, so
      * a receiver never silently takes ownership of what it was called on.
      */
-    private fun parseReceiverTypeAndModifier(): Pair<TypeRef, ParamModifier> {
+    private fun parseReceiverTypeAndModifier(): Triple<TypeRef, ParamModifier, Boolean> {
         val parsed = parseTypeName()
         return if (parsed is TypeRef.Reference) {
-            parsed.inner to parsed.kind.paramModifier
+            Triple(parsed.inner, parsed.kind.paramModifier, true)
         } else {
-            parsed to ParamModifier.SHARED
+            Triple(parsed, ParamModifier.SHARED, false)
         }
     }
 
@@ -8281,6 +8289,7 @@ class Parser(
         // to extend is a constant, which is what a reparsed `impl Type:: { … }` or
         // `impl Spec:: for Type { … }` member is.
         val receiver = if (check(TokenType.L_BRACKET)) parsePropReceiver() else PropReceiver("self", null, ParamModifier.SHARED)
+        requireObservingReceiver(receiver, name, start.line)
         val type = if (match(TokenType.COLON)) parseTypeName() else null
         // `prop name: T = expr` and `prop name: T { return expr }` are the same
         // declaration written two ways. The block form exists because a value
@@ -8360,7 +8369,7 @@ class Parser(
      */
     private fun isTypePropAhead(): Boolean {
         var i = indexAfterAnnotations(current)
-        while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSE, TokenType.PROTECT, TokenType.CONFINE)) i++
+        while (tokens.getOrNull(i)?.type in setOf(TokenType.EXPOSED, TokenType.PROTECTED, TokenType.CONFINED)) i++
         if (tokens.getOrNull(i)?.type != TokenType.DEEPINLINE) return false
         if (tokens.getOrNull(i + 1)?.type == TokenType.PROP) return true
         // A type function that takes values is a `func`, because that is what
@@ -9749,12 +9758,10 @@ class Parser(
     /**
      * A branch value, optionally sealed: `seal "!! "`.
      *
-     * `seal` is contextual, so a binding may still be called that: the
-     * keyword reading is taken only when something that can start an
-     * expression follows it, which a bare name being read never has.
+     * `seal` is followed by the value to seal.
      */
     private fun parseSealableValue(): Expr {
-        if (check(TokenType.IDENTIFIER) && peek().lexeme == "seal" && startsExpression(peekNext())) {
+        if (check(TokenType.SEAL) && startsExpression(peekNext())) {
             val start = advance()
             return Expr.Seal(parseExpr(), start.line, start.column, start.lexeme.length)
         }
@@ -9764,8 +9771,7 @@ class Parser(
     /**
      * Whether [token] can begin an expression.
      *
-     * Used to tell a contextual keyword from a name being read: `seal .Red`
-     * seals a value, while `seal` alone, or `seal + 1`, is the binding.
+     * Used to ensure `seal` is followed by a value expression.
      */
     private fun startsExpression(token: Token?): Boolean = when (token?.type) {
         null, TokenType.NEWLINE, TokenType.EOF, TokenType.R_BRACE, TokenType.R_PAREN,
@@ -10462,7 +10468,7 @@ class Parser(
                 }
             }
             val atForm = check(TokenType.AT) && isAtInfixCandidate()
-            if (!atForm && !(check(TokenType.IDENTIFIER) && peek().lexeme != "where" && isInfixCandidate())) break
+            if (!atForm && !(check(TokenType.IDENTIFIER) && isInfixCandidate())) break
             // `a @to b` - the `@` leads on an infix macro's call just as it leads
             // on its declaration. It cannot be a loop label here: a label only
             // opens a statement, and this position already has a left operand.
@@ -10692,9 +10698,8 @@ class Parser(
         // There is no `#expr` hash operator: hashing is `Hash`'s `prop hash`,
         // reached as `value.hash`. `#` survives only as the container-macro
         // sigil (`@set[…]`), which `parseMetaPrefix` reads.
-        // `lend x` - ownership the callee gives back (§13). Contextual: the word
-        // only means this when a name follows it, so `lend` stays usable as one.
-        if (check(TokenType.IDENTIFIER) && peek().lexeme == "lend" && peekNext()?.type == TokenType.IDENTIFIER) {
+        // `lend x` - ownership the callee gives back (§13).
+        if (check(TokenType.LEND) && peekNext()?.type == TokenType.IDENTIFIER) {
             val at = advance()
             return Expr.Isolated(parseUnary(), at.line, at.column, at.lexeme.length, op = OwnershipOp.LEND)
         }
@@ -11303,6 +11308,94 @@ class Parser(
         return Expr.IfExpr(condition, thenExpr, elseExpr, start.line, start.column)
     }
 
+    /** Counter for the hidden bindings a `for`-expression answers through. */
+    private var forExprCounter = 0
+
+    /**
+     * `for x in xs { … } else { value }` in expression position.
+     *
+     * The loop and the `else` are parsed exactly as the statement forms are -
+     * this is the same `for`, asked for its answer. What differs is the body:
+     * an iteration produces the expression's value by ending in one, and
+     * producing it ends the loop.
+     *
+     * Lowered here into a binding the loop writes, so nothing downstream needs
+     * a loop that is also a value: every backend already has assignment and
+     * `break`.
+     */
+    private fun parseForExpr(): Expr {
+        val start = peek()
+        val reverse = check(TokenType.REVERSE)
+        val loop = parseFor(reverse = reverse, allowElse = false)
+        if (loop !is Stmt.For) {
+            error("a 'for' used as a value has one loop and one 'else' at line ${start.line}")
+        }
+        skipNewlines()
+        consume(TokenType.ELSE, "Expected 'else' - a 'for' used as a value needs one for when nothing is produced")
+        consume(TokenType.L_BRACE, "Expected '{' after 'else'")
+        skipNewlines()
+        val fallback = parseExpr()
+        skipNewlines()
+        consume(TokenType.R_BRACE, "Expected '}' after the else value")
+
+        val temp = "__for_value_${forExprCounter++}"
+        val (body, produces) = rewriteForYields(loop.body, temp)
+        if (!produces) {
+            error(
+                "a 'for' used as a value must produce one: no iteration of the loop at line " +
+                    "${start.line} ends in a value, so the answer could only ever be the 'else'",
+            )
+        }
+        // The binding holds the else value until an iteration overwrites it, so
+        // the whole thing is a binding and a loop - two statements every pass
+        // and every backend already has. They go in front of whatever statement
+        // the value was read in; see [pendingPrelude].
+        pendingPrelude += Stmt.VarDecl(temp, TypeAnnotation.Inferred, fallback, start.line, start.column)
+        pendingPrelude += loop.copy(body = body)
+        return Expr.Identifier(temp, start.line, start.column, temp.length)
+    }
+
+    /**
+     * Rewrites each value an iteration ends in into a write of [temp].
+     *
+     * Only a *tail* expression is a value: it is the last thing the iteration
+     * does, so there is nothing after it to make the answer of. A tail reached
+     * through `if`/`when`/`scope` is a tail of each of its branches, which is
+     * what lets `if found { true }` produce on one path and fall through on the
+     * other.
+     *
+     * Returns the rewritten statements and whether any value was found.
+     */
+    private fun rewriteForYields(stmts: List<Stmt>, temp: String): Pair<List<Stmt>, Boolean> {
+        if (stmts.isEmpty()) return stmts to false
+        val (tail, produces) = rewriteForYield(stmts.last(), temp)
+        return (stmts.dropLast(1) + tail) to produces
+    }
+
+    private fun rewriteForYield(stmt: Stmt, temp: String): Pair<Stmt, Boolean> = when (stmt) {
+        is Stmt.ExprStmt -> Stmt.Scope(
+            listOf(
+                Stmt.Assignment(temp, stmt.expr, stmt.line, stmt.column),
+                Stmt.Break(null, stmt.line, stmt.column),
+            ),
+            stmt.line,
+            stmt.column,
+            stmt.length,
+        ) to true
+        is Stmt.If -> {
+            val (thenBranch, thenProduces) = rewriteForYields(stmt.thenBranch, temp)
+            val (elseBranch, elseProduces) = stmt.elseBranch
+                ?.let { rewriteForYields(it, temp) }
+                ?: (null to false)
+            stmt.copy(thenBranch = thenBranch, elseBranch = elseBranch) to (thenProduces || elseProduces)
+        }
+        is Stmt.Scope -> {
+            val (body, produces) = rewriteForYields(stmt.body, temp)
+            stmt.copy(body = body) to produces
+        }
+        else -> stmt to false
+    }
+
     private fun parsePrimary(): Expr {
         // A fragment stands where its expansion stands, so one that expands to a
         // value belongs wherever a value does: `fin id = @applyKey site` reads the
@@ -11346,15 +11439,20 @@ class Parser(
         return when (tok.type) {
             TokenType.IF -> parseIfExpr()
             TokenType.WHEN -> parseWhenExpr()
+            // A `for` reached here is one in value position: the statement
+            // parser takes every other. `reverse` is also an ordinary function
+            // (`reverse<T>(xs)`), so only the one introducing a loop is a loop.
+            TokenType.FOR -> parseForExpr()
+            TokenType.REVERSE if peekNext()?.type == TokenType.FOR -> parseForExpr()
             TokenType.INT_LITERAL -> {
                 advance()
                 val numLit = tok.literal as NumericLiteral
-                Expr.IntLiteral(numLit.value as Long, tok.line, tok.column, tok.lexeme.length, numLit.suffix, numLit.text)
+                Expr.IntLiteral(numLit.value as Long, tok.line, tok.column, tok.lexeme.length, numLit.text)
             }
             TokenType.DOUBLE_LITERAL -> {
                 advance()
                 val numLit = tok.literal as NumericLiteral
-                Expr.DoubleLiteral(numLit.value as Double, tok.line, tok.column, tok.lexeme.length, numLit.suffix, numLit.text ?: tok.lexeme)
+                Expr.DoubleLiteral(numLit.value as Double, tok.line, tok.column, tok.lexeme.length, numLit.text ?: tok.lexeme)
             }
             TokenType.STRING_LITERAL -> { advance(); Expr.StringLiteral(tok.literal as String, tok.line, tok.column, tok.lexeme.length) }
             TokenType.INTERPOLATED_STRING -> {
@@ -11379,16 +11477,17 @@ class Parser(
             )
             // A declaration may be `async func name`, but a lambda is simply
             // `async { ... }` or `async [receivers; captures] { ... }`.
-            TokenType.IDENTIFIER if isAsyncFuncAt(current) -> error(
+            TokenType.ASYNC if isAsyncFuncAt(current) -> error(
                 "line ${tok.line}: async lambdas do not use 'func'; write " +
                     "'async { ... }' or 'async [; take] { ... }'",
             )
-            TokenType.IDENTIFIER if tok.lexeme == "async" && peekNext()?.type == TokenType.LESS -> {
+            TokenType.ASYNC if peekNext()?.type == TokenType.LESS -> {
                 advance()
                 val lambda = parseGenericLambda()
                 Expr.Call("async", listOf(lambda), tok.line, tok.column, tok.lexeme.length)
             }
             TokenType.IDENTIFIER,
+            TokenType.ASYNC,
             TokenType.REVERSE -> {
                 advance()
                 // `it` is the name a lambda gives its parameter when it has exactly
@@ -11825,27 +11924,21 @@ class Parser(
         return true
     }
 
-    private fun matchContextual(word: String): Boolean {
-        if (!check(TokenType.IDENTIFIER) || peek().lexeme != word) return false
-        advance()
-        return true
-    }
-
     /**
-     * [matchContextual], allowing the word to open the following line.
+     * [match], allowing the token to open the following line.
      *
      * A long declaration puts its clause underneath itself rather than off the
      * right edge, so the newline that would have ended the declaration is only
      * a break in it. Newlines are consumed when the word is there and left
      * alone when it is not, so a declaration that simply ended still ends.
      */
-    private fun matchContinuedContextual(word: String): Boolean {
-        if (matchContextual(word)) return true
+    private fun matchContinued(type: TokenType): Boolean {
+        if (match(type)) return true
         var ahead = current
         while (ahead < tokens.size && tokens[ahead].type == TokenType.NEWLINE) ahead++
         if (ahead == current) return false
         val next = tokens.getOrNull(ahead) ?: return false
-        if (next.type != TokenType.IDENTIFIER || next.lexeme != word) return false
+        if (next.type != type) return false
         current = ahead + 1
         return true
     }

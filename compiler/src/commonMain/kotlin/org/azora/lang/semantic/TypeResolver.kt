@@ -32,7 +32,6 @@ import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.Literals
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
-import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TokenType
@@ -746,8 +745,8 @@ class TypeResolver(private val table: SymbolTable) {
         if (testContext) return true
         val visibility = program?.testScopeMembers?.get(name) ?: return true
         val reach = when (visibility.reach) {
-            Visibility.Reach.CONFINE -> "this file"
-            Visibility.Reach.PROTECT -> "this folder"
+            Visibility.Reach.CONFINED -> "this file"
+            Visibility.Reach.PROTECTED -> "this folder"
             Visibility.Reach.PUBLIC -> "any file"
         }
         errors.add(
@@ -1019,7 +1018,7 @@ class TypeResolver(private val table: SymbolTable) {
         // the type. An `impl` written elsewhere - an extension, or another
         // package's addition - sees only the public surface.
         name.startsWith("_") -> currentReceiverType == ownerType && inOwningModule(ownerType)
-        visibility.reach == Visibility.Reach.CONFINE -> currentReceiverType == ownerType
+        visibility.reach == Visibility.Reach.CONFINED -> currentReceiverType == ownerType
         else -> true
     }
 
@@ -1840,30 +1839,9 @@ class TypeResolver(private val table: SymbolTable) {
         return width
     }
 
-    private fun suffixToIntType(suffix: NumericSuffix): IrType = when (suffix) {
-        NumericSuffix.NONE -> IrType.Int
-        NumericSuffix.BYTE -> IrType.Byte
-        NumericSuffix.UBYTE -> IrType.UByte
-        NumericSuffix.SHORT -> IrType.Short
-        NumericSuffix.USHORT -> IrType.UShort
-        NumericSuffix.UINT -> IrType.UInt
-        NumericSuffix.LONG -> IrType.Long
-        NumericSuffix.ULONG -> IrType.ULong
-        NumericSuffix.CENT -> IrType.Cent
-        NumericSuffix.UCENT -> IrType.UCent
-        NumericSuffix.FLOAT -> IrType.Float
-        NumericSuffix.QUAD -> IrType.Quad
-    }
-
     private fun defaultTraceLevel(line: Int): Expr {
         val first = table.lookupEnum("LogLevel")?.firstOrNull() ?: "Debug"
         return Expr.Member(Expr.Identifier("LogLevel", line), first, line)
-    }
-
-    private fun suffixToFloatType(suffix: NumericSuffix): IrType = when (suffix) {
-        NumericSuffix.FLOAT -> IrType.Float
-        NumericSuffix.QUAD -> IrType.Quad
-        else -> IrType.Double
     }
 
     /**
@@ -1985,8 +1963,8 @@ class TypeResolver(private val table: SymbolTable) {
                 )
                 null
             }
-            is Expr.IntLiteral -> suffixToIntType(expr.suffix)
-            is Expr.DoubleLiteral -> suffixToFloatType(expr.suffix)
+            is Expr.IntLiteral -> IrType.Int
+            is Expr.DoubleLiteral -> IrType.Double
             is Expr.StringLiteral -> IrType.String
             is Expr.BoolLiteral -> IrType.Bool
             is Expr.NullLiteral -> IrType.Any  // null is compatible with any nullable type
@@ -4068,9 +4046,14 @@ class TypeResolver(private val table: SymbolTable) {
         return wanted
     }
 
-    /** True for a real literal written without a width suffix. */
+    /**
+     * True for a real literal.
+     *
+     * Every one is untyped: a literal states no width and is read at whatever
+     * the place it lands in says.
+     */
     private fun isUntypedDoubleLiteral(expr: Expr): Boolean = when (expr) {
-        is Expr.DoubleLiteral -> expr.suffix == NumericSuffix.NONE
+        is Expr.DoubleLiteral -> true
         is Expr.Grouping -> isUntypedDoubleLiteral(expr.expr)
         is Expr.Unary ->
             expr.op in setOf(TokenType.MINUS, TokenType.PLUS) && isUntypedDoubleLiteral(expr.operand)
@@ -4078,13 +4061,12 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * The value of an unsuffixed integer literal, or null.
+     * The value of an integer literal, or null.
      *
-     * A suffix (`3L`, `7u`) states a type, so such a literal is not untyped and keeps
-     * what it was written as.
+     * Every integer literal is untyped: the width comes from where it lands.
      */
     private fun untypedIntLiteral(expr: Expr): Long? = when (expr) {
-        is Expr.IntLiteral -> if (expr.suffix == NumericSuffix.NONE) expr.value else null
+        is Expr.IntLiteral -> expr.value
         is Expr.Grouping -> untypedIntLiteral(expr.expr)
         is Expr.Unary -> when (expr.op) {
             TokenType.MINUS -> untypedIntLiteral(expr.operand)?.let { -it }

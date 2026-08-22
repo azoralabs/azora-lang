@@ -817,10 +817,10 @@ test "set remove preserves remaining membership" {
 test "set algebra produces unique results" {
     fin left = setOf(1, 2, 3)
     fin right = setOf(3, 4)
-    fin union = left.union(right)
+    fin combined = left.union(right)
     fin common = left.intersect(right)
     fin difference = left.difference(right)
-    assert union.size == 4 && union.contains(4) { "union must contain both memberships" }
+    assert combined.size == 4 && combined.contains(4) { "union must contain both memberships" }
     assert common.size == 1 && common.contains(3) { "intersection must contain shared values" }
     assert difference.size == 2 && difference.contains(1) && difference.contains(2) { "difference must exclude right values" }
 }

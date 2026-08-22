@@ -29,11 +29,17 @@ spec Iterator assoc Item {
     /** Positions the cursor before the first row. */
     func reset[self: Self!]()
 
-    /** Advances to the next row, answering whether there was one. */
-    prop hasNext[self: Self!]: Bool
+    /**
+     * Advances to the next row, answering whether there was one.
+     *
+     * A `func` rather than a `prop`: advancing is a write, and a `prop` only
+     * observes. Reading one twice has to answer twice the same, which is the
+     * opposite of what walking a sequence does.
+     */
+    func hasNext[self: Self!](): Bool
 
     /** The row the cursor is on, after [hasNext] said there was one. */
-    prop next[self: Self!]: Item
+    func next[self: Self!](): Item
 
     /**
      * Runs [body] on every remaining row.

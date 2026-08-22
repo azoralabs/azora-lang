@@ -295,7 +295,12 @@ internal object ScopeAccessRewriter {
         is Stmt.Loop -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) })
         is Stmt.When -> s.copy(
             scrutinee = expr(s.scrutinee, prefix, mangled, shadowed),
-            branches = s.branches.map { it.copy(patterns = it.patterns.map { expr(it, prefix, mangled, shadowed) }, body = it.body.map { stmt(it, prefix, mangled, shadowed) }) },
+            branches = s.branches.map {
+                it.copy(
+                    patterns = it.patterns.map { p -> pattern(p, prefix, mangled, shadowed) },
+                    body = it.body.map { b -> stmt(b, prefix, mangled, shadowed) },
+                )
+            },
             elseBranch = s.elseBranch?.map { stmt(it, prefix, mangled, shadowed) },
         )
         is Stmt.Try -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) }, catchBody = s.catchBody?.map { stmt(it, prefix, mangled, shadowed) })
@@ -303,6 +308,16 @@ internal object ScopeAccessRewriter {
         is Stmt.Scope -> s.copy(body = s.body.map { stmt(it, prefix, mangled, shadowed) })
         else -> s
     }
+
+    /**
+     * A `when` arm's pattern, which reads differently from an expression.
+     *
+     * `.Bool(v)` *binds* `v`; it does not read one. Rewriting what a pattern
+     * takes apart renames the binding out from under the arm that uses it, so
+     * only the case being matched is qualified.
+     */
+    private fun pattern(p: Expr, prefix: String?, mangled: Set<String>, shadowed: Set<String>): Expr =
+        if (p is Expr.InferredMember) p else expr(p, prefix, mangled, shadowed)
 
     private fun expr(e: Expr, prefix: String?, mangled: Set<String>, shadowed: Set<String>): Expr = when (e) {
         is Expr.Identifier -> maybe(e.name, prefix, mangled, shadowed)?.let { e.copy(name = it) } ?: e

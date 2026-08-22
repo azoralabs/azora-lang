@@ -30,7 +30,6 @@ import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TypeFunctionDecl
-import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.CaptureMode
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.ReactiveKind
@@ -1504,27 +1503,6 @@ class IrGenerator(private val table: SymbolTable) {
         }
     }
 
-    private fun suffixToIntType(suffix: NumericSuffix): IrType = when (suffix) {
-        NumericSuffix.NONE -> IrType.Int
-        NumericSuffix.BYTE -> IrType.Byte
-        NumericSuffix.UBYTE -> IrType.UByte
-        NumericSuffix.SHORT -> IrType.Short
-        NumericSuffix.USHORT -> IrType.UShort
-        NumericSuffix.UINT -> IrType.UInt
-        NumericSuffix.LONG -> IrType.Long
-        NumericSuffix.ULONG -> IrType.ULong
-        NumericSuffix.CENT -> IrType.Cent
-        NumericSuffix.UCENT -> IrType.UCent
-        NumericSuffix.FLOAT -> IrType.Float
-        NumericSuffix.QUAD -> IrType.Quad
-    }
-
-    private fun suffixToFloatType(suffix: NumericSuffix): IrType = when (suffix) {
-        NumericSuffix.FLOAT -> IrType.Float
-        NumericSuffix.QUAD -> IrType.Quad
-        else -> IrType.Double
-    }
-
     private fun defaultTraceLevel(line: Int): Expr {
         val first = table.lookupEnum("LogLevel")?.firstOrNull() ?: "Debug"
         return Expr.Member(Expr.Identifier("LogLevel", line), first, line)
@@ -1907,8 +1885,8 @@ class IrGenerator(private val table: SymbolTable) {
                 "line ${expr.line}: 'key: value' is only an argument of a macro that takes " +
                     "'[...\${key: value}]' - no macro arm matched this invocation",
             )
-            is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, suffixToIntType(expr.suffix), expr.text)
-            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, suffixToFloatType(expr.suffix), expr.text)
+            is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, IrType.Int, expr.text)
+            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, IrType.Double, expr.text)
             is Expr.StringLiteral -> IrExpr.StringLiteral(expr.value)
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(expr.value)
             is Expr.NullLiteral -> IrExpr.Var("__null", IrType.Any)
@@ -3422,9 +3400,9 @@ class IrGenerator(private val table: SymbolTable) {
     private fun literalAtDeclaredType(expr: Expr, declared: IrType?): IrExpr? {
         val type = declared ?: return null
         return when {
-            expr is Expr.IntLiteral && expr.suffix == NumericSuffix.NONE && type in IrType.integerTypes ->
+            expr is Expr.IntLiteral && type in IrType.integerTypes ->
                 IrExpr.IntLiteral(expr.value, type, expr.text)
-            expr is Expr.DoubleLiteral && expr.suffix == NumericSuffix.NONE && type in IrType.floatTypes ->
+            expr is Expr.DoubleLiteral && type in IrType.floatTypes ->
                 IrExpr.DoubleLiteral(expr.value, type, expr.text)
             expr is Expr.Unary && expr.op == TokenType.MINUS ->
                 when (val inner = literalAtDeclaredType(expr.operand, type)) {

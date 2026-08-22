@@ -95,6 +95,13 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "spec") || rangeIs(source, start, end, "defer") ||
         rangeIs(source, start, end, "typealias") || rangeIs(source, start, end, "scope") ||
         rangeIs(source, start, end, "variant") || rangeIs(source, start, end, "import") ||
+        rangeIs(source, start, end, "module") || rangeIs(source, start, end, "union") ||
+        rangeIs(source, start, end, "async") || rangeIs(source, start, end, "where") ||
+        rangeIs(source, start, end, "escaping") ||
+        rangeIs(source, start, end, "derives") || rangeIs(source, start, end, "includes") ||
+        rangeIs(source, start, end, "binds") || rangeIs(source, start, end, "requires") ||
+        rangeIs(source, start, end, "assoc") || rangeIs(source, start, end, "lend") ||
+        rangeIs(source, start, end, "seal") ||
         rangeIs(source, start, end, "use") ||
         rangeIs(source, start, end, "as") || rangeIs(source, start, end, "is") || rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "annot") ||
         rangeIs(source, start, end, "bind") || rangeIs(source, start, end, "error") ||
@@ -737,8 +744,7 @@ func addInterpolationHighlights(
             index += 1
             while index < end && isIdentifierPart(charAt(source, index)) { index += 1 }
             var kind = "variable"
-            if isKeywordRange(source, identifierStart, index) ||
-                isContextualKeywordRange(source, identifierStart, index) { kind = "keyword" }
+            if isKeywordRange(source, identifierStart, index) { kind = "keyword" }
             else if loopLabelIsKnown(source, identifierStart, index) { kind = "label" }
             else if scopePathSegmentIsKnown(source, identifierStart, index) { kind = "scope" }
             else if rangeIs(source, identifierStart, index, "self") ||
@@ -890,8 +896,7 @@ func azlsHighlightRange(
             while index < stringLength(source) && isIdentifierPart(charAt(source, index)) { index += 1 }
             fin emit = start >= rangeStart
             var kind = "identifier"
-            if isKeywordRange(source, start, index) ||
-                isContextualKeywordRange(source, start, index) { kind = "keyword" }
+            if isKeywordRange(source, start, index) { kind = "keyword" }
             else if emit {
                 if expectedDeclarationKind == "function" { kind = "function" }
                 else if expectedDeclarationKind == "interface" { kind = "spec-type" }

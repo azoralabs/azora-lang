@@ -180,28 +180,4 @@ class Tier3DiTest {
         """.trimIndent()))
     }
 
-    /**
-     * `includes` composes graphs, and is contextual rather than reserved: it is an
-     * ordinary word that programs already use as a name - `std/serializer.az`
-     * has a local called `includes` - and reserving it would take that name from
-     * every one of them.
-     */
-    @Test
-    fun includeComposesGraphsWithoutTakingTheNameFromPrograms() {
-        assertEquals("kept\n42", run("""
-            import std.io
-            pack Config { fin url: String = "" }
-            graph BaseGraph { solo Config("u") }
-            graph AppGraph includes BaseGraph { }
-
-            func includes(n: Int): Int { return n }
-
-            func main() {
-                var includes = true
-                fin used = if includes { "kept" } else { "dropped" }
-                println(used)
-                println(includes(42))
-            }
-        """.trimIndent()))
-    }
 }

@@ -19,10 +19,8 @@ class Tier4ConcurrencyTest {
         return IrInterpreter().interpret(result.ir).trim()
     }
 
-    @Test fun asyncIsContextualNotReserved() {
-        // `async` names a task only when a `func` follows it; on its own it is
-        // still the builtin that spawns a lambda, and still a usable name.
-        assertEquals("5\n21\n20", run("""
+    @Test fun asyncTokenIntroducesDeclarationsAndLambdas() {
+        assertEquals("21\n20", run("""
             import std.io
 
             async func compute(n: Int): Int {
@@ -30,8 +28,6 @@ class Tier4ConcurrencyTest {
             }
 
             func main() {
-                var async = 5
-                println(async)
                 fin handle = async { 21 }
                 println(await handle)
                 println(await compute(10))

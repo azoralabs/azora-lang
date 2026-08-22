@@ -22,7 +22,6 @@ import org.azora.lang.ir.ctorSymbol
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
-import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -1006,25 +1005,10 @@ class SymbolCollector {
         is Expr.MapEntryArg -> null
         is Expr.InlineForArgs -> null
         is Expr.InCheck -> IrType.Bool
-        is Expr.IntLiteral -> when (expr.suffix) {
-            NumericSuffix.NONE -> IrType.Int
-            NumericSuffix.BYTE -> IrType.Byte
-            NumericSuffix.UBYTE -> IrType.UByte
-            NumericSuffix.SHORT -> IrType.Short
-            NumericSuffix.USHORT -> IrType.UShort
-            NumericSuffix.UINT -> IrType.UInt
-            NumericSuffix.LONG -> IrType.Long
-            NumericSuffix.ULONG -> IrType.ULong
-            NumericSuffix.CENT -> IrType.Cent
-            NumericSuffix.UCENT -> IrType.UCent
-            NumericSuffix.FLOAT -> IrType.Float
-            NumericSuffix.QUAD -> IrType.Quad
-        }
-        is Expr.DoubleLiteral -> when (expr.suffix) {
-            NumericSuffix.QUAD -> IrType.Quad
-            NumericSuffix.FLOAT -> IrType.Float
-            else -> IrType.Double // unsuffixed real literals default to Double
-        }
+        // A literal states no width: it is read at whatever the place it lands
+        // in says, and standing alone it is the default.
+        is Expr.IntLiteral -> IrType.Int
+        is Expr.DoubleLiteral -> IrType.Double
         is Expr.StringLiteral -> IrType.String
         is Expr.BoolLiteral -> IrType.Bool
         is Expr.CharLiteral -> IrType.Char

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+@Supress(.Unused)
 module azora.lang.frontend.token
 
 /**
@@ -30,171 +30,181 @@ module azora.lang.frontend.token
  */
 enum TokenType {
     // Literals
-    IntLiteral              /** 1 */
-    RealLiteral             /** 1.0 */
-    StringLiteral           /** "" */
-    CharLiteral             /** '' */
-    True                    /** true */
-    False                   /** false */
-    InterpolatedString      /** "${}" */
-    Null                    /** null */
+    IntLiteral
+    DoubleLiteral
+    StringLiteral
+    CharLiteral
+    True
+    False
+    InterpolatedString
 
     // Identifier
-    Identifier              /** Identifier */
+    Identifier
 
     // Keywords
-    Var                     /** Keyword var */
-    Fin                     /** Keyword fin */
-    Let                     /** Keyword let */
-    Func                    /** Keyword func */
-    Return                  /** Keyword return */
-    If                      /** Keyword if */
-    Else                    /** Keyword else */
-    Inline                  /** Keyword inline */
-    DeepInline              /** Keyword deepinline */
-    NoInline                /** Keyword noinline */
-    Zone                    /** Keyword zone */
-    Friend                  /** Keyword friend */
-    Test                    /** Keyword test */
-    Assert                  /** Keyword assert */
-    Trace                   /** Keyword trace */
-    Panic                   /** Keyword panic */
-    Meta                    /** Keyword meta */
-    For                     /** Keyword for */
-    While                   /** Keyword while */
-    Loop                    /** Keyword loop */
-    In                      /** Keyword in */
-    Break                   /** Keyword break */
-    Continue                /** Keyword continue */
-    Pack                    /** Keyword pack */
-    Enum                    /** Keyword enum */
-    When                    /** Keyword when */
-    Throw                   /** Keyword throw */
-    Try                     /** Keyword try */
-    Catch                   /** Keyword catch */
-    Impl                    /** Keyword impl */
-    Spec                    /** Keyword spec */
-    Defer                   /** Keyword defer */
-    Type                    /** Keyword type */
-    TypeAlias               /** Keyword typealias */
-    Slot                    /** Keyword slot */
-    Use                     /** Keyword use */
-    Import                  /** Keyword import */
-    As                      /** Keyword as */
-    Guard                   /** Keyword guard */
-    Is                      /** Keyword is */
-    By                      /** Keyword by */
-    Reverse                 /** Keyword reverse */
-    Infx                    /** Keyword infx */
-    Oper                    /** Keyword oper */
-    Fail                    /** Keyword fail */
-    Alloc                   /** Keyword alloc */
-    Drop                    /** Keyword drop */
-    Deref                   /** Keyword deref */
-    Unsafe                  /** Keyword unsafe */
-    Isolate                 /** Keyword isolate */
-    Flow                    /** Keyword flow */
-    Yield                   /** Keyword yield */
-    Task                    /** Keyword task */
-    Async                   /** Keyword async */
-    Await                   /** Keyword await */
-    Launch                  /** Keyword launch */
-    Bridge                  /** Keyword bridge */
-    Solo                    /** Keyword solo */
-    Inject                  /** Keyword inject */
-    Wrap                    /** Keyword wrap */
-    Rescue                  /** Keyword rescue */
-    Node                    /** Keyword node */
-    Leaf                    /** Keyword leaf */
-    Replace                 /** Keyword replace */
-    Virtual                 /** Keyword virtual */
-    Base                    /** Keyword base */
-    Abstract                /** Keyword abstract */
-    Mem                     /** Keyword mem */
-    Rem                     /** Keyword rem */
-    Ret                     /** Keyword ret */
-    Effect                  /** Keyword effect */
-    Hook                    /** Keyword hook */
-    Prop                    /** Keyword prop */
-    Ctor                    /** Keyword ctor */
-    Dtor                    /** Keyword dtor */
-    Ref                     /** Keyword ref */
-    Out                     /** Keyword out */
-    Mut                     /** Keyword mut */
-    Exposed                 /** Keyword exposed */
-    Confined                /** Keyword confined */
-    Protected               /** Keyword protected */
-    Intern                  /** Keyword intern */
-    Opaque                  /** Keyword opaque */
-    Module                  /** Keyword module */
-    Export                  /** Keyword export */
-    ThreadLocal             /** Keyword threadlocal */
-    Deco                    /** Keyword deco */
-    Bind                    /** Keyword bind */
+    Var
+    Fin
+    Let
+    Val
+    Func
+    Return
+    If
+    Else
+    Inline
+    DeepInline
+    NoInline
+    Scope
+    Test
+    Assert
+    Trace
+    Panic
+    Macro
+    For
+    While
+    Loop
+    In
+    Break
+    Continue
+    Pack
+    Enum
+    When
+    Throw
+    Try
+    Catch
+    Impl
+    Spec
+    Defer
+    TypeAlias
+    Variant
+    Module
+    Union
+    Async
+    Where
+    Escaping
+    Derives
+    Includes
+    Binds
+    Requires
+    Assoc
+    Lend
+    Seal
 
     // Operators
-    Plus                    /** Operator + */
-    Minus                   /** Operator - */
-    Star                    /** Operator * */
-    Slash                   /** Operator / */
-    Percent                 /** Operator % */
-    Equal                   /** Operator = */
-    DoubleEqual             /** Operator == */
-    BangEqual               /** Operator != */
-    Less                    /** Operator < */
-    LessEqual               /** Operator <= */
-    Greater                 /** Operator > */
-    GreaterEqual            /** Operator >= */
-    And                     /** Operator && */
-    Or                      /** Operator || */
-    Bang                    /** Operator ! */
-    Range                   /** Operator .. */
-    RangeExclusive          /** Operator ..< */
-    PlusEqual               /** Operator += */
-    MinusEqual              /** Operator -= */
-    StarEqual               /** Operator *= */
-    SlashEqual              /** Operator /= */
-    PercentEqual            /** Operator %= */
-    Increment               /** Operator ++ */
-    Decrement               /** Operator -- */
-    BitAnd                  /** Operator & */
-    BitOr                   /** Operator | */
-    Caret                   /** Operator ^ */
-    Tilde                   /** Operator ~ */
-    ShiftLeft               /** Operator << */
-    ShiftRight              /** Operator >> */
-    QMark                   /** Operator ? */
-    DoubleQMark             /** Operator ?? */
-    QMarkDot                /** Operator ?. */
-    QMarkEqual              /** Operator ?= */
-    QMarkPlusEqual          /** Operator ?+= */
-    QMarkMinusEqual         /** Operator ?-= */
-    QMarkStarEqual          /** Operator ?*= */
-    QMarkSlashEqual         /** Operator ?/= */
-    QMarkPercentEqual       /** Operator ?%= */
-    QMarkIncrement          /** Operator ?++ */
-    QMarkDecrement          /** Operator ?-- */
-    Ellipsis                /** ... */
-    Hash                    /** # */
+    Plus
+    Minus
+    Star
+    Slash
+    Percent
+    Equal
+    EqualEqual
+    BangEqual
+    Less
+    LessEqual
+    Greater
+    GreaterEqual
+    Spaceship
+    AndAnd
+    OrOr
+    Bang
+    Dot
+    DotDot
+    DotDotLess
+    PlusEqual
+    MinusEqual
+    StarEqual
+    SlashEqual
+    PercentEqual
+    AmpEqual
+    PipeEqual
+    CaretEqual
+    ShiftLeftEqual
+    ShiftRightEqual
+    PlusPlus
+    MinusMinus
+    Amp
+    Pipe
+    Caret
+    Tilde
+    ShiftLeft
+    ShiftRight
+    As
+    Is
+    QMark
+    QMarkQMark
+    QMarkDot
+    QMarkEqual
+    QMarkBang
+    QMarkPlusEqual
+    QMarkMinusEqual
+    QMarkStarEqual
+    QMarkSlashEqual
+    QMarkPercentEqual
+    QMarkPlusPlus
+    QMarkMinusMinus
+    Null
+    Import
+    Use
+    By
+    Reverse
+    At
+    With
+    Without
+    Oper
+    Error
+    Alloc
+    Purge
+    Unsafe
+    Take
+    Await
+    Delay
+    Bridge
+    Solo
+    Inject
+    Graph
+    Scoped
+    Direct
+    Lazy
+    Factory
+    Derive
+    Rescue
+    Ellipsis
+    React
+    Remember
+    Retain
+    Preserve
+    Effect
+    Prop
+    Ctor
+    Dtor
+    Out
+    Exposed
+    Protected
+    Confined
+    ThreadLocal
+    Annot
+    Bind
+
+    // The compiler's own primitives
+    PrimInt
+    PrimUInt
+    PrimFloat
 
     // Delimiters
-    At                      /** Delimiter @ */
-    Dot                     /** Delimiter . */
-    LParen                  /** Delimiter ( */
-    RParen                  /** Delimiter ) */
-    LBrace                  /** Delimiter { */
-    RBrace                  /** Delimiter } */
-    LBracket                /** Delimiter [ */
-    RBracket                /** Delimiter ] */
-    Comma                   /** Delimiter , */
-    Colon                   /** Delimiter : ] */
-    DoubleColon             /** Delimiter :: */
-    SemiColon               /** Delimiter ; */
-    Arrow                   /** Delimiter -> */
-    FatArrow                /** Delimiter => */
+    LParen
+    RParen
+    LBrace
+    RBrace
+    LBracket
+    RBracket
+    Comma
+    Colon
+    DoubleColon
+    Arrow
+    FatArrow
+    Semicolon
 
     // Special
-    Eol
+    Newline
     Eof
 }
 
@@ -219,7 +229,7 @@ enum NumericSuffix {
     UCent       /** uc */
 
     Float       /** f */
-    Decimal     /** D */
+    Quad        /** D */
 }
 
 /**
@@ -229,6 +239,8 @@ enum NumericSuffix {
 pack NumericLiteral {
     fin value: Any
     fin suffix: NumericSuffix = .None
+    /** The exact digits, when they are wider than [value] can carry (a 128-bit literal). */
+    fin text: String? = null
 }
 
 /**
@@ -256,7 +268,7 @@ variant enum StringPart {
  * @field line the 1-based line number where the token starts
  * @field column the 1-based column number where the token starts
  * @field literal the parsed literal value for literal tokens (e.g. [Long] for
- *   [TokenType.IntLiteral], [Double] for [TokenType.RealLiteral], [String] for
+ *   [TokenType.IntLiteral], [Double] for [TokenType.DoubleLiteral], [String] for
  *   [TokenType.StringLiteral]), or `null` for non-literal tokens
  */
 pack Token {

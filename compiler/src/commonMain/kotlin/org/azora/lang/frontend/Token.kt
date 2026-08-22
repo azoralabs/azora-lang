@@ -89,13 +89,15 @@ enum class TokenType {
     VAR, FIN, LET, VAL, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, SCOPE,
     TEST, ASSERT, TRACE, PANIC, MACRO,
     FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
-    // `pack` structs and `enum` variants. (`union` is contextual - see
-    // Parser.isUnionDeclAhead - so that `Set.union(other)` keeps working.)
+    // `pack` structs and `enum` variants. `union` has its own token below;
+    // established APIs may still use it in unambiguous member-name positions.
     PACK, ENUM, WHEN,
     THROW, TRY, CATCH,
     IMPL, SPEC,
     DEFER, TYPEALIAS,
     VARIANT,
+    MODULE, UNION, ASYNC, WHERE, ESCAPING,
+    DERIVES, INCLUDES, BINDS, REQUIRES, ASSOC, LEND, SEAL,
 
     // Operators
     PLUS, MINUS, STAR, SLASH, PERCENT,
@@ -128,7 +130,7 @@ enum class TokenType {
     OPER,
     // `error ErrSet { … }` - error-set declaration; also `error <expr>` throw sugar.
     ERROR,
-    // Memory model: `alloc <expr>`, `purge <expr>`, `deref <expr>`, `unsafe { }`.
+    // Memory model: `alloc <expr>`, `purge <expr>`, `unsafe { }`.
     ALLOC, PURGE, UNSAFE,
     // Ownership: `take <expr>` transfers ownership. Duplication is the
     // `Clone` spec's `clone()` method, not a keyword.
@@ -137,7 +139,7 @@ enum class TokenType {
     AWAIT,
     // `delay <ms>` - suspend the current task for a number of milliseconds.
     DELAY,
-    // FFI: `bridge <target> { func sigs }` - extern function declarations.
+    // FFI: `bridge <target> { func signatures }` - extern function declarations.
     BRIDGE,
     // DI: `solo pack Name { … }` singleton, `inject Type` resolve, `graph Name { … }` container.
     SOLO, INJECT, GRAPH,
@@ -175,7 +177,7 @@ enum class TokenType {
     // Visibility: public by default, `confined` narrows to the package. A
     // single leading underscore marks a declaration private where supported.
     // `exposed` marks a `module` or an `import` as auto-imported everywhere.
-    EXPOSE, PROTECT, CONFINE,
+    EXPOSED, PROTECTED, CONFINED,
     // Thread-local storage: `threadlocal var x = 0` / `threadlocal fin y = 42`.
     THREADLOCAL,
     // `annot Name [binds Spec] { fields }` - decorator/annotation declaration.
@@ -198,33 +200,14 @@ enum class TokenType {
 }
 
 /**
- * Enumerates the type suffix attached to a numeric literal.
+ * A number as it was written.
  *
- * No suffix means the default type: [NONE] maps to `Int` for integer
- * literals and `Double` for floating-point literals.
- */
-enum class NumericSuffix {
-    NONE,
-    BYTE,      // b
-    UBYTE,     // ub
-    SHORT,     // s
-    USHORT,    // us
-    UINT,      // u
-    LONG,      // L
-    ULONG,     // uL
-    CENT,      // c
-    UCENT,     // uc
-    FLOAT,     // f
-    QUAD    // D
-}
-
-/**
- * Pairs a numeric value with its suffix so the parser/IR generator can
- * produce the correct typed literal node.
+ * A literal states no width - `4` is an `__int` and takes the width of
+ * wherever it lands - so all that travels with it is its value and, when the
+ * digits are wider than a `Long` holds, the digits themselves.
  */
 data class NumericLiteral(
     val value: Any,
-    val suffix: NumericSuffix = NumericSuffix.NONE,
     /** The exact digits, when they are wider than [value] can carry (a 128-bit literal). */
     val text: String? = null,
 )

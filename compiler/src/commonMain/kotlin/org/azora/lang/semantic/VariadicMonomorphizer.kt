@@ -22,7 +22,6 @@ import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.NamedTypeMacroCall
-import org.azora.lang.frontend.NumericSuffix
 import org.azora.lang.frontend.PackField
 import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.Parser
@@ -371,34 +370,6 @@ private class MonoContext(
         else -> ref
     }
 
-    /**
-     * Gives a template's `= 0` the width the specialization chose.
-     *
-     * `var x: T = 0` is not a declaration of an `Int` zero - it is a zero of whatever
-     * `T` turns out to be. The literal is retyped here so the field's default matches
-     * the field, without loosening what a literal means in code someone wrote for one
-     * concrete type.
-     */
-    private fun retypeIntDefault(default: Expr, fieldType: TypeRef): Expr {
-        val literal = default as? Expr.IntLiteral ?: return default
-        if (literal.suffix != NumericSuffix.NONE) return default
-        val suffix = when ((fieldType as? TypeRef.Named)?.name) {
-            "Byte" -> NumericSuffix.BYTE
-            "UByte" -> NumericSuffix.UBYTE
-            "Short" -> NumericSuffix.SHORT
-            "UShort" -> NumericSuffix.USHORT
-            "UInt" -> NumericSuffix.UINT
-            "Long" -> NumericSuffix.LONG
-            "ULong" -> NumericSuffix.ULONG
-            "Cent" -> NumericSuffix.CENT
-            "UCent" -> NumericSuffix.UCENT
-            "Float" -> NumericSuffix.FLOAT
-            "Quad" -> NumericSuffix.QUAD
-            else -> return default
-        }
-        return literal.copy(suffix = suffix)
-    }
-
     private fun expandPack(mangled: String, template: TopLevel.Pack, args: List<TypeRef>): TopLevel.Pack {
         val enforce = template.annotations.any { it.name == "EnforceNumFields" }
         // A variadic pack generates its fields from the element types; a pack with
@@ -416,7 +387,7 @@ private class MonoContext(
                     val fieldType = rewriteType(substituteParams(it.type, substitution))
                     it.copy(
                         type = fieldType,
-                        default = it.default?.let { d -> retypeIntDefault(d, fieldType) },
+                        default = it.default,
                         condition = null,
                     )
                 }

@@ -69,7 +69,7 @@ every active backend in a single pass. Adding a target means one new file under
 
 # Language
 
-Ground truth for this section is the compiler: 76 reserved keywords, listed in
+Ground truth for this section is the compiler: 93 reserved keywords, listed in
 `AzoraSyntaxVocabulary.kt`.
 
 ## Types

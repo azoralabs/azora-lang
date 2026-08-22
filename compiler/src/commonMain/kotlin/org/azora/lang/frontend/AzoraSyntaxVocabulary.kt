@@ -13,9 +13,8 @@ package org.azora.lang.frontend
 /**
  * Canonical lexical vocabulary shared by the compiler and language tooling.
  *
- * Contextual words deliberately do not appear in [reservedKeywords]: the lexer
- * emits them as identifiers and the parser gives them meaning only in the
- * corresponding grammar position.
+ * Every language keyword appears in [reservedKeywords], so the lexer emits a
+ * dedicated token for it in every position.
  */
 object AzoraSyntaxVocabulary {
     val reservedKeywords: Map<String, TokenType> = mapOf(
@@ -78,9 +77,9 @@ object AzoraSyntaxVocabulary {
         "ctor" to TokenType.CTOR,
         "dtor" to TokenType.DTOR,
         "out" to TokenType.OUT,
-        "exposed" to TokenType.EXPOSE,
-        "protected" to TokenType.PROTECT,
-        "confined" to TokenType.CONFINE,
+        "exposed" to TokenType.EXPOSED,
+        "protected" to TokenType.PROTECTED,
+        "confined" to TokenType.CONFINED,
         "threadlocal" to TokenType.THREADLOCAL,
         "pack" to TokenType.PACK,
         "enum" to TokenType.ENUM,
@@ -93,6 +92,18 @@ object AzoraSyntaxVocabulary {
         "defer" to TokenType.DEFER,
         "typealias" to TokenType.TYPEALIAS,
         "variant" to TokenType.VARIANT,
+        "module" to TokenType.MODULE,
+        "union" to TokenType.UNION,
+        "async" to TokenType.ASYNC,
+        "where" to TokenType.WHERE,
+        "escaping" to TokenType.ESCAPING,
+        "derives" to TokenType.DERIVES,
+        "includes" to TokenType.INCLUDES,
+        "binds" to TokenType.BINDS,
+        "requires" to TokenType.REQUIRES,
+        "assoc" to TokenType.ASSOC,
+        "lend" to TokenType.LEND,
+        "seal" to TokenType.SEAL,
         "as" to TokenType.AS,
         "is" to TokenType.IS,
         "null" to TokenType.NULL,
@@ -101,11 +112,4 @@ object AzoraSyntaxVocabulary {
         "true" to TokenType.TRUE,
         "false" to TokenType.FALSE,
     )
-
-    val contextualKeywords: Set<String> =
-        setOf(
-            "module", "union", "async", "where", "replace", "escaping",
-            "derives", "includes", "binds", "requires", "assoc", "lend",
-            "seal",
-        )
 }

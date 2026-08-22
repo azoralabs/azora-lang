@@ -185,17 +185,4 @@ class ImplAndDeriveFormsTest {
         assertEquals(listOf("Integer", "SignedInteger", "SignedNumber"), impls.map { it.traitName })
     }
 
-    @Test fun aDeclarationThatSimplyEndedStillEnds() {
-        // The newline is only a break when `derives` follows it; here the word
-        // below is a declaration of its own and stays one.
-        val items = parse(
-            """
-            bridge pack Char
-
-            pack derives
-            """.trimIndent(),
-        )
-        assertEquals(listOf("Char", "derives"), items.filterIsInstance<TopLevel.Pack>().map { it.name })
-        assertTrue(items.filterIsInstance<TopLevel.Impl>().isEmpty())
-    }
 }

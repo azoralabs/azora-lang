@@ -76,7 +76,7 @@ class AzoraLanguageServerTest {
     }
 
     @Test
-    fun keywordColorsFollowCompilerVocabularyAndContext() {
+    fun keywordColorsFollowCompilerVocabulary() {
         val source = """
             module playground
 
@@ -92,16 +92,15 @@ class AzoraLanguageServerTest {
         fun spansFor(text: String) = all.filter { source.substring(it.start, it.end) == text }
 
         assertEquals("keyword", spansFor("module").first().type)
-        assertEquals("function", spansFor("module").last().type)
+        assertTrue(spansFor("module").all { it.type == "keyword" })
         assertTrue(spansFor("ref").all { it.type != "keyword" })
         assertTrue(spansFor("meta").all { it.type != "keyword" })
-        assertEquals("parameter", spansFor("where").first().type)
-        assertEquals("keyword", spansFor("where").last().type)
+        assertTrue(spansFor("where").all { it.type == "keyword" })
         assertEquals("keyword", spansFor("async").single().type)
     }
 
     @Test
-    fun associatedTypeClauseIsContextualAndWithoutIsReserved() {
+    fun associatedTypeClauseAndWithoutAreReserved() {
         val source = """
             spec Iterator assoc Item {
                 func next[self: Self!](): Item
@@ -118,15 +117,14 @@ class AzoraLanguageServerTest {
         val all = spans(source)
         fun spansFor(text: String) = all.filter { source.substring(it.start, it.end) == text }
 
-        assertEquals(2, spansFor("assoc").count { it.type == "keyword" })
-        assertEquals(2, spansFor("assoc").count { it.type != "keyword" })
+        assertTrue(spansFor("assoc").all { it.type == "keyword" })
         assertEquals("keyword", spansFor("without").single().type)
         assertTrue("assoc" in AzHighlighter.KEYWORDS)
         assertTrue("without" in AzHighlighter.KEYWORDS)
     }
 
     @Test
-    fun derivesIsAContextualPackKeyword() {
+    fun derivesIsAReservedPackKeyword() {
         val source = """
             pack Player<T> derives [Copy, Hash] where T: Copy
             func derives(): Unit {}
@@ -134,9 +132,28 @@ class AzoraLanguageServerTest {
         val all = spans(source)
         val derives = all.filter { source.substring(it.start, it.end) == "derives" }
 
-        assertEquals("keyword", derives.first().type)
-        assertEquals("function", derives.last().type)
+        assertTrue(derives.all { it.type == "keyword" })
         assertTrue("derives" in AzHighlighter.KEYWORDS)
+    }
+
+    @Test
+    fun aForUsedAsAValueKeepsItsKeywords() {
+        // `for … else` in value position is the same `for` and the same
+        // `else`; nothing about being an answer changes what they are.
+        val source = """
+            func any(xs: Array<Int>): Bool {
+                return for i in 0..<xs.length {
+                    if xs[i] > 0 {
+                        true
+                    }
+                } else { false }
+            }
+        """.trimIndent()
+        val spans = spans(source)
+
+        assertEquals("keyword", spans.single { source.substring(it.start, it.end) == "for" }.type)
+        assertEquals("keyword", spans.single { source.substring(it.start, it.end) == "else" }.type)
+        assertEquals("keyword", spans.single { source.substring(it.start, it.end) == "in" }.type)
     }
 
     @Test
@@ -181,9 +198,9 @@ class AzoraLanguageServerTest {
     }
 
     @Test
-    fun `every clause keyword remains contextual outside its grammar position`() {
+    fun `every clause keyword is reserved in every position`() {
         val source = """
-            graph App replace Base includes Shared {
+            graph App includes Shared {
                 solo Service binds Runnable
             }
             annot @Routed binds Serializable
@@ -204,10 +221,8 @@ class AzoraLanguageServerTest {
             .filter { source.substring(it.start, it.end) == text }
             .map { it.type }
 
-        assertEquals(1, roles("replace").count { it == "keyword" })
         for (word in listOf("includes", "binds", "requires", "escaping", "lend", "seal")) {
-            assertTrue(roles(word).any { it == "keyword" }, "$word should have one contextual keyword use: ${roles(word)}")
-            assertTrue(roles(word).any { it != "keyword" }, "$word should remain a legal identifier: ${roles(word)}")
+            assertTrue(roles(word).all { it == "keyword" }, "$word should always be a keyword: ${roles(word)}")
         }
     }
 

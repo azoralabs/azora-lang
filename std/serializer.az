@@ -327,7 +327,9 @@ func serialAsLong(value: SerialValue&): Long ?! SerializationError {
 /** Extracts a range-checked signed byte. */
 func serialAsByte(value: SerialValue&): Byte ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < -128 || parsed > 127 { return .InvalidNumber }
+    if parsed < -128 || parsed > 127 {
+        return .InvalidNumber
+    }
     return parsed as Byte
 }
 
@@ -379,7 +381,9 @@ func serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
 /** Extracts a non-negative value representable by the current ULong runtime. */
 func serialAsULong(value: SerialValue&): ULong ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < 0 { return .InvalidNumber }
+    if parsed < 0 {
+        return .InvalidNumber
+    }
     return parsed as ULong
 }
 
@@ -391,7 +395,9 @@ func serialAsCent(value: SerialValue&): Cent ?! SerializationError {
 /** Extracts an unsigned 128-bit value from the supported integer token range. */
 func serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
     fin parsed = try serialAsLong(value)
-    if parsed < 0 { return .InvalidNumber }
+    if parsed < 0 {
+        return .InvalidNumber
+    }
     return parsed as UCent
 }
 
@@ -514,7 +520,7 @@ impl _SerialReader {
         return c
     }
 
-    func expect[self&](expected: Char): Unit ?! SerializationError {
+    func expect[self!](expected: Char): Unit ?! SerializationError {
         fin actual = try self.take()
         if actual != expected {
             return .InvalidSyntax
@@ -559,7 +565,9 @@ impl _SerialReader {
 
     func readLiteral[self!](expected: String): Unit ?! SerializationError {
         for i in 0..<stringLength(expected) {
-            if try self.take() != charAt(expected, i) { return .InvalidSyntax }
+            if try self.take() != charAt(expected, i) {
+                return .InvalidSyntax
+            }
         }
     }
 
@@ -568,10 +576,14 @@ impl _SerialReader {
         var result = ""
         while !self.isAtEnd {
             fin c = try self.take()
-            if c == '"' { return result }
-            if charToCode(c) < 32 { return .InvalidEscape }
+            if c == '"' {
+                return result
+            }
+            if charToCode(c) < 32 {
+                return .InvalidEscape
+            }
             if c != '\\' {
-                result = result + c as String
+                result += c as String
             } else {
                 fin escaped = try self.take()
                 if escaped == '"' { result = result + "\"" }
@@ -597,7 +609,9 @@ impl _SerialReader {
         var value = 0
         for i in 0..<4 {
             fin c = try self.take()
-            if !charIsHexDigit(c) { return .InvalidEscape }
+            if !charIsHexDigit(c) {
+                return .InvalidEscape
+            }
             value = value * 16 + hexDigitToInt(c)
         }
         return value
@@ -605,32 +619,52 @@ impl _SerialReader {
 
     func readEscapedCodePoint[self!](): Int ?! SerializationError {
         fin first = try self.readHexUnit()
-        if first >= 56320 && first <= 57343 { return .InvalidEscape }
-        if first < 55296 || first > 56319 { return first }
+        if first >= 56320 && first <= 57343 {
+            return .InvalidEscape
+        }
+        if first < 55296 || first > 56319 {
+            return first
+        }
 
         // A high surrogate must be immediately followed by a low surrogate.
-        if try self.take() != '\\' || try self.take() != 'u' { return .InvalidEscape }
+        if try self.take() != '\\' || try self.take() != 'u' {
+            return .InvalidEscape
+        }
         fin second = try self.readHexUnit()
-        if second < 56320 || second > 57343 { return .InvalidEscape }
+        if second < 56320 || second > 57343 {
+            return .InvalidEscape
+        }
         return 65536 + (first - 55296) * 1024 + (second - 56320)
     }
 
     func readNumber[self!](): String ?! SerializationError {
         fin start = self.index
-        if charAt(self.input, self.index) == '-' { self.index += 1 }
-        if self.isAtEnd { return .InvalidNumber }
+        if charAt(self.input, self.index) == '-' {
+            self.index += 1
+        }
+        if self.isAtEnd {
+            return .InvalidNumber
+        }
 
         if charAt(self.input, self.index) == '0' {
             self.index += 1
         } else {
-            if !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
-            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
+            if !charIsDigit(charAt(self.input, self.index)) {
+                return .InvalidNumber
+            }
+            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) {
+                self.index += 1
+            }
         }
 
         if !self.isAtEnd && charAt(self.input, self.index) == '.' {
             self.index += 1
-            if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
-            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
+            if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) {
+                return .InvalidNumber
+            }
+            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) {
+                self.index += 1
+            }
         }
 
         if !self.isAtEnd && (charAt(self.input, self.index) == 'e' || charAt(self.input, self.index) == 'E') {
@@ -638,15 +672,19 @@ impl _SerialReader {
             if !self.isAtEnd && (charAt(self.input, self.index) == '+' || charAt(self.input, self.index) == '-') {
                 self.index += 1
             }
-            if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) { return .InvalidNumber }
-            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) { self.index += 1 }
+            if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) {
+                return .InvalidNumber
+            }
+            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) {
+                self.index += 1
+            }
         }
         return substring(self.input, start, self.index)
     }
 
-    func readArray[self: Self!](depth: Int): SerialValue ?! SerializationError {
+    func readArray[self!](depth: Int): SerialValue ?! SerializationError {
         try self.expect('[')
-        var values = ArrayList<SerialValue>()
+        var values: ArrayList<SerialValue> = .()
         self.skipWhitespace()
         if !self.isAtEnd && charAt(self.input, self.index) == ']' {
             self.index += 1
@@ -656,15 +694,19 @@ impl _SerialReader {
             values.add(try self.readValue(depth))
             self.skipWhitespace()
             fin separator = try self.take()
-            if separator == ']' { return SerialValue.Array(values) }
-            if separator != ',' { return .InvalidSyntax }
+            if separator == ']' {
+                return SerialValue.Array(values)
+            }
+            if separator != ',' {
+                return .InvalidSyntax
+            }
             self.skipWhitespace()
         }
     }
 
-    func readObject[self: Self!](depth: Int): SerialValue ?! SerializationError {
+    func readObject[self!](depth: Int): SerialValue ?! SerializationError {
         try self.expect('{')
-        var fields = ArrayList<SerialField>()
+        var fields: ArrayList<SerialField> = .()
         self.skipWhitespace()
         if !self.isAtEnd && charAt(self.input, self.index) == '}' {
             self.index += 1
@@ -672,7 +714,9 @@ impl _SerialReader {
         }
         loop {
             self.skipWhitespace()
-            if self.isAtEnd || charAt(self.input, self.index) != '"' { return .InvalidSyntax }
+            if self.isAtEnd || charAt(self.input, self.index) != '"' {
+                return .InvalidSyntax
+            }
             fin name = try self.readString()
             self.skipWhitespace()
             try self.expect(':')
@@ -681,67 +725,89 @@ impl _SerialReader {
 
             var duplicate = false
             for i in 0..<fields.size {
-                if serialFieldAt(fields, i).name == name { duplicate = true }
+                if serialFieldAt(fields, i).name == name {
+                    duplicate = true
+                }
             }
-            if duplicate && !self.options.allowDuplicateFields { return .DuplicateField }
+            if duplicate && !self.options.allowDuplicateFields {
+                return .DuplicateField
+            }
             fields.add(SerialField(name, value))
 
             self.skipWhitespace()
             fin separator = try self.take()
-            if separator == '}' { return SerialValue.Object(fields) }
-            if separator != ',' { return .InvalidSyntax }
+            when separator {
+                '}' -> return .Object(fields)
+                ',' -> return .InvalidSyntax
+            }
             self.skipWhitespace()
         }
     }
 }
 
 func _encodeSerialValueAtDepth(
-    value: SerialValue&,
-    options: SerializerOptions&,
+    value: SerialValue&
+    options: SerializerOptions&
     depth: Int
 ): String ?! SerializationError {
-    if depth > options.maxDepth { return .MaxDepthExceeded }
+    if depth > options.maxDepth {
+        return .MaxDepthExceeded
+    }
     when value {
-        SerialValue.Null -> { return "null" }
-        SerialValue.Bool(v) -> { return if v { "true" } else { "false" } }
-        SerialValue.Number(v) -> {
-            if !isValidSerialNumber(v) { return .InvalidNumber }
+        .Null -> { return "null" }
+        .Bool(v) -> { return if v { "true" } else { "false" } }
+        .Number(v) -> {
+            if !isValidSerialNumber(v) {
+                return .InvalidNumber
+            }
             return v
         }
-        SerialValue.Text(v) -> { return _quoteSerialString(v) }
-        SerialValue.Array(values) -> {
+        .Text(v) -> { return _quoteSerialString(v) }
+        .Array(values) -> {
             var result = "["
             for i in 0..<values.size {
-                if i > 0 { result = result + "," }
-                if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
-                result = result + try _encodeSerialValueAtDepth(values[i], options, depth + 1)
+                if i > 0 {
+                    result += ","
+                }
+                if options.pretty {
+                    result += "\n" + _repeatIndent(options.indent, depth + 1)
+                }
+                result += try _encodeSerialValueAtDepth(values[i], options, depth + 1)
             }
-            if options.pretty && values.size > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
+            if options.pretty && values.size > 0 {
+                result += "\n" + _repeatIndent(options.indent, depth)
+            }
             return result + "]"
         }
-        SerialValue.Object(fields) -> {
+        .Object(fields) -> {
             var result = "{"
             var i = 0
             var written = 0
             while i < fields.size {
                 fin field = serialFieldAt(fields, i)
                 var include = true
-                when field.value {
-                    SerialValue.Null -> { include = options.encodeNulls }
-                    else -> {}
+                if field.value == .Null {
+                    include = options.encodeNulls
                 }
                 if include {
-                    if written > 0 { result = result + "," }
-                    if options.pretty { result = result + "\n" + _repeatIndent(options.indent, depth + 1) }
-                    result = result + _quoteSerialString(field.name)
-                    result = result + ":"
-                    if options.pretty { result = result + " " }
-                    result = result + try _encodeSerialValueAtDepth(field.value, options, depth + 1)
+                    if written > 0 {
+                        result += ","
+                    }
+                    if options.pretty {
+                        result += "\n" + _repeatIndent(options.indent, depth + 1)
+                    }
+                    result += _quoteSerialString(field.name) + ":"
+                    if options.pretty {
+                        result += " "
+                    }
+                    result += try _encodeSerialValueAtDepth(field.value, options, depth + 1)
                     written += 1
                 }
                 i += 1
             }
-            if options.pretty && written > 0 { result = result + "\n" + _repeatIndent(options.indent, depth) }
+            if options.pretty && written > 0 {
+                result += "\n" + _repeatIndent(options.indent, depth)
+            }
             return result + "}"
         }
     }
@@ -768,7 +834,7 @@ func _quoteSerialString(value: String): String {
 func _repeatIndent(indent: String, count: Int): String {
     var result = ""
     for i in 0..<count {
-        result = result + indent
+        result += indent
     }
     return result
 }
@@ -784,26 +850,46 @@ func _hex4(value: Int): String {
 /** Validates the complete AZON number grammar without converting it. */
 @Experimental(since: "0.1")
 func isValidSerialNumber(value: String): Bool {
-    if stringLength(value) == 0 { return false }
+    if stringLength(value) == 0 {
+        return false
+    }
     var i = 0
-    if charAt(value, i) == '-' { i += 1 }
-    if i >= stringLength(value) { return false }
+    if charAt(value, i) == '-' {
+        i += 1
+    }
+    if i >= stringLength(value) {
+        return false
+    }
     if charAt(value, i) == '0' {
         i += 1
     } else {
-        if !charIsDigit(charAt(value, i)) { return false }
-        while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+        if !charIsDigit(charAt(value, i)) {
+            return false
+        }
+        while i < stringLength(value) && charIsDigit(charAt(value, i)) {
+            i += 1
+        }
     }
     if i < stringLength(value) && charAt(value, i) == '.' {
         i += 1
-        if i >= stringLength(value) || !charIsDigit(charAt(value, i)) { return false }
-        while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+        if i >= stringLength(value) || !charIsDigit(charAt(value, i)) {
+            return false
+        }
+        while i < stringLength(value) && charIsDigit(charAt(value, i)) {
+            i += 1
+        }
     }
     if i < stringLength(value) && (charAt(value, i) == 'e' || charAt(value, i) == 'E') {
         i += 1
-        if i < stringLength(value) && (charAt(value, i) == '+' || charAt(value, i) == '-') { i += 1 }
-        if i >= stringLength(value) || !charIsDigit(charAt(value, i)) { return false }
-        while i < stringLength(value) && charIsDigit(charAt(value, i)) { i += 1 }
+        if i < stringLength(value) && (charAt(value, i) == '+' || charAt(value, i) == '-') {
+            i += 1
+        }
+        if i >= stringLength(value) || !charIsDigit(charAt(value, i)) {
+            return false
+        }
+        while i < stringLength(value) && charIsDigit(charAt(value, i)) {
+            i += 1
+        }
     }
     return i == stringLength(value)
 }
@@ -828,13 +914,13 @@ test scope {
     pack _ManualTextSerializer
 
     impl Serializer<_ManualTextValue> for _ManualTextSerializer {
-        func toSerialValue[self: Self&](
+        func toSerialValue[&](
             value: _ManualTextValue&
         ): SerialValue ?! SerializationError {
             return .Text(value.value)
         }
 
-        func fromSerialValue[self: Self&](
+        func fromSerialValue[&](
             value: SerialValue&
         ): _ManualTextValue ?! SerializationError {
             return when value {

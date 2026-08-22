@@ -1879,29 +1879,10 @@ class StdlibInjector private constructor(
 
     private fun collectNamesFromExpr(expr: Expr, names: MutableSet<String>) {
         when (expr) {
-            is Expr.IntLiteral -> names.add(
-                when (expr.suffix) {
-                    org.azora.lang.frontend.NumericSuffix.NONE -> "Int"
-                    org.azora.lang.frontend.NumericSuffix.BYTE -> "Byte"
-                    org.azora.lang.frontend.NumericSuffix.UBYTE -> "UByte"
-                    org.azora.lang.frontend.NumericSuffix.SHORT -> "Short"
-                    org.azora.lang.frontend.NumericSuffix.USHORT -> "UShort"
-                    org.azora.lang.frontend.NumericSuffix.UINT -> "UInt"
-                    org.azora.lang.frontend.NumericSuffix.LONG -> "Long"
-                    org.azora.lang.frontend.NumericSuffix.ULONG -> "ULong"
-                    org.azora.lang.frontend.NumericSuffix.CENT -> "Cent"
-                    org.azora.lang.frontend.NumericSuffix.UCENT -> "UCent"
-                    org.azora.lang.frontend.NumericSuffix.FLOAT -> "Float"
-                    org.azora.lang.frontend.NumericSuffix.QUAD -> "Quad"
-                },
-            )
-            is Expr.DoubleLiteral -> names.add(
-                when (expr.suffix) {
-                    org.azora.lang.frontend.NumericSuffix.FLOAT -> "Float"
-                    org.azora.lang.frontend.NumericSuffix.QUAD -> "Quad"
-                    else -> "Double"
-                },
-            )
+            // A literal names the default width: it states none of its own, and
+            // is read at whatever the place it lands in says.
+            is Expr.IntLiteral -> names.add("Int")
+            is Expr.DoubleLiteral -> names.add("Double")
             is Expr.CharLiteral -> names.add("Char")
             is Expr.StringLiteral -> names.add("String")
             is Expr.BoolLiteral -> names.add("Bool")

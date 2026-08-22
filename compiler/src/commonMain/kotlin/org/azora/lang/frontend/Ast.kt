@@ -88,7 +88,6 @@ sealed class Expr {
      * Integer literal expression (e.g. `42`, `42L`, `42s`).
      *
      * @property value the parsed integer value
-     * @property suffix the numeric type suffix (e.g. [NumericSuffix.LONG] for `42L`)
      * @property line 1-based source line
      * @property column 1-based source column
      * @property length source text length
@@ -102,19 +101,18 @@ sealed class Expr {
      * have a 128-bit integer write [text] out; the ones that do not say so
      * rather than truncating.
      */
-    data class IntLiteral(val value: Long, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE, val text: String? = null) : Expr()
+    data class IntLiteral(val value: Long, override val line: Int, override val column: Int = 0, override val length: Int = 0, val text: String? = null) : Expr()
 
     /**
      * Floating-point literal expression (e.g. `3.14`, `3.14f`, `3.14D`).
      *
      * @property value the parsed double-precision value
-     * @property suffix the numeric type suffix (e.g. [NumericSuffix.FLOAT] for `3.14f`)
      * @property line 1-based source line
      * @property column 1-based source column
      * @property length source text length
      * @property text the digits as written, which a `Double` cannot always hold
      */
-    data class DoubleLiteral(val value: Double, override val line: Int, override val column: Int = 0, override val length: Int = 0, val suffix: NumericSuffix = NumericSuffix.NONE, val text: String? = null) : Expr()
+    data class DoubleLiteral(val value: Double, override val line: Int, override val column: Int = 0, override val length: Int = 0, val text: String? = null) : Expr()
 
     /**
      * Character literal expression (e.g. `'a'`, `'\n'`).
@@ -1703,7 +1701,7 @@ sealed class TypeAnnotation {
  * How widely a declaration can be reached.
  *
  * [PUBLIC] is the default and needs no keyword: a declaration is reachable
- * unless something says otherwise. [CONFINE] narrows it to the declaring
+ * unless something says otherwise. [CONFINED] narrows it to the declaring
  * package. A single leading underscore marks declarations private where that
  * declaration kind supports private visibility.
  */
@@ -1729,28 +1727,28 @@ data class Visibility(
     val isExposed: Boolean = false,
 ) {
     /** How far a declaration can be seen. */
-    enum class Reach { PUBLIC, PROTECT, CONFINE }
+    enum class Reach { PUBLIC, PROTECTED, CONFINED }
 
     companion object {
         val PUBLIC = Visibility(Reach.PUBLIC)
-        val PROTECT = Visibility(Reach.PROTECT)
-        val CONFINE = Visibility(Reach.CONFINE)
+        val PROTECTED = Visibility(Reach.PROTECTED)
+        val CONFINED = Visibility(Reach.CONFINED)
     }
 }
 
 /**
  * Visibility of a whole module (`[exposed] [confined] mod x`).
  *
- * - [EXPOSE] (default): importable everywhere, including downstream libraries.
- * - [PROTECT]: importable only within the declaring folder.
- * - [CONFINE]: private - not importable anywhere (e.g. a test file or an app's
+ * - [EXPOSED] (default): importable everywhere, including downstream libraries.
+ * - [PROTECTED]: importable only within the declaring folder.
+ * - [CONFINED]: private - not importable anywhere (e.g. a test file or an app's
  *   `main` module).
  *
  * Orthogonal to `export` (see [Program.isExported]): `exposed` auto-imports the
  * module into every unit within its visibility scope. `exposed confined` is
  * contradictory and rejected at parse time.
  */
-enum class ModuleVisibility { PUBLIC, CONFINE }
+enum class ModuleVisibility { PUBLIC, CONFINED }
 
 /**
  * Compile-time metadata for a declaration's enclosing scope, surfaced by
@@ -2699,7 +2697,6 @@ sealed class TopLevel {
      * dependency graph.
      *
      * @property included graphs whose definitions this one also contains.
-     * @property replaces the graph this one starts from and overrides.
      */
     data class Graph(
         val name: String,
@@ -2707,7 +2704,6 @@ sealed class TopLevel {
         val line: Int,
         val column: Int = 0,
         val included: List<String> = emptyList(),
-        val replaces: String? = null,
     ) : TopLevel()
 
     /**

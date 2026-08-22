@@ -198,7 +198,7 @@ impl PartialCompare {
     prop isUnordered[self&]: Bool = self == .Unordered
 
     /** The comparison with its operands swapped. `Unordered` stays unordered. */
-    prop reversed[self]: PartialCompare {
+    prop reversed[self&]: PartialCompare {
         return when self {
             .Less -> .Greater
             .Greater -> .Less

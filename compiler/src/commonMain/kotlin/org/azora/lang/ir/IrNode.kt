@@ -799,7 +799,9 @@ sealed class IrExpr {
             }
             "(${left.prettyPrint()} $opStr ${right.prettyPrint()})"
         }
-        is Call -> "$name(${args.joinToString(", ") { it.prettyPrint() }})"
+        // An indirect call has no name: the value being called is the receiver.
+        // Printing only the arguments made `p(xs[i])` read as `(xs[i])`.
+        is Call -> "${receiver?.prettyPrint() ?: name}(${args.joinToString(", ") { it.prettyPrint() }})"
         is ArrayLiteral -> "[${elements.joinToString(", ") { it.prettyPrint() }}]"
         is MapLit -> "[${entries.joinToString(", ") { "${it.first.prettyPrint()} : ${it.second.prettyPrint()}" }}]"
         is SetLit -> "![${elements.joinToString(", ") { it.prettyPrint() }}]"
@@ -1312,7 +1314,18 @@ data class IrProgram(
     val moduleName: String?,
     val items: List<IrTopLevel>,
     /** Dynamic-dispatch tables for specs with concrete `pack` implementers. */
-    val specTables: List<IrSpecTable> = emptyList()
+    val specTables: List<IrSpecTable> = emptyList(),
+    /**
+     * The items generated from the source file itself, by name.
+     *
+     * A program is compiled together with whatever standard library it
+     * reaches, so most of what reaches IR is not what anyone wrote. A reader
+     * asking what *this file* became needs the difference, and a name is what
+     * survives optimization - the item list does not.
+     *
+     * Empty means the distinction was never drawn, and everything is shown.
+     */
+    val sourceNames: Set<String> = emptySet(),
 ) {
     /** Convenience - returns only the global statements. */
     val globals: List<IrStmt> get() = items.filterIsInstance<IrTopLevel.Global>().map { it.stmt }
@@ -1324,12 +1337,32 @@ data class IrProgram(
     val tests: List<IrTopLevel.Test> get() = items.filterIsInstance<IrTopLevel.Test>()
 
     /** Pretty-prints this program as Azora IR text. */
-    fun prettyPrint(): String {
+    /** What an item is called, which is how [sourceNames] identifies one. */
+    private fun nameOf(item: IrTopLevel): String? = when (item) {
+        is IrTopLevel.Func -> item.function.name
+        is IrTopLevel.Enum -> item.name
+        is IrTopLevel.Test -> item.name
+        is IrTopLevel.Struct -> item.name
+        is IrTopLevel.Global -> (item.stmt as? IrStmt.VarDecl)?.name
+        // A backend declaration is the toolchain's, never the file's.
+        is IrTopLevel.Extern -> null
+    }
+
+    fun prettyPrint(): String = prettyPrint(emptySet())
+
+    /**
+     * The program as text, keeping only the items [only] names.
+     *
+     * An empty [only] keeps everything, which is what a caller that never drew
+     * the distinction wants.
+     */
+    fun prettyPrint(only: Set<String>): String {
         val sb = StringBuilder()
         if (moduleName != null) {
             sb.appendLine("module $moduleName")
             sb.appendLine()
         }
+        val items = if (only.isEmpty()) items else items.filter { nameOf(it) in only }
         for ((i, item) in items.withIndex()) {
             val next = items.getOrNull(i + 1)
             when (item) {

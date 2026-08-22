@@ -40,9 +40,8 @@ import org.azora.lang.frontend.AzoraSyntaxVocabulary
  */
 object AzHighlighter {
 
-    /** Reserved words plus contextual words offered by code completion. */
-    val KEYWORDS: Set<String> =
-        AzoraSyntaxVocabulary.reservedKeywords.keys + AzoraSyntaxVocabulary.contextualKeywords
+    /** The compiler's reserved words, also offered by code completion. */
+    val KEYWORDS: Set<String> = AzoraSyntaxVocabulary.reservedKeywords.keys
 
     private val RESERVED_KEYWORDS = AzoraSyntaxVocabulary.reservedKeywords.keys
 
@@ -82,7 +81,7 @@ object AzHighlighter {
                         var next = cursor
                         while (next < end && source[next].isWhitespace()) next++
                         val type = when {
-                            word in RESERVED_KEYWORDS || isContextualKeyword(source, tokenStart, cursor) -> "keyword"
+                            word in RESERVED_KEYWORDS -> "keyword"
                             tokenStart in semantics.modulePathOffsets -> "modulePath"
                             tokenStart in semantics.labelOffsets -> "label"
                             tokenStart in semantics.scopeOffsets -> "scope"
@@ -239,7 +238,7 @@ object AzHighlighter {
                     var j = i
                     while (j < n && source[j] == ' ') j++
                     val type = when {
-                        word in RESERVED_KEYWORDS || isContextualKeyword(source, start, i) -> "keyword"
+                        word in RESERVED_KEYWORDS -> "keyword"
                         start in semantics.functionDeclarations -> "function"
                         start in semantics.modulePathOffsets -> "modulePath"
                         start in semantics.labelOffsets -> "label"

@@ -209,12 +209,16 @@ private fun handleCheck(args: List<String>) {
 
 private fun handleCompile(args: List<String>) {
     if (args.size < 2) {
-        System.err.println("Usage: azora compile <wasm|llvm|ir> <file.az>")
+        System.err.println("Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] <file.az>")
         return
     }
 
     val target = args[0]
     val debug = args.any { it == "--debug" || it == "-O0" }
+    // `--file-only` answers "what did *this file* become", which is the
+    // question an editor asks. Everything else in the dump is the standard
+    // library the file reached, injected because it was referenced.
+    val fileOnly = args.any { it == "--file-only" }
     val filePath = args.drop(1).first { !it.startsWith("-") }
     val file = File(filePath)
     if (!file.exists()) {
@@ -232,7 +236,7 @@ private fun handleCompile(args: List<String>) {
             val output = when (target) {
                 "wasm", "wat" -> if (debug) org.azora.lang.backend.WasmCodegen().generate(backendIr) else result.wasm
                 "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen().generate(backendIr) else result.llvm
-                "ir" -> backendIr.prettyPrint()
+                "ir" -> backendIr.prettyPrint(if (fileOnly) declaredNames(result.ast, unit.source) else emptySet())
                 "ast" -> result.ast.dumpTree()
                 else -> {
                     System.err.println("Unknown target: $target (use wasm, llvm, ir, or ast)")
@@ -246,6 +250,41 @@ private fun handleCompile(args: List<String>) {
             exitProcess(1)
         }
     }
+}
+
+/**
+ * The IR items [source] itself declares, by the name IR gives them.
+ *
+ * A file is compiled together with whatever standard library it reaches, so
+ * most of what reaches IR was written by nobody here. The file's own AST says
+ * what it declared; a member is named for its owner, which is the one place the
+ * two spellings differ.
+ */
+private fun declaredNames(compiled: org.azora.lang.frontend.Program, source: String): Set<String> {
+    val own = runCatching {
+        org.azora.lang.frontend.Parser(org.azora.lang.frontend.Lexer(source).tokenize()).parse()
+    }.getOrNull() ?: compiled
+    val names = linkedSetOf<String>()
+    for (item in own.items) {
+        when (item) {
+            is org.azora.lang.frontend.TopLevel.Func -> names += item.decl.name
+            is org.azora.lang.frontend.TopLevel.Pack -> names += item.name
+            is org.azora.lang.frontend.TopLevel.Enum -> names += item.name
+            is org.azora.lang.frontend.TopLevel.FinDecl -> names += item.name
+            is org.azora.lang.frontend.TopLevel.VarDecl -> names += item.name
+            is org.azora.lang.frontend.TopLevel.LetDecl -> names += item.name
+            is org.azora.lang.frontend.TopLevel.Test -> names += item.name
+            is org.azora.lang.frontend.TopLevel.Impl -> item.methods.forEach { method ->
+                // `impl ArrayList { func any }` reaches IR as `ArrayList_any`;
+                // both spellings are kept so neither form is missed.
+                names += method.name
+                names += "${item.typeName}_${method.name}"
+                names += "__${item.typeName}_${method.name}"
+            }
+            else -> Unit
+        }
+    }
+    return names
 }
 
 // ── azora test <file.az | dir> ───────────────────────────────────

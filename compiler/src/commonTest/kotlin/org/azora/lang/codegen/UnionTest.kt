@@ -75,18 +75,6 @@ class UnionTest {
         assertEquals(listOf("i", "d", "b"), struct.fields.map { it.name })
     }
 
-    @Test
-    fun unionIsStillUsableAsAnOrdinaryName() {
-        // `union` is contextual: only `unsafe union Name {` declares one.
-        success("""
-            import std.io
-            func main() {
-                fin union = 1
-                println(union)
-            }
-        """)
-    }
-
     // -- the unsafe requirement ----------------------------------------------
 
     @Test

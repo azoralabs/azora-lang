@@ -193,6 +193,14 @@ class Compiler(
         // debugger can pause at breakpoints (stdlib, injected below, stays clean).
         val parsed = if (debug) DebugInstrumenter.instrument(rawAst) else rawAst
 
+        // 2a-0. A library source that does not parse is reported to the units
+        // that import it. One unreadable file elsewhere in the tree is not a
+        // reason to refuse a file that never names it.
+        val libraryErrors = libraries.unusableLibraries(parsed)
+        if (libraryErrors.isNotEmpty()) {
+            return CompilationResult.Failure(libraryErrors)
+        }
+
         // 2a-bis. Reject imports of namespaces that have no module file (e.g.
         // `import std` - there is no `std.az`, only modules beneath it).
         val importErrors = libraries.validateImports(parsed)
@@ -326,14 +334,18 @@ class Compiler(
         // substitutes and what `T.typeName` reads.
         val semantic = SemanticPipeline().analyze(InferredTypeArgs.apply(ast), defines = defines)
 
-        val warnings = semantic.errors.filter { it.startsWith("warning:") }
+        // A library source nothing here imports was skipped rather than fatal;
+        // it is still worth saying so, because the next file to import it will
+        // not compile.
+        val warnings = semantic.errors.filter { it.startsWith("warning:") } +
+            libraries.skippedLibraryNotices().map { "warning: $it" }
         val errors = semantic.errors.filter { !it.startsWith("warning:") }
 
         if (errors.isNotEmpty()) {
             return CompilationResult.Failure(semantic.errors.map { withLibraryHint(it, ast, libraries) })
         }
         if (warningsAsErrors && warnings.isNotEmpty()) {
-            return CompilationResult.Failure(semantic.errors)
+            return CompilationResult.Failure(errors + warnings)
         }
 
         // ===============================================================

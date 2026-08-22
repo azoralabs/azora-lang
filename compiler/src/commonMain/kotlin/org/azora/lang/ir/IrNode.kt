@@ -19,6 +19,7 @@ package org.azora.lang.ir
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TypeFunctionCall
 import org.azora.lang.frontend.CallableKind
+import org.azora.lang.frontend.TestMethod
 
 // ---------------------------------------------------------------------------
 // Types
@@ -946,8 +947,11 @@ sealed class IrStmt {
      * Scoped block (`scope { ... }`). Introduces a new variable scope.
      *
      * @property body the list of statements inside the scope
+     * @property label what the scope is, where it stands for something the
+     *   source named - the body of a `test` gathered into a `test .All`, above
+     *   all. A scope the compiler made for its own reasons has none.
      */
-    data class Scope(val body: List<IrStmt>) : IrStmt()
+    data class Scope(val body: List<IrStmt>, val label: String? = null) : IrStmt()
 
     /**
      * Runtime assertion (`assert condition { "message" }`).
@@ -1087,7 +1091,8 @@ sealed class IrStmt {
                 sb.appendLine("${pad}}")
             }
             is Scope -> {
-                sb.appendLine("${pad}scope {")
+                val named = label?.let { " \"$it\"" }.orEmpty()
+                sb.appendLine("${pad}scope$named {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -1266,8 +1271,15 @@ sealed class IrTopLevel {
      *
      * @property name the test name string
      * @property body the list of IR statements forming the test body
+     * @property method how the test runs. `This` is the default and is carried
+     *   rather than dropped: a reader of the IR should not have to know which
+     *   of the two was left unwritten in the source.
      */
-    data class Test(val name: String, val body: List<IrStmt>) : IrTopLevel()
+    data class Test(
+        val name: String,
+        val body: List<IrStmt>,
+        val method: TestMethod = TestMethod.This,
+    ) : IrTopLevel()
 
     /**
      * A `pack` (struct) declaration, emitted so backends can generate the type definition.
@@ -1382,7 +1394,10 @@ data class IrProgram(
                     if (i < items.lastIndex) sb.appendLine()
                 }
                 is IrTopLevel.Test -> {
-                    sb.appendLine("test \"${item.name}\" {")
+                    // The method is always written. `test "…"` in source means
+                    // `TestMethod.This`, and the IR states what the source left
+                    // to the default rather than repeating the omission.
+                    sb.appendLine("test TestMethod.${item.method.name} \"${item.name}\" {")
                     for (stmt in item.body) stmt.prettyPrint(sb, 1)
                     sb.appendLine("}")
                     if (i < items.lastIndex) sb.appendLine()
@@ -1426,7 +1441,7 @@ data class IrProgram(
                     sb.appendLine("    IrEnum(name=${item.name}, variants=${item.variants})")
                 }
                 is IrTopLevel.Test -> {
-                    sb.appendLine("    IrTest(name=\"${item.name}\")")
+                    sb.appendLine("    IrTest(name=\"${item.name}\", method=${item.method})")
                     sb.appendLine("        body:")
                     for (stmt in item.body) dumpIrStmtTree(sb, stmt, "            ")
                 }

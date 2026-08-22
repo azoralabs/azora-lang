@@ -21,9 +21,11 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.algorithm
 
 import std.container.array::*
+import std.traits::Order
 
 /**
  * Merge sort - O(n log n) stable sorting algorithm.
@@ -36,16 +38,12 @@ func mergeSort<T>(arr: Array<T>): Array<T> {
     var mid: Int = arr.size / 2
     var left: Array<T> = .() * mid
     var right: Array<T> = .() * arr.size - mid
-    var i = 0
-    while i < mid {
+    for i: Int in 0..mid {
         left[i] = arr[i]
-        i += 1
     }
-    var j = 0
-    while i < arr.size {
+    for j: Int in 0..arr.size {
         right[j] = arr[i]
-        i += 1
-        j += 1
+        i++
     }
     var sortedLeft: Array<T> = mergeSort(left)
     var sortedRight: Array<T> = mergeSort(right)
@@ -58,28 +56,26 @@ func mergeSort<T>(arr: Array<T>): Array<T> {
 @Experimental(since: "0.1")
 func merge<T: Order>(a: Array<T>, b: Array<T>): Array<T> {
     var result: Array<T> = .() * a.size + b.size
-    var ri = 0
-    var ai = 0
-    var bi = 0
+    var [ri, ai, bi] = 0
     while ai < a.size && bi < b.size {
         if a[ai] <= b[bi] {
             result[ri] = a[ai]
-            ai += 1
+            ai++
         } else {
             result[ri] = b[bi]
-            bi += 1
+            bi++
         }
-        ri += 1
+        ri++
     }
     while ai < a.size {
         result[ri] = a[ai]
-        ai += 1
-        ri += 1
+        ai++
+        ri++
     }
     while bi < b.size {
         result[ri] = b[bi]
-        bi += 1
-        ri += 1
+        bi++
+        ri++
     }
     return result
 }
@@ -107,7 +103,7 @@ out {
 } scope {
     fin count = arr.size
     var result: Array<T> = .() * count
-    for i in 0..<count {
+    for i: Int in 0..<count {
         result[i] = arr[i]
     }
     if count <= 1 {
@@ -118,16 +114,15 @@ out {
     // a key function may be arbitrarily expensive, and a comparison sort
     // asks O(n log n) times.
     var keys: Array<K> = .() * count
-    for i in 0..<count {
+    for i: Int in 0..<count {
         keys[i] = key(result[i])
     }
 
-    var width = 1
+    var width: Int = 1
     var scratch: Array<T> = .() * count
     var scratchKeys: Array<K> = .() * count
     while width < count {
-        var lo = 0
-        while lo < count {
+        for lo: Int in 0..count {
             var mid = lo + width
             if mid > count {
                 mid = count
@@ -140,7 +135,7 @@ out {
             var right = mid
             var at = lo
             while at < hi {
-                fin takeLeft = if left >= mid {
+                fin takeLeft: Bool = if left >= mid {
                     false
                 } else if right >= hi {
                     true
@@ -152,21 +147,21 @@ out {
                 if takeLeft {
                     scratch[at] = result[left]
                     scratchKeys[at] = keys[left]
-                    left += 1
+                    left++
                 } else {
                     scratch[at] = result[right]
                     scratchKeys[at] = keys[right]
-                    right += 1
+                    right++
                 }
-                at += 1
+                at++
             }
             lo = lo + width + width
         }
-        for i in 0..<count {
+        for i: Int in 0..<count {
             result[i] = scratch[i]
             keys[i] = scratchKeys[i]
         }
-        width = width + width
+        width *= 2
     }
     return result
 }
@@ -191,7 +186,7 @@ func groupBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
         if found == -1 {
             keys[keyCount] = k
             groups[keyCount] = @arr[arr[i]]
-            keyCount += 1
+            keyCount++
         } else {
             var g: Array<T> = groups[found]
             g[g.size] = arr[i]
@@ -220,11 +215,11 @@ func interleave<T>(a: Array<T>, b: Array<T>): Array<T> {
     for i in 0..<maxLen {
         if i < a.size {
             result[ri] = a[i]
-            ri += 1
+            ri++
         }
         if i < b.size {
             result[ri] = b[i]
-            ri += 1
+            ri++
         }
     }
     return result
@@ -249,8 +244,8 @@ func windows<T>(arr: Array<T>, size: Int): Array<T> {
             w[j] = arr[i + j]
         }
         result[ri] = w
-        ri += 1
-        i += 1
+        ri++
+        i++
     }
     return result
 }
@@ -266,7 +261,7 @@ func evens<T>(arr: Array<T>): Array<T> {
     var i = 0
     while i < arr.size {
         result[ri] = arr[i]
-        ri += 1
+        ri++
         i += 2
     }
     return result
@@ -283,7 +278,7 @@ func odds<T>(arr: Array<T>): Array<T> {
     var i = 1
     while i < arr.size {
         result[ri] = arr[i]
-        ri += 1
+        ri++
         i += 2
     }
     return result

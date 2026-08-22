@@ -1052,7 +1052,15 @@ sealed class Stmt {
         /** Iterate the range downwards: `reverse for x in a..b`. */
         val reverse: Boolean = false,
         /** Optional source label for `break:label`/`continue:label`. */
-        val label: String? = null
+        val label: String? = null,
+        /**
+         * `for i: Int in 0..mid` - the type the row is declared to have.
+         *
+         * A loop variable is a binding like any other, and a binding may say
+         * what it holds instead of leaving a reader to work it out from the
+         * thing being walked. Null is the unannotated form, which infers.
+         */
+        val declaredType: TypeRef? = null
     ) : Stmt()
 
     /**

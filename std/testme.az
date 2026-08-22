@@ -1,0 +1,5 @@
+module std.testme
+
+func main() {
+    fin x: Int = 2
+}

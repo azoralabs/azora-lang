@@ -59,7 +59,18 @@ import org.azora.lang.putIfAbsentCompat
 class StdlibInjector private constructor(
     rawPrograms: List<Program>,
     private val configOverrides: Map<String, String>,
+    /** Library sources that could not be read, and why. See [unusableLibraries]. */
+    private val skipped: List<SkippedSource> = emptyList(),
 ) {
+
+    /**
+     * A library source that did not parse, or whose path disagrees with the
+     * module it declares.
+     *
+     * @property module the module it meant to declare, or null when the failure
+     *   was early enough that not even that could be read.
+     */
+    private data class SkippedSource(val path: String, val module: String?, val message: String)
     /**
      * Library modules with their declaration-name macros already resolved, so the
      * index registers `azPoke8` rather than the unexpanded `@foreignName(…)` that
@@ -102,20 +113,44 @@ class StdlibInjector private constructor(
             val typeListEnv = AzStdlib.comptimeLists.toMutableMap()
             val enumEnv = AzStdlib.declaredEnums.toMutableMap()
             val listScopes = AzStdlib.comptimeListScopes.toMutableMap()
-            val additionalPrograms = additionalSources.map { (path, source) ->
+            // A source that cannot be read is not a library, and one file in a
+            // tree is not a reason to refuse every compilation in it: the entry
+            // being compiled may not import it at all, and often does not even
+            // know it exists. The failure is kept and reported by
+            // [unusableLibraries] against what the entry actually reaches.
+            val skipped = mutableListOf<SkippedSource>()
+            val additionalPrograms = additionalSources.mapNotNull { (path, source) ->
                 val program = try {
                     Parser(Lexer(source).tokenize(), typeListEnv, enumEnv, typeListScope = listScopes).parse()
                 } catch (error: Exception) {
-                    throw IllegalArgumentException(
-                        "Failed to parse library source '$path': ${error.message ?: error.toString()}",
-                        error,
+                    skipped.add(
+                        SkippedSource(
+                            path,
+                            declaredModuleIn(source),
+                            "Failed to parse library source '$path': ${error.message ?: error.toString()}",
+                        )
                     )
+                    return@mapNotNull null
                 }
-                checkFileMatchesModule(path, program.moduleName)
+                try {
+                    checkFileMatchesModule(path, program.moduleName)
+                } catch (error: Exception) {
+                    skipped.add(
+                        SkippedSource(path, program.moduleName, error.message ?: error.toString())
+                    )
+                    return@mapNotNull null
+                }
                 program
             }
-            return StdlibInjector(AzStdlib.loadPrograms() + additionalPrograms, configOverrides)
+            return StdlibInjector(AzStdlib.loadPrograms() + additionalPrograms, configOverrides, skipped)
         }
+
+        /** The module a source declares, read without parsing it. */
+        private fun declaredModuleIn(source: String): String? =
+            MODULE_HEADER.find(source)?.groupValues?.get(1)
+
+        private val MODULE_HEADER =
+            Regex("""(?m)^[ \t]*(?:(?:export|exposed|confined|protected)[ \t]+)*module[ \t]+([A-Za-z_][\w.]*)""")
 
         /** Compatibility lookup against the bundled standard library. */
         fun moduleOf(name: String): String? = standard.moduleOf(name)
@@ -403,6 +438,56 @@ class StdlibInjector private constructor(
     }
 
     /**
+     * The unreadable library sources [program] actually depends on.
+     *
+     * Compiling one file walks the whole source tree for the modules it might
+     * import, and a tree of any size has a file in it that does not compile -
+     * an example, a scratch, something half-renamed. Refusing to compile
+     * anything until every one of them parses makes an unrelated file's problem
+     * everyone's. So the failure is reported to whoever imports it, and to
+     * nobody else; [skippedLibraryNotices] still mentions the rest.
+     */
+    fun unusableLibraries(program: Program): List<String> {
+        if (skipped.isEmpty()) return emptyList()
+        val reached = reachableImportPaths(program)
+        return skipped.filter { failure ->
+            val module = failure.module ?: return@filter false
+            reached.any { path -> module == path || module.startsWith("$path.") }
+        }.map { it.message }
+    }
+
+    /** Every skipped library source, for a build that wants to hear about all of them. */
+    fun skippedLibraryNotices(): List<String> = skipped.map { it.message }
+
+    /**
+     * The import paths this program reaches: its own, plus what the modules
+     * behind them re-export, and so on.
+     *
+     * Paths rather than modules, because a path that names nothing loaded is
+     * exactly the interesting case here - a module that failed to parse is not
+     * in the index, and asking the index for it would answer that nobody wants
+     * it.
+     */
+    private fun reachableImportPaths(program: Program): Set<String> {
+        val seeds = ArrayDeque<Pair<String, String?>>()
+        for (item in program.items) {
+            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
+        }
+        for (module in index.alwaysOnModules) {
+            seeds.addAll(index.exportedImportsByModule[module].orEmpty())
+        }
+        val visited = linkedSetOf<String>()
+        while (seeds.isNotEmpty()) {
+            val (path, _) = seeds.removeFirst()
+            if (!visited.add(path)) continue
+            for (module in modulesForPath(path)) {
+                seeds.addAll(index.exportedImportsByModule[module].orEmpty())
+            }
+        }
+        return visited
+    }
+
+    /**
      * Validates source-level type qualification independently from declaration
      * injection. Importing a module makes a type visible, but a type declared in
      * a named scope must still be written as `Scope::Type` outside that scope.
@@ -417,6 +502,29 @@ class StdlibInjector private constructor(
         val errors = linkedSetOf<String>()
 
         class Validator {
+
+            /**
+             * The contract of an `impl Spec for Type` or a `derives [Spec]`.
+             *
+             * A spec is named like anything else, so it is imported like
+             * anything else. Nothing else made this true: the specs of the
+             * standard library arrive in a unit anyway, pulled in behind the
+             * implementations `Int` and its siblings carry, so `derives [Equal]`
+             * would compile in a file that never mentioned `std.traits` while
+             * the very same name in a signature would not.
+             */
+            fun contract(name: String, qualifier: String?, line: Int) {
+                if (qualifier != null || name in localGlobalTypes) return
+                if (program.scopeTypeNamespaces.containsKey(name)) return
+                val declaration = index.items[name] ?: return
+                if (declaration in visibleDeclarations) return
+                val module = index.moduleOfName[name] ?: return
+                errors.add(
+                    "line $line: undefined spec or decorator '$name' - '$name' is provided by " +
+                        "'$module': add 'import $module::$name'",
+                )
+            }
+
             fun scopeSymbol(
                 name: String,
                 qualifier: String?,
@@ -730,6 +838,7 @@ class StdlibInjector private constructor(
                         stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
                     is Stmt.For -> {
+                        stmt.declaredType?.let { type(it, stmt.line, typeParams, currentScope) }
                         expression(stmt.iterable, typeParams, currentScope)
                         stmt.step?.let { expression(it, typeParams, currentScope) }
                         stmt.body.forEach { statement(it, typeParams, currentScope) }
@@ -828,6 +937,7 @@ class StdlibInjector private constructor(
                     item.annotations.forEach { validator.appliedAnnotation(it, currentScope) }
                     item.traitName?.let {
                         validator.scopeSymbol(it, item.traitQualifier, item.line, currentScope, "spec or decorator")
+                        validator.contract(it, item.traitQualifier, item.line)
                     }
                     val typeParams = item.typeParams.toSet()
                     item.traitArgs.forEach { validator.type(it, item.line, typeParams, currentScope) }
@@ -1792,6 +1902,7 @@ class StdlibInjector private constructor(
                 stmt.body.forEach { collectNamesFromStmt(it, names) }
             }
             is Stmt.For -> {
+                stmt.declaredType?.let { collectNamesFromTypeRef(it, names) }
                 collectNamesFromExpr(stmt.iterable, names)
                 stmt.step?.let { collectNamesFromExpr(it, names) }
                 stmt.body.forEach { collectNamesFromStmt(it, names) }

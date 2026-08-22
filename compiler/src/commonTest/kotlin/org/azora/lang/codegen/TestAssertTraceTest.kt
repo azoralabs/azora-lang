@@ -466,4 +466,43 @@ class TestAssertTraceTest {
         """.trimIndent())
         assertNotNull(result)
     }
+    // ---- how a test reads in the IR ----
+
+    @Test
+    fun test_carriesItsMethodIntoTheIr() {
+        val result = compile("""
+            test "a name" {
+                assert 1 == 1 { "one is one" }
+            }
+            func main() {}
+        """.trimIndent())
+
+        val ir = result.ir.prettyPrint()
+        assertTrue("test TestMethod.This \"a name\" {" in ir, ir)
+        // The optimizer rebuilds every item; the method survives that too.
+        assertTrue("test TestMethod.This \"a name\" {" in result.optimizedIr.prettyPrint(), ir)
+    }
+
+    @Test
+    fun testAll_saysSoAndNamesWhatItGathered() {
+        val result = compile("""
+            test "first" {
+                assert 1 == 1 { "one is one" }
+            }
+
+            test "second" {
+                assert 2 == 2 { "two is two" }
+            }
+
+            test .All "everything"
+            func main() {}
+        """.trimIndent())
+
+        val ir = result.ir.prettyPrint()
+        assertTrue("test TestMethod.All \"everything\" {" in ir, ir)
+        assertTrue("scope \"first\" {" in ir, ir)
+        assertTrue("scope \"second\" {" in ir, ir)
+        // The gathered tests run inside the `.All` one, not beside it.
+        assertFalse("test TestMethod.This" in ir, ir)
+    }
 }

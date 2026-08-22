@@ -28,6 +28,8 @@
 @Supress(.Unused)
 exposed module std.char
 
+import std.traits::[PartialEqual, Equal, Order, Hash]
+
 /**
  * A Unicode code point.
  *

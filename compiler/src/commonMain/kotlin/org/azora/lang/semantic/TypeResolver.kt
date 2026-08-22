@@ -1543,7 +1543,9 @@ class TypeResolver(private val table: SymbolTable) {
                             errors.add("line ${stmt.line}: range end must be Int, got $toType")
                         }
                         table.pushScope()
-                        table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
+                        table.defineVariable(
+                            VariableSymbol(stmt.name, loopRowType(stmt, IrType.Int), mutable = true),
+                        )
                         inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
                     }
@@ -1560,7 +1562,9 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     if (walked != null) {
                         table.pushScope()
-                        table.defineVariable(VariableSymbol(stmt.name, walked, mutable = false))
+                        table.defineVariable(
+                            VariableSymbol(stmt.name, loopRowType(stmt, walked), mutable = false),
+                        )
                         inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
                         return
@@ -1578,7 +1582,9 @@ class TypeResolver(private val table: SymbolTable) {
                         is IrType.Set -> iterType.element
                         else -> error("unreachable")
                     }
-                    table.defineVariable(VariableSymbol(stmt.name, elementType, mutable = false))
+                    table.defineVariable(
+                        VariableSymbol(stmt.name, loopRowType(stmt, elementType), mutable = false),
+                    )
                         inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
                     }
@@ -4674,6 +4680,28 @@ class TypeResolver(private val table: SymbolTable) {
             }
         }
         return type
+    }
+
+    /**
+     * The type a loop's row is bound at, checking what was declared for it.
+     *
+     * `for i: Int in 0..mid` states what the walk already knows, which is the
+     * point: the reader is told rather than asked to work it out. A statement
+     * that disagrees with what is being walked is the one thing an annotation
+     * can do that inference cannot, and it is an error rather than a silent
+     * conversion - `for c: Char in words` is a mistake about `words`, and
+     * binding `c` to whatever `words` holds would hide it.
+     */
+    private fun loopRowType(stmt: Stmt.For, walked: IrType): IrType {
+        val ref = stmt.declaredType ?: return walked
+        val declared = tryResolveType(ref, stmt.line) ?: return walked
+        if (!isCompatible(declared, walked)) {
+            errors.add(
+                "line ${stmt.line}: '${stmt.name}' is declared $declared but the loop walks $walked",
+            )
+            return walked
+        }
+        return declared
     }
 
     private fun resolveBinding(

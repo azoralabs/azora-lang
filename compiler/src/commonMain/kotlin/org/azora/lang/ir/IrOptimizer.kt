@@ -57,7 +57,7 @@ class IrOptimizer {
             when (item) {
                 is IrTopLevel.Global -> item.copy(stmt = foldStmt(item.stmt))
                 is IrTopLevel.Func -> IrTopLevel.Func(item.function.copy(body = item.function.body.map { foldStmt(it) }))
-                is IrTopLevel.Test -> IrTopLevel.Test(item.name, item.body.map { foldStmt(it) })
+                is IrTopLevel.Test -> item.copy(body = item.body.map { foldStmt(it) })
                 is IrTopLevel.Struct, is IrTopLevel.Enum, is IrTopLevel.Extern -> item
             }
         })
@@ -200,7 +200,7 @@ class IrOptimizer {
                     item.copy(stmt = optimized.first())
                 }
                 is IrTopLevel.Func -> IrTopLevel.Func(propagateInFunction(item.function))
-                is IrTopLevel.Test -> IrTopLevel.Test(item.name, propagateStmts(item.body, mutableMapOf()))
+                is IrTopLevel.Test -> item.copy(body = propagateStmts(item.body, mutableMapOf()))
                 is IrTopLevel.Struct, is IrTopLevel.Enum, is IrTopLevel.Extern -> item
             }
         })
@@ -491,7 +491,7 @@ class IrOptimizer {
             when (item) {
                 is IrTopLevel.Global -> item.copy(stmt = eliminateDeadCode(listOf(item.stmt)).first())
                 is IrTopLevel.Func -> IrTopLevel.Func(item.function.copy(body = eliminateDeadCode(item.function.body)))
-                is IrTopLevel.Test -> IrTopLevel.Test(item.name, eliminateDeadCode(item.body))
+                is IrTopLevel.Test -> item.copy(body = eliminateDeadCode(item.body))
                 is IrTopLevel.Struct, is IrTopLevel.Enum, is IrTopLevel.Extern -> item
             }
         })

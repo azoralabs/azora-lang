@@ -293,7 +293,7 @@ spec From<T> {
  */
 @Since("0.1")
 bridge spec Cast<TO> {
-    prop castValue<TO>[self: Self&]: TO
+    prop castValue<TO>[self&]: TO
 }
 
 /**
@@ -304,7 +304,7 @@ bridge spec Cast<TO> {
  */
 @Since("0.1")
 bridge spec CheckedCast<TO> {
-    prop castValue<TO>[self: Self&]: TO?
+    prop castValue<TO>[self&]: TO?
 }
 
 /**
@@ -315,7 +315,7 @@ bridge spec CheckedCast<TO> {
  */
 @Since("0.1")
 bridge spec BitCast<TO> {
-    prop castValue<TO>[self: Self&]: TO
+    prop castValue<TO>[self&]: TO
 }
 
 @Experimental(since: "0.1")
@@ -448,7 +448,7 @@ bridge enum SupressKind {
 }
 
 @Experimental(since: "0.1")
-bridge annot @Supress for .* {
+bridge annot @Supress {
     fin kind: SupressKind
 }
 

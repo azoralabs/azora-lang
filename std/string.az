@@ -29,6 +29,7 @@
 exposed module std.string
 
 import std.container.array::*
+import std.traits::[PartialEqual, Equal, Order, Hash]
 
 /** A string of Unicode code points, ordered lexicographically by code point. */
 @Since("0.1")

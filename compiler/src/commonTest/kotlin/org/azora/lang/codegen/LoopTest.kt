@@ -219,4 +219,48 @@ class LoopTest {
             }
         """.trimIndent()))
     }
+    // ---- a loop variable may say what it holds ----
+
+    @Test
+    fun forRangeWithADeclaredRowType() {
+        assertEquals("15", run("""
+            import std.io
+            func main() {
+                var sum = 0
+                for i: Int in 1..5 {
+                    sum = sum + i
+                }
+                println(sum)
+            }
+        """.trimIndent()))
+    }
+
+    @Test
+    fun forArrayWithADeclaredRowType() {
+        assertEquals("6", run("""
+            import std.io
+            func main() {
+                var sum = 0
+                for value: Int in @arr[1, 2, 3] {
+                    sum = sum + value
+                }
+                println(sum)
+            }
+        """.trimIndent()))
+    }
+
+    @Test
+    fun aDeclaredRowTypeMustAgreeWithWhatIsWalked() {
+        val result = Compiler().compile("""
+            import std.io
+            func main() {
+                for row: String in 1..3 { println(row) }
+            }
+        """.trimIndent())
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            failure.errors.any { "'row' is declared String but the loop walks Int" in it },
+            failure.errors.toString(),
+        )
+    }
 }

@@ -7458,6 +7458,10 @@ class Parser(
         } else {
             "__row${start.line}_${start.column}"
         }
+        // `for i: Int in 0..mid` - the row's type, said rather than inferred. A
+        // taken-apart row has one type per name and no single place to write it,
+        // so the form is the one-name one.
+        val declaredType = if (destructured.isEmpty() && match(TokenType.COLON)) parseTypeName() else null
         consume(TokenType.IN, "Expected 'in' after loop variable")
         // The step is part of the header too: in `for x in 0..<6 by 2 { … }` the
         // `{` closes the header, so it must not be read as a trailing lambda on
@@ -7483,6 +7487,7 @@ class Parser(
             step = step,
             reverse = reverse,
             label = label,
+            declaredType = declaredType,
         )
         return if (elseBranch != null) withLoopElse(loop, elseBranch, start.line, start.column) else loop
     }

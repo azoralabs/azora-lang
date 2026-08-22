@@ -596,12 +596,18 @@ class IrGenerator(private val table: SymbolTable) {
                         hasAllTest && item.method == TestMethod.This -> emptyList()
                         item.method == TestMethod.All -> {
                             val ownBody = lowerTestBody(item.name, item.body)
+                            // Each gathered body keeps the name of the test it
+                            // came from: an `.All` test is every `This` test in
+                            // the file, and which is which is the first thing a
+                            // reader of the lowered form needs.
                             val children = sourceTests
                                 .filter { it.method == TestMethod.This }
-                                .map { IrStmt.Scope(lowerTestBody(it.name, it.body)) }
-                            listOf(IrTopLevel.Test(item.name, ownBody + children))
+                                .map { IrStmt.Scope(lowerTestBody(it.name, it.body), it.name) }
+                            listOf(IrTopLevel.Test(item.name, ownBody + children, item.method))
                         }
-                        else -> listOf(IrTopLevel.Test(item.name, lowerTestBody(item.name, item.body)))
+                        else -> listOf(
+                            IrTopLevel.Test(item.name, lowerTestBody(item.name, item.body), item.method),
+                        )
                     }
                 }
                 is TopLevel.Enum -> listOf(IrTopLevel.Enum(item.name, item.variants))

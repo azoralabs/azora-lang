@@ -580,4 +580,83 @@ class StdlibInjectionTest {
         assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
         assertEquals("7", IrInterpreter().interpret(result.ir))
     }
+    // ---- a spec is imported like anything else ----
+
+    @Test fun derivingASpecNeedsItsImport() {
+        val result = Compiler().compile("""
+            pack Point derives [Equal] {
+                x: Int
+            }
+        """.trimIndent())
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertEquals(
+            listOf("line 1: undefined spec or decorator 'Equal' - 'Equal' is provided by 'std.traits': add 'import std.traits::Equal'"),
+            failure.errors,
+        )
+    }
+
+    @Test fun derivingASpecWorksOnceImported() {
+        val result = Compiler().compile("""
+            import std.io
+            import std.traits::Equal
+
+            pack Point derives [Equal] {
+                x: Int
+            }
+
+            func main() {
+                println(Point(x: 1) == Point(x: 1))
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("true", IrInterpreter().interpret(result.ir).trim())
+    }
+
+    @Test fun implementingASpecNeedsItsImport() {
+        val result = Compiler().compile("""
+            pack Point {
+                x: Int
+            }
+
+            impl Clone for Point {
+                func clone[self&](): Point { return Point(x: self.x) }
+            }
+        """.trimIndent())
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            failure.errors.any { "'Clone' is provided by 'std.traits': add 'import std.traits::Clone'" in it },
+            failure.errors.toString(),
+        )
+    }
+
+    // ---- a library source nobody imports ----
+
+    @Test fun anUnreadableLibraryNobodyImportsIsNotFatal() {
+        val broken = LibrarySource("examples/scratch.az", "module examples.scratch\n\nfunc (((")
+        val result = Compiler(listOf(broken)).compile("""
+            import std.io
+            func main() { println(1) }
+        """.trimIndent())
+
+        val success = assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("1", IrInterpreter().interpret(result.ir).trim())
+        assertTrue(
+            success.warnings.any { "examples/scratch.az" in it },
+            "the skipped source is still reported: ${success.warnings}",
+        )
+    }
+
+    @Test fun anUnreadableLibraryThatIsImportedIsFatal() {
+        val broken = LibrarySource("examples/scratch.az", "module examples.scratch\n\nfunc (((")
+        val result = Compiler(listOf(broken)).compile("""
+            import examples.scratch
+            func main() {}
+        """.trimIndent())
+
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            failure.errors.any { "Failed to parse library source 'examples/scratch.az'" in it },
+            failure.errors.toString(),
+        )
+    }
 }

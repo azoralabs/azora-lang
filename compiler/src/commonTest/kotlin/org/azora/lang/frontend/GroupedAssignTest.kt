@@ -48,8 +48,8 @@ class GroupedAssignTest {
     // -- one value, to each member ------------------------------------------
 
     @Test fun oneValueReachesEveryMember() {
-        // `self.[offset, allocCount] = 0` - the form the allocators reset with.
-        val stmts = group("self.[offset, allocCount] = 0")
+        // `self.{offset, allocCount} = 0` - the form the allocators reset with.
+        val stmts = group("self.{offset, allocCount} = 0")
         assertEquals(listOf("offset", "allocCount"), stmts.map { assigned(it).first })
         assertTrue(stmts.all { assertIs<Expr.IntLiteral>(assigned(it).second).value == 0L })
     }
@@ -58,14 +58,14 @@ class GroupedAssignTest {
         // A group is the lines it stands for, so each member gets the
         // expression - not one shared result. `alloc .() * n` asks for a buffer
         // per member, and handing both the same one would alias them.
-        val stmts = group("self.[keys, values, hashes] = next()")
+        val stmts = group("self.{keys, values, hashes} = next()")
         assertEquals(3, stmts.size)
         assertTrue(stmts.none { it is Stmt.FinDecl }, "nothing is bound in between")
         assertTrue(stmts.all { assigned(it).second is Expr.Call })
     }
 
     @Test fun fourMembersTakeTheSameValue() {
-        val stmts = group("self.[offset, allocCount, peakUsage, totalAllocated] = 0")
+        val stmts = group("self.{offset, allocCount, peakUsage, totalAllocated} = 0")
         assertEquals(
             listOf("offset", "allocCount", "peakUsage", "totalAllocated"),
             stmts.map { assigned(it).first },
@@ -74,8 +74,8 @@ class GroupedAssignTest {
 
     // -- one value per member -----------------------------------------------
 
-    @Test fun aBracketedListIsPositional() {
-        val stmts = group("""self.[a, b, c] = [1, "2", true]""")
+    @Test fun aBraceSourceGroupIsPositional() {
+        val stmts = group("""self.{a, b, c} = {1, "2", true}""")
         assertEquals(listOf("a", "b", "c"), stmts.map { assigned(it).first })
         assertIs<Expr.IntLiteral>(assigned(stmts[0]).second)
         assertIs<Expr.StringLiteral>(assigned(stmts[1]).second)
@@ -84,7 +84,7 @@ class GroupedAssignTest {
 
     @Test fun aPositionalGroupNeedsNoTemporary() {
         // Each value lands in exactly one member, so there is nothing to share.
-        val stmts = group("self.[a, b] = [1, 2]")
+        val stmts = group("self.{a, b} = {1, 2}")
         assertEquals(2, stmts.size)
         assertTrue(stmts.none { it is Stmt.FinDecl })
     }
@@ -94,11 +94,11 @@ class GroupedAssignTest {
     @Test fun namesMayBeSeparatedByNewlinesAlone() {
         val stmts = group(
             """
-            self.[
+            self.{
                 offset
                 allocCount
                 peakUsage
-            ] = 0
+            } = 0
             """.trimIndent(),
         )
         assertEquals(listOf("offset", "allocCount", "peakUsage"), stmts.map { assigned(it).first })
@@ -107,10 +107,10 @@ class GroupedAssignTest {
     @Test fun valuesMayBeSeparatedByNewlinesAlone() {
         val stmts = group(
             """
-            self.[a, b] = [
+            self.{a, b} = {
                 1
                 2
-            ]
+            }
             """.trimIndent(),
         )
         assertEquals(listOf("a", "b"), stmts.map { assigned(it).first })
@@ -119,19 +119,19 @@ class GroupedAssignTest {
     // -- any receiver, not just self ----------------------------------------
 
     @Test fun theReceiverIsWhateverWasWritten() {
-        val stmts = group("config.[width, height] = 0")
+        val stmts = group("config.{width, height} = 0")
         assertEquals("config", assertIs<Expr.Identifier>(assertIs<Stmt.MemberAssign>(stmts[0]).target).name)
     }
 
     @Test fun aNestedReceiverWorks() {
-        val stmts = group("self.window.[width, height] = 0")
+        val stmts = group("self.window.{width, height} = 0")
         assertIs<Expr.Member>(assertIs<Stmt.MemberAssign>(stmts[0]).target)
     }
 
     // -- successive groups stay independent ---------------------------------
 
     @Test fun twoGroupsInOneBodyStayApart() {
-        val stmts = body("self.[a, b] = 0\nself.[c, d] = 1")
+        val stmts = body("self.{a, b} = 0\nself.{c, d} = 1")
         assertEquals(listOf("a", "b"), assertIs<Stmt.Scope>(stmts[0]).body.map { assigned(it).first })
         assertEquals(listOf("c", "d"), assertIs<Stmt.Scope>(stmts[1]).body.map { assigned(it).first })
     }
@@ -139,7 +139,7 @@ class GroupedAssignTest {
     // -- what is rejected ---------------------------------------------------
 
     @Test fun aPositionalGroupMustMatchInArity() {
-        val e = assertFailsWith<IllegalStateException> { body("self.[a, b, c] = [1, 2]") }
+        val e = assertFailsWith<IllegalStateException> { body("self.{a, b, c} = {1, 2}") }
         assertTrue(
             "one value per member" in e.message.orEmpty() && "3 named" in e.message.orEmpty(),
             e.message.orEmpty(),
@@ -147,23 +147,23 @@ class GroupedAssignTest {
     }
 
     @Test fun aMemberMayNotBeNamedTwice() {
-        val e = assertFailsWith<IllegalStateException> { body("self.[a, b, a] = 0") }
+        val e = assertFailsWith<IllegalStateException> { body("self.{a, b, a} = 0") }
         assertTrue("more than once" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun anEmptyGroupIsRejected() {
-        val e = assertFailsWith<IllegalStateException> { body("self.[] = 0") }
+        val e = assertFailsWith<IllegalStateException> { body("self.{} = 0") }
         assertTrue("at least one member name" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun aGroupIsATargetAndNotAValue() {
         // `.[…]` reads several members at once, which is not a value any type has.
-        val e = assertFailsWith<IllegalStateException> { body("fin x = self.[a, b]") }
+        val e = assertFailsWith<IllegalStateException> { body("fin x = self.{a, b}") }
         assertTrue("not a value" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun aGroupMustBeAssigned() {
-        val e = assertFailsWith<IllegalStateException> { body("self.[a, b]") }
+        val e = assertFailsWith<IllegalStateException> { body("self.{a, b}") }
         assertTrue("Expected '='" in e.message.orEmpty(), e.message.orEmpty())
     }
 

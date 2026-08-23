@@ -7,8 +7,8 @@ import kotlin.test.*
 
 /**
  * A lambda reaches the scope around it only through its capture list
- * (LAMBDA_CONTEXT_CAPTURE_DIP.MD §4). Capture is never implicit: `[; =]`, `[; &]`,
- * `[; !]`, and `[; take]` ask for it; writing no capture section asks for none.
+ * (LAMBDA_CONTEXT_CAPTURE_DIP.MD §4). Capture is never implicit: `[=]`, `[&]`,
+ * `[!]`, and `[take]` ask for it; writing no capture section asks for none.
  */
 class LambdaCaptureTest {
 
@@ -44,9 +44,19 @@ class LambdaCaptureTest {
                 cb()
             }
         """.trimIndent()).first { "not in scope" in it }
-        for (fix in listOf("'[; n.&]'", "'[; n.!]'", "'[; n]'", "'[; &]'")) {
+        for (fix in listOf("'[n.&]'", "'[n.!]'", "'[n]'", "'[&]'")) {
             assertTrue(fix in message, "$fix missing from: $message")
         }
+    }
+
+    @Test fun aNamedMutableCaptureRequiresTheOwnershipDot() {
+        val found = errors("""
+            func main() {
+                var n = 0
+                fin bump = [n!] { n = n + 1 }
+            }
+        """.trimIndent())
+        assertTrue(found.any { "write 'n.!'" in it }, found.toString())
     }
 
     @Test fun aSelfContainedLambdaNeedsNoBrackets() {
@@ -86,15 +96,15 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var a = 7
-                fin shared = [; &] { println(a) }
+                fin shared = [&] { println(a) }
                 shared()
 
                 var b = 3
-                fin copied = [; =] { println(b) }
+                fin copied = [=] { println(b) }
                 copied()
 
                 var c = 1
-                fin bumped = [; !] { c = c + 1 }
+                fin bumped = [!] { c = c + 1 }
                 bumped()
                 println(c)
             }
@@ -106,11 +116,11 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var read = 9
-                fin show = [; read.&] { println(read) }
+                fin show = [read.&] { println(read) }
                 show()
 
                 var count = 1
-                fin bump = [; count.!] { count = count + 4 }
+                fin bump = [count.!] { count = count + 4 }
                 bump()
                 println(count)
             }
@@ -124,7 +134,7 @@ class LambdaCaptureTest {
             func main() {
                 var a = 1
                 var b = 2
-                fin cb = [; a.&] { println(b) }
+                fin cb = [a.&] { println(b) }
                 cb()
             }
         """.trimIndent())
@@ -137,7 +147,7 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var n = 1
-                fin outer = [; n.&] {
+                fin outer = [n.&] {
                     fin inner = { println(n) }
                     inner()
                 }
@@ -150,7 +160,7 @@ class LambdaCaptureTest {
     @Test fun captureOfAnUnknownNameIsReported() {
         val found = errors("""
             func main() {
-                fin cb = [; nope.&] { 1 }
+                fin cb = [nope.&] { 1 }
             }
         """.trimIndent())
         assertTrue(
@@ -163,7 +173,7 @@ class LambdaCaptureTest {
         val found = errors("""
             func main() {
                 var n = 1
-                fin cb = [; &, =] { n }
+                fin cb = [&, =] { n }
             }
         """.trimIndent())
         assertTrue(found.any { "one capture default" in it }, found.toString())
@@ -174,14 +184,15 @@ class LambdaCaptureTest {
         val found = errors("""
             import std.io
             import std.traits
+            import std.container.list
             func main() {
                 var xs = listOf<Int>()
-                fin cb = [; xs] { println(xs.size) }
+                fin cb = [xs] { println(xs.size) }
                 cb()
             }
         """.trimIndent())
         val message = found.first { "cannot be captured by copy" in it }
-        for (fix in listOf("'[; xs.&]'", "'[; xs.clone()]'", "'[; take xs]'")) {
+        for (fix in listOf("'[xs.&]'", "'[xs.clone()]'", "'[take xs]'")) {
             assertTrue(fix in message, "$fix missing from: $message")
         }
     }
@@ -189,9 +200,10 @@ class LambdaCaptureTest {
     @Test fun aBorrowAsksNothingOfTheValue() {
         assertEquals("0", run("""
             import std.io
+            import std.container.list
             func main() {
                 var xs = listOf<Int>()
-                fin cb = [; xs.&] { println(xs.size) }
+                fin cb = [xs.&] { println(xs.size) }
                 cb()
             }
         """.trimIndent()))
@@ -203,7 +215,7 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var s: String = "hi"
-                fin cb = [; take s] { println(s) }
+                fin cb = [take s] { println(s) }
                 println(s)
             }
         """.trimIndent())
@@ -216,7 +228,7 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var s: String = "hi"
-                fin cb = [; take s] { println(s) }
+                fin cb = [take s] { println(s) }
                 cb()
             }
         """.trimIndent()))
@@ -231,12 +243,12 @@ class LambdaCaptureTest {
         val found = errors("""
             func make(): () -> Int {
                 var n = 5
-                return [; n.&] { n }
+                return [n.&] { n }
             }
             func main() { }
         """.trimIndent())
         assertTrue(
-            found.any { "is returned while borrowing 'n'" in it && "[; take n]" in it },
+            found.any { "is returned while borrowing 'n'" in it && "[take n]" in it },
             found.toString(),
         )
     }
@@ -246,7 +258,7 @@ class LambdaCaptureTest {
             import std.io
             func make(): () -> Int {
                 var n = 5
-                return [; n] { n }
+                return [n] { n }
             }
             func main() { println(make()()) }
         """.trimIndent()))
@@ -256,7 +268,7 @@ class LambdaCaptureTest {
         val found = errors("""
             func make(): () -> Int {
                 var n = 5
-                return [; &] { n }
+                return [&] { n }
             }
             func main() { }
         """.trimIndent())
@@ -268,7 +280,7 @@ class LambdaCaptureTest {
             import std.io
             func make(): () -> Int {
                 var untouched = 9
-                return [; &] { 5 }
+                return [&] { 5 }
             }
             func main() { println(make()()) }
         """.trimIndent()))
@@ -280,7 +292,7 @@ class LambdaCaptureTest {
             func onEvent(handler: escaping (Int) -> Unit) { }
             func main() {
                 var n = 1
-                onEvent([; n.&] { println(n) })
+                onEvent([n.&] { println(n) })
             }
         """.trimIndent())
         assertTrue(
@@ -313,26 +325,26 @@ class LambdaCaptureTest {
         assertEquals("4", run("""
             import std.io
             pack Sink { var total: Int = 0 }
-            impl Sink { func push[self: Self!](n: Int) { self.total = self.total + n } }
+            impl Sink { func !.push(n: Int) { self.total = self.total + n } }
             func main() {
                 var step = 4
-                fin fill = [sink: Sink!; step.&] { sink.push(step) }
+                fin fill = [!, step.&] sink: Sink { sink.push(step) }
                 var sink = Sink(0)
-                with sink { fill() }
+                using sink { fill() }
                 println(sink.total)
             }
         """.trimIndent()))
     }
 
-    @Test fun aBareBracketNameIsAlwaysAReceiver() {
-        val found = errors("""
+    @Test fun aBareBracketNameIsAnExplicitCapture() {
+        assertEquals("4", run("""
+            import std.io
             func main() {
                 var n = 4
                 fin read = [n] { n }
-                read()
+                println(read())
             }
-        """.trimIndent())
-        assertTrue(found.any { "requires contextual receiver" in it }, found.toString())
+        """.trimIndent()))
     }
 
     @Test fun captureDefaultMayBeOverriddenByName() {
@@ -341,7 +353,7 @@ class LambdaCaptureTest {
             func main() {
                 var changed = 3
                 var copied = 7
-                fin update = [; =, changed.!] {
+                fin update = [=, changed.!] {
                     changed = changed + 5
                     println(copied)
                 }
@@ -352,13 +364,56 @@ class LambdaCaptureTest {
         """.trimIndent()))
     }
 
+    @Test fun captureDefaultHonoursWithoutFence() {
+        assertEquals("4", run("""
+            import std.io
+            func main() {
+                var included = 4
+                var excluded = 9
+                fin read = [&, without excluded] { included }
+                println(read())
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun usingAnExcludedCaptureIsAnError() {
+        val found = errors("""
+            func main() {
+                var secret = 9
+                fin read = [&, without secret] { secret }
+            }
+        """.trimIndent())
+        assertTrue(found.any { "excluded from this lambda's captures" in it && "without secret" in it }, found.toString())
+    }
+
+    @Test fun groupedCaptureExclusionsAreEquivalent() {
+        val found = errors("""
+            func main() {
+                var secret = 9
+                var key = 2
+                fin read = [&, without (secret, key)] { key }
+            }
+        """.trimIndent())
+        assertTrue(found.any { "excluded from this lambda's captures" in it && "without key" in it }, found.toString())
+    }
+
+    @Test fun explicitCaptureCannotOverrideWithoutFence() {
+        val found = errors("""
+            func main() {
+                var secret = 9
+                fin read = [&, secret.&, without secret] { secret }
+            }
+        """.trimIndent())
+        assertTrue(found.any { "both captured and excluded" in it }, found.toString())
+    }
+
     @Test fun defaultTakeMovesOnlyUsedFreeBindings() {
         assertEquals("used\nkept", run("""
             import std.io
             func main() {
                 fin used = "used"
                 fin untouched = "kept"
-                fin consume = [; take] { println(used) }
+                fin consume = [take] { println(used) }
                 consume()
                 println(untouched)
             }
@@ -370,7 +425,7 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 fin used = "used"
-                fin consume = [; take] { println(used) }
+                fin consume = [take] { println(used) }
                 println(used)
             }
         """.trimIndent())
@@ -385,7 +440,7 @@ class LambdaCaptureTest {
                 fin copied = "copy"
                 fin cloned = "clone"
                 fin moved = "move"
-                fin consumeAll = [; target = n.!, a = copied, b = cloned.clone(), c = take moved] {
+                fin consumeAll = [target = n.!, a = copied, b = cloned.clone(), c = take moved] {
                     target = target + 1
                     println(target)
                     println(a)
@@ -401,7 +456,7 @@ class LambdaCaptureTest {
         val found = errors("""
             func main() {
                 var n = 1
-                fin invalid = [; n.&] { n = 2 }
+                fin invalid = [n.&] { n = 2 }
             }
         """.trimIndent())
         assertTrue(found.any { "cannot reassign immutable binding 'n'" in it }, found.toString())
@@ -411,7 +466,7 @@ class LambdaCaptureTest {
         val found = errors("""
             func main() {
                 fin n = 1
-                fin invalid = [; n.!] { n = 2 }
+                fin invalid = [n.!] { n = 2 }
             }
         """.trimIndent())
         assertTrue(found.any { "cannot reassign immutable binding 'n'" in it }, found.toString())
@@ -422,7 +477,7 @@ class LambdaCaptureTest {
             func main() {
                 var a = 1
                 var b = 2
-                fin invalid = [; value = a, value = b] { value }
+                fin invalid = [value = a, value = b] { value }
             }
         """.trimIndent())
         assertTrue(duplicateName.any { "duplicate lambda capture name 'value'" in it }, duplicateName.toString())
@@ -430,7 +485,7 @@ class LambdaCaptureTest {
         val duplicateSource = errors("""
             func main() {
                 var a = 1
-                fin invalid = [; first = a, second = a] { first + second }
+                fin invalid = [first = a, second = a] { first + second }
             }
         """.trimIndent())
         assertTrue(duplicateSource.any { "'a' is captured more than once" in it }, duplicateSource.toString())
@@ -440,7 +495,7 @@ class LambdaCaptureTest {
         val found = errors("""
             func main() {
                 var outer = 1
-                fin invalid = [value: Int; value = outer] { value }
+                fin invalid = [&, value = outer] value: Int { value }
             }
         """.trimIndent())
         assertTrue(found.any { "cannot be both a receiver and a capture" in it }, found.toString())
@@ -465,8 +520,8 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 var offset = 2
-                fin add = <T>[context: T&; offset.&] { value: Int -> value + offset }
-                with 10 { println(add(10)) }
+                fin add = <T>[&] context: T { value: Int -> value + offset }
+                using 10 { println(add(10)) }
             }
         """.trimIndent()))
     }
@@ -474,7 +529,7 @@ class LambdaCaptureTest {
     @Test fun variadicReceiversAreRejectedExplicitly() {
         val found = errors("""
             func main() {
-                fin invalid = <T>[...contexts: T;] { 1 }
+                fin invalid = <T>[&] (...contexts) { 1 }
             }
         """.trimIndent())
         assertTrue(found.any { "contextual receivers cannot be variadic" in it }, found.toString())
@@ -485,7 +540,7 @@ class LambdaCaptureTest {
             import std.io
             func main() {
                 fin message = "ready"
-                fin worker = async [; take] { message }
+                fin worker = async [take] { message }
                 println(await worker)
             }
         """.trimIndent()))
@@ -507,10 +562,10 @@ class LambdaCaptureTest {
         val found = errors("""
             func main() {
                 var n = 1
-                fin invalid = [n.!] { n = 2 }
+                fin invalid = [;n.!] { n = 2 }
             }
         """.trimIndent())
-        assertTrue(found.any { "capture 'n' must follow ';'" in it && "[; n.!]" in it }, found.toString())
+        assertTrue(found.any { "'[receivers; captures]'" in it && "one ownership header" in it }, found.toString())
     }
 
     @Test fun upperScopeAccessCannotBypassCapture() {
@@ -525,18 +580,20 @@ class LambdaCaptureTest {
 
     @Test fun contextualCallableTypesAlwaysRequireParentheses() {
         val found = errors("""
-            fin invalid: [Int, Int] -> Int = [left, right] { left + right }
+            fin invalid: (Int, Int). -> Int = [take] (left, right) { left + right }
             func main() { }
         """.trimIndent())
-        assertTrue(found.any { "write '()'" in it }, found.toString())
+        assertTrue(found.any { "Expected '(' after the callable receiver dot" in it }, found.toString())
     }
 
     @Test fun contextualCallableTypeWithEmptyParameterListIsAccepted() {
         assertEquals("3", run("""
             import std.io
-            fin add: [Int, Int]() -> Int = [left, right] { left + right }
+            pack Left { fin value: Int }
+            pack Right { fin value: Int }
+            fin add: (Left&, Right&).() -> Int = [&] (left, right) { left.value + right.value }
             func main() {
-                with [1, 2] { println(add()) }
+                using (Left(1), Right(2)) { println(add()) }
             }
         """.trimIndent()))
     }

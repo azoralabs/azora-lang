@@ -119,7 +119,7 @@ t.f0 + t.f1                     // 3
 The same pack binds on every declaration that takes type parameters:
 
 ```azora
-func count<...T>(): Int { … }
+func<...T> count(): Int { … }
 
 deepinline prop promote<...T>: Type where T.length >= 2 && T is Number {
     var result: Type = T.0
@@ -219,8 +219,15 @@ signature:
 The point of writing it this way is that the three lists are **linked by one
 pack**: the number of receivers, the number of arguments, and the element type
 are one fact stated once, rather than three that a caller has to keep in step.
-`[Int, Int](Int, Int) -> Int` says the same thing for one arity and says nothing
-about any other.
+`[Int, String](Int, String) -> Result` illustrates one fixed arity and says
+nothing about any other. `[Int, Int](Int, Int) -> Int` is not a valid receiver
+shape because contextual receiver base types must be pairwise distinct.
+
+When `...T` expands in receiver position, its specialized members must therefore
+be pairwise distinct after alias expansion and capability stripping. A pack
+such as `(Int, String)` is eligible; `(Int, Int)` is rejected at specialization.
+This is an implicit receiver-shape requirement, not a claim that variadic
+receivers already have runtime call semantics.
 
 `T` is doing two jobs here, and they are worth separating: in `[...T]` the pack
 is expanded - one receiver per member - while in `(...e: T)` the pack's *element
@@ -249,7 +256,7 @@ other(area)     // pass it on - no longer expressible
 
 It would be the only value in the language that cannot be mentioned, only
 triggered. And it adds nothing: `[Vec2&]() -> Int` already expresses the
-computation, and `prop area[self: Vec2&]: Int` already expresses the call-free
+computation, and `prop Vec2&.area: Int` already expresses the call-free
 read. `prop` is a **declaration** modifier, and what makes it work is the
 receiver it is declared on - a type spelling has no receiver to lean on.
 
@@ -259,7 +266,7 @@ writes `prop` on the declaration.
 A missing `()` is therefore an **error**, not a second meaning:
 
 ```
-[Int, Int] -> Int       // rejected - write '[Int, Int]() -> Int'
+[Int, String] -> Int    // rejected - write '[Int, String]() -> Int'
 ```
 
 This is a change to what parses. `[A, B] -> R` was accepted as a zero-parameter
@@ -269,15 +276,15 @@ parameters, and neither is inferred from being absent.
 
 ### 5.3 None of it means anything yet
 
-Nothing supplies a variable number of contextual receivers: `with` takes a fixed
-list, and the receiver-call forms (`2.scale(7)`, `[2, 3].add()`) each supply
+Nothing supplies a variable number of contextual receivers: `using` takes a fixed
+list, and the receiver-call forms (`2.scale(7)`, `{2, "three"}.combine()`) each supply
 exactly as many receivers as the type declares. So the type parses and no call
 can satisfy it.
 
 - ⬜ **Variadic receivers are a parsed type with no semantics.** No call form
   produces one, no lowering consumes one, and nothing rejects the declaration -
   so a signature can promise something the language cannot express. Either give
-  `with` and the receiver call a variadic form, or refuse the type
+  `using` and the receiver call a variadic form, or refuse the type
 - ⬜ **A callable type carrying its own `<...T>` is unmeasured.** §5.1 is the
   shape the feature wants; whether the parser takes type parameters on a callable
   *type* (as opposed to on the declaration around it) was not tested, and the
@@ -371,6 +378,8 @@ These hold today.
 8. A callable type always writes its parameter list, empty or not. `[Ctx] -> T`
    is rejected; `[Ctx]() -> T` is the zero-parameter function, and a program that
    wants a property writes `prop` on the declaration (§5.2).
+9. Every fixed or expanded contextual receiver list has pairwise-distinct
+   canonical base types. Capability markers do not distinguish duplicates.
 
 ---
 

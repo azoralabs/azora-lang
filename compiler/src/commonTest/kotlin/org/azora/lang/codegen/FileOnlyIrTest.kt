@@ -70,4 +70,57 @@ class FileOnlyIrTest {
 
         assertTrue(result.ir.prettyPrint(emptySet()) == result.ir.prettyPrint())
     }
+
+    // ── How it reads ───────────────────────────────────────────────────
+
+    @Test fun itemsComeBackInTheOrderTheyWereWritten() {
+        // A reader comparing the IR against the source compares it line by
+        // line. Grouping the enums apart from everything else made the two
+        // orders disagree the moment a file mixed its declarations.
+        val result = ir(
+            """
+            pack Alpha { var a: Int }
+
+            func first(): Int { return 1 }
+
+            enum Beta {
+                One
+                Two
+            }
+
+            func second(): Int { return 2 }
+
+            pack Gamma { var g: Int }
+
+            func main() { var n = first() }
+            """,
+        )
+
+        val mine = result.ir.prettyPrint(setOf("Alpha", "first", "Beta", "second", "Gamma", "main"))
+        val order = listOf("pack Alpha", "func first", "enum Beta", "func second", "pack Gamma", "func main")
+            .map { mine.indexOf(it) }
+
+        assertTrue(order.none { it < 0 }, "every item is printed; got:\n$mine")
+        assertTrue(order == order.sorted(), "source order, got:\n$mine")
+    }
+
+    @Test fun aPackListsOneFieldToALine() {
+        // The same shape an `enum` prints its variants in. Six fields on one
+        // line is a line nobody reads to the end.
+        val result = ir(
+            """
+            pack Token {
+                var kind: Int
+                var lexeme: String
+                var line: Int
+            }
+
+            func main() { var t = Token(0, "a", 1) }
+            """,
+        )
+
+        val mine = result.ir.prettyPrint(setOf("Token", "main"))
+
+        assertTrue("pack Token {\n    kind: Int\n    lexeme: String\n    line: Int\n}" in mine, mine)
+    }
 }

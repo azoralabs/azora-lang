@@ -100,6 +100,43 @@ class ImportGrammarTest {
         )
     }
 
+    // -- wildcard exclusions -----------------------------------------------
+
+    @Test fun aWildcardGroupMayExcludeOneSymbol() {
+        val spec = specs("import a.b::{*, without x}").single()
+        assertEquals("a.b", spec.path)
+        assertEquals(ImportSpec.Selector.All, spec.selector)
+        assertEquals(listOf("x"), spec.without)
+        assertEquals(listOf("a.b" to "*"), spec.flatten())
+    }
+
+    @Test fun repeatedWildcardExclusionsPreserveSourceOrder() {
+        val spec = specs("import a.b::{*, without x, without y}").single()
+        assertEquals(listOf("x", "y"), spec.without)
+    }
+
+    @Test fun groupedWildcardExclusionsEqualRepeatedExclusions() {
+        assertEquals(
+            specs("import a.b::{*, without x, without y}").single().without,
+            specs("import a.b::{*, without (x, y)}").single().without,
+        )
+    }
+
+    @Test fun wildcardExclusionsMayUsePhysicalNewlinesWithoutCommas() {
+        val spec = specs(
+            """
+            import a.b::{
+                *
+                without (
+                    x
+                    y
+                )
+            }
+            """.trimIndent(),
+        ).single()
+        assertEquals(listOf("x", "y"), spec.without)
+    }
+
     @Test fun groupsNest() {
         // A member is a clause, so a member may itself be a group.
         val spec = specs("import a.[b::[c, d::*], e::*]").single()
@@ -176,6 +213,27 @@ class ImportGrammarTest {
     @Test fun anUnclosedGroupIsRejected() {
         val e = assertFailsWith<IllegalStateException> { specs("import std.container.[list, map") }
         assertTrue("Expected ']'" in e.message.orEmpty(), e.message.orEmpty())
+    }
+
+    @Test fun withoutRequiresALeadingWildcard() {
+        val error = assertFailsWith<IllegalStateException> {
+            specs("import a.b::{without x}")
+        }
+        assertTrue("requires '*' first" in error.message.orEmpty(), error.message.orEmpty())
+    }
+
+    @Test fun wildcardImportExclusionsMustBeUnique() {
+        val error = assertFailsWith<IllegalStateException> {
+            specs("import a.b::{*, without x, without (x, y)}")
+        }
+        assertTrue("written more than once" in error.message.orEmpty(), error.message.orEmpty())
+    }
+
+    @Test fun wildcardImportGroupRejectsOrdinaryMembersAfterStar() {
+        val error = assertFailsWith<IllegalStateException> {
+            specs("import a.b::{*, x}")
+        }
+        assertTrue("only 'without name'" in error.message.orEmpty(), error.message.orEmpty())
     }
 
     @Test fun aDottedWildcardIsRejected() {

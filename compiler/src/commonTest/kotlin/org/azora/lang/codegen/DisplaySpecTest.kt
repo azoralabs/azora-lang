@@ -72,7 +72,7 @@ class DisplaySpecTest {
                 var y: Int
             }
             impl Display for Vec2 {
-                func display[self: Self&](formatter: Formatter!) {
+                func &.display(formatter: Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")
@@ -99,7 +99,7 @@ class DisplaySpecTest {
                 var inner: Vec2
             }
             impl Display for Vec2 {
-                func display[self: Self&](formatter: Formatter!) {
+                func &.display(formatter: Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")
@@ -108,7 +108,7 @@ class DisplaySpecTest {
                 }
             }
             impl Display for Wrapper {
-                func display[self: Self&](formatter: Formatter!) {
+                func &.display(formatter: Formatter!) {
                     formatter.write("[")
                     self.inner.display(formatter)
                     formatter.write("]")
@@ -147,7 +147,7 @@ class DisplaySpecTest {
                 var y: Int
             }
             impl Display for Vec2 {
-                func display[self: Self&](formatter: Formatter!) {
+                func &.display(formatter: Formatter!) {
                     formatter.write("Vec2(")
                     formatter.write("${'$'}{self.x}")
                     formatter.write(", ")

@@ -135,9 +135,9 @@ class CollectionCtorTest {
             var max: Int
         }
         impl Range {
-            func reset[self: Self!]() { self.i = 0 }
-            func hasNext[self: Self!](): Bool { return self.i < self.max }
-            func next[self: Self!](): Int {
+            func !.reset() { self.i = 0 }
+            func !.hasNext(): Bool { return self.i < self.max }
+            func !.next(): Int {
                 fin v = self.i
                 self.i = self.i + 1
                 return v
@@ -158,9 +158,9 @@ class CollectionCtorTest {
             var max: Int
         }
         impl Query {
-            func reset[self: Self!]() { self.i = 0 }
-            func hasNext[self: Self!](): Bool { return self.i < self.max }
-            func next[self: Self!](): Int {
+            func !.reset() { self.i = 0 }
+            func !.hasNext(): Bool { return self.i < self.max }
+            func !.next(): Int {
                 fin v = self.i
                 self.i = self.i + 1
                 return v

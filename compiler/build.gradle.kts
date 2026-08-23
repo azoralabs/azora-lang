@@ -33,6 +33,12 @@ val generateStdlib = tasks.register("generateAzStdlib") {
             val file = baseDir.resolve(relPath)
             val name = uniqueName(prefix, relPath)
             val content = file.readText()
+            check(
+                Regex("""(?m)^@Supress\(\.Unused\)\r?\n(?:exposed\s+)?module\s+""")
+                    .containsMatchIn(content),
+            ) {
+                "std/$relPath must annotate its module declaration with @Supress(.Unused)"
+            }
             val escaped = content.replace("$", "\${'$'}")
             "    private val $name = \"\"\"\n$escaped\"\"\".trimIndent()"
         }

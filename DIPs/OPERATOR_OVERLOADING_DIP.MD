@@ -133,7 +133,7 @@ walks per node visited, at every level of the tree.
 There is no `Equal`, no `Order`, no `Compare` anywhere in `std/`. `traits.az`
 has `Clone`, `Copy` and `PrettyPrint`, and stops. Consequently:
 
-- `func sort<T>(arr: Array<T>): Array<T>` (`sort.az:42`) accepts *any* `T` and
+- `func<T> sort(arr: Array<T>): Array<T>` (`sort.az:42`) accepts *any* `T` and
   then writes `result[k] > key`. It type-checks only because an erased generic
   resolves to `Any`, which the resolver lets compare against anything
   (`TypeResolver.kt:2567`). Sorting an array of a type with no ordering is a
@@ -357,7 +357,7 @@ Both types carry the same three members, each over its own type:
 inline for Ty in [Compare, PartialCompare] {
     impl Ty {
         /** The comparison with its operands swapped. `Less` ⇄ `Greater`. */
-        prop reversed[self: Self&]: Ty
+        prop &.reversed: Ty
 
         /**
          * `self` if it is decisive, otherwise `next`. Lexicographic chaining.
@@ -367,10 +367,10 @@ inline for Ty in [Compare, PartialCompare] {
          * `Unordered`, which is what a lexicographic order over a partial one
          * has to do.
          */
-        func then[self: Self&](next: Ty): Ty
+        func &.then(next: Ty): Ty
 
         /** `then`, with the second comparison evaluated only if it is reached. */
-        func thenBy[self: Self&](next: () -> Ty): Ty
+        func &.thenBy(next: () -> Ty): Ty
     }
 }
 ```
@@ -468,7 +468,7 @@ operator names (`Mangling.kt:22`).
 
 `SymbolCollector.specMemberReturnType` (`:630`) already reads an impl member's
 return type off the spec it implements - the reason
-`impl Clone for Vec2 { func clone[self: Self&]() { … } }` need not repeat
+`impl Clone for Vec2 { func &.clone() { … } }` need not repeat
 `: Vec2`. `Order` declares `oper<=> … : Compare` and `PartialOrder`
 declares `oper<=> … : PartialCompare` (§6), so:
 
@@ -658,7 +658,7 @@ Instead the resolver treats `Order` as satisfying `PartialOrder<Self>`
 directly, inserting the §4.1 widening at the call:
 
 ```azora
-func clamp<T>(v: T, lo: T, hi: T): T where T: PartialOrder { … }
+func<T> clamp(v: T, lo: T, hi: T): T where T: PartialOrder { … }
 
 clamp(3, 0, 10)          // Int is Order - accepted, Compare widened
 clamp(3.0, 0.0, 10.0)    // Double is PartialOrder - accepted directly
@@ -1052,15 +1052,15 @@ locale-aware collation is a separate function and should never be what `<` does.
 Signatures gain the bound the bodies always assumed:
 
 ```azora
-func sort<T>(arr: Array<T>): Array<T> where T: Order
-func sortDescending<T>(arr: Array<T>): Array<T> where T: Order
-func isSorted<T>(arr: Array<T>): Bool where T: Order
-func minOf<T>(arr: Array<T>): T where T: Order
-func maxOf<T>(arr: Array<T>): T where T: Order
-func binarySearch<T>(arr: Array<T>, target: T&): Int? where T: Order
+func<T> sort(arr: Array<T>): Array<T> where T: Order
+func<T> sortDescending(arr: Array<T>): Array<T> where T: Order
+func<T> isSorted(arr: Array<T>): Bool where T: Order
+func<T> minOf(arr: Array<T>): T where T: Order
+func<T> maxOf(arr: Array<T>): T where T: Order
+func<T> binarySearch(arr: Array<T>, target: T&): Int? where T: Order
 
-func sortBy<T>(arr: Array<T>, cmp: (T&, T&) -> Compare): Array<T>
-func sortByKey<T, K>(arr: Array<T>, key: (T&) -> K): Array<T> where K: Order
+func<T> sortBy(arr: Array<T>, cmp: (T&, T&) -> Compare): Array<T>
+func<T, K> sortByKey(arr: Array<T>, key: (T&) -> K): Array<T> where K: Order
 ```
 
 `sortDescending` becomes `sortBy(arr) { a, b -> (a <=> b).reversed }` rather
@@ -1134,11 +1134,11 @@ the rewriter.
 A comparison bound is written with `:`, and carries type arguments:
 
 ```azora
-func min<T>(a: T, b: T): T where T: Order {
+func<T> min(a: T, b: T): T where T: Order {
     return if a < b { a } else { b }
 }
 
-func indexOf<T, U>(haystack: Array<T>, needle: U&): Int?
+func<T, U> indexOf(haystack: Array<T>, needle: U&): Int?
     where T: PartialEqual<U>
 {
     for i in 0..<haystack.length {
@@ -1147,22 +1147,22 @@ func indexOf<T, U>(haystack: Array<T>, needle: U&): Int?
     return null
 }
 
-func clamp<T>(v: T, lo: T, hi: T): T where T: PartialOrder
+func<T> clamp(v: T, lo: T, hi: T): T where T: PartialOrder
 ```
 
 The equivalent spelling in the parameter list is also accepted, and means
 exactly the same thing:
 
 ```azora
-func min<T: Order>(a: T, b: T): T
-func indexOf<T: PartialEqual<U>, U>(haystack: Array<T>, needle: U&): Int?
+func<T: Order> min(a: T, b: T): T
+func<T: PartialEqual<U>, U> indexOf(haystack: Array<T>, needle: U&): Int?
 ```
 
 Several bounds on one parameter use the bracket list Azora already uses for
 `impl [A, B] for T`:
 
 ```azora
-func sortedKeys<K>(m: Map<K, V>): Array<K> where K: [Order, Clone]
+func<K> sortedKeys(m: Map<K, V>): Array<K> where K: [Order, Clone]
 ```
 
 ### 11.2 What this costs to implement
@@ -1369,9 +1369,9 @@ is what generic numeric code wants and it stays short.
 When a function needs less, the bracket says which:
 
 ```azora
-func sum<T>(xs: Array<T>): T where T: Arithmetic[+]
-func scale<T>(v: T, k: Double): T where T: Arithmetic[*]
-func midpoint<T>(a: T, b: T): T where T: Arithmetic[+, /]
+func<T> sum(xs: Array<T>): T where T: Arithmetic[+]
+func<T> scale(v: T, k: Double): T where T: Arithmetic[*]
+func<T> midpoint(a: T, b: T): T where T: Arithmetic[+, /]
 ```
 
 `sum` accepts a `Matrix` that only implemented `+=`; `%` was never its business.
@@ -1455,7 +1455,7 @@ needed for the naming; only the lookup.
  */
 @Since("0.1")
 bridge spec Hash requires Equal {
-    prop hash[self: Self&]: ULong
+    prop &.hash: ULong
 }
 ```
 
@@ -1497,7 +1497,7 @@ prose.
  */
 @Since("0.1")
 bridge spec Display {
-    func display[self: Self&](formatter: Formatter!)
+    func &.display(formatter: Formatter!)
 }
 ```
 
@@ -1603,7 +1603,7 @@ alias from §11.5:
 ```azora
 typealias FullCast<To> = [Cast<To>, CheckedCast<To>, BitCast<To>]
 
-func reinterpretable<T>(v: T) where T: FullCast<ULong> { … }
+func<T> reinterpretable(v: T) where T: FullCast<ULong> { … }
 ```
 
 **The target moves from the operator to the impl.** `TYPE_DIP.MD:133` has it as
@@ -1633,7 +1633,7 @@ Both were rewritten in `0.0.5` rather than removed:
 
 ```azora
 spec Into<T> {
-    prop into<T>[self: Self&]: T
+    prop &.into<T>: T
     use into<T> as "to${T.typeName}"
 }
 
@@ -1661,9 +1661,9 @@ duplicate go:
 
 ```azora
 scope std {                                    // std/cast.az - deleted entirely
-    bridge func cast<T, U>(value: U): T
-    bridge func dyncast<T, U>(value: U): T?
-    bridge func bitcast<T, U>(value: U): T
+    bridge func<T, U> cast(value: U): T
+    bridge func<T, U> dyncast(value: U): T?
+    bridge func<T, U> bitcast(value: U): T
 }
 ```
 
@@ -1725,7 +1725,7 @@ line 164: 'impl Order for Vec2' declares '<=>' returning PartialCompare
 
 line 177: 'Key' implements PartialEqual but has no 'hash', and is a HashMap key
   a key whose equality and hash disagree is inserted and never found
-  add 'prop hash[self: Key&]: ULong', or derive both with 'impl [Equal] for Key'
+  add 'prop Key&.hash: ULong', or derive both with 'impl [Equal] for Key'
 
 line 203: 'Matrix' has no '%' - its 'impl Arithmetic' does not declare 'oper%'
   an operator family implements the part it wants; add 'oper%' to that impl

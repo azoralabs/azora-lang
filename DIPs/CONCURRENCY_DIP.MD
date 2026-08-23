@@ -103,11 +103,11 @@ The conceptual contracts are:
 ```azora
 pack RaceBuilder<T>
 
-async func race<T>(
+async func<T> race(
     configure: [RaceBuilder<T>!]() -> Unit
 ): T
 
-func branch<T>[builder: RaceBuilder<T>!](
+func<T> (builder: RaceBuilder<T>!).branch(
     body: async () -> T
 )
 ```
@@ -181,8 +181,9 @@ values.collect({ n -> println(n) })
 ```
 
 The builder takes a lambda with a **bracketed contextual receiver**, and `yield`
-is a free function on that receiver. `flow` is the same shape with `emit` and a
-`FlowCollector`.
+is a free function on that receiver. Stream construction uses the same lambda
+shape with `emit` and a `FlowCollector`; `flow` is not a function-declaration
+keyword.
 
 ### 6.1 They are eager, and `Flow` is not asynchronous
 

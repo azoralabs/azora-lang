@@ -522,7 +522,7 @@ func main() { println("Hello, Azora!") }"""))
     @Test fun ch31_flow() = assertEquals("0\n1\n4\n9", run("""
         import std.io
         import std.concurrency.generators
-        func squares(n: Int): Sequence<Int> = sequence<Int> [s: SequenceScope<Int>!; n.&] {
+        func squares(n: Int): Sequence<Int> = sequence<Int> [!, n.&] s: SequenceScope<Int> {
             for i in 0..<n { yield(i * i) }
         }
         func main() {
@@ -553,7 +553,7 @@ func main() { println("Hello, Azora!") }"""))
             var value: Int = 42
         }
         impl Config {
-            func get[self: Self!](): Int { return self.value }
+            func !.get(): Int { return self.value }
         }
         func main() {
             println(inject Config.get())
@@ -566,7 +566,7 @@ func main() { println("Hello, Azora!") }"""))
             var n: Int = 0
         }
         impl Counter {
-            func inc[self: Self!](): Int {
+            func !.inc(): Int {
                 self.n = self.n + 1
                 return self.n
             }
@@ -635,7 +635,7 @@ func main() { println("Hello, Azora!") }"""))
 
     @Test fun ch35_variadic() = assertEquals("3\n10", run("""
         import std.io
-        func variadicSum<...T>(first: Int, rest: ...T): Int {
+        func<...T> variadicSum(first: Int, rest: ...T): Int {
             var total = first
             for x in rest { total = total + x }
             return total

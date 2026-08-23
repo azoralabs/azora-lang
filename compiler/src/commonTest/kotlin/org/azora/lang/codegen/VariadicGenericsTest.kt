@@ -19,7 +19,7 @@ class VariadicGenericsTest {
     @Test fun variadicFunctionCollectsArgs() {
         assertEquals("3\n10", run("""
             import std.io
-            func variadicSum<...T>(first: Int, rest: ...T): Int {
+            func<...T> variadicSum(first: Int, rest: ...T): Int {
                 var total = first
                 for x in rest {
                     total = total + x
@@ -36,7 +36,7 @@ class VariadicGenericsTest {
     @Test fun variadicWithNoExtraArgs() {
         assertEquals("42", run("""
             import std.io
-            func variadic<...T>(first: Int, rest: ...T): Int {
+            func<...T> variadic(first: Int, rest: ...T): Int {
                 return first
             }
             func main() {

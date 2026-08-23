@@ -25,6 +25,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.parallelism.sync
 
 /**
@@ -48,7 +49,7 @@ impl Guard<T> {
      * @param action The function to execute with the current value.
      */
     @Experimental(since: "0.1")
-    func read[self: Self&](action: (T) -> Unit) {
+    func &.read(action: (T) -> Unit) {
         mutex.lock()
         action(value)
         mutex.unlock()
@@ -60,7 +61,7 @@ impl Guard<T> {
      * @param action The function that receives the current value and returns the new value.
      */
     @Experimental(since: "0.1")
-    func write[self: Self!](action: (T) -> T) {
+    func !.write(action: (T) -> T) {
         mutex.lock()
         self._value = action(value)
         mutex.unlock()
@@ -72,7 +73,7 @@ impl Guard<T> {
      * @return The current value.
      */
     @Experimental(since: "0.1")
-    func get[self: Self&](): T {
+    func &.get(): T {
         mutex.lock()
         fin v = value
         mutex.unlock()
@@ -97,7 +98,7 @@ impl CountDownLatch<T> {
      * Decrements the latch count by one.
      */
     @Experimental(since: "0.1")
-    func countDown[self: Self!]() {
+    func !.countDown() {
         self.atomic.add(1)
     }
 
@@ -105,7 +106,7 @@ impl CountDownLatch<T> {
      * Whether the latch count has been reached.
      */
     @Experimental(since: "0.1")
-    prop isReached[self: Self&]: Bool = self.atomic.load() >= self.count
+    prop &.isReached: Bool = self.atomic.load() >= self.count
 }
 
 /**
@@ -126,7 +127,7 @@ impl SpinLock<T> {
      * Acquires the lock, spinning until successful.
      */
     @Experimental(since: "0.1")
-    func acquire[self: Self&]() {
+    func &.acquire() {
         while !flag.cas(0, 1) { }
     }
 
@@ -134,7 +135,7 @@ impl SpinLock<T> {
      * Releases the lock.
      */
     @Experimental(since: "0.1")
-    func release[self: Self&]() {
+    func &.release() {
         flag.store(0)
     }
 
@@ -144,7 +145,7 @@ impl SpinLock<T> {
      * @param action The function to execute under lock.
      */
     @Experimental(since: "0.1")
-    func withLock[self: Self&](action: () -> Unit) {
+    func &.withLock(action: () -> Unit) {
         self.acquire()
         action()
         self.release()
@@ -158,7 +159,7 @@ impl SpinLock<T> {
  * @param action The function to execute while holding the lock.
  */
 @Experimental(since: "0.1")
-func withMutex<T>(mutex: T, action: () -> Unit) {
+func<T> withMutex(mutex: T, action: () -> Unit) {
     mutex.lock()
     action()
     mutex.unlock()

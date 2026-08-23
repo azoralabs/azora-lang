@@ -25,7 +25,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 var value: Int
             }
-            func peek[self: Counter&](): Int {
+            func (self: Counter&).peek(): Int {
                 return self.value
             }
             func main() {
@@ -41,7 +41,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 var _value: Int
             }
-            func bump[self: Counter!]() {
+            func (self: Counter!).bump() {
                 self._value = self._value + 1
             }
             func main() {
@@ -60,10 +60,10 @@ class Feature003SyntaxTest {
                 var value: Int
             }
             impl pack Counter {
-                func bump[self: Self!]() {
+                func !.bump() {
                     self.value = self.value + 1
                 }
-                func peek[self: Self&](): Int {
+                func &.peek(): Int {
                     return self.value
                 }
             }
@@ -98,7 +98,7 @@ class Feature003SyntaxTest {
             pack Counter {
                 var value: Int
             }
-            func bump[self: Counter&]() {
+            func (self: Counter&).bump() {
                 self.value = self.value + 1
             }
             func main() {
@@ -132,15 +132,21 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Into<T>[self: Self&]: T use as "to${'$'}{T.typeName}"
-            spec From<T>[self: Self&]: T use as "from${'$'}{T.typeName}"
+            spec Into<T> {
+                prop<T> &.into: T
+                inline prop to${'$'}{T.typeName}: T = into<T>
+            }
+            spec From<T> {
+                prop<T> &.from: T
+                inline prop from${'$'}{T.typeName}: T = from<T>
+            }
             impl Into<String> for Label {
-                prop into[self: Self&]: String {
+                prop &.into: String {
                     return "Label(" + self.value + ")"
                 }
             }
             impl From<String> for Label {
-                prop from[self: Self&]: String {
+                prop &.from: String {
                     return "Label(" + self.value + ")"
                 }
             }
@@ -159,12 +165,12 @@ class Feature003SyntaxTest {
                 var value: String
             }
             impl Show<String> for Label {
-                prop show[self: Self&]: String {
+                prop &.show: String {
                     return "Label(" + self.value + ")"
                 }
             }
             spec Show<T> {
-                prop show<T>[self: Self&]: T
+                prop<T> &.show: T
                 inline prop show${'$'}{T.typeName}: T = show<T>
             }
             func main() {
@@ -181,11 +187,11 @@ class Feature003SyntaxTest {
                 var value: String
             }
             spec Render<T> {
-                prop render<T>[self: Self&]: T
+                prop<T> &.render: T
                 inline prop render: T = render<T>
             }
             impl Render<String> for Label {
-                prop render[self: Self&]: String {
+                prop &.render: String {
                     return "Label(" + self.value + ")"
                 }
             }
@@ -202,9 +208,12 @@ class Feature003SyntaxTest {
             pack Label {
                 var value: String
             }
-            spec Into<T>[self: Self&]: T use as "to${'$'}{T.typeName}"
+            spec Into<T> {
+                prop<T> &.into: T
+                inline prop to${'$'}{T.typeName}: T = into<T>
+            }
             impl Into<String> for Label {
-                prop into[self: Self&]: String {
+                prop &.into: String {
                     return self.value
                 }
             }
@@ -224,11 +233,11 @@ class Feature003SyntaxTest {
                 var value: Int
             }
             spec Extract<T> {
-                func extract<T>[self: Self&](): T
+                func<T> &.extract(): T
                 inline prop extract${'$'}{T.typeName}: T = extract<T>
             }
             impl Extract<Int> for Box {
-                func extract[self: Self&](): Int {
+                func &.extract(): Int {
                     return self.value
                 }
             }
@@ -244,11 +253,11 @@ class Feature003SyntaxTest {
                 var value: Int
             }
             spec Extract<T> {
-                func extract<T>[self: Self&](): T
+                func<T> &.extract(): T
                 inline prop extract${'$'}{T.typeName}: T = extract<T>
             }
             impl Extract<Int> for Box {
-                func extract[self: Self&](): Int {
+                func &.extract(): Int {
                     return self.value
                 }
             }
@@ -269,7 +278,7 @@ class Feature003SyntaxTest {
                 var value: String
             }
             impl Cast<String> for Label {
-                prop castValue[self: Self&]: String {
+                prop &.castValue: String {
                     return "cast:" + self.value
                 }
             }
@@ -288,7 +297,7 @@ class Feature003SyntaxTest {
                 var value: String
             }
             impl Cast<String> for Label {
-                prop castValue[self: Self&]: String {
+                prop &.castValue: String {
                     return "cast:" + self.value
                 }
             }
@@ -370,11 +379,11 @@ class Feature003SyntaxTest {
                 var value: Int
             }
             impl pack Counter {
-                func bump[self: Self!]() {
+                func !.bump() {
                     self.value = self.value + 1
                 }
             }
-            func peek[self: Counter&](): Int {
+            func (self: Counter&).peek(): Int {
                 return self.value
             }
                         react func main() {

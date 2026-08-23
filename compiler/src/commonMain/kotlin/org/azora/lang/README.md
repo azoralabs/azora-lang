@@ -389,11 +389,13 @@ Grouped:
 - **Memory and ownership**: `alloc` `purge` `take` `unsafe` `scope`
 - **FFI and DI**: `bridge` `solo` `graph` `inject`
 - **Reactivity**: `remember` `retain` `preserve` `effect`
-- **Metaprogramming**: `inline` `deepinline` `noinline` `macro` `derive`
-- **Modules and scoping**: `scope` `import` `use` `exposed` `protected` `confined`
+- **Metaprogramming**: `inline` `deepinline` `noinline` `macro` `derive` `with`
+  `without`
+- **Modules and scoping**: `scope` `import` `using` `exposed` `protected`
+  `confined`
 - **Annotations**: `annot` `bind`; contextual declaration clauses use `binds`
 - **Contracts and testing**: `out` `test` `assert` `trace`
-- **Expressions**: `as` `is` `null` `true` `false` `with`
+- **Expressions**: `as` `is` `null` `true` `false`
 
 `union` is contextual, so `Set.union(other)` still parses as a call.
 `module`, `async`, `where`, `without`, `replace`, `escaping`, `derives`,

@@ -143,7 +143,7 @@ enum TokenType {
     QMarkMinusMinus
     Null
     Import
-    Use
+    Using
     By
     Reverse
     At
@@ -209,36 +209,11 @@ enum TokenType {
 }
 
 /**
- * Enumerates the type suffix attached to a numeric literal.
- *
- * No suffix means the default type: [None] maps to `Int` for integer
- * literals and `Double` for floating-point literals.
- */
-enum NumericSuffix {
-    None        /** maps to `Int` or `Double` */
-
-    Byte        /** b */
-    Short       /** s */
-    Long        /** L */
-    Cent        /** c */
-
-    UByte       /** ub */
-    UShort      /** us */
-    UInt        /** u */
-    ULong       /** uL */
-    UCent       /** uc */
-
-    Float       /** f */
-    Quad        /** D */
-}
-
-/**
  * Pairs a numeric value with its suffix so the parser/IR generator can
  * produce the correct typed literal node.
  */
 pack NumericLiteral {
     fin value: Any
-    fin suffix: NumericSuffix = .None
     /** The exact digits, when they are wider than [value] can carry (a 128-bit literal). */
     fin text: String? = null
 }
@@ -272,7 +247,7 @@ variant enum StringPart {
  *   [TokenType.StringLiteral]), or `null` for non-literal tokens
  */
 pack Token {
-    fin ty: TokenType
+    fin type: TokenType
     fin lexeme: String
     fin line: Int
     fin column: Int = 0

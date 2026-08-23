@@ -113,7 +113,7 @@ class GenericRealTest {
     @Test fun aRealCrossesAGenericFunctionBoundary() {
         assertEquals("1.5", run("""
             import std.io
-            func identity<T>(value: T): T {
+            func<T> identity(value: T): T {
                 return value
             }
             func main() {

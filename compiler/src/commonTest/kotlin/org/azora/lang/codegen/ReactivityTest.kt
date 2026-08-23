@@ -40,7 +40,7 @@ class ReactivityTest {
             import std.io
             pack Counter { var base: Int = 0 }
             impl Counter {
-                react prop total[self: Self&]: Int {
+                react prop &.total: Int {
                     remember var value = 1
                     var observed = 0
                     effect { observed = value }
@@ -59,7 +59,7 @@ class ReactivityTest {
         val found = errors("""
             pack Counter { var base: Int = 0 }
             impl Counter {
-                prop total[self: Self&]: Int {
+                prop &.total: Int {
                     remember var value = 1
                     return value
                 }
@@ -93,7 +93,7 @@ class ReactivityTest {
 
             pack P { var n: Int = 0 }
             impl P {
-                react ctor[self: Self!](n: Int) {
+                react ctor .(n: Int) {
                     self.n = n
                 }
             }
@@ -384,7 +384,7 @@ class ReactivityTest {
                 var source = state(1)
                 var latest = 0
                 var calls = 0
-                var subscription = observe(source) [; latest.!, calls.!] { value: Int ->
+                var subscription = observe(source) [latest.!, calls.!] { value: Int ->
                     latest = value
                     calls += 1
                 }

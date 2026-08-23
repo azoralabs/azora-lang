@@ -202,9 +202,9 @@ The standard module exposes lower-case operations and small, typed contracts:
 import std.reactive
 
 var count = state(0)
-var subscription = observe(count, { value: Int ->
-    trace { "count = ${value}" }
-})
+var subscription = observe(count) {
+    trace { "count = ${it}" }
+}
 
 count.set(1)
 subscription.dispose()
@@ -264,21 +264,21 @@ keyword:
 ```azora
 spec AttemptSource
 
-func attempt<T, E, S>(
+func<T, E, S> attempt(
     source: S!,
     body: (Attempt<S>!) -> T ?! E
 ): T ?! E
 where S: AttemptSource
 ```
 
-`attempt(source) { attempt -> ... }` opens a journal through the source's
+`attempt(source) { ... }` opens a journal through the source's
 implementation. A successful body commits. A typed failure rolls back before
 it propagates. `defer` always runs. The transaction view is the only mutable
 view passed to the body, preventing accidental writes around the journal.
 
 ```azora
-fin updated = attempt(store) { attempt ->
-    fin count = attempt.write(counter)
+fin updated = attempt(store) {
+    fin count = it.write(counter)
     count.set(count.value + 1)
     return count.value
 }

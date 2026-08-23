@@ -46,14 +46,14 @@ impl Allocator for ArenaAllocator {
 ```
 
 ```azora
-unsafe func allocWith<T>(allocator: Allocator!, value: T): T^ ?! AllocError {
+unsafe func<T> allocWith(allocator: Allocator!, value: T): T^ ?! AllocError {
     fin memory = try allocator.allocate(T.sizeof, T.alignof) catch { return .OutOfMemory }
     fin pointer = bitcast<T^>(memory)
     pointer.^ = mov value // you need to add "mov" keyword like rust "move"
     return pointer
 }
 
-unsafe func purgeWith<T>(allocator: Allocator!, pointer: T^) {
+unsafe func<T> purgeWith(allocator: Allocator!, pointer: T^) {
     drop pointer.^
     allocator.deallocate(bitcast<Byte^>(pointer), T.sizeof, T.alignof)
 }

@@ -34,6 +34,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.container.list
 
 /**
@@ -47,58 +48,58 @@ module std.container.list
 @Experimental(since: "0.1")
 spec List<T> {
     /** Number of elements. */
-    prop size[self: Self&]: Int
+    prop &.size: Int
 
     /** Whether this list has no elements. */
-    prop isEmpty[self: Self&]: Bool
+    prop &.isEmpty: Bool
 
     /** Whether this list has at least one element. */
-    prop isNotEmpty[self: Self&]: Bool
+    prop &.isNotEmpty: Bool
 
     /** The first element. Asserts when empty. */
-    prop first[self: Self&]: T
+    prop &.first: T
 
     /** The last element. Asserts when empty. */
-    prop last[self: Self&]: T
+    prop &.last: T
 
     /** A new list with the elements of this one in reverse order. */
-    prop reversed[self: Self&]: List<T>
+    prop &.reversed: List<T>
 
     /** Returns the element at `index`. Asserts on an out-of-bounds index. */
-    func get[self: Self&](index: Int): T
+    func &.get(index: Int): T
 
     /** Returns whether `element` is present. */
-    func contains[self: Self&](element: T): Bool
+    func &.contains(element: T): Bool
 
     /** Returns the first index of `element`, or `-1` when absent. */
-    func indexOf[self: Self&](element: T): Int
+    func &.indexOf(element: T): Int
 
     /** Returns the last index of `element`, or `-1` when absent. */
-    func lastIndexOf[self: Self&](element: T): Int
+    func &.lastIndexOf(element: T): Int
 
     /** Invokes `action` once for every element in order. */
-    func forEach[self: Self&](action: (T) -> Unit)
+    func &.forEach(action: (T) -> Unit)
 
     /** Returns a new list with each element transformed by `transform`. */
-    func map[self: Self&](transform: (T) -> T): List<T>
+    func &.map(transform: (T) -> T): List<T>
 
     /** Returns a new list with only elements satisfying `predicate`. */
-    func filter[self: Self&](predicate: (T) -> Bool): List<T>
+    func &.filter(predicate: (T) -> Bool): List<T>
 
     /** Returns whether at least one element satisfies `predicate`. */
-    func any[self: Self&](predicate: (T) -> Bool): Bool
+    func &.any(predicate: (T) -> Bool): Bool
 
     /** Returns whether every element satisfies `predicate`. */
-    func all[self: Self&](predicate: (T) -> Bool): Bool
+    func &.all(predicate: (T) -> Bool): Bool
 
     /** Returns whether no element satisfies `predicate`. */
-    func none[self: Self&](predicate: (T) -> Bool): Bool
+    func &.none(predicate: (T) -> Bool): Bool
 
     /** Counts the elements satisfying `predicate`. */
-    func count[self: Self&](predicate: (T) -> Bool): Int
+    func &.count(predicate: (T) -> Bool): Int
 
     /** Returns a half-open `[from, to)` snapshot of this list. */
-    func subList[self: Self&](from: Int, to: Int): List<T>
+    func &.subList(from: Int, to: Int): List<T>
 }
 
 /**
@@ -120,25 +121,25 @@ derive Clone for List
 @Experimental(since: "0.1")
 spec MutableList<T> : List<T> {
     /** Appends `element` to the end. */
-    func add[self: Self&](element: T)
+    func &.add(element: T)
 
     /** Inserts `element` at `index`, shifting the suffix right. */
-    func insert[self: Self&](index: Int, element: T)
+    func &.insert(index: Int, element: T)
 
     /** Replaces the element at `index`. */
-    func set[self: Self&](index: Int, element: T)
+    func &.set(index: Int, element: T)
 
     /** Removes and returns the element at `index`. */
-    func removeAt[self: Self&](index: Int): T
+    func &.removeAt(index: Int): T
 
     /** Removes and returns the first element. */
-    func removeFirst[self: Self&](): T
+    func &.removeFirst(): T
 
     /** Removes and returns the last element. */
-    func removeLast[self: Self&](): T
+    func &.removeLast(): T
 
     /** Removes every element while retaining reusable internal capacity. */
-    func clear[self: Self&]()
+    func &.clear()
 }
 
 /**
@@ -160,21 +161,21 @@ pack ArrayList<T> {
 
 impl ArrayList<T> {
     // this is .() * 7
-    ctor[self: Self!]() * count {
+    ctor .() * count {
         self._data = alloc .() * count
         self._size = count
         self._capacity = count
     }
 
     // this is .(1, 2, 3)
-    ctor[self: Self!](...args: T) {
+    ctor .(...args: T) {
         self._data = alloc args
         self._size = args.length
         self._capacity = args.length
     }
 
     // this is .(5) * 10
-    ctor[self: Self!](fill: T) * count {
+    ctor .(fill: T) * count {
         self._data = alloc .(fill) * count
         self._size = count
         self._capacity = count
@@ -189,7 +190,7 @@ impl ArrayList<T> {
 
 @Since("0.1")
 impl Clone for ArrayList {
-    func clone[self&]() {
+    func &.clone() {
         var copy: ArrayList<T> = .()
         for i in 0..<self._size {
             copy.add(self._data[i])
@@ -205,7 +206,7 @@ impl Clone for ArrayList {
 impl ArrayList<T> {
     /** Doubles the backing buffer, copying existing elements. */
     @Experimental(since: "0.1")
-    func grow[self!]() {
+    func !.grow() {
         fin newCap = self._capacity * 2
         let newData: T* = alloc .() * newCap
         for i in 0..<self._size {
@@ -219,35 +220,35 @@ impl ArrayList<T> {
 }
 
 impl List<T> for ArrayList<T> {
-    prop size[self&]: Int = self._size
-    prop isEmpty[self&]: Bool = self._size == 0
-    prop isNotEmpty[self&]: Bool = self._size > 0
+    prop &.size: Int = self._size
+    prop &.isEmpty: Bool = self._size == 0
+    prop &.isNotEmpty: Bool = self._size > 0
 
-    prop first[self&]: T
+    prop &.first: T
     in {
         assert self._size > 0 { "List is empty" }
     } scope {
         return self._data[0]
     }
 
-    prop last[self&]: T
+    prop &.last: T
     in {
         assert self._size > 0 { "List is empty" }
     } scope {
         return self._data[self._size - 1]
     }
 
-    prop reversed[self&]: List<T> {
+    prop &.reversed: List<T> {
         var result: ArrayList<T> = .()
         var i = self._size - 1
         while i >= 0 {
             result.add(self._data[i])
-            i -= 1
+            i--
         }
         return result
     }
 
-    func get[self&](index: Int): T
+    func &.get(index: Int): T
     in {
         assert index >= 0 { "List index must be non-negative" }
         assert index < self._size { "List index out of bounds" }
@@ -255,7 +256,7 @@ impl List<T> for ArrayList<T> {
         return self._data[index]
     }
 
-    func contains[self&](element: T): Bool {
+    func &.contains(element: T): Bool {
         for i in 0..<self._size {
             if self._data[i] == element {
                 return true
@@ -264,7 +265,7 @@ impl List<T> for ArrayList<T> {
         return false
     }
 
-    func indexOf[self&](element: T): Int {
+    func &.indexOf(element: T): Int {
         for i in 0..<self._size {
             if self._data[i] == element {
                 return i
@@ -273,7 +274,7 @@ impl List<T> for ArrayList<T> {
         return -1
     }
 
-    func lastIndexOf[self&](element: T): Int {
+    func &.lastIndexOf(element: T): Int {
         var result = -1
         for i in 0..<self._size {
             if self._data[i] == element {
@@ -283,13 +284,13 @@ impl List<T> for ArrayList<T> {
         return result
     }
 
-    func forEach[self&](action: (T) -> Unit) {
+    func &.forEach(action: (T) -> Unit) {
         for i in 0..<self._size {
             action(self._data[i])
         }
     }
 
-    func map[self&](transform: (T) -> T): List<T> {
+    func &.map(transform: (T) -> T): List<T> {
         var result: ArrayList<T> = .()
         for i in 0..<self._size {
             result.add(transform(self._data[i]))
@@ -297,7 +298,7 @@ impl List<T> for ArrayList<T> {
         return result
     }
 
-    func filter[self&](predicate: (T) -> Bool): List<T> {
+    func &.filter(predicate: (T) -> Bool): List<T> {
         var result: ArrayList<T> = .()
         for i in 0..<self._size {
             if predicate(self._data[i]) {
@@ -307,7 +308,7 @@ impl List<T> for ArrayList<T> {
         return result
     }
 
-    func any[self&](predicate: (T) -> Bool): Bool {
+    func &.any(predicate: (T) -> Bool): Bool {
         return for i in 0..<self._size {
             if predicate(self._data[i]) {
                 true
@@ -315,7 +316,7 @@ impl List<T> for ArrayList<T> {
         } else { false }
     }
 
-    func all[self&](predicate: (T) -> Bool): Bool {
+    func &.all(predicate: (T) -> Bool): Bool {
         return for i in 0..<self._size {
             if !predicate(self._data[i]) {
                 false
@@ -323,7 +324,7 @@ impl List<T> for ArrayList<T> {
         } else { true }
     }
 
-    func none[self&](predicate: (T) -> Bool): Bool {
+    func &.none(predicate: (T) -> Bool): Bool {
         return for i in 0..<self._size {
             if predicate(self._data[i]) {
                 false
@@ -331,17 +332,17 @@ impl List<T> for ArrayList<T> {
         } else { true }
     }
 
-    func count[self&](predicate: (T) -> Bool): Int {
+    func &.count(predicate: (T) -> Bool): Int {
         var c = 0
         for i in 0..<self._size {
             if predicate(self._data[i]) {
-                c += 1
+                c++
             }
         }
         return c
     }
 
-    func subList[self&](from: Int, to: Int): List<T> in {
+    func &.subList(from: Int, to: Int): List<T> in {
         assert from >= 0 { "subList from must be non-negative" }
         assert to <= self._size { "subList to out of bounds" }
         assert from <= to { "subList from must be <= to" }
@@ -355,7 +356,7 @@ impl List<T> for ArrayList<T> {
 }
 
 impl MutableList<T> for ArrayList<T> {
-    func add[self!](element: T) {
+    func !.add(element: T) {
         if self._size >= self._capacity {
             self.grow()
         }
@@ -363,7 +364,7 @@ impl MutableList<T> for ArrayList<T> {
         self._size++
     }
 
-    func insert[self!](index: Int, element: T)
+    func !.insert(index: Int, element: T)
     in {
         assert index >= 0 { "Insert index must be non-negative" }
         assert index <= self._size { "Insert index out of bounds" }
@@ -374,13 +375,13 @@ impl MutableList<T> for ArrayList<T> {
         var i = self._size
         while i > index {
             self._data[i] = self._data[i - 1]
-            i -= 1
+            i--
         }
         self._data[index] = element
         self._size++
     }
 
-    func set[self!](index: Int, element: T)
+    func !.set(index: Int, element: T)
     in {
         assert index >= 0 { "Set index must be non-negative" }
         assert index < self._size { "Set index out of bounds" }
@@ -388,7 +389,7 @@ impl MutableList<T> for ArrayList<T> {
         self._data[index] = element
     }
 
-    func removeAt[self!](index: Int): T
+    func !.removeAt(index: Int): T
     in {
         assert index >= 0 { "Remove index must be non-negative" }
         assert index < self._size { "Remove index out of bounds" }
@@ -401,14 +402,14 @@ impl MutableList<T> for ArrayList<T> {
         return removed
     }
 
-    func removeFirst[self!](): T
+    func !.removeFirst(): T
     in {
         assert self._size > 0 { "List is empty" }
     } scope {
         return self.removeAt(0)
     }
 
-    func removeLast[self!](): T
+    func !.removeLast(): T
     in {
         assert self._size > 0 { "List is empty" }
     } scope {
@@ -417,7 +418,7 @@ impl MutableList<T> for ArrayList<T> {
         return removed
     }
 
-    func clear[self!]() {
+    func !.clear() {
         fin oldData = self._data
         self._data = alloc .() * 8
         self._size = 0
@@ -431,7 +432,7 @@ impl MutableList<T> for ArrayList<T> {
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-func listOf<T>(...elements: T): List<T> {
+func<T> listOf(...elements: T): List<T> {
     var result: ArrayList<T> = .()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -440,7 +441,7 @@ func listOf<T>(...elements: T): List<T> {
 }
 
 @Experimental(since: "0.1")
-func mutableListOf<T>(...elements: T): MutableList<T> {
+func<T> mutableListOf(...elements: T): MutableList<T> {
     var result: ArrayList<T> = .()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -449,7 +450,7 @@ func mutableListOf<T>(...elements: T): MutableList<T> {
 }
 
 @Experimental(since: "0.1")
-func arrayListOf<T>(...elements: T): ArrayList<T> {
+func<T> arrayListOf(...elements: T): ArrayList<T> {
     var result: ArrayList<T> = .()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -479,7 +480,7 @@ oper[]= [self: ArrayList<T>!](index: Int, element: T) {
 
 @Experimental(since: "0.1")
 impl Into<String> for ArrayList<T> {
-    prop into[self&]: String {
+    prop &.into: String {
         var s = "["
         for i in 0..<self._size {
             s += if i > 0 { ", " } else { self._data[i] as String }
@@ -507,7 +508,7 @@ oper!= [self: ArrayList<T>&](rhs: List<T>): Bool {
 
 @Experimental(since: "0.1")
 impl ArrayList<T> {
-    prop hash[self&]: ULong {
+    prop &.hash: ULong {
         var result = 0 as ULong
         for i in 0..<self._size {
             result += self._data[i].hash

@@ -28,9 +28,9 @@ import kotlin.test.assertTrue
  *
  * ```
  * impl A {
- *     func x[self&]() {}   // borrowed, read-only
- *     func y[self!]() {}   // borrowed, mutable
- *     func c[self]() {}    // owned, consuming
+ *     func &.x() {}   // borrowed, read-only
+ *     func !.y() {}   // borrowed, mutable
+ *     func .c() {}    // owned, consuming
  *     func z() {}          // no receiver at all - a static, see S5.1
  * }
  * ```
@@ -48,9 +48,9 @@ class ReceiverShorthandTest {
 
     @Test fun eachBorrowHasItsOwnShorthand() {
         val source = impl(
-            "func x[self&]() {}",
-            "func y[self!]() {}",
-            "func c[self]() {}",
+            "func &.x() {}",
+            "func !.y() {}",
+            "func .c() {}",
         )
 
         assertEquals(ParamModifier.SHARED, member(source, "x").receiverModifier)
@@ -64,8 +64,8 @@ class ReceiverShorthandTest {
     }
 
     @Test fun theShortAndLongSpellingsAgree() {
-        val short = impl("func x[self&]() {}", "func y[self!]() {}")
-        val long = impl("func x[self: Self&]() {}", "func y[self: Self!]() {}")
+        val short = impl("func &.x() {}", "func !.y() {}")
+        val long = impl("func &.x() {}", "func !.y() {}")
 
         for (name in listOf("x", "y")) {
             assertEquals(
@@ -77,16 +77,16 @@ class ReceiverShorthandTest {
     }
 
     @Test fun aReceiverTheMemberDoesNotUseNeedsNoName() {
-        val source = impl("func x[&]() {}", "func y[!]() {}")
+        val source = impl("func &.x() {}", "func !.y() {}")
 
-        assertEquals("_", member(source, "x").receiverName)
+        assertEquals("self", member(source, "x").receiverName)
         assertEquals(ParamModifier.SHARED, member(source, "x").receiverModifier)
-        assertEquals("_", member(source, "y").receiverName)
+        assertEquals("self", member(source, "y").receiverName)
         assertEquals(ParamModifier.EXCLUSIVE, member(source, "y").receiverModifier)
     }
 
     @Test fun aPropertyTakesTheShorthandToo() {
-        val source = impl("prop isEmpty[self&]: Bool = self.size == 0")
+        val source = impl("prop &.isEmpty: Bool = self.size == 0")
         assertEquals(ParamModifier.SHARED, member(source, "isEmpty").receiverModifier)
         assertEquals("self", member(source, "isEmpty").receiverName)
     }
@@ -110,9 +110,9 @@ class ReceiverShorthandTest {
     @Test fun theShorthandIsOnlyForBodiesThatKnowTheirSelf() {
         // A free function has no `Self` to leave out.
         val message = assertFailsWith<Exception> {
-            Parser(Lexer("func x[self&]() {}").tokenize()).parse()
+            Parser(Lexer("func &.x() {}").tokenize()).parse()
         }.message.orEmpty()
-        assertTrue("must name its type" in message, message)
+        assertTrue("require an impl or spec" in message && "(self: Type&).member" in message, message)
     }
 
     @Test fun aSpecMemberTakesTheShorthand() {
@@ -122,8 +122,8 @@ class ReceiverShorthandTest {
             Lexer(
                 """
                 spec Map<K, V> {
-                    prop size[self&]: Int
-                    func firstKey[self&](): K?
+                    prop &.size: Int
+                    func &.firstKey(): K?
                 }
                 """.trimIndent(),
             ).tokenize(),

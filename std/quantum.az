@@ -25,12 +25,13 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.quantum
 
-import std.[
-    container.[array::*, list::*]
+import std::{
+    container::{array::*, list::*}
     math::*
-]
+}
 
 /** The operation vocabulary understood by the portable circuit IR. */
 @Experimental(since: "0.1")
@@ -100,7 +101,7 @@ func circuit(qubits: Int): Circuit {
 impl Circuit {
     /** Adds a fully specified operation to the circuit. */
     @Experimental(since: "0.1")
-    func add[self: Self!](operation: Gate) {
+    func !.add(operation: Gate) {
         assert operation.target >= 0 && operation.target < self.qubits {
             "gate target is outside the circuit"
         }
@@ -115,70 +116,70 @@ impl Circuit {
 
     /** Appends a Hadamard gate. */
     @Experimental(since: "0.1")
-    func h[self: Self!](target: Int) {
+    func !.h(target: Int) {
         self.add(Gate(GateKind.H, target, -1, 0.0))
     }
 
     /** Appends a Pauli-X gate. */
     @Experimental(since: "0.1")
-    func x[self: Self!](target: Int) {
+    func !.x(target: Int) {
         self.add(Gate(GateKind.X, target, -1, 0.0))
     }
 
     /** Appends a Pauli-Y gate. */
     @Experimental(since: "0.1")
-    func y[self: Self!](target: Int) {
+    func !.y(target: Int) {
         self.add(Gate(GateKind.Y, target, -1, 0.0))
     }
 
     /** Appends a Pauli-Z gate. */
     @Experimental(since: "0.1")
-    func z[self: Self!](target: Int) {
+    func !.z(target: Int) {
         self.add(Gate(GateKind.Z, target, -1, 0.0))
     }
 
     /** Appends an arbitrary-angle X rotation, in radians. */
     @Experimental(since: "0.1")
-    func rotateX[self: Self!](target: Int, angle: Double) {
+    func !.rotateX(target: Int, angle: Double) {
         self.add(Gate(GateKind.Rx, target, -1, angle))
     }
 
     /** Appends an arbitrary-angle Y rotation, in radians. */
     @Experimental(since: "0.1")
-    func rotateY[self: Self!](target: Int, angle: Double) {
+    func !.rotateY(target: Int, angle: Double) {
         self.add(Gate(GateKind.Ry, target, -1, angle))
     }
 
     /** Appends an arbitrary-angle Z rotation, in radians. */
     @Experimental(since: "0.1")
-    func rotateZ[self: Self!](target: Int, angle: Double) {
+    func !.rotateZ(target: Int, angle: Double) {
         self.add(Gate(GateKind.Rz, target, -1, angle))
     }
 
     /** Appends a controlled-NOT gate. */
     @Experimental(since: "0.1")
-    func cnot[self: Self!](control: Int, target: Int) {
+    func !.cnot(control: Int, target: Int) {
         assert control != target { "a controlled gate needs two qubits" }
         self.add(Gate(GateKind.CNot, target, control, 0.0))
     }
 
     /** Appends a controlled phase rotation, in radians. */
     @Experimental(since: "0.1")
-    func controlledPhase[self: Self!](control: Int, target: Int, angle: Double) {
+    func !.controlledPhase(control: Int, target: Int, angle: Double) {
         assert control != target { "a controlled gate needs two qubits" }
         self.add(Gate(GateKind.ControlledPhase, target, control, angle))
     }
 
     /** Appends a swap gate. */
     @Experimental(since: "0.1")
-    func swap[self: Self!](first: Int, second: Int) {
+    func !.swap(first: Int, second: Int) {
         assert first != second { "a swap gate needs two qubits" }
         self.add(Gate(GateKind.Swap, first, second, 0.0))
     }
 
     /** Appends a measurement in the requested basis. */
     @Experimental(since: "0.1")
-    func measure[self: Self!](target: Int, basis: MeasurementBasis): Unit {
+    func !.measure(target: Int, basis: MeasurementBasis): Unit {
         fin basisCode = if basis == MeasurementBasis.X {
             1
         } else if basis == MeasurementBasis.Y {
@@ -191,19 +192,19 @@ impl Circuit {
 
     /** Appends the portable marked-state phase oracle used by Grover. */
     @Experimental(since: "0.1")
-    func markState[self: Self!](state: Int) {
+    func !.markState(state: Int) {
         self.add(Gate(GateKind.MultiControlledZ, 0, -1, state as Double))
     }
 
     /** Appends a classical feed-forward X correction. */
     @Experimental(since: "0.1")
-    func classicalX[self: Self!](target: Int, bit: Int) {
+    func !.classicalX(target: Int, bit: Int) {
         self.add(Gate(GateKind.ClassicalX, target, bit, 0.0))
     }
 
     /** Appends a classical feed-forward Z correction. */
     @Experimental(since: "0.1")
-    func classicalZ[self: Self!](target: Int, bit: Int) {
+    func !.classicalZ(target: Int, bit: Int) {
         self.add(Gate(GateKind.ClassicalZ, target, bit, 0.0))
     }
 }

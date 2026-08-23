@@ -12,6 +12,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.memory.slice
 
 @Since("0.1")
@@ -35,19 +36,19 @@ oper[]= [self: Slice<T>!](index: Int, value: T) {
 impl Slice<T> {
     /** `true` when the slice has no elements. */
     @Since("0.1")
-    prop isEmpty[self: Self&]: Bool = self.count == 0
+    prop &.isEmpty: Bool = self.count == 0
 
     /** `true` when the slice has at least one element. */
     @Since("0.1")
-    prop isNotEmpty[self: Self&]: Bool = self.count > 0
+    prop &.isNotEmpty: Bool = self.count > 0
 
     /** Returns the raw underlying `T*`. */
     @Since("0.1")
-    prop ptr[self: Self&]: T* = self._raw
+    prop &.ptr: T* = self._raw
 
     /** Returns a sub-slice `[start, start+count)`; asserts bounds. */
     @Experimental(since: "0.1")
-    func sub[self: Self&](start: Int, count: Int): Slice<T> {
+    func &.sub(start: Int, count: Int): Slice<T> {
         assert start >= 0 { "Slice start must be non-negative" }
         assert count >= 0 { "Slice count must be non-negative" }
         assert start + count <= self.count { "Slice range out of bounds" }
@@ -57,12 +58,12 @@ impl Slice<T> {
 
 /** Constructs a `Slice<T>` over [length] elements starting at [ptr]. */
 @Experimental(since: "0.1")
-func sliceOf<T>(ptr: T*, length: Int): Slice<T> {
+func<T> sliceOf(ptr: T*, length: Int): Slice<T> {
     return Slice(ptr, length)
 }
 
 /** Alias of [sliceOf]. */
 @Experimental(since: "0.1")
-func ptrSlice<T>(ptr: T*, length: Int): Slice<T> {
+func<T> ptrSlice(ptr: T*, length: Int): Slice<T> {
     return sliceOf(ptr, length)
 }

@@ -241,7 +241,7 @@ internal object SourceSymbolValidator {
             is Stmt.Try -> { statement.catchName?.let { declaration(it, "catch variable", statement.line) }; statement.body.forEach(::statement); statement.catchBody?.forEach(::statement) }
             is Stmt.Defer -> statement.body.forEach(::statement)
             is Stmt.Effect -> { statement.dependencies?.forEach(::expression); statement.body.forEach(::statement) }
-            is Stmt.WithContext -> { statement.values.forEach(::expression); statement.body.forEach(::statement) }
+            is Stmt.UsingContext -> { statement.values.forEach(::expression); statement.body.forEach(::statement) }
         }
     }
 

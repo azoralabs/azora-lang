@@ -24,6 +24,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.parallelism.channel
 
 /**
@@ -46,15 +47,15 @@ impl Channel<T> {
 
     /** The number of messages currently in the channel. */
     @Since("0.1")
-    prop length[self: Self&]: Int = queue.length
+    prop &.length: Int = queue.length
 
     /** Whether the channel has no messages. */
     @Since("0.1")
-    prop isEmpty[self: Self&]: Bool = queue.isEmpty
+    prop &.isEmpty: Bool = queue.isEmpty
 
     /** Whether the channel has been closed. */
     @Since("0.1")
-    prop isClosed[self: Self&]: Bool = closed
+    prop &.isClosed: Bool = closed
 
     // --- Operations ---
 
@@ -65,7 +66,7 @@ impl Channel<T> {
      * @throws AssertionError if the channel is closed.
      */
     @Experimental(since: "0.1")
-    func send[self: Self!](value: T) {
+    func !.send(value: T) {
         assert !closed { "Cannot send on closed channel" }
         mutex.lock()
         queue.enqueue(value)
@@ -79,7 +80,7 @@ impl Channel<T> {
      * @throws AssertionError if the channel is empty.
      */
     @Experimental(since: "0.1")
-    func receive[self: Self!](): T {
+    func !.receive(): T {
         assert queue.isNotEmpty { "Channel is empty" }
         mutex.lock()
         fin value = queue.dequeue()
@@ -94,7 +95,7 @@ impl Channel<T> {
      * @return The next message, or the default value if empty.
      */
     @Experimental(since: "0.1")
-    func tryReceive[self: Self!](default: T): T {
+    func !.tryReceive(default: T): T {
         mutex.lock()
         if queue.isEmpty {
             mutex.unlock()
@@ -109,7 +110,7 @@ impl Channel<T> {
      * Closes the channel, preventing further sends.
      */
     @Since("0.1")
-    func close[self: Self!]() {
+    func !.close() {
         self._closed = true
     }
 }

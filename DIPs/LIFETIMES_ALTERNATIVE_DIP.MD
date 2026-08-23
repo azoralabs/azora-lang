@@ -17,11 +17,11 @@ Take away the escape and the proof becomes trivial. That is the whole proposal.
 Concretely, `&` and `!` may appear in exactly three places:
 
 1. a parameter type - `func serialField(value: SerialValue&, name: String)`
-2. a receiver - `prop width[self: Model&]: Double`, `func toAzon[self&](value: T&)`
+2. a receiver - `prop Model&.width: Double`, `func &.toAzon(value: T&)`
 3. a local binding whose initialiser is one of the above
 
-4. a return type, **when exactly one input borrow could have produced it** - see *Returning
-   a borrow*, below
+4. a return type, when its origin is inferable or explicitly fenced as
+   `T&|source|` / `T&|left, right|` - see *Returning a borrow*, below
 
 and in neither of these:
 
@@ -38,7 +38,7 @@ Returning a borrow is genuinely useful and the language already relies on it. `a
 has three of them:
 
 ```azora
-func setClearColor(r: Double, g: Double, b: Double): Engine! { self! ->
+func Engine!.setClearColor(r: Double, g: Double, b: Double): Engine!|self| {
     self.clearR = r
     return self
 }
@@ -48,27 +48,26 @@ Fluent chaining, an accessor handing back a mutable element, a view over one con
 these all want the reference to escape the call, and forbidding them outright would be a
 worse language, not a safer one.
 
-They are safe without annotation for one reason: **there is only one thing the returned
-borrow could have come from.** When a function has exactly one borrow among its inputs
-(receiver included), "how long does the result live" has a single possible answer - as long
-as that input - so there is nothing to name. This is Rust's *lifetime elision*, which is
-why most Rust functions carry no `'a` either. The proposal is to keep the elision and drop
-the general case that made annotations necessary.
+They are safe without Rust-style lifetime parameters because Azora either has
+one inferable input origin or records a finite set of input origins directly on
+the returned borrow. `T&|source|` names a source binding, not an abstract
+lifetime variable.
 
 The rule:
 
-- **exactly one input borrow** - a returned borrow is derived from it. Allowed, no syntax.
+- **exactly one input borrow** - a returned borrow may infer that origin in a
+  private implementation; a public/spec signature writes `T&|source|`.
 - **no input borrow** - there is nothing to derive from, so a returned borrow would point at
   a local. Rejected.
-- **two or more input borrows** - ambiguous; the compiler will not guess. Rejected, with the
-  suggestion to return a value or an index instead.
+- **two or more input borrows** - inference does not guess. The signature must
+  state every possible source, for example `T&|left, right|`.
 
 One local check backs it: the returned expression must actually be reachable from that input
 borrow, not from a local or a temporary. `return self` passes; `return localNode&` does not.
 
-The third case is the only expressiveness this proposal really gives up, and it is the rare
-one - `fn longest(a: &str, b: &str) -> &str` is the textbook example precisely because it
-takes effort to think of.
+The fence may contain only receiver/parameter origins (including positional
+`self.0`) and may not be empty. It therefore expresses Rust's `longest` case
+without exposing arbitrary lifetime names or lifetime algebra.
 
 ### This is already how Azora is written
 
@@ -98,8 +97,11 @@ println(a.name)   // error: 'a' was moved on line 2
 the same dataflow the compiler already runs for `purge` - a moved-from binding and a purged
 binding are both "no longer yours", and one analysis answers both.
 
-Destruction is deterministic: a value's `dtor` runs when its owner goes out of scope, and
-`purge` runs it early. No collector, no pauses.
+Destruction is deterministic: a value's owned-instance `dtor .()` runs exactly
+once when its owner goes out of scope, and `purge` runs it early. A shared or
+mutable borrow never has a destructor and never invokes lifecycle code when the
+borrow ends. `dtor ()` is instead the receiver-free static shutdown hook. No
+collector, no pauses.
 
 ## Escaping is possible, and it is spelled
 
@@ -137,7 +139,7 @@ checker: the property is a fact about a type, computed once from its fields.
 Deterministic destruction means the ordinary cases cannot leak:
 
 - a value owned by a scope is destroyed at scope exit,
-- `Unique<T>` destroys its pointee in its `dtor`,
+- `Unique<T>` destroys its pointee in its `dtor .()`,
 
 **One hole, stated plainly: cycles among `Shared`/`SyncShared` leak.** Reference counting
 cannot reclaim a cycle without a collector, and no annotation scheme fixes that - Rust has
@@ -164,7 +166,8 @@ Where a borrowing view really is wanted, `Slice<T>` over a raw pointer is availa
 
 ## What it buys
 
-- No lifetime syntax anywhere in the language.
+- No abstract lifetime variables, bounds, or lifetime algebra in the language;
+  origin fences name concrete inputs only.
 - No inference to explain when it fails, and no signature churn when it changes.
 - A safety check that is **local to a single function** and cheap to run.
 - Deterministic destruction, so no collector and no pauses.
@@ -177,8 +180,9 @@ Roughly in dependency order:
 1. **Reject borrows in field position**, and apply the elision rule to returns. Parser and
    type resolver; the diagnostic should name the position (`a pack field cannot hold a
    borrow - store the value, or take it as a parameter`). The field rule costs nothing
-   today; the return rule accepts the engine's existing `Engine!` chaining and rejects only
-   the ambiguous multi-borrow case, of which there are none.
+   today; the return rule accepts existing chaining, infers a sole private
+   origin, and requires an explicit `|a, b|` fence for public multi-origin
+   returns.
 
 2. **`mov` and use-after-move.** Extend `AllocDropAnalyzer`, which already does liveness, to
    mark a binding dead after `mov` or `purge` and report any later use.

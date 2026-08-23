@@ -130,7 +130,7 @@ class ContractsTest {
             import std.io
             pack Counter { var value: Int }
             impl Counter {
-                prop current[self: Self&]: Int
+                prop &.current: Int
                 in {
                     assert self.value >= 0 { "counter must not be negative" }
                 } out { result ->

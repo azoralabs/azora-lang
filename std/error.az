@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+@Supress(.Unused)
 module std.error
 
 variant error IndexError {

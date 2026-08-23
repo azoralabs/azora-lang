@@ -59,15 +59,15 @@ class CtorOverloadTest {
         }
 
         impl Buffer {
-            ctor[self: Self!]() * count {
+            ctor .() * count {
                 self.size = count
             }
 
-            ctor[self: Self!](initial: Int) {
+            ctor .(initial: Int) {
                 self.size = initial
             }
 
-            ctor[self: Self!](fill: Int) * count {
+            ctor .(fill: Int) * count {
                 self.size = count
                 self.fill = fill
             }
@@ -117,7 +117,7 @@ class CtorOverloadTest {
             }
 
             impl Point {
-                ctor[self: Self!](x: Int) {
+                ctor .(x: Int) {
                     self.x = x
                 }
             }
@@ -151,9 +151,9 @@ class CtorOverloadTest {
         }
 
         impl Bag<T> {
-            prop count[self: Self&]: Int = self._n
+            prop &.count: Int = self._n
 
-            ctor[self: Self!](...args: T) {
+            ctor .(...args: T) {
                 self._items = alloc args
                 self._n = args.length
             }
@@ -195,7 +195,7 @@ class CtorOverloadTest {
                 var _items: T* = null
             }
             impl Bag<T> {
-                ctor[self: Self!](...args: T) {
+                ctor .(...args: T) {
                     self._items = alloc .(
                         inline for e in args { e }
                     )

@@ -108,7 +108,7 @@ object AzoraSyntaxVocabulary {
         "is" to TokenType.IS,
         "null" to TokenType.NULL,
         "import" to TokenType.IMPORT,
-        "use" to TokenType.USE,
+        "using" to TokenType.USING,
         "true" to TokenType.TRUE,
         "false" to TokenType.FALSE,
     )

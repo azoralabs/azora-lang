@@ -305,7 +305,7 @@ object SerializationDeriver {
         helpers: Helpers,
     ): String = buildString {
         appendLine("impl ${pack.name} {")
-        appendLine("    func toSerialValue[self: Self&](value: ${pack.name}&): SerialValue ?! SerializationError {")
+        appendLine("    func &.toSerialValue(value: ${pack.name}&): SerialValue ?! SerializationError {")
         appendLine("        var __serialFields = ArrayList<SerialField>()")
         fields.filterNot { it.ignored }.forEach { plan ->
             val encoded = appendEncodedField(plan, helpers)
@@ -320,7 +320,7 @@ object SerializationDeriver {
         appendLine("        return SerialValue.Object(__serialFields)")
         appendLine("    }")
         appendLine()
-        appendLine("    func fromSerialValue[self: Self&](value: SerialValue&): ${pack.name} ?! SerializationError {")
+        appendLine("    func &.fromSerialValue(value: SerialValue&): ${pack.name} ?! SerializationError {")
         appendLine("        when value {")
         appendLine("            SerialValue.Object(__serialFields) -> {")
         fields.filterNot { it.ignored }.forEach { plan ->
@@ -459,12 +459,12 @@ object SerializationDeriver {
      */
     private fun StringBuilder.appendTextMethods(typeName: String, helpers: Helpers) {
         appendLine()
-        appendLine("    func toAzon[self: Self&](value: $typeName&, options: SerializerOptions&): String ?! SerializationError {")
+        appendLine("    func &.toAzon(value: $typeName&, options: SerializerOptions&): String ?! SerializationError {")
         appendLine("        fin __serialValue = try self.toSerialValue(value)")
         appendLine("        return try ${qualified(helpers.provider, "encodeSerialValue")}(__serialValue, options)")
         appendLine("    }")
         appendLine()
-        appendLine("    func fromAzon[self: Self&](input: String, options: SerializerOptions&): $typeName ?! SerializationError {")
+        appendLine("    func &.fromAzon(input: String, options: SerializerOptions&): $typeName ?! SerializationError {")
         appendLine("        fin __serialValue = try ${qualified(helpers.provider, "decodeSerialValue")}(input, options)")
         appendLine("        return try self.fromSerialValue(__serialValue)")
         appendLine("    }")
@@ -524,7 +524,15 @@ object SerializationDeriver {
         } else {
             "${renderType(type.ok)} ?! [${type.errSets.joinToString(", ")}]"
         }
-        is TypeRef.Reference -> "${type.kind.spelling} ${renderType(type.inner)}"
+        is TypeRef.Reference -> buildString {
+            append(renderType(type.inner))
+            append(if (type.kind == TypeRef.RefKind.MUTABLE) '!' else '&')
+            if (type.origins.isNotEmpty()) {
+                append('|')
+                append(type.origins.joinToString(", "))
+                append('|')
+            }
+        }
         is TypeRef.Const -> type.value.toString()
     }
 

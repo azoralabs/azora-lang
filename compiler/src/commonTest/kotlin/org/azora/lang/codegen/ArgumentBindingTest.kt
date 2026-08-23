@@ -65,7 +65,7 @@ class ArgumentBindingTest {
             pack P { var n: Int }
 
             impl P {
-                func f[self: Self&](a: Int = 1, b: Int = 2): Int {
+                func &.f(a: Int = 1, b: Int = 2): Int {
                     return a * 10 + b
                 }
             }
@@ -114,7 +114,7 @@ class ArgumentBindingTest {
             pack P { var n: Int }
 
             impl P {
-                func build[self: Self&](
+                func &.build(
                     spacing: Double = 0.0,
                     padding: Double = 0.0,
                     body: () -> Unit,
@@ -146,7 +146,7 @@ class ArgumentBindingTest {
             pack P { var n: Int }
 
             impl P {
-                func each<R>[self: Self&](label: String = "x", body: () -> R): String {
+                func<R> &.each(label: String = "x", body: () -> R): String {
                     body()
                     return label
                 }

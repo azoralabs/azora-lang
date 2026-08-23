@@ -58,7 +58,7 @@ class IrSymbolCanonicalizerTest {
         val result = Compiler().compile(
             """
             scope acme::ops {
-                func choose<...T>(...values: ...T): Int {
+                func<...T> choose(...values: ...T): Int {
                     return 7
                 }
             }

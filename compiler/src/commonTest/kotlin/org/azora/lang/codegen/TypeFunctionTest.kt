@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
 
 /**
- * Compile-time type properties: `deepinline prop Name<...T>: Type { … }`.
+ * Compile-time type properties: `deepinline prop<...T> Name: Type { … }`.
  *
  * A use site spells one exactly like a generic type (`promote<T, U>`), so most
  * of what is checked here is that the two are told apart correctly.
@@ -31,7 +31,7 @@ class TypeFunctionTest {
     @Test
     fun parserRetainsStructuredTypePropertyDeclaration() {
         val program = Parser(Lexer("""
-            deepinline prop Wider<A, B>: Type {
+            deepinline prop<A, B> Wider: Type {
                 return if A.rank >= B.rank { A } else { B }
             }
             func result(): Wider<Int, Double> { return 1.0 }
@@ -56,14 +56,14 @@ class TypeFunctionTest {
         // A type property names a type, but it is not required to look like one:
         // `promote<T, U>` reads better than `Promote<T, U>` for
         // something that computes a type rather than declaring one.
-        val program = Parser(Lexer("deepinline prop wider<A, B>: Type { return A }").tokenize()).parse()
+        val program = Parser(Lexer("deepinline prop<A, B> wider: Type { return A }").tokenize()).parse()
         assertEquals("wider", program.typeFunctions.single().name)
     }
 
     @Test
     fun aTypePropertyMustDeclareTypeAsItsResult() {
         val failure = assertFailsWith<IllegalStateException> {
-            Parser(Lexer("deepinline prop Wider<A, B>: Int { return A }").tokenize()).parse()
+            Parser(Lexer("deepinline prop<A, B> Wider: Int { return A }").tokenize()).parse()
         }
         assertTrue("must declare ': Type'" in failure.message.orEmpty(), failure.message.orEmpty())
     }
@@ -73,7 +73,7 @@ class TypeFunctionTest {
         // Azora never infers a declaration's type - least of all one that binds a type.
         val failure = assertFailsWith<IllegalStateException> {
             Parser(Lexer("""
-                deepinline prop Widest<...T>: Type {
+                deepinline prop<...T> Widest: Type {
                     var result = T.0
                     return result
                 }
@@ -119,7 +119,7 @@ class TypeFunctionTest {
     @Test
     fun fixedTypePropertyResolvesReturnType() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Wider<A, B>: Type {
+            deepinline prop<A, B> Wider: Type {
                 return if A.rank >= B.rank { A } else { B }
             }
             func result(): Wider<Int, Double> {
@@ -131,8 +131,8 @@ class TypeFunctionTest {
     @Test
     fun exactOverloadWinsBeforeVariadicOverload() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Choose<A, B>: Type { return A }
-            deepinline prop Choose<...Types>: Type where Types.size >= 2 {
+            deepinline prop<A, B> Choose: Type { return A }
+            deepinline prop<...Types> Choose: Type where Types.size >= 2 {
                 return Types.1
             }
             func result(): Choose<String, Int> {
@@ -144,10 +144,10 @@ class TypeFunctionTest {
     @Test
     fun typePropertiesCanCallOtherTypeProperties() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop NumericResult<A, B>: Type {
+            deepinline prop<A, B> NumericResult: Type {
                 return if A.rank >= B.rank { A } else { B }
             }
-            deepinline prop Forwarded<A, B>: Type { return NumericResult<A, B> }
+            deepinline prop<A, B> Forwarded: Type { return NumericResult<A, B> }
             func result(): Forwarded<Int, Double> { return 4.5 }
         """))
     }
@@ -155,7 +155,7 @@ class TypeFunctionTest {
     @Test
     fun aVariadicTypePropertySupportsBindingsLoopsAndRank() {
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Widest<...Types>: Type where Types.size >= 2 {
+            deepinline prop<...Types> Widest: Type where Types.size >= 2 {
                 var result: Type = Types.0
                 for candidate: Type in Types[1...] {
                     if candidate.rank > result.rank {
@@ -175,7 +175,7 @@ class TypeFunctionTest {
         // The branch is a statement, not an expression, so an unmatched condition
         // simply leaves the binding as it was.
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop FirstUnlessWider<A, B>: Type {
+            deepinline prop<A, B> FirstUnlessWider: Type {
                 var result: Type = A
                 if B.rank > A.rank {
                     result = B
@@ -190,11 +190,11 @@ class TypeFunctionTest {
     fun genericFunctionCallUsesTypePropertyForItsResult() {
         assertIs<CompilationResult.Success>(compile("""
             import std.traits
-            func greater<T, U>(a: T, b: U): promote<T, U> {
+            func<T, U> greater(a: T, b: U): promote<T, U> {
                 return a + b
             }
             func main() {
-                fin result: Double = greater(1, 2.5)
+                fin result: Float = greater(1, 2.5)
             }
         """))
     }
@@ -202,7 +202,7 @@ class TypeFunctionTest {
     @Test
     fun variadicConstraintProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            deepinline prop Widest<...Types>: Type where Types.size >= 2 {
+            deepinline prop<...Types> Widest: Type where Types.size >= 2 {
                 return Types.0
             }
             func invalid(): Widest<Int> { return 1 }
@@ -213,8 +213,8 @@ class TypeFunctionTest {
     @Test
     fun recursiveTypePropertyProducesDiagnostic() {
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            deepinline prop First<Value>: Type { return Second<Value> }
-            deepinline prop Second<Value>: Type { return First<Value> }
+            deepinline prop<Value> First: Type { return Second<Value> }
+            deepinline prop<Value> Second: Type { return First<Value> }
             func invalid(): First<Int> { return 1 }
         """))
         assertTrue(failure.errors.any { "Recursive type-property call" in it }, failure.errors.toString())
@@ -224,8 +224,8 @@ class TypeFunctionTest {
     fun duplicateOverloadIsRejectedByParser() {
         assertFailsWith<IllegalStateException> {
             Parser(Lexer("""
-                deepinline prop Same<Value>: Type { return Value }
-                deepinline prop Same<Other>: Type { return Other }
+                deepinline prop<Value> Same: Type { return Value }
+                deepinline prop<Other> Same: Type { return Other }
             """.trimIndent()).tokenize()).parse()
         }
     }
@@ -242,10 +242,10 @@ class TypeFunctionTest {
         // One argument cannot satisfy `.size >= 2`, so selection must fall through
         // to the single-argument overload rather than report a constraint error.
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Pick<...Types>: Type where Types.size >= 2 {
+            deepinline prop<...Types> Pick: Type where Types.size >= 2 {
                 return Types.1
             }
-            deepinline prop Pick<Only>: Type {
+            deepinline prop<Only> Pick: Type {
                 return Only
             }
             func one(): Pick<Int> { return 1 }
@@ -257,7 +257,7 @@ class TypeFunctionTest {
     fun aConcreteInvalidSpecializationIsAnError() {
         // With no applicable alternative, the same violation is the user's error.
         val failure = assertIs<CompilationResult.Failure>(compile("""
-            deepinline prop OnlyPairs<...Types>: Type where Types.size >= 2 {
+            deepinline prop<...Types> OnlyPairs: Type where Types.size >= 2 {
                 return Types.0
             }
             func invalid(): OnlyPairs<Int> { return 1 }
@@ -273,10 +273,10 @@ class TypeFunctionTest {
         // Selection order is unchanged by the split: the candidate with the most
         // fixed parameters before its pack still wins.
         assertIs<CompilationResult.Success>(compile("""
-            deepinline prop Tagged<First, ...Rest>: Type {
+            deepinline prop<First, ...Rest> Tagged: Type {
                 return First
             }
-            deepinline prop Tagged<...Rest>: Type {
+            deepinline prop<...Rest> Tagged: Type {
                 return Rest.0
             }
             func chosen(): Tagged<Int, Double> { return 1 }

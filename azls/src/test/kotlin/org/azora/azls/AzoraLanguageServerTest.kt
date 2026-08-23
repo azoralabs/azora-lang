@@ -103,11 +103,11 @@ class AzoraLanguageServerTest {
     fun associatedTypeClauseAndWithoutAreReserved() {
         val source = """
             spec Iterator assoc Item {
-                func next[self: Self!](): Item
+                func !.next(): Item
             }
 
             impl Iterator for Rows assoc Item = Entity {
-                func next[self: Self!](): Entity { return Entity() }
+                func !.next(): Entity { return Entity() }
             }
 
             func assoc(): Unit {}
@@ -177,7 +177,7 @@ class AzoraLanguageServerTest {
     fun genericParametersLoopLabelsAndScopePathsHaveDistinctSemanticRoles() {
         val source = """
             scope ide::editor {
-                func transform<T>[self: Box<T>&](value: T): T {
+                func<T> transform[self: Box<T>&](value: T): T {
                     outer: loop {
                         continue:outer
                     }
@@ -232,7 +232,7 @@ class AzoraLanguageServerTest {
             pack Language { fin name: String }
 
             impl Language {
-                func greeting[self: Self&](): String {
+                func &.greeting(): String {
                     return self.name
                 }
             }
@@ -335,9 +335,9 @@ fin array = @collect_all(tuple)"""
                 var x: Double
             }
             impl Point {
-                prop magnitude[self: Self&]: Double = self.x
+                prop &.magnitude: Double = self.x
 
-                func scaled[self: Self&](factor: Double): Double {
+                func &.scaled(factor: Double): Double {
                     return self.magnitude * factor
                 }
             }

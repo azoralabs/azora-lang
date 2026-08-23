@@ -23,6 +23,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.gpu
 
 import std.container.array::*
@@ -395,7 +396,7 @@ bridge func commands(stream: GpuStream): GpuCommandList
 
 /** Allocates typed device memory without uploading host values. */
 @Experimental(since: "0.1")
-bridge func buffer<T>(
+bridge func<T> buffer(
     device: GpuDevice,
     elements: Int,
     usage: BufferUsage,
@@ -403,7 +404,7 @@ bridge func buffer<T>(
 
 /** Allocates typed device memory and uploads a host array. */
 @Experimental(since: "0.1")
-bridge func upload<T>(
+bridge func<T> upload(
     device: GpuDevice,
     values: Array<T>,
     usage: BufferUsage,
@@ -411,11 +412,11 @@ bridge func upload<T>(
 
 /** Reads a typed buffer back to host memory. */
 @Experimental(since: "0.1")
-bridge func download<T>(device: GpuDevice, values: GpuBuffer<T>): Array<T>
+bridge func<T> download(device: GpuDevice, values: GpuBuffer<T>): Array<T>
 
 /** Queues a host-to-device upload without synchronizing the CPU. */
 @Experimental(since: "0.1")
-bridge func uploadAsync<T>(
+bridge func<T> uploadAsync(
     stream: GpuStream,
     values: Array<T>,
     usage: BufferUsage,
@@ -423,19 +424,19 @@ bridge func uploadAsync<T>(
 
 /** Queues a device-to-host readback and returns a deferred result. */
 @Experimental(since: "0.1")
-bridge func downloadAsync<T>(stream: GpuStream, values: GpuBuffer<T>): GpuReadback<T>
+bridge func<T> downloadAsync(stream: GpuStream, values: GpuBuffer<T>): GpuReadback<T>
 
 /** Resolves a deferred readback, waiting only when the data is consumed. */
 @Experimental(since: "0.1")
-bridge func resolve<T>(readback: GpuReadback<T>): Array<T>
+bridge func<T> resolve(readback: GpuReadback<T>): Array<T>
 
 /** Builds a tensor view over an existing buffer without copying it. */
 @Experimental(since: "0.1")
-bridge func view<T>(values: GpuBuffer<T>, layout: GpuLayout): GpuTensor<T>
+bridge func<T> view(values: GpuBuffer<T>, layout: GpuLayout): GpuTensor<T>
 
 /** Extracts a tiled tensor view without copying its backing allocation. */
 @Experimental(since: "0.1")
-bridge func tile<T>(values: GpuTensor<T>, layout: GpuLayout): GpuTensor<T>
+bridge func<T> tile(values: GpuTensor<T>, layout: GpuLayout): GpuTensor<T>
 
 /** Compiles source or a future compiler-native [kernel] artifact. */
 @Experimental(since: "0.1")
@@ -455,15 +456,15 @@ bridge func pipeline(device: GpuDevice, shader: GpuShader): GpuPipeline
 
 /** Binds a typed storage resource by reflected symbol slot. */
 @Experimental(since: "0.1")
-bridge func bindBuffer<T>(commands: GpuCommandList, slot: Int, values: GpuBuffer<T>): Unit
+bridge func<T> bindBuffer(commands: GpuCommandList, slot: Int, values: GpuBuffer<T>): Unit
 
 /** Binds a small uniform value by reflected symbol slot. */
 @Experimental(since: "0.1")
-bridge func bindUniform<T>(commands: GpuCommandList, slot: Int, value: T): Unit
+bridge func<T> bindUniform(commands: GpuCommandList, slot: Int, value: T): Unit
 
 /** Enqueues a device-to-device copy on the command list. */
 @Experimental(since: "0.1")
-bridge func copyBuffer<T>(
+bridge func<T> copyBuffer(
     commands: GpuCommandList,
     destination: GpuBuffer<T>,
     source: GpuBuffer<T>,
@@ -471,7 +472,7 @@ bridge func copyBuffer<T>(
 
 /** Enqueues a typed buffer fill on the command list. */
 @Experimental(since: "0.1")
-bridge func fillBuffer<T>(commands: GpuCommandList, destination: GpuBuffer<T>, value: T): Unit
+bridge func<T> fillBuffer(commands: GpuCommandList, destination: GpuBuffer<T>, value: T): Unit
 
 /** Enqueues a fully bound compute launch and returns its completion token. */
 @Experimental(since: "0.1")
@@ -521,15 +522,15 @@ bridge func barrier(barrierScope: BarrierScope): Unit
 
 /** Subgroup-wide reduction with a hardware or portable fallback. */
 @Experimental(since: "0.1")
-bridge func subgroupReduce<T>(value: T, operation: ReductionOp): T
+bridge func<T> subgroupReduce(value: T, operation: ReductionOp): T
 
 /** Subgroup prefix scan; every invocation receives its partial result. */
 @Experimental(since: "0.1")
-bridge func subgroupPrefix<T>(value: T, operation: ReductionOp): T
+bridge func<T> subgroupPrefix(value: T, operation: ReductionOp): T
 
 /** Workgroup-wide reduction using shared memory and subgroup primitives. */
 @Experimental(since: "0.1")
-bridge func workgroupReduce<T>(
+bridge func<T> workgroupReduce(
     value: T,
     operation: ReductionOp,
     workgroup: WorkgroupSize,
@@ -537,11 +538,11 @@ bridge func workgroupReduce<T>(
 
 /** Allocates compiler-managed workgroup-local scratch storage. */
 @Experimental(since: "0.1")
-bridge func shared<T>(elements: Int): GpuShared<T>
+bridge func<T> shared(elements: Int): GpuShared<T>
 
 /** Hardware-accelerated asynchronous global-to-shared copy. */
 @Experimental(since: "0.1")
-bridge func copyAsync<T>(
+bridge func<T> copyAsync(
     destination: GpuShared<T>,
     source: GpuBuffer<T>,
     count: Int,
@@ -549,7 +550,7 @@ bridge func copyAsync<T>(
 
 /** Atomic add with an explicit memory order. */
 @Experimental(since: "0.1")
-bridge func atomicAdd<T>(
+bridge func<T> atomicAdd(
     values: GpuBuffer<T>,
     index: Int,
     value: T,
@@ -558,7 +559,7 @@ bridge func atomicAdd<T>(
 
 /** Compare-and-exchange primitive for lock-free GPU algorithms. */
 @Experimental(since: "0.1")
-bridge func atomicCompareExchange<T>(
+bridge func<T> atomicCompareExchange(
     values: GpuBuffer<T>,
     index: Int,
     expected: T,
@@ -568,7 +569,7 @@ bridge func atomicCompareExchange<T>(
 
 /** Matrix multiply-accumulate through a negotiated tensor-core path. */
 @Experimental(since: "0.1")
-bridge func matrixMultiplyAccumulate<T>(
+bridge func<T> matrixMultiplyAccumulate(
     accumulator: GpuMatrixTile<T>,
     left: GpuMatrixTile<T>,
     right: GpuMatrixTile<T>,

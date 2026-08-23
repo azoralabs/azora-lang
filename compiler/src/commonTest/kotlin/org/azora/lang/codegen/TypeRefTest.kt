@@ -2,6 +2,7 @@ package org.azora.lang.codegen
 
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
+import org.azora.lang.frontend.TypeRef
 import org.azora.lang.ir.IrType
 import kotlin.test.*
 
@@ -11,6 +12,23 @@ import kotlin.test.*
  * surface types, function, tuple, and generic named-type annotations.
  */
 class TypeRefTest {
+
+    @Test
+    fun borrowOriginsRenderWithPipeFences() {
+        val shared = TypeRef.Reference(
+            TypeRef.RefKind.BORROWED,
+            TypeRef.Named("String"),
+            origins = listOf("self"),
+        )
+        val mutable = TypeRef.Reference(
+            TypeRef.RefKind.MUTABLE,
+            TypeRef.Named("Buffer"),
+            origins = listOf("source", "fallback"),
+        )
+
+        assertEquals("String&|self|", shared.toString())
+        assertEquals("Buffer!|source, fallback|", mutable.toString())
+    }
 
     private fun compile(source: String): CompilationResult.Success {
         val result = Compiler().compile(source, release = false)

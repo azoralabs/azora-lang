@@ -49,7 +49,7 @@ class SourceSymbolNameTest {
         assertNameFailure("scope _private { func value() {} }\nfunc main() {}", "cannot be private")
         assertNameFailure("func read(_value: Int) {}", "cannot be private")
         assertNameFailure("func main() { fin _value = 1 }", "cannot be private")
-        assertNameFailure("func main<T_value>() {}", "'_' is allowed only once")
+        assertNameFailure("func<T_value> main() {}", "'_' is allowed only once")
     }
 
     @Test fun leadingUnderscoreIsAcceptedForPrivateDeclarations() {
@@ -61,13 +61,13 @@ class SourceSymbolNameTest {
             }
 
             impl pack _Counter {
-                prop _valuePlusAnswer[self: Self&]: Int = self._value + _answer
+                prop &._valuePlusAnswer: Int = self._value + _answer
 
-                func _readValue[self: Self&](): Int {
+                func &._readValue(): Int {
                     return self._value + _answer
                 }
 
-                func readValue[self: Self&](): Int {
+                func &.readValue(): Int {
                     return self._readValue()
                 }
             }

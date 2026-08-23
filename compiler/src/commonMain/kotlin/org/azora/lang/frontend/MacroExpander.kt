@@ -571,7 +571,7 @@ internal object MacroExpander {
             body = rewriteStmts(stmt.body, macros, depth),
             dependencies = stmt.dependencies?.map { rewriteExpr(it, macros, depth) },
         )
-        is Stmt.WithContext -> stmt.copy(
+        is Stmt.UsingContext -> stmt.copy(
             values = stmt.values.map { rewriteExpr(it, macros, depth) },
             body = rewriteStmts(stmt.body, macros, depth),
         )
@@ -1000,7 +1000,7 @@ internal object MacroExpander {
             body = stmt.body.map { substituteStmt(it, bindings, invokeLine) },
             dependencies = stmt.dependencies?.map { substitute(it, bindings, invokeLine) },
         )
-        is Stmt.WithContext -> stmt.copy(
+        is Stmt.UsingContext -> stmt.copy(
             values = stmt.values.map { substitute(it, bindings, invokeLine) },
             body = stmt.body.map { substituteStmt(it, bindings, invokeLine) },
         )

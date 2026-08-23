@@ -18,7 +18,7 @@ class GenericsTest {
     @Test fun genericIdentity() {
         assertEquals("5", run("""
             import std.io
-            func identity<T>(x: T): T {
+            func<T> identity(x: T): T {
                 return x
             }
             func main() {
@@ -30,7 +30,7 @@ class GenericsTest {
     @Test fun genericIdentityString() {
         assertEquals("hello", run("""
             import std.io
-            func identity<T>(x: T): T {
+            func<T> identity(x: T): T {
                 return x
             }
             func main() {
@@ -42,7 +42,7 @@ class GenericsTest {
     @Test fun genericTwoParams() {
         assertEquals("10", run("""
             import std.io
-            func first<T, U>(a: T, b: U): T {
+            func<T, U> first(a: T, b: U): T {
                 return a
             }
             func main() {
@@ -80,7 +80,7 @@ class GenericsTest {
     @Test fun genericUsedInArithmetic() {
         assertEquals("43", run("""
             import std.io
-            func identity<T>(x: T): T {
+            func<T> identity(x: T): T {
                 return x
             }
             func main() {
@@ -103,7 +103,7 @@ class GenericsTest {
                 var health: Int
             }
 
-            func get<T>(store: Store<T>): T {
+            func<T> get(store: Store<T>): T {
                 return store.value
             }
 

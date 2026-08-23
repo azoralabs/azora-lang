@@ -191,7 +191,10 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
             sb.appendLine("${indent}Wrap(name=${item.name}, registrations=[${item.registrations.joinToString(", ") { "${it.typeName}(${it.args.size} args)" }}])")
         }
         is TopLevel.UseImport -> {
-            sb.appendLine("${indent}UseImport(${item.imports.joinToString(", ") { (scope, item) -> if (item != null) "$scope::$item" else "$scope::*" }})")
+            sb.appendLine("${indent}UseImport(${item.importSpecs.joinToString(", ") { spec ->
+                val selected = if (spec.selector is ImportSpec.Selector.All) "${spec.path}::*" else spec.path
+                if (spec.without.isEmpty()) selected else "$selected without (${spec.without.joinToString(", ")})"
+            }})")
         }
         is TopLevel.Spec -> {
             val typeParams = if (item.typeParams.isEmpty()) "" else "<${item.typeParams.joinToString(", ")}>"
@@ -400,8 +403,8 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             stmt.dependencies?.forEach { dumpExpr(sb, it, "$indent    ") }
             for (s in stmt.body) dumpStmt(sb, s, "$indent    ")
         }
-        is Stmt.WithContext -> {
-            sb.appendLine("${indent}WithContext")
+        is Stmt.UsingContext -> {
+            sb.appendLine("${indent}UsingContext")
             stmt.values.forEach { dumpExpr(sb, it, "$indent    ") }
             stmt.body.forEach { dumpStmt(sb, it, "$indent    ") }
         }

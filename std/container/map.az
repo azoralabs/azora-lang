@@ -42,7 +42,7 @@
 @Supress(.Unused)
 module std.container.map
 
-import std.container.[array::*, list::*]
+import std.container::{array::*, list::*}
 
 /**
  * One immutable key-value association.
@@ -69,37 +69,37 @@ pack MapEntry<K, V> {
 @Experimental(since: "0.1")
 spec Map<K, V> {
     /** Number of unique keys. */
-    prop size[self&]: Int
+    prop &.size: Int
 
     /** Whether this map has no entries. */
-    prop isEmpty[self&]: Bool
+    prop &.isEmpty: Bool
 
     /** Whether this map has at least one entry. */
-    prop isNotEmpty[self&]: Bool
+    prop &.isNotEmpty: Bool
 
     /** Returns whether `key` is present. */
-    func containsKey[self&](key: K&): Bool
+    func &.containsKey(key: K&): Bool
 
     /** Returns whether an equal value is present. Requires `oper==` for `V`. */
-    func containsValue[self&](value: V&): Bool
+    func &.containsValue(value: V&): Bool
 
     /** Returns the value associated with `key`, or `null` when absent. */
-    func get[self&](key: K&): V?
+    func &.get(key: K&): V?
 
     /** Returns the associated value, or `defaultValue` when absent. */
-    func getOrDefault[self&](key: K&, defaultValue: V): V
+    func &.getOrDefault(key: K&, defaultValue: V): V
 
     /** Returns an iteration-order snapshot of all entries. */
-    func entries[self&](): Array<MapEntry<K, V>>
+    func &.entries(): Array<MapEntry<K, V>>
 
     /** Returns an iteration-order snapshot of all keys. */
-    func keys[self&](): List<K>
+    func &.keys(): List<K>
 
     /** Returns an iteration-order snapshot of all values. */
-    func values[self&](): List<V>
+    func &.values(): List<V>
 
     /** Invokes `action` once for every entry in iteration order. */
-    func forEach[self&](action: (K&, V&) -> Unit)
+    func &.forEach(action: (K&, V&) -> Unit)
 }
 
 /**
@@ -122,19 +122,19 @@ derive Clone for Map
 @Experimental(since: "0.1")
 spec MutableMap<K, V> : Map<K, V> {
     /** Associates `key` with `value` and returns the replaced value, if any. */
-    func put[self&](key: K, value: V): V?
+    func &.put(key: K, value: V): V?
 
     /** Copies all entries from `other`, replacing equal keys. */
-    func putAll[self&](other: Map<K, V>&)
+    func &.putAll(other: Map<K, V>&)
 
     /** Removes `key` and returns its previous value, or `null` when absent. */
-    func remove[self&](key: K&): V?
+    func &.remove(key: K&): V?
 
     /** Removes every entry while retaining reusable internal capacity. */
-    func clear[self&]()
+    func &.clear()
 
     /** Returns the existing value or inserts and returns `defaultValue()`. */
-    func getOrPut[self&](key: K, defaultValue: () -> V): V
+    func &.getOrPut(key: K, defaultValue: () -> V): V
 }
 
 /**
@@ -150,37 +150,37 @@ spec MutableMap<K, V> : Map<K, V> {
 @Experimental(since: "0.1")
 spec SortedMap<K, V> {
     /** Returns the smallest key, or `null` when empty. */
-    func firstKey[self&](): K?
+    func &.firstKey(): K?
 
     /** Returns the greatest key, or `null` when empty. */
-    func lastKey[self&](): K?
+    func &.lastKey(): K?
 
     /** Returns the greatest key strictly below `key`. */
-    func lowerKey[self&](key: K&): K?
+    func &.lowerKey(key: K&): K?
 
     /** Returns the greatest key below or equivalent to `key`. */
-    func floorKey[self&](key: K&): K?
+    func &.floorKey(key: K&): K?
 
     /** Returns the smallest key equivalent to or above `key`. */
-    func ceilingKey[self&](key: K&): K?
+    func &.ceilingKey(key: K&): K?
 
     /** Returns the smallest key strictly above `key`. */
-    func higherKey[self&](key: K&): K?
+    func &.higherKey(key: K&): K?
 
     /** Returns the entry with the smallest key, or `null` when empty. */
-    func firstEntry[self&](): MapEntry<K, V>?
+    func &.firstEntry(): MapEntry<K, V>?
 
     /** Returns the entry with the greatest key, or `null` when empty. */
-    func lastEntry[self&](): MapEntry<K, V>?
+    func &.lastEntry(): MapEntry<K, V>?
 
     /** Returns an ascending read-only view below `toKey`. */
-    func headMap[self&](toKey: K&, inclusive: Bool = false): SortedMap<K, V>
+    func &.headMap(toKey: K&, inclusive: Bool = false): SortedMap<K, V>
 
     /** Returns an ascending read-only view above `fromKey`. */
-    func tailMap[self&](fromKey: K&, inclusive: Bool = true): SortedMap<K, V>
+    func &.tailMap(fromKey: K&, inclusive: Bool = true): SortedMap<K, V>
 
     /** Returns an ascending read-only view between two key boundaries. */
-    func subMap[self&](
+    func &.subMap(
         fromKey: K&,
         fromInclusive: Bool,
         toKey: K&,
@@ -196,10 +196,10 @@ spec SortedMap<K, V> {
 @Experimental(since: "0.1")
 spec MutableSortedMap<K, V> : SortedMap<K, V> {
     /** Removes and returns the smallest entry, or `null` when empty. */
-    func pollFirstEntry[self&](): MapEntry<K, V>?
+    func &.pollFirstEntry(): MapEntry<K, V>?
 
     /** Removes and returns the greatest entry, or `null` when empty. */
-    func pollLastEntry[self&](): MapEntry<K, V>?
+    func &.pollLastEntry(): MapEntry<K, V>?
 }
 
 /** Hash table with unspecified iteration order. `K` requires `Hash` and `oper==`. */
@@ -261,7 +261,7 @@ pack MapSlice {
 
 @Since("0.1")
 impl Clone for HashMap {
-    func clone[self&]() {
+    func &.clone() {
         var copy: HashMap<K, V> = .()
         for i in 0..<self.capacity {
             if self.occupied[i] {
@@ -273,21 +273,21 @@ impl Clone for HashMap {
 }
 
 impl HashMap<K, V> {
-    ctor[self!]() {
+    ctor .() {
         for i in 0..<self.capacity {
             self.occupied[i] = false
         }
     }
 
-    dtor[self&] {
-        with self purge [keys, values, hashes, occupied]
+    dtor .() {
+        using self { purge [keys, values, hashes, occupied] }
     }
 
-    func _bucketFor[self&](hash: ULong): Int {
+    func &._bucketFor(hash: ULong): Int {
         return (hash % (self.capacity as ULong)) as Int
     }
 
-    func _findIndex[self&](key: K&): Int {
+    func &._findIndex(key: K&): Int {
         fin hash = key.hash
         var index = self._bucketFor(hash)
         for visited in 0..<self.capacity {
@@ -302,7 +302,7 @@ impl HashMap<K, V> {
         return -1
     }
 
-    func _insertKnownHash[self!](key: K, value: V, hash: ULong): V? {
+    func !._insertKnownHash(key: K, value: V, hash: ULong): V? {
         var index = self._bucketFor(hash)
         while self.occupied[index] {
             if self.hashes[index] == hash && self.keys[index] == key {
@@ -320,13 +320,13 @@ impl HashMap<K, V> {
         return null
     }
 
-    func _rehash[self!](newCapacity: Int) {
-        fin [oldKeys, oldValues, oldHashes, oldOccupied, oldCapacity] = with self {
-            [keys, values, hashes, occupied, capacity]
+    func !._rehash(newCapacity: Int) {
+        fin {oldKeys, oldValues, oldHashes, oldOccupied, oldCapacity} = using self {
+            {keys, values, hashes, occupied, capacity}
         }
 
-        self.[keys, values, hashes, occupied] = alloc .() * newCapacity
-        self.[capacity, _size] = [newCapacity, 0]
+        self.{keys, values, hashes, occupied} = alloc .() * newCapacity
+        self.{capacity, _size} = {newCapacity, 0}
 
         for i in 0..newCapacity {
             self.occupied[i] = false
@@ -342,19 +342,19 @@ impl HashMap<K, V> {
         purge oldOccupied
     }
 
-    func _ensureInsertCapacity[self&]() {
+    func &._ensureInsertCapacity() {
         if (self._size + 1) * 10 >= self.capacity * 7 {
             self._rehash(self.capacity * 2)
         }
     }
 
-    func _putValue[self&](key: K, value: V): V? {
+    func &._putValue(key: K, value: V): V? {
         self._ensureInsertCapacity()
         fin hash = key.hash
         return self._insertKnownHash(key, value, hash)
     }
 
-    func _removeValue[self!](key: K&): V? {
+    func !._removeValue(key: K&): V? {
         fin found = self._findIndex(key)
         if found < 0 {
             return null
@@ -376,7 +376,7 @@ impl HashMap<K, V> {
         return previous
     }
 
-    func _entrySnapshot[self&](): Array<MapEntry<K, V>> {
+    func &._entrySnapshot(): Array<MapEntry<K, V>> {
         var result: Array<MapEntry<K, V>> = .() * self._size
         var source = 0
         var target = 0
@@ -392,13 +392,13 @@ impl HashMap<K, V> {
 }
 
 impl Map<K, V> for HashMap<K, V> {
-    prop size[self&]: Int = self._size
-    prop isEmpty[self&]: Bool = self._size == 0
-    prop isNotEmpty[self&]: Bool = self._size > 0
+    prop &.size: Int = self._size
+    prop &.isEmpty: Bool = self._size == 0
+    prop &.isNotEmpty: Bool = self._size > 0
 
-    func containsKey[self&](key: K&): Bool { return self._findIndex(key) >= 0 }
+    func &.containsKey(key: K&): Bool { return self._findIndex(key) >= 0 }
 
-    func containsValue[self&](value: V&): Bool {
+    func &.containsValue(value: V&): Bool {
         for i in 0..<self.capacity {
             if self.occupied[i] && self.values[i] == value {
                 return true
@@ -407,7 +407,7 @@ impl Map<K, V> for HashMap<K, V> {
         return false
     }
 
-    func get[self&](key: K&): V? {
+    func &.get(key: K&): V? {
         fin index = self._findIndex(key)
         if index < 0 {
             return null
@@ -415,7 +415,7 @@ impl Map<K, V> for HashMap<K, V> {
         return self.values[index]
     }
 
-    func getOrDefault[self&](key: K&, defaultValue: V): V {
+    func &.getOrDefault(key: K&, defaultValue: V): V {
         fin index = self._findIndex(key)
         if index < 0 {
             return defaultValue
@@ -423,9 +423,9 @@ impl Map<K, V> for HashMap<K, V> {
         return self.values[index]
     }
 
-    func entries[self&](): Array<MapEntry<K, V>> { return self._entrySnapshot() }
+    func &.entries(): Array<MapEntry<K, V>> { return self._entrySnapshot() }
 
-    func keys[self&](): List<K> {
+    func &.keys(): List<K> {
         fin all = self.entries()
         var result: Array<K> = .() * all.size
         for i in 0..<all.size {
@@ -434,7 +434,7 @@ impl Map<K, V> for HashMap<K, V> {
         return result
     }
 
-    func values[self&](): List<V> {
+    func &.values(): List<V> {
         fin all = self._entrySnapshot()
         var result: Array<V> = .() * all.size
         for i in 0..<all.size {
@@ -443,7 +443,7 @@ impl Map<K, V> for HashMap<K, V> {
         return result
     }
 
-    func forEach[self&](action: (K&, V&) -> Unit) {
+    func &.forEach(action: (K&, V&) -> Unit) {
         for i in 0..<self.capacity {
             if self.occupied[i] {
                 action(self.keys[i], self.values[i])
@@ -453,29 +453,29 @@ impl Map<K, V> for HashMap<K, V> {
 }
 
 impl MutableMap<K, V> for HashMap<K, V> {
-    func put[self&](key: K, value: V): V? {
+    func &.put(key: K, value: V): V? {
         return self._putValue(key, value)
     }
 
-    func putAll[self&](other: Map<K, V>&) {
+    func &.putAll(other: Map<K, V>&) {
         fin all = other.entries()
         for i in 0..<all.size {
             self._putValue(all[i].key, all[i].value)
         }
     }
 
-    func remove[self&](key: K&): V? {
+    func &.remove(key: K&): V? {
         return self._removeValue(key)
     }
 
-    func clear[self!]() {
+    func !.clear() {
         for i in 0..<self.capacity {
             self.occupied[i] = false
         }
         self._size = 0
     }
 
-    func getOrPut[self!](key: K, defaultValue: () -> V): V {
+    func !.getOrPut(key: K, defaultValue: () -> V): V {
         fin index = self._findIndex(key)
         if index >= 0 {
             return self.values[index]
@@ -491,17 +491,17 @@ impl MutableMap<K, V> for HashMap<K, V> {
 // ---------------------------------------------------------------------
 
 impl LinkedHashMap<K, V> {
-    ctor[self!]() {
+    ctor .() {
         for i in 0..<self.bucketCapacity {
             self.buckets[i] = -1
         }
     }
 
-    dtor[self&] {
-        with self purge [keys, values, hashes, buckets]
+    dtor .() {
+        using self { purge [keys, values, hashes, buckets] }
     }
 
-    func _findIndex[self&](key: K&): Int {
+    func &._findIndex(key: K&): Int {
         fin hash = key.hash
         var bucket = (hash % (self.bucketCapacity as ULong)) as Int
         for visited in 0..<self.bucketCapacity {
@@ -517,7 +517,7 @@ impl LinkedHashMap<K, V> {
         return -1
     }
 
-    func _insertBucket[self!](index: Int) {
+    func !._insertBucket(index: Int) {
         var bucket = (self.hashes[index] % (self.bucketCapacity as ULong)) as Int
         while self.buckets[bucket] >= 0 {
             bucket = (bucket + 1) % self.bucketCapacity
@@ -525,7 +525,7 @@ impl LinkedHashMap<K, V> {
         self.buckets[bucket] = index
     }
 
-    func _rebuildBuckets[self!](newCapacity: Int) {
+    func !._rebuildBuckets(newCapacity: Int) {
         fin oldBuckets = self.buckets
         self.buckets = alloc .() * newCapacity
         self.bucketCapacity = newCapacity
@@ -542,7 +542,7 @@ impl LinkedHashMap<K, V> {
         purge oldBuckets
     }
 
-    func _growEntries[self!]() {
+    func !._growEntries() {
         fin newCapacity = self.capacity * 2
         let newKeys: K* = alloc .() * newCapacity
         let newValues: V* = alloc .() * newCapacity
@@ -564,7 +564,7 @@ impl LinkedHashMap<K, V> {
         purge oldHashes
     }
 
-    func _putValue[self!](key: K, value: V): V? {
+    func !._putValue(key: K, value: V): V? {
         fin found = self._findIndex(key)
         if found >= 0 {
             fin previous = self.values[found]
@@ -586,15 +586,15 @@ impl LinkedHashMap<K, V> {
         return null
     }
 
-    func _removeValue[self!](key: K&): V? {
+    func !._removeValue(key: K&): V? {
         fin found = self._findIndex(key)
         if found < 0 {
             return null
         }
         fin previous = self.values[found]
         for i in found..<self._size - 1 {
-            self.[keys[i], values[i], hashes[i]] = with self {
-                [keys[i + 1], values[i + 1], hashes[i + 1]]
+            self.{keys[i], values[i], hashes[i]} = using self {
+                {keys[i + 1], values[i + 1], hashes[i + 1]}
             }
         }
         self._size -= 1
@@ -602,7 +602,7 @@ impl LinkedHashMap<K, V> {
         return previous
     }
 
-    func _entrySnapshot[self&](): Array<MapEntry<K, V>> {
+    func &._entrySnapshot(): Array<MapEntry<K, V>> {
         var result: Array<MapEntry<K, V>> = .() * self._size
         for i in 0..<self._size {
             result[i] = MapEntry(self.keys[i], self.values[i])
@@ -612,15 +612,15 @@ impl LinkedHashMap<K, V> {
 }
 
 impl Map<K, V> for LinkedHashMap<K, V> {
-    prop size[self&]: Int = self._size
-    prop isEmpty[self&]: Bool = self._size == 0
-    prop isNotEmpty[self&]: Bool = self._size > 0
+    prop &.size: Int = self._size
+    prop &.isEmpty: Bool = self._size == 0
+    prop &.isNotEmpty: Bool = self._size > 0
 
-    func containsKey[self&](key: K&): Bool {
+    func &.containsKey(key: K&): Bool {
         return self._findIndex(key) >= 0
     }
 
-    func containsValue[self&](value: V&): Bool {
+    func &.containsValue(value: V&): Bool {
         for i in 0..<self._size {
             if self.values[i] == value {
                 return true
@@ -629,7 +629,7 @@ impl Map<K, V> for LinkedHashMap<K, V> {
         return false
     }
 
-    func get[self&](key: K&): V? {
+    func &.get(key: K&): V? {
         fin index = self._findIndex(key)
         if index < 0 {
             return null
@@ -637,7 +637,7 @@ impl Map<K, V> for LinkedHashMap<K, V> {
         return self.values[index]
     }
 
-    func getOrDefault[self&](key: K&, defaultValue: V): V {
+    func &.getOrDefault(key: K&, defaultValue: V): V {
         fin index = self._findIndex(key)
         if index < 0 {
             return defaultValue
@@ -645,11 +645,11 @@ impl Map<K, V> for LinkedHashMap<K, V> {
         return self.values[index]
     }
 
-    func entries[self&](): Array<MapEntry<K, V>> {
+    func &.entries(): Array<MapEntry<K, V>> {
         return self._entrySnapshot()
     }
 
-    func keys[self&](): List<K> {
+    func &.keys(): List<K> {
         var result: Array<K> = .() * self._size
         for i in 0..<self._size {
             result[i] = self.keys[i]
@@ -657,7 +657,7 @@ impl Map<K, V> for LinkedHashMap<K, V> {
         return result
     }
 
-    func values[self&](): List<V> {
+    func &.values(): List<V> {
         var result: Array<V> = .() * self._size
         for i in 0..<self._size {
             result[i] = self.values[i]
@@ -665,7 +665,7 @@ impl Map<K, V> for LinkedHashMap<K, V> {
         return result
     }
 
-    func forEach[self&](action: (K&, V&) -> Unit) {
+    func &.forEach(action: (K&, V&) -> Unit) {
         for i in 0..<self._size {
             action(self.keys[i], self.values[i])
         }
@@ -673,29 +673,29 @@ impl Map<K, V> for LinkedHashMap<K, V> {
 }
 
 impl MutableMap<K, V> for LinkedHashMap<K, V> {
-    func put[self!](key: K, value: V): V? {
+    func !.put(key: K, value: V): V? {
         return self._putValue(key, value)
     }
 
-    func putAll[self!](other: Map<K, V>&) {
+    func !.putAll(other: Map<K, V>&) {
         fin all = other.entries()
         for i in 0..<all.size {
             self._putValue(all[i].key, all[i].value)
         }
     }
 
-    func remove[self!](key: K&): V? {
+    func !.remove(key: K&): V? {
         return self._removeValue(key)
     }
 
-    func clear[self!]() {
+    func !.clear() {
         self._size = 0
         for i in 0..<self.bucketCapacity {
             self.buckets[i] = -1
         }
     }
 
-    func getOrPut[self!](key: K, defaultValue: () -> V): V {
+    func !.getOrPut(key: K, defaultValue: () -> V): V {
         fin index = self._findIndex(key)
         if index >= 0 {
             return self.values[index]
@@ -711,18 +711,18 @@ impl MutableMap<K, V> for LinkedHashMap<K, V> {
 // ---------------------------------------------------------------------
 
 impl TreeMap<K, V> {
-    dtor[self&] {
-        with self purge [keys, values, left, right, parent, heights, freeNext]
+    dtor .() {
+        using self { purge [keys, values, left, right, parent, heights, freeNext] }
     }
 
-    func _elemHeight[self&](elem: Int): Int {
+    func &._elemHeight(elem: Int): Int {
         if elem < 0 {
             return 0
         }
         return self.heights[elem]
     }
 
-    func _updateHeight[self!](elem: Int) {
+    func !._updateHeight(elem: Int) {
         if elem < 0 {
             return
         }
@@ -735,9 +735,9 @@ impl TreeMap<K, V> {
         }
     }
 
-    func _grow[self!]() {
+    func !._grow() {
         fin newCapacity = self.capacity * 2
-        let [
+        let {
             newKeys: K*
             newValues: V*
             newLeft: Int*
@@ -745,20 +745,20 @@ impl TreeMap<K, V> {
             newParent: Int*
             newHeights: Int*
             newFreeNext: Int*
-        ] = alloc .() * newCapacity
+        } = alloc .() * newCapacity
 
         for i in 0..<self.elemCount {
-            [newKeys[i], newValues[i], newLeft[i], newRight[i]
-            newParent[i], newHeights[i], newFreeNext[i]] = with self {
-                [keys[i], values[i], left[i], right[i], parent[i], heights[i], freeNext[i]]
+            {newKeys[i], newValues[i], newLeft[i], newRight[i]
+            newParent[i], newHeights[i], newFreeNext[i]} = using self {
+                {keys[i], values[i], left[i], right[i], parent[i], heights[i], freeNext[i]}
             }
         }
-        with self purge [keys, values, left, right, parent, heights, freeNext]
-        self.[keys, values, left, right, parent, heights, freeNext, capacity] =
-            [newKeys, newValues, newLeft, newRight, newParent, newHeights, newFreeNext, newCapacity]
+        using self { purge [keys, values, left, right, parent, heights, freeNext] }
+        self.{keys, values, left, right, parent, heights, freeNext, capacity} =
+            {newKeys, newValues, newLeft, newRight, newParent, newHeights, newFreeNext, newCapacity}
     }
 
-    func _allocateNode[self!](key: K, value: V, parent: Int): Int {
+    func !._allocateNode(key: K, value: V, parent: Int): Int {
         var elem = self.freeHead
         if elem >= 0 {
             self.freeHead = self.freeNext[elem]
@@ -769,18 +769,18 @@ impl TreeMap<K, V> {
             elem = self.elemCount
             self.elemCount += 1
         }
-        self.[keys[elem], values[elem], left[elem], right[elem], parent[elem], heights[elem]] =
-            [key, value, -1, -1, parent, 1]
+        self.{keys[elem], values[elem], left[elem], right[elem], parent[elem], heights[elem]} =
+            {key, value, -1, -1, parent, 1}
         self._size += 1
         return elem
     }
 
-    func _releaseNode[self!](elem: Int) {
-        self.[freeNext[elem], freeHead] = [self.freeHead, elem]
+    func !._releaseNode(elem: Int) {
+        self.{freeNext[elem], freeHead} = {self.freeHead, elem}
         self._size -= 1
     }
 
-    func _replaceParentChild[self!](parent: Int, oldChild: Int, newChild: Int) {
+    func !._replaceParentChild(parent: Int, oldChild: Int, newChild: Int) {
         if parent < 0 {
             self.root = newChild
         } else if self.left[parent] == oldChild {
@@ -793,33 +793,33 @@ impl TreeMap<K, V> {
         }
     }
 
-    func _rotateLeft[self!](elem: Int): Int {
-        fin [pivot, oldParent]: Bool = [self.right[elem], self.parent[elem]]
+    func !._rotateLeft(elem: Int): Int {
+        fin {pivot, oldParent}: Bool = {self.right[elem], self.parent[elem]}
         self.right[elem] = self.left[pivot]
         if self.right[elem] >= 0 {
             self.parent[self.right[elem]] = elem
         }
-        self.[left[pivot], parent[elem], parent[pivot]] = [elem, pivot, oldParent]
+        self.{left[pivot], parent[elem], parent[pivot]} = {elem, pivot, oldParent}
         self._replaceParentChild(oldParent, elem, pivot)
         self._updateHeight(elem)
         self._updateHeight(pivot)
         return pivot
     }
 
-    func _rotateRight[self!](elem: Int): Int {
-        fin [pivot, oldParent]: Bool = [self.left[elem], self.parent[elem]]
+    func !._rotateRight(elem: Int): Int {
+        fin {pivot, oldParent}: Bool = {self.left[elem], self.parent[elem]}
         self.left[elem] = self.right[pivot]
         if self.left[elem] >= 0 {
             self.parent[self.left[elem]] = elem
         }
-        self.[right[pivot], parent[elem], parent[pivot]] = [elem, pivot, oldParent]
+        self.{right[pivot], parent[elem], parent[pivot]} = {elem, pivot, oldParent}
         self._replaceParentChild(oldParent, elem, pivot)
         self._updateHeight(elem)
         self._updateHeight(pivot)
         return pivot
     }
 
-    func _rebalanceFrom[self!](start: Int) {
+    func !._rebalanceFrom(start: Int) {
         var elem = start
         while elem >= 0 {
             self._updateHeight(elem)
@@ -842,7 +842,7 @@ impl TreeMap<K, V> {
         }
     }
 
-    func _findNode[self&](key: K&): Int {
+    func &._findNode(key: K&): Int {
         var elem = self.root
         while elem >= 0 {
             if key < self.keys[elem] {
@@ -856,7 +856,7 @@ impl TreeMap<K, V> {
         return -1
     }
 
-    func _putValue[self!](key: K, value: V): V? {
+    func !._putValue(key: K, value: V): V? {
         if self.root < 0 {
             self.root = self._allocateNode(key, value, -1)
             return null
@@ -885,7 +885,7 @@ impl TreeMap<K, V> {
         return null
     }
 
-    func _minimumNode[self&](start: Int): Int {
+    func &._minimumNode(start: Int): Int {
         var elem = start
         if elem < 0 {
             return -1
@@ -896,7 +896,7 @@ impl TreeMap<K, V> {
         return elem
     }
 
-    func _maximumNode[self&](start: Int): Int {
+    func &._maximumNode(start: Int): Int {
         var elem = start
         if elem < 0 {
             return -1
@@ -907,7 +907,7 @@ impl TreeMap<K, V> {
         return elem
     }
 
-    func _removeValue[self!](key: K&): V? {
+    func !._removeValue(key: K&): V? {
         var elem = self._findNode(key)
         if elem < 0 {
             return null
@@ -933,7 +933,7 @@ impl TreeMap<K, V> {
         return previous
     }
 
-    func _entrySnapshot[self&](): Array<MapEntry<K, V>> {
+    func &._entrySnapshot(): Array<MapEntry<K, V>> {
         var result: Array<MapEntry<K, V>> = .() * self._size
         let stack: Int* = alloc .() * self._size
         var stackSize = 0
@@ -957,15 +957,15 @@ impl TreeMap<K, V> {
 }
 
 impl Map<K, V> for TreeMap<K, V> {
-    prop size[self&]: Int = self._size
-    prop isEmpty[self&]: Bool = self._size == 0
-    prop isNotEmpty[self&]: Bool = self._size > 0
+    prop &.size: Int = self._size
+    prop &.isEmpty: Bool = self._size == 0
+    prop &.isNotEmpty: Bool = self._size > 0
 
-    func containsKey[self&](key: K&): Bool {
+    func &.containsKey(key: K&): Bool {
         return self._findNode(key) >= 0
     }
 
-    func containsValue[self&](value: V&): Bool {
+    func &.containsValue(value: V&): Bool {
         fin all = self._entrySnapshot()
         for i in 0..<all.size {
             if all[i].value == value {
@@ -975,7 +975,7 @@ impl Map<K, V> for TreeMap<K, V> {
         return false
     }
 
-    func get[self&](key: K&): V? {
+    func &.get(key: K&): V? {
         fin elem = self._findNode(key)
         if elem < 0 {
             return null
@@ -983,7 +983,7 @@ impl Map<K, V> for TreeMap<K, V> {
         return self.values[elem]
     }
 
-    func getOrDefault[self&](key: K&, defaultValue: V): V {
+    func &.getOrDefault(key: K&, defaultValue: V): V {
         fin elem = self._findNode(key)
         if elem < 0 {
             return defaultValue
@@ -991,9 +991,9 @@ impl Map<K, V> for TreeMap<K, V> {
         return self.values[elem]
     }
 
-    func entries[self&](): Array<MapEntry<K, V>> { return self._entrySnapshot() }
+    func &.entries(): Array<MapEntry<K, V>> { return self._entrySnapshot() }
 
-    func keys[self&](): List<K> {
+    func &.keys(): List<K> {
         fin all = self.entries()
         var result: Array<K> = .() * all.size
         for i in 0..<all.size {
@@ -1002,7 +1002,7 @@ impl Map<K, V> for TreeMap<K, V> {
         return result
     }
 
-    func values[self&](): List<V> {
+    func &.values(): List<V> {
         fin all = self._entrySnapshot()
         var result: Array<V> = .() * all.size
         for i in 0..<all.size {
@@ -1011,7 +1011,7 @@ impl Map<K, V> for TreeMap<K, V> {
         return result
     }
 
-    func forEach[self&](action: (K&, V&) -> Unit) {
+    func &.forEach(action: (K&, V&) -> Unit) {
         fin all = self._entrySnapshot()
         for i in 0..<all.size {
             action(all[i].key, all[i].value)
@@ -1020,27 +1020,27 @@ impl Map<K, V> for TreeMap<K, V> {
 }
 
 impl MutableMap<K, V> for TreeMap<K, V> {
-    func put[self!](key: K, value: V): V? {
+    func !.put(key: K, value: V): V? {
         return self._putValue(key, value)
     }
 
-    func putAll[self!](other: Map<K, V>&) {
+    func !.putAll(other: Map<K, V>&) {
         fin all = other.entries()
         for i in 0..<all.size {
             self._putValue(all[i].key, all[i].value)
         }
     }
 
-    func remove[self!](key: K&): V? { return self._removeValue(key) }
+    func !.remove(key: K&): V? { return self._removeValue(key) }
 
-    func clear[self!]() {
+    func !.clear() {
         self.root = -1
         self.freeHead = -1
         self.elemCount = 0
         self._size = 0
     }
 
-    func getOrPut[self!](key: K, defaultValue: () -> V): V {
+    func !.getOrPut(key: K, defaultValue: () -> V): V {
         fin elem = self._findNode(key)
         if elem >= 0 {
             return self.values[elem]
@@ -1052,7 +1052,7 @@ impl MutableMap<K, V> for TreeMap<K, V> {
 }
 
 impl SortedMap<K, V> for TreeMap<K, V> {
-    func firstKey[self&](): K? {
+    func &.firstKey(): K? {
         fin elem = self._minimumNode(self.root)
         if elem < 0 {
             return null
@@ -1060,7 +1060,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return self.keys[elem]
     }
 
-    func lastKey[self&](): K? {
+    func &.lastKey(): K? {
         fin elem = self._maximumNode(self.root)
         if elem < 0 {
             return null
@@ -1068,7 +1068,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return self.keys[elem]
     }
 
-    func lowerKey[self&](key: K&): K? {
+    func &.lowerKey(key: K&): K? {
         var elem = self.root
         var candidate = -1
         while elem >= 0 {
@@ -1085,7 +1085,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return self.keys[candidate]
     }
 
-    func floorKey[self&](key: K&): K? {
+    func &.floorKey(key: K&): K? {
         fin exact = self._findNode(key)
         if exact >= 0 {
             return self.keys[exact]
@@ -1093,7 +1093,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return self.lowerKey(key)
     }
 
-    func ceilingKey[self&](key: K&): K? {
+    func &.ceilingKey(key: K&): K? {
         fin exact = self._findNode(key)
         if exact >= 0 {
             return self.keys[exact]
@@ -1101,7 +1101,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return self.higherKey(key)
     }
 
-    func higherKey[self&](key: K&): K? {
+    func &.higherKey(key: K&): K? {
         var elem = self.root
         var candidate = -1
         while elem >= 0 {
@@ -1119,7 +1119,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return self.keys[candidate]
     }
 
-    func firstEntry[self&](): MapEntry<K, V>? {
+    func &.firstEntry(): MapEntry<K, V>? {
         fin elem = self._minimumNode(self.root)
         if elem < 0 {
             return null
@@ -1127,7 +1127,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return MapEntry(self.keys[elem], self.values[elem])
     }
 
-    func lastEntry[self&](): MapEntry<K, V>? {
+    func &.lastEntry(): MapEntry<K, V>? {
         fin elem = self._maximumNode(self.root)
         if elem < 0 {
             return null
@@ -1135,7 +1135,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return MapEntry(self.keys[elem], self.values[elem])
     }
 
-    func headMap[self&](toKey: K&, inclusive: Bool = false): SortedMap<K, V> {
+    func &.headMap(toKey: K&, inclusive: Bool = false): SortedMap<K, V> {
         var result: TreeMap<K, V> = .()
         fin all = self._entrySnapshot()
         for i in 0..<all.size {
@@ -1147,7 +1147,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return result
     }
 
-    func tailMap[self&](fromKey: K&, inclusive: Bool = true): SortedMap<K, V> {
+    func &.tailMap(fromKey: K&, inclusive: Bool = true): SortedMap<K, V> {
         var result: TreeMap<K, V> = .()
         fin all = self._entrySnapshot()
         for i in 0..<all.size {
@@ -1159,7 +1159,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         return result
     }
 
-    func subMap[self&](
+    func &.subMap(
         fromKey: K&, fromInclusive: Bool
         toKey: K&, toInclusive: Bool
     ): SortedMap<K, V>
@@ -1180,7 +1180,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
 }
 
 impl MutableSortedMap<K, V> for TreeMap<K, V> {
-    func pollFirstEntry[self!](): MapEntry<K, V>? {
+    func !.pollFirstEntry(): MapEntry<K, V>? {
         fin elem = self._minimumNode(self.root)
         if elem < 0 {
             return null
@@ -1190,7 +1190,7 @@ impl MutableSortedMap<K, V> for TreeMap<K, V> {
         return result
     }
 
-    func pollLastEntry[self!](): MapEntry<K, V>? {
+    func !.pollLastEntry(): MapEntry<K, V>? {
         fin elem = self._maximumNode(self.root)
         if elem < 0 {
             return null
@@ -1206,7 +1206,7 @@ impl MutableSortedMap<K, V> for TreeMap<K, V> {
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-func mapEntry<K, V>(key: K, value: V): MapEntry<K, V> {
+func<K, V> mapEntry(key: K, value: V): MapEntry<K, V> {
     return MapEntry(key, value)
 }
 
@@ -1220,7 +1220,7 @@ func mapEntry<K, V>(key: K, value: V): MapEntry<K, V> {
 macro $a @to $b => mapEntry($a, $b)
 
 @Experimental(since: "0.1")
-func hashMapOf<K, V>(...entries: MapEntry<K, V>): HashMap<K, V> {
+func<K, V> hashMapOf(...entries: MapEntry<K, V>): HashMap<K, V> {
     var result: HashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1229,7 +1229,7 @@ func hashMapOf<K, V>(...entries: MapEntry<K, V>): HashMap<K, V> {
 }
 
 @Experimental(since: "0.1")
-func linkedHashMapOf<K, V>(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
+func<K, V> linkedHashMapOf(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
     var result: LinkedHashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1238,7 +1238,7 @@ func linkedHashMapOf<K, V>(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
 }
 
 @Experimental(since: "0.1")
-func treeMapOf<K, V>(...entries: MapEntry<K, V>): TreeMap<K, V> {
+func<K, V> treeMapOf(...entries: MapEntry<K, V>): TreeMap<K, V> {
     var result: TreeMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1254,7 +1254,7 @@ func treeMapOf<K, V>(...entries: MapEntry<K, V>): TreeMap<K, V> {
  * keep the last supplied value.
  */
 @Experimental(since: "0.1")
-func mapOf<K, V>(...entries: MapEntry<K, V>): Map<K, V> {
+func<K, V> mapOf(...entries: MapEntry<K, V>): Map<K, V> {
     var result: LinkedHashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1270,7 +1270,7 @@ func mapOf<K, V>(...entries: MapEntry<K, V>): Map<K, V> {
  * the last supplied value.
  */
 @Experimental(since: "0.1")
-func mutableMapOf<K, V>(...entries: MapEntry<K, V>): MutableMap<K, V> {
+func<K, V> mutableMapOf(...entries: MapEntry<K, V>): MutableMap<K, V> {
     var result: LinkedHashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1426,7 +1426,7 @@ oper!= [self: HashMap<K, V>&](rhs: Map<K, V>): Bool {
 
 @Experimental(since: "0.1")
 impl HashMap<K, V> {
-    prop hash[self&]: ULong {
+    prop &.hash: ULong {
         fin all = self.entries()
         var result = 0 as ULong
         for i in 0..<all.size {
@@ -1456,7 +1456,7 @@ oper!= [self: LinkedHashMap<K, V>&](rhs: Map<K, V>): Bool {
 
 @Experimental(since: "0.1")
 impl LinkedHashMap<K, V> {
-    prop hash[self&]: ULong {
+    prop &.hash: ULong {
         var result = 0 as ULong
         for i in 0..<self._size {
             result += ((self.keys[i].hash as ULong) ^ (self.values[i].hash as ULong))
@@ -1486,7 +1486,7 @@ oper!= [self: TreeMap<K, V>&](rhs: Map<K, V>): Bool {
 
 @Experimental(since: "0.1")
 impl TreeMap<K, V> {
-    prop hash[self&]: ULong {
+    prop &.hash: ULong {
         fin all = self.entries()
         var result = 0 as ULong
         for i in 0..<all.size {

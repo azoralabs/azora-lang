@@ -112,15 +112,15 @@ the language does not have.
 Sixty-four lines, three functions, and none of them is about threads:
 
 ```azora
-async func sleep<T>(ms: T) { delay ms }
+async func<T> sleep(ms: T) { delay ms }
 
-async func spawnAsync<T>(ms: T, action: () -> Unit) {
+async func<T> spawnAsync(ms: T, action: () -> Unit) {
     fin handle = async { action() }
     delay ms
     await(handle)
 }
 
-async func joinAll<T>(count: T) { delay count }
+async func<T> joinAll(count: T) { delay count }
 ```
 
 - `sleep` is `delay` with another name.

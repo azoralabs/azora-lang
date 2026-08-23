@@ -9,14 +9,14 @@ on it picks the implementation at run time.
 
 ```azora
 spec Shape {
-    func area[self: Self&](): Int
+    func &.area(): Int
 }
 
 pack Square { fin side: Int = 0 }
 pack Circle { fin r: Int = 0 }
 
-impl Shape for Square { func area[self: Self&](): Int { return self.side * self.side } }
-impl Shape for Circle { func area[self: Self&](): Int { return 3 * self.r * self.r } }
+impl Shape for Square { func &.area(): Int { return self.side * self.side } }
+impl Shape for Circle { func &.area(): Int { return 3 * self.r * self.r } }
 
 func describe(s: Shape): Int {
     return s.area()          // dispatched on what `s` actually is

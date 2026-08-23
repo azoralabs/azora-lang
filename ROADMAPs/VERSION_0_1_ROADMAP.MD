@@ -414,7 +414,7 @@ generation. Every form the parser accepts:
   type and no test double can replace a real service
 - ⬜ **`include` is parsed and ignored**; `replace` has no keyword; a `graph`'s
   name is still recorded and never read
-- ⬜ `func main() with AppGraph` - static graph selection, so an unsatisfiable
+- ⬜ `func main() { using AppGraph { ... } }` - static graph selection, so an unsatisfiable
   injection is a compile error rather than a runtime surprise
 - ⬜ Replace the string-keyed `typeName → instance` map with compiler-generated
   `DefinitionId` symbols, so missing and ambiguous definitions are diagnosed at

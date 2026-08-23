@@ -73,12 +73,12 @@ Declared by implementing `Into<T>` (`std/convert/convert.az`):
 
 ```azora
 spec Into<T> {
-    prop into<T>[self: Self&]: T
+    prop &.into<T>: T
     use into<T> as "to${T.typeName}"
 }
 
 impl Into<String> for Label {
-    prop into[self: Self&]: String { return "Label(" + self.value + ")" }
+    prop &.into: String { return "Label(" + self.value + ")" }
 }
 
 label.toString      // the `use as` alias
@@ -171,19 +171,19 @@ differs, split when the promise differs*:
 /** Converts to `To`. Total: it cannot fail. */
 @Since("0.1")
 spec Cast<To> {
-    prop cast<To>[self: Self&]: To
+    prop &.cast<To>: To
 }
 
 /** Converts to `To` when the value permits it, and answers null when not. */
 @Since("0.1")
 spec CheckedCast<To> {
-    prop cast<To>[self: Self&]: To?
+    prop &.cast<To>: To?
 }
 
 /** Reinterprets the bits as a `To`. Sizes must match; checked at lowering. */
 @Since("0.1")
 spec BitCast<To> {
-    prop cast<To>[self: Self&]: To
+    prop &.cast<To>: To
 }
 ```
 
@@ -194,7 +194,7 @@ infallible form - and `BitCast` requires neither.
 
 ```azora
 impl Cast<Fahrenheit> for Celsius {
-    prop cast[self: Self&]: Fahrenheit {
+    prop &.cast: Fahrenheit {
         return Fahrenheit(self.degrees * 1.8 + 32.0)
     }
 }
@@ -245,14 +245,14 @@ A type that wants both writes both. They are two lines.
 
 ```
 line 12: 'Celsius' has no 'Cast<Fahrenheit>' - cannot write 'c as Fahrenheit'
-  add 'impl Cast<Fahrenheit> for Celsius { prop cast[self: Self&]: Fahrenheit { … } }'
+  add 'impl Cast<Fahrenheit> for Celsius { prop &.cast: Fahrenheit { … } }'
   or, if the conversion allocates or consumes, implement 'Into' and write 'c.into<Fahrenheit>'
 
 line 20: 'as*' requires equal sizes - Celsius is 8 bytes, Flag is 1
   a bit reinterpretation cannot change a value's width
 
 line 27: 'impl as Fahrenheit for Celsius' was removed
-  write 'impl Cast<Fahrenheit> for Celsius { prop cast[self: Self&]: Fahrenheit { … } }'
+  write 'impl Cast<Fahrenheit> for Celsius { prop &.cast: Fahrenheit { … } }'
 
 line 33: 'Username' has 'From<String>' but no 'Into<String>'
   the two directions are separate; 'Username::from(s)' is what this type declares

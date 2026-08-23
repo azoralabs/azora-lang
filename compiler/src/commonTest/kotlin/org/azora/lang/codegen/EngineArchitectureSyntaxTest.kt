@@ -112,7 +112,8 @@ class EngineArchitectureSyntaxTest {
         assertTrue(assertIs<TypeRef.Named>(move.params[2].type).name.startsWith("__Query_"))
         val player = result.ast.items.filterIsInstance<TopLevel.Pack>().single { it.name == "Player" }
         val health = result.ast.items.filterIsInstance<TopLevel.Pack>().single { it.name == "Health" }
-        assertEquals("Double", assertIs<TypeRef.Named>(player.fields.single().type).name)
+        // A field inferred from a real literal takes the default float width.
+        assertEquals("Float", assertIs<TypeRef.Named>(player.fields.single().type).name)
         assertEquals("Int", assertIs<TypeRef.Named>(health.fields.single().type).name)
         assertFalse(result.llvm.contains("__azora_named_type_macro__"))
         assertFalse(result.wasm.contains("__azora_named_type_macro__"))

@@ -31,6 +31,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.algorithm.sort
 
 import std.container.array::*
@@ -45,7 +46,7 @@ import std.container.array::*
  * @return A new array with elements in ascending order.
  */
 @Experimental(since: "0.1")
-func sort<T>(arr: Array<T>): Array<T> where T: Order
+func<T> sort(arr: Array<T>): Array<T> where T: Order
 out {
     assert it.size == arr.size { "sort must preserve length" }
 } scope {
@@ -62,7 +63,7 @@ out {
  * @return A new array with elements in descending order.
  */
 @Experimental(since: "0.1")
-func sortDescending<T>(arr: Array<T>): Array<T> where T: Order
+func<T> sortDescending(arr: Array<T>): Array<T> where T: Order
 out {
     assert it.size == arr.size { "sortDescending must preserve length" }
 } scope {
@@ -86,7 +87,7 @@ fin _sortRunLength = 16
  * bug still.
  */
 @Experimental(since: "0.1")
-func _mergeSorted<T: Order>(arr: Array<T>, ascending: Bool): Array<T> {
+func<T: Order> _mergeSorted(arr: Array<T>, ascending: Bool): Array<T> {
     fin count = arr.size
     var source: Array<T> = .() * count
     for i in 0..<count {
@@ -132,7 +133,7 @@ func _mergeSorted<T: Order>(arr: Array<T>, ascending: Bool): Array<T> {
 
 /** Sorts `values[start..<stop]` in place. Stable: equal elements never swap. */
 @Experimental(since: "0.1")
-func _insertionSortRange<T: Order>(
+func<T: Order> _insertionSortRange(
     values: Array<T>
     start: Int
     stop: Int
@@ -158,7 +159,7 @@ func _insertionSortRange<T: Order>(
  * the left run holds the elements that came first.
  */
 @Experimental(since: "0.1")
-func _mergeRange<T: Order>(
+func<T: Order> _mergeRange(
     values: Array<T>
     into: Array<T>
     lo: Int
@@ -191,7 +192,7 @@ func _mergeRange<T: Order>(
 
 /** True when [first] must come after [second] in the requested direction. */
 @Experimental(since: "0.1")
-func _outOfOrder<T: Order>(first: T, second: T, ascending: Bool): Bool {
+func<T: Order> _outOfOrder(first: T, second: T, ascending: Bool): Bool {
     if ascending {
         return first > second
     }
@@ -205,7 +206,7 @@ func _outOfOrder<T: Order>(first: T, second: T, ascending: Bool): Bool {
  * @return true if the array is sorted, false otherwise.
  */
 @Experimental(since: "0.1")
-func isSorted<T: Order>(arr: Array<T>): Bool {
+func<T: Order> isSorted(arr: Array<T>): Bool {
     if arr.size <= 1 {
         return true
     }
@@ -224,7 +225,7 @@ func isSorted<T: Order>(arr: Array<T>): Bool {
  * @return true if the array is sorted descending, false otherwise.
  */
 @Experimental(since: "0.1")
-func isSortedDescending<T: Order>(arr: Array<T>): Bool {
+func<T: Order> isSortedDescending(arr: Array<T>): Bool {
     if arr.size <= 1 {
         return true
     }
@@ -243,7 +244,7 @@ func isSortedDescending<T: Order>(arr: Array<T>): Bool {
  * @return A new reversed array.
  */
 @Experimental(since: "0.1")
-func reverse<T>(arr: Array<T>): Array<T>
+func<T> reverse(arr: Array<T>): Array<T>
 out {
     assert it.size == arr.size { "reverse must preserve length" }
 } scope {
@@ -263,7 +264,7 @@ out {
  * @return A new array with unique consecutive elements.
  */
 @Experimental(since: "0.1")
-func unique<T: Order>(arr: Array<T>): Array<T> {
+func<T: Order> unique(arr: Array<T>): Array<T> {
     if arr.size == 0 { return .() }
     var result: Array<T> = .() * arr.size
     result[0] = arr[0]
@@ -291,7 +292,7 @@ func unique<T: Order>(arr: Array<T>): Array<T> {
  * @return A new array with elements swapped.
  */
 @Experimental(since: "0.1")
-func swap<T>(arr: Array<T>, i: Int, j: Int): Array<T>
+func<T> swap(arr: Array<T>, i: Int, j: Int): Array<T>
 in {
     assert i >= 0 && i < arr.size { "swap index i out of bounds" }
     assert j >= 0 && j < arr.size { "swap index j out of bounds" }
@@ -314,7 +315,7 @@ in {
  * @return A new rotated array.
  */
 @Experimental(since: "0.1")
-func rotateLeft<T>(arr: Array<T>, n: Int): Array<T> {
+func<T> rotateLeft(arr: Array<T>, n: Int): Array<T> {
     if arr.size == 0 {
         return .()
     }

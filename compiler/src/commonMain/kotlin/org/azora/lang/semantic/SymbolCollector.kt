@@ -232,7 +232,7 @@ class SymbolCollector {
                 val paramNames = func.params.map { it.name }
                 val defaults = func.params.mapIndexedNotNull { i, p -> p.defaultValue?.let { i to it } }.toMap()
                 // A `flow` generator's call returns a list of its (element-type) yields.
-                val callReturnType = if (func.isFlow) IrType.Array(returnType) else returnType
+                val callReturnType = returnType
                 // Variadic only when declared with the `...T` syntax - a plain
                 // trailing `[T]` parameter takes an array argument as-is.
                 val isVariadic = func.params.lastOrNull()?.variadic == true
@@ -432,7 +432,7 @@ class SymbolCollector {
                 val implTypeParams = table.lookupStruct(item.typeName)?.typeParams?.toSet() ?: emptySet()
                 for (method in item.methods) {
                     // A method may introduce type parameters of its own -
-                    // `func map<R>[self: Self&](f: (T) -> R)`. Only the *type's*
+                    // `func<R> &.map(f: (T) -> R)`. Only the *type's*
                     // parameters were in scope here, so `R` resolved as an
                     // unknown named type and every use of it failed to match.
                     val tpSet = implTypeParams + method.typeParams
@@ -1007,8 +1007,8 @@ class SymbolCollector {
         is Expr.InCheck -> IrType.Bool
         // A literal states no width: it is read at whatever the place it lands
         // in says, and standing alone it is the default.
-        is Expr.IntLiteral -> IrType.Int
-        is Expr.DoubleLiteral -> IrType.Double
+        is Expr.IntLiteral -> IrType.defaultInt
+        is Expr.DoubleLiteral -> IrType.defaultFloat
         is Expr.StringLiteral -> IrType.String
         is Expr.BoolLiteral -> IrType.Bool
         is Expr.CharLiteral -> IrType.Char

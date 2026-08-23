@@ -630,7 +630,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 }
                 Pair(listOf(stmt.copy(body = newBody, dependencies = dependencies)), changed || dependencyChanged)
             }
-            is Stmt.WithContext -> {
+            is Stmt.UsingContext -> {
                 var valuesChanged = false
                 val values = stmt.values.map {
                     val (value, didChange) = foldExpr(it, program)
@@ -864,7 +864,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     /**
      * The const type arguments a call supplies, as the literals they stand for.
      *
-     * `func axis<I: Int>()` called as `axis<0>()` binds `I` to `0`. A type argument
+     * `func<I: Int> axis()` called as `axis<0>()` binds `I` to `0`. A type argument
      * that is a type rather than a value binds nothing here - it is not something the
      * body can read.
      */
@@ -1756,7 +1756,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         if (name in program.testScopeMembers) return null
         // Tasks/flows are execution boundaries, not pure value expressions. Folding
         // them would erase scheduling, cancellation, and Task<T> from the type graph.
-        if (funcDecl.isTask || funcDecl.isFlow || funcDecl.isUnsafe) return null
+        if (funcDecl.isTask || funcDecl.isUnsafe) return null
         // A `T ?! E` function can fail, and failure is not a value this evaluator
         // models - it would interpret straight past a `return .Variant` and fold
         // the call to whatever the success path happens to produce. Leave the
@@ -1799,7 +1799,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 }
                 is Stmt.RemDecl -> return null // reactive state, not CTCE-evaluable
                 is Stmt.Effect -> return null // effects are not CTCE-evaluable
-                is Stmt.WithContext -> return null // contextual dispatch is resolved semantically
+                is Stmt.UsingContext -> return null // contextual dispatch is resolved semantically
                 is Stmt.FinDecl -> {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value

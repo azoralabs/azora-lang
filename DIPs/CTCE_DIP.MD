@@ -74,7 +74,7 @@ deepinline prop promote<...T>: Type where T.length >= 2 && T is Number {
     return result
 }
 
-func add<A, B>(a: A, b: B): promote<A, B> { … }   // used as a type
+func<A, B> add(a: A, b: B): promote<A, B> { … }   // used as a type
 ```
 
 - The name is capitalized, because a use site reads it as the type it produces.

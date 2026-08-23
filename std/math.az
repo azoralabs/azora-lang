@@ -25,6 +25,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.math
 
 import std.container.array::*
@@ -78,7 +79,7 @@ fin EPSILON: Double = 0.00000000000001
  * @return The non-negative magnitude of x.
  */
 @Experimental(since: "0.1")
-func abs<T>(x: T): T
+func<T> abs(x: T): T
 out {
     assert it >= 0 { "abs must return non-negative" }
 } scope {
@@ -93,7 +94,7 @@ out {
  * @return The lesser of a and b.
  */
 @Experimental(since: "0.1")
-func min<T>(a: T, b: T): T {
+func<T> min(a: T, b: T): T {
     return if a < b { a } else { b }
 }
 
@@ -105,7 +106,7 @@ func min<T>(a: T, b: T): T {
  * @return The greater of a and b.
  */
 @Experimental(since: "0.1")
-func max<T>(a: T, b: T): T {
+func<T> max(a: T, b: T): T {
     return if a > b { a } else { b }
 }
 
@@ -118,7 +119,7 @@ func max<T>(a: T, b: T): T {
  * @return x if it falls within [lo, hi], otherwise the nearest bound.
  */
 @Experimental(since: "0.1")
-func clamp<T>(x: T, lo: T, hi: T): T
+func<T> clamp(x: T, lo: T, hi: T): T
 in {
     assert lo <= hi { "clamp lower bound must be <= upper bound" }
 } scope {
@@ -132,7 +133,7 @@ in {
  * @return 1 if x is positive, -1 if negative, 0 if zero.
  */
 @Experimental(since: "0.1")
-func sign<T>(x: T): Int {
+func<T> sign(x: T): Int {
     return if x > 0 { 1 } else { if x < 0 { -1 } else { 0 } }
 }
 
@@ -243,7 +244,7 @@ in {
  * @return value raised to the power of exp.
  */
 @Experimental(since: "0.1")
-func pow<T>(value: T, exp: Int): T
+func<T> pow(value: T, exp: Int): T
 in {
     assert exp >= 0 { "Exponent must be non-negative" }
 } scope {
@@ -262,7 +263,7 @@ in {
  * @return n! (n factorial).
  */
 @Experimental(since: "0.1")
-func factorial<T>(n: T): T
+func<T> factorial(n: T): T
 in {
     assert n >= 0 { "Factorial requires non-negative input" }
 } out {
@@ -286,7 +287,7 @@ in {
  * @return The GCD of a and b.
  */
 @Experimental(since: "0.1")
-func gcd<T>(a: T, b: T): T
+func<T> gcd(a: T, b: T): T
 out {
     assert it >= 0 { "GCD must be non-negative" }
 } scope {
@@ -310,7 +311,7 @@ out {
  * @return The LCM of a and b.
  */
 @Experimental(since: "0.1")
-func lcm<T>(a: T, b: T): T
+func<T> lcm(a: T, b: T): T
 out {
     assert it >= 0 { "LCM must be non-negative" }
 } scope {
@@ -333,7 +334,7 @@ out {
  * @return true if n is even.
  */
 @Experimental(since: "0.1")
-func isEven<T>(n: T): Bool {
+func<T> isEven(n: T): Bool {
     return n % 2 == 0
 }
 
@@ -344,7 +345,7 @@ func isEven<T>(n: T): Bool {
  * @return true if n is odd.
  */
 @Experimental(since: "0.1")
-func isOdd<T>(n: T): Bool {
+func<T> isOdd(n: T): Bool {
     return n % 2 != 0
 }
 
@@ -355,7 +356,7 @@ func isOdd<T>(n: T): Bool {
  * @return The sum of all elements.
  */
 @Experimental(since: "0.1")
-func sum<T>(arr: Array<T>): T {
+func<T> sum(arr: Array<T>): T {
     var total = 0
     for i in 0..<arr.size {
         total += arr[i]
@@ -370,7 +371,7 @@ func sum<T>(arr: Array<T>): T {
  * @return The sum of all elements.
  */
 @Experimental(since: "0.1")
-func sumReal<T>(arr: Array<T>): T {
+func<T> sumReal(arr: Array<T>): T {
     var total = 0.0
     for i in 0..<arr.size {
         total += arr[i]
@@ -385,7 +386,7 @@ func sumReal<T>(arr: Array<T>): T {
  * @return The product of all elements.
  */
 @Experimental(since: "0.1")
-func product<T>(arr: Array<T>): T {
+func<T> product(arr: Array<T>): T {
     if arr.size == 0 { return 0 }
     var result = 1
     for i in 0..<arr.size {
@@ -401,7 +402,7 @@ func product<T>(arr: Array<T>): T {
  * @return The Nth Fibonacci number.
  */
 @Experimental(since: "0.1")
-func fib<T>(n: T): T
+func<T> fib(n: T): T
 in {
     assert n >= 0 { "Fibonacci requires non-negative input" }
 } out {

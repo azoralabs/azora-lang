@@ -16,6 +16,7 @@
 
 package org.azora.lang.ir
 
+import org.azora.lang.frontend.Literals
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TypeFunctionCall
 import org.azora.lang.frontend.CallableKind
@@ -140,7 +141,11 @@ sealed class IrType {
         val isInline: Boolean = false,
     ) : IrType() {
         override fun toString(): kotlin.String {
-            val context = if (receivers.isEmpty()) "" else receivers.joinToString(", ", "[", "]")
+            val context = when (receivers.size) {
+                0 -> ""
+                1 -> "${receivers.single()}."
+                else -> receivers.joinToString(", ", "(", ").")
+            }
             val arguments = params.joinToString(", ", "(", ")")
             val prefix = if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
             return "$prefix$context$arguments -> $ret"
@@ -260,6 +265,17 @@ sealed class IrType {
         val floatTypes: kotlin.collections.Set<IrType> = setOf(Half, Float, Double, Quad)
 
         /**
+         * The width a real literal is read at where nothing says which.
+         *
+         * The name it answers to is [Literals.DEFAULT_FLOAT]; this is the same
+         * answer in the form the IR asks the question in.
+         */
+        val defaultFloat: IrType get() = fromName(Literals.DEFAULT_FLOAT)
+
+        /** The width an integer literal is read at where nothing says which. */
+        val defaultInt: IrType get() = fromName(Literals.DEFAULT_INT)
+
+        /**
          * How wide each integer is, in bits.
          *
          * The widths past 64 have no hardware behind them: LLVM has the type,
@@ -285,7 +301,7 @@ sealed class IrType {
             // written with before there is a type written as one.
             "__int" -> Int
             "__uint" -> UInt
-            "__float" -> Double
+            "__float" -> Float
             "Int" -> Int
             "UInt" -> UInt
             "Double" -> Double
@@ -504,12 +520,12 @@ sealed class IrExpr {
      * what a backend wider than a `Double` reads instead.
      *
      * @property value the double-precision value
-     * @property type the resolved float type (defaults to [IrType.Double])
+     * @property type the resolved float type (defaults to [IrType.defaultFloat])
      * @property text the digits as written, when they came from a literal
      */
     data class DoubleLiteral(
         val value: Double,
-        override val type: IrType = IrType.Double,
+        override val type: IrType = IrType.defaultFloat,
         val text: String? = null,
     ) : IrExpr()
 
@@ -707,7 +723,7 @@ sealed class IrExpr {
         val body: List<IrStmt>,
         override val type: IrType,
         /**
-         * Names captured by reference (`[; n.&]`, `[; n.!]`).
+         * Names captured by reference (`[n.&]`, `[n.!]`).
          *
          * A referenced capture is the original binding, so the environment holds
          * its address rather than a copy of its value - which is what makes a
@@ -717,7 +733,7 @@ sealed class IrExpr {
         /** Legacy flag retained for serialized IR compatibility; new IR records exact names. */
         val allCapturesByRef: Boolean = false,
         /**
-         * Names captured by value (`[; n]`, `[; n.clone()]`, `[; take n]`).
+         * Names captured by value (`[n]`, `[n.clone()]`, `[take n]`).
          *
          * A value capture is the closure's own, taken when the closure is
          * created, so a later write to the original does not reach it.
@@ -1194,8 +1210,6 @@ data class IrFunction(
     val params: List<Pair<String, IrType>>,
     val returnType: IrType,
     val body: List<IrStmt>,
-    /** `flow` generator: calling it returns a list of `yield`ed values. */
-    val isFlow: Boolean = false,
     /** Indices of `ref`/`out` parameters - the interpreter wraps these in mutable cells. */
     val refParams: Set<Int> = emptySet(),
     val isTask: Boolean = false,
@@ -1403,8 +1417,16 @@ data class IrProgram(
                     if (i < items.lastIndex) sb.appendLine()
                 }
                 is IrTopLevel.Struct -> {
-                    val fields = item.fields.joinToString(", ") { "${it.name}: ${it.type}" }
-                    sb.appendLine("pack ${item.name} { $fields }")
+                    // A field to a line, the way an `enum` lists its variants and
+                    // the way the source declared them. A `Token` with six fields
+                    // on one line is a line nobody reads to the end.
+                    if (item.fields.isEmpty()) {
+                        sb.appendLine("pack ${item.name} {}")
+                    } else {
+                        sb.appendLine("pack ${item.name} {")
+                        item.fields.forEach { sb.appendLine("    ${it.name}: ${it.type}") }
+                        sb.appendLine("}")
+                    }
                     if (i < items.lastIndex) sb.appendLine()
                 }
                 is IrTopLevel.Extern -> {

@@ -43,7 +43,7 @@ class LambdaTest {
             import std.io
             func makeAdder(n: Int): (Int) -> Int {
                 // Returned, so it escapes: it must own `n`, and Int is Copy.
-                return [; n] { x: Int -> x + n }
+                return [n] { x: Int -> x + n }
             }
             func main() {
                 var add5 = makeAdder(5)
@@ -57,7 +57,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var offset = 3
-                var add = [; offset.&] { x: Int -> x + offset }
+                var add = [offset.&] { x: Int -> x + offset }
                 println(add(4))
             }
         """.trimIndent()))
@@ -131,7 +131,7 @@ class LambdaTest {
             import std.io
             pack Runner
             impl Runner {
-                func run[self: Self&](action: (Int) -> Int): Int {
+                func &.run(action: (Int) -> Int): Int {
                     return action(4)
                 }
             }
@@ -168,14 +168,14 @@ class LambdaTest {
         assertEquals("receiver", run("""
             import std.io
             pack Context { fin value: String }
-            func run<T>(fallback: T, action: [Context&]() -> T): T {
+            func<T> run(fallback: T, action: Context&.() -> T): T {
                 fin context = Context("receiver")
                 var result = fallback
-                with context { result = action() }
+                using context { result = action() }
                 return result
             }
             func main() {
-                println(run<String>("") [context: Context&] { context.value })
+                println(run<String>("") [&] context: Context { context.value })
             }
         """.trimIndent()))
     }
@@ -184,14 +184,14 @@ class LambdaTest {
         assertEquals("prefixed", run("""
             import std.io
             pack Context { fin value: String }
-            func render(prefix: String, action: [Context&]() -> String): String {
+            func render(prefix: String, action: Context&.() -> String): String {
                 fin context = Context("fixed")
                 var result = prefix
-                with context { result += action() }
+                using context { result += action() }
                 return result
             }
             func main() {
-                println(render("pre") [context: Context&] { context.value })
+                println(render("pre") [&] context: Context { context.value })
             }
         """.trimIndent()))
     }
@@ -235,7 +235,7 @@ class LambdaTest {
         assertEquals("12", run("""
             import std.io
             impl Int {
-                func map[self: Self&](action: (Int) -> Int): Int {
+                func &.map(action: (Int) -> Int): Int {
                     return action(self)
                 }
             }
@@ -264,11 +264,11 @@ class LambdaTest {
         assertEquals("spec", run("""
             import std.io
             spec Executor {
-                func execute[self: Self&](action: () -> String): String
+                func &.execute(action: () -> String): String
             }
             pack Direct
             impl Executor for Direct {
-                func execute[self: Self&](action: () -> String): String {
+                func &.execute(action: () -> String): String {
                     return action()
                 }
             }
@@ -285,16 +285,18 @@ class LambdaTest {
         assertEquals("5\n2", run("""
             import std.io
 
+            pack Left { fin value: Int }
+            pack Right { fin value: Int }
             pack Calculator {
-                fin add: [Int, Int]() -> Int =
-                    [x: Int, y: Int] { x + y }
+                fin add: (Left&, Right&).() -> Int =
+                    [&] (x: Left, y: Right) { x.value + y.value }
                 fin sub: (Int, Int) -> Int =
                     { x: Int, y: Int -> return x - y }
             }
 
             func main() {
                 fin calculator = Calculator()
-                with [2, 3] { println(calculator.add()) }
+                using (Left(2), Right(3)) { println(calculator.add()) }
                 println(calculator.sub(9, 7))
             }
         """.trimIndent()))
@@ -310,7 +312,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var n = 0
-                fin inc = [; n.!] { n = n + 1 }
+                fin inc = [n.!] { n = n + 1 }
                 inc()
                 println(n)
             }
@@ -333,7 +335,7 @@ class LambdaTest {
             import std.io
             func main() {
                 var seen = 0
-                fin outer = [; seen.!] {
+                fin outer = [seen.!] {
                     fin inner: (Int) -> Int = { it * 2 }
                     seen = inner(1)
                 }
@@ -363,6 +365,7 @@ class LambdaTest {
     @Test fun aCallableTypeMayBeAGenericArgument() {
         assertEquals("ok", run("""
             import std.io
+            import std.container.list
             func main() {
                 var fs = listOf<() -> Int>()
                 var handlers = listOf<(Int) -> Int>()
@@ -371,15 +374,17 @@ class LambdaTest {
         """.trimIndent()))
     }
 
-    @Test fun withSuppliesContextualReceivers() {
+    @Test fun usingSuppliesContextualReceivers() {
         assertEquals("5", run("""
             import std.io
+            pack Left { fin value: Int }
+            pack Right { fin value: Int }
 
-            fin add: [Int, Int]() -> Int =
-                [x: Int, y: Int] { x + y }
+            fin add: (Left&, Right&).() -> Int =
+                [&] (x: Left, y: Right) { x.value + y.value }
 
             func main() {
-                with [2, 3] {
+                using (Left(2), Right(3)) {
                     println(add())
                 }
             }
@@ -412,14 +417,14 @@ class LambdaTest {
 
             pack Vec2 { fin x = 0 fin y = 0 }
 
-            func apply(v: Vec2&, f: [Vec2&]() -> Int): Int {
+            func apply(v: Vec2&, f: Vec2&.() -> Int): Int {
                 var acc = 0
-                with v { acc = f() }
+                using v { acc = f() }
                 return acc
             }
 
             func main() {
-                fin add = [self: Vec2&]{ self.x + self.y }
+                fin add = [&] self: Vec2 { self.x + self.y }
                 println(apply(Vec2(2, 3), add))
             }
         """.trimIndent()))
@@ -431,14 +436,14 @@ class LambdaTest {
 
             pack Vec2 { fin x = 0 fin y = 0 }
 
-            func apply(v: Vec2&, o: Vec2&, f: [Vec2&](Vec2&) -> Int): Int {
+            func apply(v: Vec2&, o: Vec2&, f: Vec2&.(Vec2&) -> Int): Int {
                 var acc = 0
-                with v { acc = f(o) }
+                using v { acc = f(o) }
                 return acc
             }
 
             func main() {
-                fin add = [self: Vec2&]{ other: Vec2& -> self.x + other.y }
+                fin add = [&] self: Vec2 { other: Vec2& -> self.x + other.y }
                 println(apply(Vec2(2, 3), Vec2(10, 20), add))
             }
         """.trimIndent()))
@@ -448,11 +453,11 @@ class LambdaTest {
         assertEquals("10\n14", run("""
             import std.io
 
-            fin scale: [Int](Int) -> Int =
-                [value: Int] { factor: Int -> value * factor }
+            fin scale: Int.(Int) -> Int =
+                [take] value: Int { factor: Int -> value * factor }
 
             func main() {
-                with 5 {
+                using 5 {
                     println(scale(2))
                 }
                 println(2.scale(7))
@@ -460,22 +465,32 @@ class LambdaTest {
         """.trimIndent()))
     }
 
+    @Test fun receiverAndSoleParameterHaveImplicitSelfAndIt() {
+        assertEquals("14", run("""
+            import std.io
+            fin scale: Int&.(Int) -> Int = { self * it }
+            func main() { println(2.scale(7)) }
+        """.trimIndent()))
+    }
+
     /**
      * A contextual receiver is not an argument. There are two ways to supply one:
-     * a `with` block, or the receiver call - `2.scale(7)` for one, `[2, 3].add()`
+     * a `using` block, or the receiver call - `2.scale(7)` for one, `{2, 3}.add()`
      * for several (LAMBDA_CONTEXT_CAPTURE_DIP.MD §2).
      */
-    @Test fun aReceiverIsSuppliedByWithOrByAReceiverCall() {
+    @Test fun aReceiverIsSuppliedByUsingOrByAReceiverCall() {
         assertEquals("10\n14\n5\n5", run("""
             import std.io
-            fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
-            fin add: [Int, Int]() -> Int = { x, y -> x + y }
+            pack Left { fin value: Int }
+            pack Right { fin value: Int }
+            fin scale: Int.(Int) -> Int = [take] value { factor -> value * factor }
+            fin add: (Left&, Right&).() -> Int = [&] (x, y) { x.value + y.value }
 
             func main() {
-                with 5 { println(scale(2)) }
+                using 5 { println(scale(2)) }
                 println(2.scale(7))
-                with [2, 3] { println(add()) }
-                println([2, 3].add())
+                using (Left(2), Right(3)) { println(add()) }
+                println({Left(2), Right(3)}.add())
             }
         """.trimIndent()))
     }
@@ -483,7 +498,7 @@ class LambdaTest {
     @Test fun aReceiverMayNotBePassedAsAnArgument() {
         val errors = assertIs<CompilationResult.Failure>(Compiler().compile("""
             import std.io
-            fin scale: [Int](Int) -> Int = [value] { factor -> value * factor }
+            fin scale: Int.(Int) -> Int = [take] value { factor -> value * factor }
             func main() { println(scale(2, 7)) }
         """.trimIndent())).errors
         assertTrue(
@@ -496,10 +511,12 @@ class LambdaTest {
     @Test fun aLambdaMayOmitTypesTheDeclaredTypeSupplies() {
         assertEquals("6", run("""
             import std.io
-            fin add: [Int, Int]() -> Int = { x, y -> x + y }
+            pack Left { fin value: Int }
+            pack Right { fin value: Int }
+            fin add: (Left&, Right&).() -> Int = [&] (x, y) { x.value + y.value }
             fin twice: (Int) -> Int = { n -> n * 2 }
             func main() {
-                with [1, 2] { println(add() + twice(1) + 1) }
+                using (Left(1), Right(2)) { println(add() + twice(1) + 1) }
             }
         """.trimIndent()))
     }

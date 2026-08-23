@@ -24,6 +24,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.functional
 
 import std.container.array::*
@@ -35,7 +36,7 @@ import std.container.array::*
  * @return The same value.
  */
 @Experimental(since: "0.1")
-func identity<T>(x: T): T { return x }
+func<T> identity(x: T): T { return x }
 
 /**
  * Applies a transformation to each element of an array.
@@ -45,7 +46,7 @@ func identity<T>(x: T): T { return x }
  * @return A new array with transformed elements.
  */
 @Experimental(since: "0.1")
-func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
+func<T> map(arr: Array<T>, f: (T) -> T): Array<T> {
     var result: Array<T> = .() * arr.size
     for i in 0..<arr.size {
         result[i] = f(arr[i])
@@ -61,7 +62,7 @@ func map<T>(arr: Array<T>, f: (T) -> T): Array<T> {
  * @return A filtered array.
  */
 @Experimental(since: "0.1")
-func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
+func<T> filter(arr: Array<T>, pred: (T) -> Bool): Array<T> {
     var tmp: Array<T> = .() * arr.size
     var count = 0
     for i in 0..<arr.size {
@@ -86,7 +87,7 @@ func filter<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
  * @return The final accumulated value.
  */
 @Experimental(since: "0.1")
-func reduce<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
+func<T> reduce(arr: Array<T>, initial: T, f: (T, T) -> T): T {
     var acc = initial
     for i in 0..<arr.size {
         acc = f(acc, arr[i])
@@ -101,7 +102,7 @@ func reduce<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
  * @param action The function to apply.
  */
 @Experimental(since: "0.1")
-func forEach<T>(arr: Array<T>, action: (T) -> Unit) {
+func<T> forEach(arr: Array<T>, action: (T) -> Unit) {
     for i in 0..<arr.size {
         action(arr[i])
     }
@@ -115,7 +116,7 @@ func forEach<T>(arr: Array<T>, action: (T) -> Unit) {
  * @return true if at least one element matches.
  */
 @Experimental(since: "0.1")
-func any<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+func<T> any(arr: Array<T>, pred: (T) -> Bool): Bool {
     for i in 0..<arr.size {
         if pred(arr[i]) { return true }
     }
@@ -130,7 +131,7 @@ func any<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
  * @return true if every element matches.
  */
 @Experimental(since: "0.1")
-func all<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+func<T> all(arr: Array<T>, pred: (T) -> Bool): Bool {
     for i in 0..<arr.size {
         if !pred(arr[i]) { return false }
     }
@@ -145,7 +146,7 @@ func all<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
  * @return true if no element matches.
  */
 @Experimental(since: "0.1")
-func none<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
+func<T> none(arr: Array<T>, pred: (T) -> Bool): Bool {
     for i in 0..<arr.size {
         if pred(arr[i]) { return false }
     }
@@ -160,7 +161,7 @@ func none<T>(arr: Array<T>, pred: (T) -> Bool): Bool {
  * @return A new array with at most n elements.
  */
 @Experimental(since: "0.1")
-func take<T>(arr: Array<T>, n: Int): Array<T>
+func<T> take(arr: Array<T>, n: Int): Array<T>
 in {
     assert n >= 0 { "take count must be non-negative" }
 } scope {
@@ -180,7 +181,7 @@ in {
  * @return A new array without the first n elements.
  */
 @Experimental(since: "0.1")
-func drop<T>(arr: Array<T>, n: Int): Array<T>
+func<T> drop(arr: Array<T>, n: Int): Array<T>
 in {
     assert n >= 0 { "purge count must be non-negative" }
 } scope {
@@ -204,7 +205,7 @@ in {
  * @return An array of [a[i], b[i]] pairs, up to the shorter length.
  */
 @Experimental(since: "0.1")
-func zip<T>(a: Array<T>, b: Array<T>): Array<T> {
+func<T> zip(a: Array<T>, b: Array<T>): Array<T> {
     fin len = if a.size < b.size { a.size } else { b.size }
     var result: Array<T> = .() * len
     for i in 0..<len {
@@ -221,7 +222,7 @@ func zip<T>(a: Array<T>, b: Array<T>): Array<T> {
  * @return A new array of count elements, all set to value.
  */
 @Experimental(since: "0.1")
-func fill<T>(value: T, count: Int): Array<T>
+func<T> fill(value: T, count: Int): Array<T>
 in {
     assert count >= 0 { "fill count must be non-negative" }
 } scope {
@@ -240,7 +241,7 @@ in {
  * @return A new array of generated elements.
  */
 @Experimental(since: "0.1")
-func generate<T>(count: T, f: (T) -> T): Array<T> {
+func<T> generate(count: T, f: (T) -> T): Array<T> {
     var result: Array<T> = .() * count
     for i in 0..<count {
         result[i] = f(i)
@@ -256,7 +257,7 @@ func generate<T>(count: T, f: (T) -> T): Array<T> {
  * @return The count of matching elements.
  */
 @Experimental(since: "0.1")
-func countWhere<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+func<T> countWhere(arr: Array<T>, pred: (T) -> Bool): Int {
     var c = 0
     for i in 0..<arr.size {
         if pred(arr[i]) { c += 1 }
@@ -273,7 +274,7 @@ func countWhere<T>(arr: Array<T>, pred: (T) -> Bool): Int {
  * @return The first matching element or default.
  */
 @Experimental(since: "0.1")
-func findOr<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
+func<T> findOr(arr: Array<T>, pred: (T) -> Bool, default: T): T {
     for i in 0..<arr.size {
         if pred(arr[i]) { return arr[i] }
     }
@@ -284,7 +285,7 @@ func findOr<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
  * Maps each element to an array and flattens the results.
  */
 @Experimental(since: "0.1")
-func flatMap<T>(arr: Array<T>, f: (T) -> Array<T>): Array<T> {
+func<T> flatMap(arr: Array<T>, f: (T) -> Array<T>): Array<T> {
     // Two-pass: first count total, then fill
     var total = 0
     var i = 0
@@ -312,7 +313,7 @@ func flatMap<T>(arr: Array<T>, f: (T) -> Array<T>): Array<T> {
  * Since Azora generics are single-type, accumulator uses same type T.
  */
 @Experimental(since: "0.1")
-func fold<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
+func<T> fold(arr: Array<T>, initial: T, f: (T, T) -> T): T {
     var acc: T = initial
     for i in 0..<arr.size {
         acc = f(acc, arr[i])
@@ -324,7 +325,7 @@ func fold<T>(arr: Array<T>, initial: T, f: (T, T) -> T): T {
  * Like reduce but returns all intermediate accumulator values.
  */
 @Experimental(since: "0.1")
-func scan<T>(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
+func<T> scan(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
     var result: Array<T> = .() * arr.size + 1
     var acc: T = initial
     result[0] = acc
@@ -340,7 +341,7 @@ func scan<T>(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
  * Returns transformed array. Index passed as first element of a 2-element array.
  */
 @Experimental(since: "0.1")
-func mapIndexed<T>(arr: Array<T>, f: (T, T) -> T): Array<T> {
+func<T> mapIndexed(arr: Array<T>, f: (T, T) -> T): Array<T> {
     var result: Array<T> = .() * arr.size
     for i in 0..<arr.size {
         result[i] = f(arr[i], arr[i])
@@ -352,7 +353,7 @@ func mapIndexed<T>(arr: Array<T>, f: (T, T) -> T): Array<T> {
  * Calls function N times, collecting results.
  */
 @Experimental(since: "0.1")
-func repeatCall<T>(count: T, f: () -> T): Array<T> {
+func<T> repeatCall(count: T, f: () -> T): Array<T> {
     var result: Array<T> = .() * count
     for idx in 0..<count {
         result[idx] = f()
@@ -364,7 +365,7 @@ func repeatCall<T>(count: T, f: () -> T): Array<T> {
  * Returns the first element matching the predicate, or default.
  */
 @Experimental(since: "0.1")
-func firstWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
+func<T> firstWhere(arr: Array<T>, pred: (T) -> Bool, default: T): T {
     for i in 0..<arr.size {
         if pred(arr[i]) {
             return arr[i]
@@ -377,7 +378,7 @@ func firstWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
  * Returns the last element matching the predicate, or default.
  */
 @Experimental(since: "0.1")
-func lastWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
+func<T> lastWhere(arr: Array<T>, pred: (T) -> Bool, default: T): T {
     var result: T = default
     for i in 0..<arr.size {
         if pred(arr[i]) {
@@ -392,7 +393,7 @@ func lastWhere<T>(arr: Array<T>, pred: (T) -> Bool, default: T): T {
  * Returns a 2-element array: [matching, nonMatching].
  */
 @Experimental(since: "0.1")
-func partition<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
+func<T> partition(arr: Array<T>, pred: (T) -> Bool): Array<T> {
     var yes: Array<T> = .() * arr.size
     var no: Array<T> = .() * arr.size
     var yi = 0
@@ -426,7 +427,7 @@ func partition<T>(arr: Array<T>, pred: (T) -> Bool): Array<T> {
  * Splits array into chunks of given size.
  */
 @Experimental(since: "0.1")
-func chunk<T>(arr: Array<T>, size: Int): Array<T> {
+func<T> chunk(arr: Array<T>, size: Int): Array<T> {
     fin numChunks = (arr.size + size - 1) / size
     var result: Array<T> = .() * numChunks
     var ri = 0
@@ -449,7 +450,7 @@ func chunk<T>(arr: Array<T>, size: Int): Array<T> {
  * Flattens a nested array by one level.
  */
 @Experimental(since: "0.1")
-func flatten<T>(arr: Array<T>): Array<T> {
+func<T> flatten(arr: Array<T>): Array<T> {
     // Two-pass: count total, then fill
     var total = 0
     var i = 0
@@ -475,7 +476,7 @@ func flatten<T>(arr: Array<T>): Array<T> {
  * Removes all duplicate elements (not just consecutive), preserving first occurrence.
  */
 @Experimental(since: "0.1")
-func distinct<T>(arr: Array<T>): Array<T> {
+func<T> distinct(arr: Array<T>): Array<T> {
     var tmp: Array<T> = .() * arr.size
     var ri = 0
     for i in 0..<arr.size {
@@ -501,7 +502,7 @@ func distinct<T>(arr: Array<T>): Array<T> {
  * Returns a new array with elements in the given index range.
  */
 @Experimental(since: "0.1")
-func slice<T>(arr: Array<T>, start: Int, end: Int): Array<T> {
+func<T> slice(arr: Array<T>, start: Int, end: Int): Array<T> {
     fin actualEnd = if end < arr.size {
         end
     } else {

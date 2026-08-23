@@ -36,6 +36,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.container.set
 
 import std.serializer::Serializable
@@ -52,40 +53,40 @@ import std.serializer::Serializable
 @Experimental(since: "0.1")
 spec Set<T> {
     /** Number of unique elements. */
-    prop size[self: Self&]: Int
+    prop &.size: Int
 
     /** Whether this set has no elements. */
-    prop isEmpty[self: Self&]: Bool
+    prop &.isEmpty: Bool
 
     /** Whether this set has at least one element. */
-    prop isNotEmpty[self: Self&]: Bool
+    prop &.isNotEmpty: Bool
 
     /** Returns the element at `index` in iteration order. Asserts out of bounds. */
-    func get[self: Self&](index: Int): T
+    func &.get(index: Int): T
 
     /** Returns whether `element` is present. */
-    func contains[self: Self&](element: T): Bool
+    func &.contains(element: T): Bool
 
     /** Invokes `action` once for every element in iteration order. */
-    func forEach[self: Self&](action: (T) -> Unit)
+    func &.forEach(action: (T) -> Unit)
 
     /** Returns a new set with only elements satisfying `predicate`. */
-    func filter[self: Self&](predicate: (T) -> Bool): Set<T>
+    func &.filter(predicate: (T) -> Bool): Set<T>
 
     /** Returns whether at least one element satisfies `predicate`. */
-    func any[self: Self&](predicate: (T) -> Bool): Bool
+    func &.any(predicate: (T) -> Bool): Bool
 
     /** Returns whether every element satisfies `predicate`. */
-    func all[self: Self&](predicate: (T) -> Bool): Bool
+    func &.all(predicate: (T) -> Bool): Bool
 
     /** Returns a new set with all unique elements from both sets. */
-    func union[self: Self&](other: Set<T>): Set<T>
+    func &.union(other: Set<T>): Set<T>
 
     /** Returns a new set with only elements present in both sets. */
-    func intersect[self: Self&](other: Set<T>): Set<T>
+    func &.intersect(other: Set<T>): Set<T>
 
     /** Returns a new set with elements here that are absent from `other`. */
-    func difference[self: Self&](other: Set<T>): Set<T>
+    func &.difference(other: Set<T>): Set<T>
 }
 
 /**
@@ -107,13 +108,13 @@ derive Clone for Set
 @Experimental(since: "0.1")
 spec MutableSet<T> : Set<T> {
     /** Adds `element`; returns whether membership changed. */
-    func add[self: Self&](element: T): Bool
+    func &.add(element: T): Bool
 
     /** Removes `element`; returns whether membership changed. */
-    func remove[self: Self&](element: T): Bool
+    func &.remove(element: T): Bool
 
     /** Removes every element while retaining reusable internal capacity. */
-    func clear[self: Self&]()
+    func &.clear()
 }
 
 /**
@@ -140,7 +141,7 @@ pack LinkedHashSet<T> {
 impl LinkedHashSet<T> {
     /** Doubles the backing buffer, copying existing elements. */
     @Experimental(since: "0.1")
-    func growSet[self: Self!]() {
+    func !.growSet() {
         fin newCap = self.capacity * 2
         let newData: T* = alloc .() * newCap
         for i in 0..<self.size {
@@ -154,7 +155,7 @@ impl LinkedHashSet<T> {
 
     /** Returns whether `element` is already stored. */
     @Experimental(since: "0.1")
-    func has[self: Self&](element: T): Bool {
+    func &.has(element: T): Bool {
         for i in 0..<self.size {
             if self.data[i] == element { return true }
         }
@@ -163,27 +164,27 @@ impl LinkedHashSet<T> {
 }
 
 impl Set<T> for LinkedHashSet<T> {
-    prop size[self: Self&]: Int = self.size
-    prop isEmpty[self: Self&]: Bool = self.size == 0
-    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+    prop &.size: Int = self.size
+    prop &.isEmpty: Bool = self.size == 0
+    prop &.isNotEmpty: Bool = self.size > 0
 
-    func get[self: Self&](index: Int): T {
+    func &.get(index: Int): T {
         assert index >= 0 { "Set index must be non-negative" }
         assert index < self.size { "Set index out of bounds" }
         return self.data[index]
     }
 
-    func contains[self: Self&](element: T): Bool {
+    func &.contains(element: T): Bool {
         return self.has(element)
     }
 
-    func forEach[self: Self&](action: (T) -> Unit) {
+    func &.forEach(action: (T) -> Unit) {
         for i in 0..<self.size {
             action(self.data[i])
         }
     }
 
-    func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
+    func &.filter(predicate: (T) -> Bool): Set<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<self.size {
             if predicate(self.data[i]) {
@@ -193,21 +194,21 @@ impl Set<T> for LinkedHashSet<T> {
         return result
     }
 
-    func any[self: Self&](predicate: (T) -> Bool): Bool {
+    func &.any(predicate: (T) -> Bool): Bool {
         for i in 0..<self.size {
             if predicate(self.data[i]) { return true }
         }
         return false
     }
 
-    func all[self: Self&](predicate: (T) -> Bool): Bool {
+    func &.all(predicate: (T) -> Bool): Bool {
         for i in 0..<self.size {
             if !predicate(self.data[i]) { return false }
         }
         return true
     }
 
-    func union[self: Self&](other: Set<T>): Set<T> {
+    func &.union(other: Set<T>): Set<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<self.size {
             result.add(self.data[i])
@@ -218,7 +219,7 @@ impl Set<T> for LinkedHashSet<T> {
         return result
     }
 
-    func intersect[self: Self&](other: Set<T>): Set<T> {
+    func &.intersect(other: Set<T>): Set<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<self.size {
             if other.contains(self.data[i]) {
@@ -228,7 +229,7 @@ impl Set<T> for LinkedHashSet<T> {
         return result
     }
 
-    func difference[self: Self&](other: Set<T>): Set<T> {
+    func &.difference(other: Set<T>): Set<T> {
         var result = LinkedHashSet<T>()
         for i in 0..<self.size {
             if !other.contains(self.data[i]) {
@@ -240,7 +241,7 @@ impl Set<T> for LinkedHashSet<T> {
 }
 
 impl MutableSet<T> for LinkedHashSet<T> {
-    func add[self: Self!](element: T): Bool {
+    func !.add(element: T): Bool {
         if self.has(element) { return false }
         if self.size >= self.capacity { self.growSet() }
         self.data[self.size] = element
@@ -248,7 +249,7 @@ impl MutableSet<T> for LinkedHashSet<T> {
         return true
     }
 
-    func remove[self: Self!](element: T): Bool {
+    func !.remove(element: T): Bool {
         var idx = -1
         for i in 0..<self.size {
             if self.data[i] == element { idx = i }
@@ -261,7 +262,7 @@ impl MutableSet<T> for LinkedHashSet<T> {
         return true
     }
 
-    func clear[self: Self!]() {
+    func !.clear() {
         fin oldData = self.data
         self.data = alloc .() * 8
         self.size = 0
@@ -275,17 +276,17 @@ impl MutableSet<T> for LinkedHashSet<T> {
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-func emptySet<T>(): Set<T> {
+func<T> emptySet(): Set<T> {
     return LinkedHashSet<T>()
 }
 
 @Experimental(since: "0.1")
-func emptyMutableSet<T>(): MutableSet<T> {
+func<T> emptyMutableSet(): MutableSet<T> {
     return LinkedHashSet<T>()
 }
 
 @Experimental(since: "0.1")
-func setOf<T>(...elements: T): Set<T> {
+func<T> setOf(...elements: T): Set<T> {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -294,7 +295,7 @@ func setOf<T>(...elements: T): Set<T> {
 }
 
 @Experimental(since: "0.1")
-func mutableSetOf<T>(...elements: T): MutableSet<T> {
+func<T> mutableSetOf(...elements: T): MutableSet<T> {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -303,7 +304,7 @@ func mutableSetOf<T>(...elements: T): MutableSet<T> {
 }
 
 @Experimental(since: "0.1")
-func linkedHashSetOf<T>(...elements: T): LinkedHashSet<T> {
+func<T> linkedHashSetOf(...elements: T): LinkedHashSet<T> {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -312,7 +313,7 @@ func linkedHashSetOf<T>(...elements: T): LinkedHashSet<T> {
 }
 
 @Experimental(since: "0.1")
-func emptyLinkedHashSet<T>(): MutableSet<T> {
+func<T> emptyLinkedHashSet(): MutableSet<T> {
     return LinkedHashSet<T>()
 }
 
@@ -327,7 +328,7 @@ pack HashSet<T> {
 }
 
 @Experimental(since: "0.1")
-func hashSetOf<T>(...elements: T): HashSet<T> {
+func<T> hashSetOf(...elements: T): HashSet<T> {
     var result = HashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -336,7 +337,7 @@ func hashSetOf<T>(...elements: T): HashSet<T> {
 }
 
 @Experimental(since: "0.1")
-func emptyHashSet<T>(): MutableSet<T> {
+func<T> emptyHashSet(): MutableSet<T> {
     return HashSet<T>()
 }
 
@@ -347,7 +348,7 @@ func emptyHashSet<T>(): MutableSet<T> {
 
 @Since("0.1")
 impl Clone for HashSet {
-    func clone[self: Self&]() {
+    func &.clone() {
         var copy = HashSet<T>()
         for i in 0..<self.size {
             copy.add(self.data[i])
@@ -358,7 +359,7 @@ impl Clone for HashSet {
 
 impl HashSet<T> {
     @Experimental(since: "0.1")
-    func growSet[self: Self!]() {
+    func !.growSet() {
         fin newCap = self.capacity * 2
         let newData: T* = alloc .() * newCap
         for i in 0..<self.size {
@@ -371,7 +372,7 @@ impl HashSet<T> {
     }
 
     @Experimental(since: "0.1")
-    func has[self: Self&](element: T): Bool {
+    func &.has(element: T): Bool {
         for i in 0..<self.size {
             if self.data[i] == element { return true }
         }
@@ -380,27 +381,27 @@ impl HashSet<T> {
 }
 
 impl Set<T> for HashSet<T> {
-    prop size[self: Self&]: Int = self.size
-    prop isEmpty[self: Self&]: Bool = self.size == 0
-    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+    prop &.size: Int = self.size
+    prop &.isEmpty: Bool = self.size == 0
+    prop &.isNotEmpty: Bool = self.size > 0
 
-    func get[self: Self&](index: Int): T {
+    func &.get(index: Int): T {
         assert index >= 0 { "Set index must be non-negative" }
         assert index < self.size { "Set index out of bounds" }
         return self.data[index]
     }
 
-    func contains[self: Self&](element: T): Bool {
+    func &.contains(element: T): Bool {
         return self.has(element)
     }
 
-    func forEach[self: Self&](action: (T) -> Unit) {
+    func &.forEach(action: (T) -> Unit) {
         for i in 0..<self.size {
             action(self.data[i])
         }
     }
 
-    func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
+    func &.filter(predicate: (T) -> Bool): Set<T> {
         var result = HashSet<T>()
         for i in 0..<self.size {
             if predicate(self.data[i]) {
@@ -410,21 +411,21 @@ impl Set<T> for HashSet<T> {
         return result
     }
 
-    func any[self: Self&](predicate: (T) -> Bool): Bool {
+    func &.any(predicate: (T) -> Bool): Bool {
         for i in 0..<self.size {
             if predicate(self.data[i]) { return true }
         }
         return false
     }
 
-    func all[self: Self&](predicate: (T) -> Bool): Bool {
+    func &.all(predicate: (T) -> Bool): Bool {
         for i in 0..<self.size {
             if !predicate(self.data[i]) { return false }
         }
         return true
     }
 
-    func union[self: Self&](other: Set<T>): Set<T> {
+    func &.union(other: Set<T>): Set<T> {
         var result = HashSet<T>()
         for i in 0..<self.size {
             result.add(self.data[i])
@@ -437,7 +438,7 @@ impl Set<T> for HashSet<T> {
         return result
     }
 
-    func intersect[self: Self&](other: Set<T>): Set<T> {
+    func &.intersect(other: Set<T>): Set<T> {
         var result = HashSet<T>()
         for i in 0..<self.size {
             if other.contains(self.data[i]) {
@@ -447,7 +448,7 @@ impl Set<T> for HashSet<T> {
         return result
     }
 
-    func difference[self: Self&](other: Set<T>): Set<T> {
+    func &.difference(other: Set<T>): Set<T> {
         var result = HashSet<T>()
         for i in 0..<self.size {
             if !other.contains(self.data[i]) {
@@ -459,7 +460,7 @@ impl Set<T> for HashSet<T> {
 }
 
 impl MutableSet<T> for HashSet<T> {
-    func add[self: Self!](element: T): Bool {
+    func !.add(element: T): Bool {
         if self.has(element) { return false }
         if self.size >= self.capacity { self.growSet() }
         self.data[self.size] = element
@@ -467,7 +468,7 @@ impl MutableSet<T> for HashSet<T> {
         return true
     }
 
-    func remove[self: Self!](element: T): Bool {
+    func !.remove(element: T): Bool {
         var idx = -1
         for i in 0..<self.size {
             if self.data[i] == element { idx = i }
@@ -482,7 +483,7 @@ impl MutableSet<T> for HashSet<T> {
         return true
     }
 
-    func clear[self: Self!]() {
+    func !.clear() {
         fin oldData = self.data
         self.data = alloc .() * 8
         self.size = 0
@@ -501,7 +502,7 @@ oper[] [self: HashSet<T>&](index: Int): T {
 
 @Experimental(since: "0.1")
 impl Into<String> for HashSet<T> {
-    prop into[self: Self&]: String {
+    prop &.into: String {
         var s = "{"
         for i in 0..<self.size {
             if i > 0 { s = s + ", " }
@@ -527,7 +528,7 @@ oper!= [self: HashSet<T>&](rhs: Set<T>): Bool {
 
 @Experimental(since: "0.1")
 impl HashSet<T> {
-    prop hash[self: Self&]: ULong {
+    prop &.hash: ULong {
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + self.data[i].hash
@@ -547,7 +548,7 @@ pack TreeSet<T> {
 }
 
 @Experimental(since: "0.1")
-func treeSetOf<T>(...elements: T): TreeSet<T> {
+func<T> treeSetOf(...elements: T): TreeSet<T> {
     var result = TreeSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -557,7 +558,7 @@ func treeSetOf<T>(...elements: T): TreeSet<T> {
 
 impl TreeSet<T> {
     @Experimental(since: "0.1")
-    func growSet[self: Self!]() {
+    func !.growSet() {
         fin newCap = self.capacity * 2
         let newData: T* = alloc .() * newCap
         for i in 0..<self.size {
@@ -570,7 +571,7 @@ impl TreeSet<T> {
     }
 
     @Experimental(since: "0.1")
-    func has[self: Self&](element: T): Bool {
+    func &.has(element: T): Bool {
         for i in 0..<self.size {
             if self.data[i] == element { return true }
         }
@@ -579,27 +580,27 @@ impl TreeSet<T> {
 }
 
 impl Set<T> for TreeSet<T> {
-    prop size[self: Self&]: Int = self.size
-    prop isEmpty[self: Self&]: Bool = self.size == 0
-    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+    prop &.size: Int = self.size
+    prop &.isEmpty: Bool = self.size == 0
+    prop &.isNotEmpty: Bool = self.size > 0
 
-    func get[self: Self&](index: Int): T {
+    func &.get(index: Int): T {
         assert index >= 0 { "Set index must be non-negative" }
         assert index < self.size { "Set index out of bounds" }
         return self.data[index]
     }
 
-    func contains[self: Self&](element: T): Bool {
+    func &.contains(element: T): Bool {
         return self.has(element)
     }
 
-    func forEach[self: Self&](action: (T) -> Unit) {
+    func &.forEach(action: (T) -> Unit) {
         for i in 0..<self.size {
             action(self.data[i])
         }
     }
 
-    func filter[self: Self&](predicate: (T) -> Bool): Set<T> {
+    func &.filter(predicate: (T) -> Bool): Set<T> {
         var result = TreeSet<T>()
         for i in 0..<self.size {
             if predicate(self.data[i]) {
@@ -609,21 +610,21 @@ impl Set<T> for TreeSet<T> {
         return result
     }
 
-    func any[self: Self&](predicate: (T) -> Bool): Bool {
+    func &.any(predicate: (T) -> Bool): Bool {
         for i in 0..<self.size {
             if predicate(self.data[i]) { return true }
         }
         return false
     }
 
-    func all[self: Self&](predicate: (T) -> Bool): Bool {
+    func &.all(predicate: (T) -> Bool): Bool {
         for i in 0..<self.size {
             if !predicate(self.data[i]) { return false }
         }
         return true
     }
 
-    func union[self: Self&](other: Set<T>): Set<T> {
+    func &.union(other: Set<T>): Set<T> {
         var result = TreeSet<T>()
         for i in 0..<self.size {
             result.add(self.data[i])
@@ -636,7 +637,7 @@ impl Set<T> for TreeSet<T> {
         return result
     }
 
-    func intersect[self: Self&](other: Set<T>): Set<T> {
+    func &.intersect(other: Set<T>): Set<T> {
         var result = TreeSet<T>()
         for i in 0..<self.size {
             if other.contains(self.data[i]) {
@@ -646,7 +647,7 @@ impl Set<T> for TreeSet<T> {
         return result
     }
 
-    func difference[self: Self&](other: Set<T>): Set<T> {
+    func &.difference(other: Set<T>): Set<T> {
         var result = TreeSet<T>()
         for i in 0..<self.size {
             if !other.contains(self.data[i]) {
@@ -658,7 +659,7 @@ impl Set<T> for TreeSet<T> {
 }
 
 impl MutableSet<T> for TreeSet<T> {
-    func add[self: Self!](element: T): Bool {
+    func !.add(element: T): Bool {
         if self.has(element) { return false }
         if self.size >= self.capacity { self.growSet() }
         self.data[self.size] = element
@@ -666,7 +667,7 @@ impl MutableSet<T> for TreeSet<T> {
         return true
     }
 
-    func remove[self: Self!](element: T): Bool {
+    func !.remove(element: T): Bool {
         var idx = -1
         for i in 0..<self.size {
             if self.data[i] == element { idx = i }
@@ -681,7 +682,7 @@ impl MutableSet<T> for TreeSet<T> {
         return true
     }
 
-    func clear[self: Self!]() {
+    func !.clear() {
         fin oldData = self.data
         self.data = alloc .() * 8
         self.size = 0
@@ -700,7 +701,7 @@ oper[] [self: TreeSet<T>&](index: Int): T {
 
 @Experimental(since: "0.1")
 impl Into<String> for TreeSet<T> {
-    prop into[self: Self&]: String {
+    prop &.into: String {
         var s = "{"
         for i in 0..<self.size {
             if i > 0 { s = s + ", " }
@@ -726,7 +727,7 @@ oper!= [self: TreeSet<T>&](rhs: Set<T>): Bool {
 
 @Experimental(since: "0.1")
 impl TreeSet<T> {
-    prop hash[self: Self&]: ULong {
+    prop &.hash: ULong {
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + self.data[i].hash
@@ -749,7 +750,7 @@ oper[] [self: LinkedHashSet<T>&](index: Int): T {
 
 @Experimental(since: "0.1")
 impl Into<String> for LinkedHashSet<T> {
-    prop into[self: Self&]: String {
+    prop &.into: String {
         var s = "{"
         for i in 0..<self.size {
             if i > 0 { s = s + ", " }
@@ -775,7 +776,7 @@ oper!= [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
 
 @Experimental(since: "0.1")
 impl LinkedHashSet<T> {
-    prop hash[self: Self&]: ULong {
+    prop &.hash: ULong {
         var result = 0 as ULong
         for i in 0..<self.size {
             result = result + self.data[i].hash

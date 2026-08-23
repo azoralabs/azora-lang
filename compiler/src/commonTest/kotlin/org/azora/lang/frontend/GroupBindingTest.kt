@@ -23,7 +23,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * `fin [a, b, c] = …` declares several names at once.
+ * `fin {a, b, c} = …` declares several names at once.
  *
  * A group is the lines it stands for, and those lines belong to the block it
  * was written in - not to a scope of their own, where the names would die at
@@ -46,11 +46,11 @@ class GroupBindingTest {
 
     // -- reading members off one value --------------------------------------
 
-    @Test fun withReadsEachMemberOfOneValue() {
+    @Test fun usingReadsEachMemberOfOneValue() {
         val stmts = body(
             """
-            fin [oldKeys, oldValues, oldCapacity] = with self {
-                [keys, values, capacity]
+            fin {oldKeys, oldValues, oldCapacity} = using self {
+                {keys, values, capacity}
             }
             """.trimIndent(),
         )
@@ -63,21 +63,21 @@ class GroupBindingTest {
 
     @Test fun theBindingsBelongToTheBlockAroundThem() {
         // Not a scope of their own: a name declared here is readable below.
-        val stmts = body("fin [a, b] = with self { [x, y] }\nreturn a")
+        val stmts = body("fin {a, b} = using self { {x, y} }\nreturn a")
         assertIs<Stmt.FinDecl>(stmts[0])
         assertIs<Stmt.FinDecl>(stmts[1])
         assertIs<Stmt.Return>(stmts[2])
     }
 
     @Test fun theReceiverIsWhateverWasWritten() {
-        val stmts = body("fin [w, h] = with config.window { [width, height] }")
+        val stmts = body("fin {w, h} = using config.window { {width, height} }")
         assertIs<Expr.Member>(assertIs<Expr.Member>(bound(stmts[0]).second).target)
     }
 
     // -- one value per name -------------------------------------------------
 
-    @Test fun aBracketedListIsPositional() {
-        val stmts = body("""fin [a, b, c] = [1, "2", true]""")
+    @Test fun aBraceSourceGroupIsPositional() {
+        val stmts = body("""fin {a, b, c} = {1, "2", true}""")
         assertEquals(listOf("a", "b", "c"), stmts.map { bound(it).first })
         assertIs<Expr.IntLiteral>(bound(stmts[0]).second)
         assertIs<Expr.StringLiteral>(bound(stmts[1]).second)
@@ -87,7 +87,7 @@ class GroupBindingTest {
     // -- one expression, written to each ------------------------------------
 
     @Test fun oneExpressionIsWrittenToEveryName() {
-        val stmts = body("fin [a, b] = next()")
+        val stmts = body("fin {a, b} = next()")
         assertEquals(2, stmts.size)
         assertTrue(stmts.all { bound(it).second is Expr.Call })
     }
@@ -97,10 +97,10 @@ class GroupBindingTest {
     @Test fun everyNameMayStateItsOwnType() {
         val stmts = body(
             """
-            let [
+            let {
                 newKeys: K*
                 newValues: V*
-            ] = alloc .() * newCapacity
+            } = alloc .() * newCapacity
             """.trimIndent(),
         )
 
@@ -113,7 +113,7 @@ class GroupBindingTest {
     }
 
     @Test fun oneTypeMayCoverTheWholeGroup() {
-        val stmts = body("fin [a, b, c]: Int = 0")
+        val stmts = body("fin {a, b, c}: Int = 0")
 
         assertEquals(3, stmts.size)
         assertTrue(
@@ -124,43 +124,43 @@ class GroupBindingTest {
     }
 
     @Test fun oneTypeAndOneValuePerName() {
-        val stmts = body("fin [a, b, c]: Int = [1, 2, 3]")
+        val stmts = body("fin {a, b, c}: Int = {1, 2, 3}")
 
         assertEquals(listOf(1L, 2L, 3L), stmts.map { assertIs<Expr.IntLiteral>(bound(it).second).value })
     }
 
     @Test fun theTypeIsStatedOnceOrPerName() {
-        val e = assertFailsWith<IllegalStateException> { body("fin [a: Int, b]: Int = 0") }
+        val e = assertFailsWith<IllegalStateException> { body("fin {a: Int, b}: Int = 0") }
         assertTrue("states its type once" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     // -- var groups ---------------------------------------------------------
 
     @Test fun varBindsMutably() {
-        val stmts = body("var [a, b] = with self { [x, y] }")
+        val stmts = body("var {a, b} = using self { {x, y} }")
         assertTrue(stmts.all { it is Stmt.VarDecl }, "$stmts")
     }
 
     // -- what is rejected ---------------------------------------------------
 
     @Test fun theCountsMustAgree() {
-        val e = assertFailsWith<IllegalStateException> { body("fin [a, b, c] = with self { [x, y] }") }
+        val e = assertFailsWith<IllegalStateException> { body("fin {a, b, c} = using self { {x, y} }") }
         assertTrue("one value per name" in e.message.orEmpty(), e.message.orEmpty())
         assertTrue("3 named" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun aNameMayNotBeBoundTwice() {
-        val e = assertFailsWith<IllegalStateException> { body("fin [a, b, a] = [1, 2, 3]") }
+        val e = assertFailsWith<IllegalStateException> { body("fin {a, b, a} = {1, 2, 3}") }
         assertTrue("more than once" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun anEmptyGroupIsRejected() {
-        val e = assertFailsWith<IllegalStateException> { body("fin [] = 0") }
+        val e = assertFailsWith<IllegalStateException> { body("fin {} = 0") }
         assertTrue("binds nothing" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun lazyTakesASingleBinding() {
-        val e = assertFailsWith<IllegalStateException> { body("lazy fin [a, b] = next()") }
+        val e = assertFailsWith<IllegalStateException> { body("lazy fin {a, b} = next()") }
         assertTrue("single binding" in e.message.orEmpty(), e.message.orEmpty())
     }
 

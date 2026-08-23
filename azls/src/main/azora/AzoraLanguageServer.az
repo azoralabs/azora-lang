@@ -102,7 +102,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "binds") || rangeIs(source, start, end, "requires") ||
         rangeIs(source, start, end, "assoc") || rangeIs(source, start, end, "lend") ||
         rangeIs(source, start, end, "seal") ||
-        rangeIs(source, start, end, "use") ||
+        rangeIs(source, start, end, "using") ||
         rangeIs(source, start, end, "as") || rangeIs(source, start, end, "is") || rangeIs(source, start, end, "oper") || rangeIs(source, start, end, "annot") ||
         rangeIs(source, start, end, "bind") || rangeIs(source, start, end, "error") ||
         rangeIs(source, start, end, "alloc") || rangeIs(source, start, end, "purge") ||

@@ -34,11 +34,11 @@ import kotlin.test.assertTrue
 class GroupingAsWrittenTest {
 
     private fun body(source: String): List<Stmt> =
-        Parser(Lexer("impl TreeMap<K, V> {\n    func _grow[self!]() {\n$source\n    }\n}").tokenize())
+        Parser(Lexer("impl TreeMap<K, V> {\n    func !._grow() {\n$source\n    }\n}").tokenize())
             .parse().items.filterIsInstance<TopLevel.Impl>().single()
             .methods.single().body
 
-    /** `self.<name>` under a receiver, as `[a, b] = with self { … }` produces. */
+    /** `self.<name>` under a receiver, as `[a, b] = using self { … }` produces. */
     private fun readsFromSelf(value: Expr): String {
         val index = assertIs<Expr.Index>(value)
         val member = assertIs<Expr.Member>(index.target)
@@ -50,21 +50,21 @@ class GroupingAsWrittenTest {
         val stmts = body(
             """
             fin newCapacity = self.capacity * 2
-            let [
+            let {
                 newKeys: K*
                 newValues: V*
                 newLeft: Int*
-            ] = alloc .() * newCapacity
+            } = alloc .() * newCapacity
 
             for i in 0..<self.elemCount {
-                [newKeys[i], newValues[i]
-                newLeft[i]] = with self {
-                    [keys[i], values[i], left[i]]
+                {newKeys[i], newValues[i]
+                newLeft[i]} = using self {
+                    {keys[i], values[i], left[i]}
                 }
             }
-            with self purge [keys, values, left]
-            self.[keys, values, left, capacity] =
-                [newKeys, newValues, newLeft, newCapacity]
+            using self { purge [keys, values, left] }
+            self.{keys, values, left, capacity} =
+                {newKeys, newValues, newLeft, newCapacity}
             """.trimIndent(),
         )
 
@@ -95,8 +95,8 @@ class GroupingAsWrittenTest {
             copies.map { readsFromSelf(assertIs<Stmt.IndexAssign>(it).value) },
         )
 
-        // `with self purge [ … ]` is still the statement it was.
-        assertIs<Stmt.WithContext>(stmts.first { it is Stmt.WithContext })
+        // `using self { purge [ … ] }` is still the statement it was.
+        assertIs<Stmt.UsingContext>(stmts.first { it is Stmt.UsingContext })
 
         // The value list on the line after the `=`, one value per member.
         val assigned = assertIs<Stmt.Scope>(stmts.last()).body
@@ -113,12 +113,12 @@ class GroupingAsWrittenTest {
     @Test fun theRehashBodyMeansTheLinesItStandsFor() {
         val stmts = body(
             """
-            fin [oldKeys, oldValues, oldCapacity] = with self {
-                [keys, values, capacity]
+            fin {oldKeys, oldValues, oldCapacity} = using self {
+                {keys, values, capacity}
             }
 
-            self.[keys, values, hashes] = alloc .() * newCapacity
-            self.[capacity, _size] = [newCapacity, 0]
+            self.{keys, values, hashes} = alloc .() * newCapacity
+            self.{capacity, _size} = {newCapacity, 0}
             """.trimIndent(),
         )
 
@@ -149,8 +149,8 @@ class GroupingAsWrittenTest {
         // `_allocateNode` writes six slots of one node in one statement.
         val stmts = body(
             """
-            self.[keys[elem], values[elem], parent[elem], heights[elem]] =
-                [key, value, -1, 1]
+            self.{keys[elem], values[elem], parent[elem], heights[elem]} =
+                {key, value, -1, 1}
             """.trimIndent(),
         )
 
@@ -166,11 +166,11 @@ class GroupingAsWrittenTest {
     }
 
     @Test fun theAssignmentsRunInTheOrderTheyAreWritten() {
-        // `self.[freeNext[elem], freeHead] = [self.freeHead, elem]` relinks a
+        // `self.{freeNext[elem], freeHead} = [self.freeHead, elem]` relinks a
         // free list: the first line reads `freeHead` and the second overwrites
         // it, which only works because the group is those two lines and not a
         // pre-computed pair.
-        val stmts = body("self.[freeNext[elem], freeHead] = [self.freeHead, elem]")
+        val stmts = body("self.{freeNext[elem], freeHead} = {self.freeHead, elem}")
 
         val assigned = assertIs<Stmt.Scope>(stmts.single()).body
         assertEquals(2, assigned.size)
@@ -185,20 +185,20 @@ class GroupingAsWrittenTest {
     @Test fun aConstructorShorthandSurvivesTheGroup() {
         // `.()` reads its type from the member it lands in, exactly as it does
         // when the line is written on its own.
-        val stmts = body("self.[parts, count] = [.() * 16, 0]")
+        val stmts = body("self.{parts, count} = {.() * 16, 0}")
 
         val assigned = assertIs<Stmt.Scope>(stmts.single()).body
         assertIs<Expr.InferredMember>(assertIs<Expr.Binary>(assertIs<Stmt.MemberAssign>(assigned[0]).value).left)
     }
 
     @Test fun theElementCopyReadsTheNextSlot() {
-        // `self.[keys[i], …] = with self { [keys[i + 1], …] }` - the index on
+        // `self.{keys[i], …} = using self { [keys[i + 1], …] }` - the index on
         // the right is this scope's own expression, and only the head moves
         // onto the receiver.
         val stmts = body(
             """
-            self.[keys[i], values[i]] = with self {
-                [keys[i + 1], values[i + 1]]
+            self.{keys[i], values[i]} = using self {
+                {keys[i + 1], values[i + 1]}
             }
             """.trimIndent(),
         )

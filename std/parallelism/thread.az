@@ -24,6 +24,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.parallelism.thread
 
 /**
@@ -32,7 +33,7 @@ module std.parallelism.thread
  * @param ms The delay in milliseconds.
  */
 @Experimental(since: "0.1")
-async func sleep<T>(ms: T) {
+async func<T> sleep(ms: T) {
     delay ms
 }
 
@@ -43,7 +44,7 @@ async func sleep<T>(ms: T) {
  * @param action The function to execute.
  */
 @Experimental(since: "0.1")
-async func spawnAsync<T>(ms: T, action: () -> Unit) {
+async func<T> spawnAsync(ms: T, action: () -> Unit) {
     fin handle = async { action() }
     delay ms
     await handle
@@ -56,6 +57,6 @@ async func spawnAsync<T>(ms: T, action: () -> Unit) {
  * @param count The delay in milliseconds.
  */
 @Experimental(since: "0.1")
-async func joinAll<T>(count: T) {
+async func<T> joinAll(count: T) {
     delay count
 }

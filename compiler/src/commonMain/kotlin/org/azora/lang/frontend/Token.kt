@@ -115,15 +115,17 @@ enum class TokenType {
     QMARK_PLUS_EQUAL, QMARK_MINUS_EQUAL, QMARK_STAR_EQUAL, QMARK_SLASH_EQUAL, QMARK_PERCENT_EQUAL,
     QMARK_PLUS_PLUS, QMARK_MINUS_MINUS,
     NULL,
-    // `import path` - module imports. `use as` gives a spec member its generated
-    // call spelling; bridge ABI names are declaration macros, not parser syntax.
-    IMPORT, USE,
+    // `import path` - module imports.
+    IMPORT,
+    // Contextual callable receivers: `using value { ... }` /
+    // `using (a, b) { ... }`. It may also be a macro name after `@`.
+    USING,
     // `for x by N in ...` (step) and `reverse for` / `for x in reverse ...`
     BY,
     REVERSE,
     // Decorators and macro declarations/invocations.
     AT,
-    // Contextual callable receivers: `with value { ... }` / `with [a, b] { ... }`.
+    // Type-filter composition, `inline for ... with index`, and macro grammar.
     WITH,
     WITHOUT,
     // `oper[]` / `oper[]=` - index-operator overloading inside impl blocks.

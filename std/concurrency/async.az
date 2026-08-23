@@ -24,6 +24,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.concurrency.async
 
 /**
@@ -37,7 +38,7 @@ module std.concurrency.async
  * @return true if the action completed, false otherwise.
  */
 @Experimental(since: "0.1")
-async func timeout<T>(ms: T, action: () -> Unit): Bool {
+async func<T> timeout(ms: T, action: () -> Unit): Bool {
     var completed = false
     fin handle = async {
         action()
@@ -59,7 +60,7 @@ async func timeout<T>(ms: T, action: () -> Unit): Bool {
  * @return true if any attempt succeeded, false if all attempts failed.
  */
 @Experimental(since: "0.1")
-async func retry<T>(attempts: T, delayMs: T, action: () -> Bool): Bool {
+async func<T> retry(attempts: T, delayMs: T, action: () -> Bool): Bool {
     for i in 0..<attempts {
         fin result = action()
         if result { return true }
@@ -78,7 +79,7 @@ async func retry<T>(attempts: T, delayMs: T, action: () -> Bool): Bool {
  * @param b The second action to execute.
  */
 @Experimental(since: "0.1")
-async func parallel<T>(tag: T, a: () -> Unit, b: () -> Unit) {
+async func<T> parallel(tag: T, a: () -> Unit, b: () -> Unit) {
     fin t1 = async { a() }
     fin t2 = async { b() }
     await(t1)
@@ -93,7 +94,7 @@ async func parallel<T>(tag: T, a: () -> Unit, b: () -> Unit) {
  * @param b The second action to execute.
  */
 @Experimental(since: "0.1")
-async func race<T>(tag: T, a: () -> Unit, b: () -> Unit) {
+async func<T> race(tag: T, a: () -> Unit, b: () -> Unit) {
     var done = false
     fin t1 = async {
         a()

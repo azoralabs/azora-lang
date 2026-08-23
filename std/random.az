@@ -24,6 +24,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.random
 
 import std.container.array::Array
@@ -41,7 +42,7 @@ impl Random {
      * Returns the next pseudo-random integer (0 to 2^30 - 1).
      */
     @Experimental(since: "0.1")
-    func next[self: Self!](): Int {
+    func !.next(): Int {
         self.seed = (self.seed * 1103515245 + 12345) % 2147483647
         if self.seed < 0 {
             self.seed = 0 - self.seed
@@ -53,7 +54,7 @@ impl Random {
      * Returns a pseudo-random integer in [0, max).
      */
     @Experimental(since: "0.1")
-    func nextInt[self: Self&](max: Int): Int {
+    func &.nextInt(max: Int): Int {
         var n: Int = self.next()
         if max <= 0 { return 0 }
         return n % max
@@ -63,7 +64,7 @@ impl Random {
      * Returns a pseudo-random integer in [min, max].
      */
     @Experimental(since: "0.1")
-    func nextRange[self: Self&](min: Int, max: Int): Int {
+    func &.nextRange(min: Int, max: Int): Int {
         var range: Int = max - min + 1
         return min + self.nextInt(range)
     }
@@ -72,7 +73,7 @@ impl Random {
      * Returns a pseudo-random boolean.
      */
     @Experimental(since: "0.1")
-    func nextBool[self: Self&](): Bool {
+    func &.nextBool(): Bool {
         return self.next() % 2 == 0
     }
 }
@@ -81,7 +82,7 @@ impl Random {
  * Shuffles an array in-place using Fisher-Yates algorithm.
  */
 @Experimental(since: "0.1")
-func shuffle<T>(arr: Array<T>, rng: Random): Array<T> {
+func<T> shuffle(arr: Array<T>, rng: Random): Array<T> {
     var result: Array<T> = .() * arr.size
     var i = 0
     while i < arr.size {
@@ -103,7 +104,7 @@ func shuffle<T>(arr: Array<T>, rng: Random): Array<T> {
  * Returns a random sample of n elements from the array.
  */
 @Experimental(since: "0.1")
-func sample<T>(arr: Array<T>, count: Int, rng: Random): Array<T> {
+func<T> sample(arr: Array<T>, count: Int, rng: Random): Array<T> {
     var shuffled: Array<T> = shuffle<T>(arr, rng)
     var limit: Int = count
     if limit > shuffled.size { limit = shuffled.size }

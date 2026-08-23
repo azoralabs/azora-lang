@@ -1173,7 +1173,7 @@ class IrInterpreter {
             is IrExpr.Lambda -> {
                 val st = state()
                 run {
-                    // A value capture (`[; n]`, `[; n.clone()]`, `[; take n]`) is the
+                    // A value capture (`[n]`, `[n.clone()]`, `[take n]`) is the
                     // closure's own, taken now - so it is snapshotted into a scope
                     // of its own rather than read back through the scope chain,
                     // where a later write to the original would reach it.
@@ -1339,7 +1339,7 @@ class IrInterpreter {
      * The operator a value's *runtime* type declares, or null to fall through.
      *
      * A generic body is compiled once with its type parameter erased, so
-     * `a + b` inside `func total<T>(…) where T: Arithmetic` reaches the
+     * `a + b` inside `func<T> total(…) where T: Arithmetic` reaches the
      * interpreter as a built-in add over two pack values. The bound guaranteed
      * the operator exists; this is where it is found, from the `__type` the
      * value carries.
@@ -1389,7 +1389,7 @@ class IrInterpreter {
         val right = evalExpr(expr.right)
 
         // A generic body sees its type parameter erased, so `a + b` inside
-        // `func total<T>(…) where T: Arithmetic` lowered to the built-in add
+        // `func<T> total(…) where T: Arithmetic` lowered to the built-in add
         // with no chance to find the operator. The values know their own type at
         // runtime, so the operator is looked up here - which is the same reason
         // the interpreter already compares erased values at runtime.
@@ -1770,21 +1770,6 @@ class IrInterpreter {
 
         val func = functions[expr.name]
         if (func != null) {
-            // A `flow` generator: return a LAZY producer (rendezvous channel). The body
-            // runs in a coroutine, suspending at each `yield` until the consumer receives.
-            if (func.isFlow) {
-                val scope = coroutineScope ?: error("flow used outside of the interpreter's runBlocking scope")
-                // The producer runs in its own coroutine with an isolated ExecState
-                // (scopes snapshotted from the caller) so concurrent flows don't share state.
-                return scope.produce<Any?>(context = childState()) {
-                    state().flowProduceChannels.addLast(this)
-                    try {
-                        executeFunction(func, args)
-                    } finally {
-                        state().flowProduceChannels.removeLast()
-                    }
-                }
-            }
             if (func.isTask) {
                 val scope = coroutineScope ?: error("task used outside of the interpreter's structured scope")
                 return TaskHandle(scope.async(context = childState()) { executeFunction(func, args) })

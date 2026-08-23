@@ -48,7 +48,7 @@ class ImplCtorFormRemovedTest {
             """.trimIndent()
         )
         assertTrue("was removed" in message, message)
-        assertTrue("ctor[self: Self!](…)" in message, "the error names the replacement: $message")
+        assertTrue("ctor .(…)" in message, "the error names the replacement: $message")
     }
 
     @Test fun theTopLevelDtorFormIsRejected() {
@@ -60,7 +60,7 @@ class ImplCtorFormRemovedTest {
             """.trimIndent()
         )
         assertTrue("was removed" in message, message)
-        assertTrue("dtor[self: Self!]" in message, "the error names the replacement: $message")
+        assertTrue("dtor .()" in message, "the error names the replacement: $message")
     }
 
     @Test fun theFormIsRejectedEvenWithoutTheInBraceReceiver() {
@@ -71,11 +71,11 @@ class ImplCtorFormRemovedTest {
         val methods = parse(
             """
             impl Queue<T> {
-                ctor[self: Self!]() {
+                ctor .() {
                     self.size = 0
                 }
 
-                dtor[self: Self&] {
+                dtor .(){
                     purge self.data
                 }
             }

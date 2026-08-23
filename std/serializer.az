@@ -38,13 +38,14 @@
  * This API is experimental, but its wire-format rules are intentionally strict
  * so data written today can remain readable as the implementation evolves.
  */
+@Supress(.Unused)
 module std.serializer
 
-import std.[
+import std::{
     container.list::*
     char::*
     string::*
-]
+}
 
 /** Failures reported by text decoders and typed serializers. */
 @Experimental(since: "0.1")
@@ -81,7 +82,7 @@ error SerializationError {
     listModule: "std.container.list",
     deferGeneric: true
 )
-annot @Serializable for .Pack binds [Serializer, AzonSerializer] {
+annot @Serializable for .Pack binds (Serializer, AzonSerializer) {
     /** Accepts object members which do not map to an exposed pack field. */
     fin ignoreUnknownFields: Bool = false
 
@@ -185,10 +186,10 @@ variant enum SerialValue {
 @Experimental(since: "0.1")
 spec Serializer<T> {
     /** Converts a typed value into the format-independent value tree. */
-    func toSerialValue[self: Self&](value: T&): SerialValue ?! SerializationError
+    func &.toSerialValue(value: T&): SerialValue ?! SerializationError
 
     /** Reconstructs a typed value, validating all required fields and types. */
-    func fromSerialValue[self: Self&](value: SerialValue&): T ?! SerializationError
+    func &.fromSerialValue(value: SerialValue&): T ?! SerializationError
 }
 
 /**
@@ -203,10 +204,10 @@ spec Serializer<T> {
 @Experimental(since: "0.1")
 spec AzonSerializer<T> {
     /** Encodes `value` as one complete AZON document. */
-    func toAzon[self: Self&](value: T&, options: SerializerOptions&): String ?! SerializationError
+    func &.toAzon(value: T&, options: SerializerOptions&): String ?! SerializationError
 
     /** Decodes one complete AZON document into `T`. */
-    func fromAzon[self: Self&](input: String, options: SerializerOptions&): T ?! SerializationError
+    func &.fromAzon(input: String, options: SerializerOptions&): T ?! SerializationError
 }
 
 /** Creates conservative defaults suitable for processing untrusted input. */
@@ -499,9 +500,9 @@ pack _SerialReader {
 }
 
 impl _SerialReader {
-    prop isAtEnd[self&]: Bool = self.index >= stringLength(self.input)
+    prop &.isAtEnd: Bool = self.index >= stringLength(self.input)
 
-    func skipWhitespace[self!](): Unit {
+    func !.skipWhitespace(): Unit {
         while !self.isAtEnd {
             fin c = charAt(self.input, self.index)
             if c != ' ' && c != '\n' && c != '\r' && c != '\t' {
@@ -511,7 +512,7 @@ impl _SerialReader {
         }
     }
 
-    func take[self!](): Char ?! SerializationError {
+    func !.take(): Char ?! SerializationError {
         if self.isAtEnd {
             return .UnexpectedEnd
         }
@@ -520,14 +521,14 @@ impl _SerialReader {
         return c
     }
 
-    func expect[self!](expected: Char): Unit ?! SerializationError {
+    func !.expect(expected: Char): Unit ?! SerializationError {
         fin actual = try self.take()
         if actual != expected {
             return .InvalidSyntax
         }
     }
 
-    func readValue[self!](depth: Int): SerialValue ?! SerializationError {
+    func !.readValue(depth: Int): SerialValue ?! SerializationError {
         if depth > self.options.maxDepth {
             return .MaxDepthExceeded
         }
@@ -563,7 +564,7 @@ impl _SerialReader {
         return .InvalidSyntax
     }
 
-    func readLiteral[self!](expected: String): Unit ?! SerializationError {
+    func !.readLiteral(expected: String): Unit ?! SerializationError {
         for i in 0..<stringLength(expected) {
             if try self.take() != charAt(expected, i) {
                 return .InvalidSyntax
@@ -571,7 +572,7 @@ impl _SerialReader {
         }
     }
 
-    func readString[self!](): String ?! SerializationError {
+    func !.readString(): String ?! SerializationError {
         try self.expect('"')
         var result = ""
         while !self.isAtEnd {
@@ -605,7 +606,7 @@ impl _SerialReader {
         return .UnexpectedEnd
     }
 
-    func readHexUnit[self: Self!](): Int ?! SerializationError {
+    func !.readHexUnit(): Int ?! SerializationError {
         var value = 0
         for i in 0..<4 {
             fin c = try self.take()
@@ -617,7 +618,7 @@ impl _SerialReader {
         return value
     }
 
-    func readEscapedCodePoint[self!](): Int ?! SerializationError {
+    func !.readEscapedCodePoint(): Int ?! SerializationError {
         fin first = try self.readHexUnit()
         if first >= 56320 && first <= 57343 {
             return .InvalidEscape
@@ -637,7 +638,7 @@ impl _SerialReader {
         return 65536 + (first - 55296) * 1024 + (second - 56320)
     }
 
-    func readNumber[self!](): String ?! SerializationError {
+    func !.readNumber(): String ?! SerializationError {
         fin start = self.index
         if charAt(self.input, self.index) == '-' {
             self.index += 1
@@ -682,7 +683,7 @@ impl _SerialReader {
         return substring(self.input, start, self.index)
     }
 
-    func readArray[self!](depth: Int): SerialValue ?! SerializationError {
+    func !.readArray(depth: Int): SerialValue ?! SerializationError {
         try self.expect('[')
         var values: ArrayList<SerialValue> = .()
         self.skipWhitespace()
@@ -704,7 +705,7 @@ impl _SerialReader {
         }
     }
 
-    func readObject[self!](depth: Int): SerialValue ?! SerializationError {
+    func !.readObject(depth: Int): SerialValue ?! SerializationError {
         try self.expect('{')
         var fields: ArrayList<SerialField> = .()
         self.skipWhitespace()
@@ -914,13 +915,13 @@ test scope {
     pack _ManualTextSerializer
 
     impl Serializer<_ManualTextValue> for _ManualTextSerializer {
-        func toSerialValue[&](
+        func &.toSerialValue(
             value: _ManualTextValue&
         ): SerialValue ?! SerializationError {
             return .Text(value.value)
         }
 
-        func fromSerialValue[&](
+        func &.fromSerialValue(
             value: SerialValue&
         ): _ManualTextValue ?! SerializationError {
             return when value {
@@ -956,24 +957,24 @@ test scope {
         fin name: String = ""
     }
 
-    derive [SerialName, SerialRequired] for _GroupedDecoratorFixture::name
+    derive (SerialName, SerialRequired) for _GroupedDecoratorFixture::name
 
     pack _GroupedTargetFixture {
         fin name: String = ""
         fin password: String = ""
     }
 
-    derive SerialIgnore for [_GroupedTargetFixture::name, _GroupedTargetFixture::password]
+    derive SerialIgnore for (_GroupedTargetFixture::name, _GroupedTargetFixture::password)
 
     pack _CrossProductDecoratorFixture {
         fin name: String = ""
         fin password: String = ""
     }
 
-    derive [SerialName, SerialRequired] for [
+    derive (SerialName, SerialRequired) for (
         _CrossProductDecoratorFixture::name
         _CrossProductDecoratorFixture::password
-    ]
+    )
 
     pack WildcardDecoratorFixture {
         fin name: String = ""
@@ -987,7 +988,7 @@ test scope {
         fin password: String = ""
     }
 
-    derive [SerialName, SerialRequired] for _GroupedWildcardDecoratorFixture::*
+    derive (SerialName, SerialRequired) for _GroupedWildcardDecoratorFixture::*
 }
 
 test "serializer decorator is visible at compile time" {

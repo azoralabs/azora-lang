@@ -229,7 +229,6 @@ object DecoratorMetadata {
                 function.name == "ctor" -> DecoTarget.Ctor
                 function.name == "dtor" -> DecoTarget.Dtor
                 function.isTask -> DecoTarget.AsyncFunc
-                function.isFlow -> DecoTarget.AsyncFunc
                 else -> DecoTarget.Func
             }
             sites.add(Site(identity, target, function.annotations))

@@ -756,19 +756,14 @@ class IrGenerator(private val table: SymbolTable) {
                 IrTopLevel.Global(declaration, exportName = irName)
             }
         }
-        val enumItems = items.filterIsInstance<IrTopLevel.Enum>()
-        val runtimeItems = items.filterNot { it is IrTopLevel.Enum }
-        val mainIndex = runtimeItems.indexOfFirst {
-            it is IrTopLevel.Func && it.function.name == "main"
-        }
-        val orderedItems = if (mainIndex >= 0) {
-            runtimeItems.take(mainIndex + 1) + enumItems + runtimeItems.drop(mainIndex + 1)
-        } else {
-            runtimeItems + enumItems
-        }
+        // Source order, item for item. The IR is read as much as it is run -
+        // a `pack`, the `func` under it and the `enum` between them come back in
+        // the order they were written, because a reader comparing the two is
+        // comparing them line by line. Nothing downstream depends on the shape
+        // of this list: a backend that needs its own order sorts for itself.
         val lowered = IrProgram(
             program.moduleName,
-            generatedTraceFunctions.map { IrTopLevel.Func(it) } + orderedItems,
+            generatedTraceFunctions.map { IrTopLevel.Func(it) } + items,
             buildSpecTables(),
         )
         return IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces)
@@ -886,7 +881,6 @@ class IrGenerator(private val table: SymbolTable) {
             mangledParams,
             symbol.returnType,
             body,
-            func.isFlow,
             refParams,
             func.isTask,
             func.isUnsafe,
@@ -957,14 +951,37 @@ class IrGenerator(private val table: SymbolTable) {
             table.defineVariable(VariableSymbol(name, type, mutable = mutable))
             m to type
         }
+        val unnamedReceiverTuple = method.contextualParams > 0 && method.receiverName == "__receiver0"
+        val receiverTupleType = if (unnamedReceiverTuple) {
+            IrType.Tuple(symbol.params.take(1 + method.contextualParams).map { it.second })
+        } else null
+        val receiverTuplePrelude = if (receiverTupleType != null) {
+            val selfName = registerName("self")
+            table.defineVariable(VariableSymbol("self", receiverTupleType, mutable = false))
+            listOf(
+                IrStmt.FinDecl(
+                    selfName,
+                    receiverTupleType,
+                    IrExpr.TupleLit(
+                        symbol.params.take(1 + method.contextualParams).map { (name, type) ->
+                            IrExpr.Var(resolveName(name), type)
+                        },
+                        receiverTupleType,
+                    ),
+                ),
+            )
+        } else emptyList()
         contextualValues.addLast(
             ContextFrame(
-                listOf(IrExpr.Var(resolveName(method.receiverName), IrType.Named(typeName))),
+                listOf(
+                    if (receiverTupleType != null) IrExpr.Var(resolveName("self"), receiverTupleType)
+                    else IrExpr.Var(resolveName(method.receiverName), IrType.Named(typeName)),
+                ),
                 prefersMembers = false,
             ),
         )
         val body = try {
-            lowerBody(method.body)
+            receiverTuplePrelude + lowerBody(method.body)
         } finally {
             reactiveNames.clear()
             reactiveNames.addAll(savedReactiveNames)
@@ -1403,7 +1420,7 @@ class IrGenerator(private val table: SymbolTable) {
                     )
                 }
             }
-            is Stmt.WithContext -> {
+            is Stmt.UsingContext -> {
                 val values = stmt.values.map(::lowerExpr)
                 contextualValues.addLast(ContextFrame(values, prefersMembers = true))
                 val body = try {
@@ -1819,7 +1836,7 @@ class IrGenerator(private val table: SymbolTable) {
     /**
      * The call `expr` reads as a member of a value a `with` block opened, or null.
      *
-     * `with c { bump() }` is `c.bump()`, and a scope-qualified call reaches its
+     * `using c { bump() }` is `c.bump()`, and a scope-qualified call reaches its
      * contextual receiver the same way: `yield(1)` names the member `yield`,
      * and the scope only says where it was declared, not what it is called on.
      *
@@ -1891,8 +1908,8 @@ class IrGenerator(private val table: SymbolTable) {
                 "line ${expr.line}: 'key: value' is only an argument of a macro that takes " +
                     "'[...\${key: value}]' - no macro arm matched this invocation",
             )
-            is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, IrType.Int, expr.text)
-            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, IrType.Double, expr.text)
+            is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, IrType.defaultInt, expr.text)
+            is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, IrType.defaultFloat, expr.text)
             is Expr.StringLiteral -> IrExpr.StringLiteral(expr.value)
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(expr.value)
             is Expr.NullLiteral -> IrExpr.Var("__null", IrType.Any)
@@ -2512,7 +2529,12 @@ class IrGenerator(private val table: SymbolTable) {
                         val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type
                         listOf(IrExpr.ArrayLiteral(elems, IrType.Array(elemType)))
                     } else {
-                        expr.args.map { lowerExpr(it) } + contextualArguments(v.type, expr.args.size)
+                        // The lambda states its parameter widths, so a literal
+                        // written at the call takes them - the same adoption a
+                        // named function's arguments get just above.
+                        expr.args.mapIndexed { i, arg ->
+                            v.type.params.getOrNull(i)?.let { coerceToFloat(lowerExpr(arg), it) } ?: lowerExpr(arg)
+                        } + contextualArguments(v.type, expr.args.size)
                     }
                     return IrExpr.Call(
                         "",
@@ -2731,15 +2753,26 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Member(target, expr.name, memberType)
             }
             is Expr.MethodCall -> {
-                // `[2, 3].add()` - the receiver call with several receivers. The
+                // `{2, 3}.add()` - the receiver call with several receivers. The
                 // closure's convention is parameters first, receivers after, so the
                 // bracket list lowers to the trailing arguments.
-                val bracketTarget = expr.target as? Expr.ArrayLiteral
-                if (bracketTarget != null) {
+                val groupTarget = expr.target as? Expr.TupleLit
+                if (groupTarget != null) {
+                    val receivers = groupTarget.elements.map { lowerExpr(it) }
+                    val owner = receivers.firstOrNull()?.type as? IrType.Named
+                    val methodSymbol = owner?.let { table.lookupMethod(it.name, expr.name) }
+                    val method = methodSymbol?.let(table::lookupFunction)
+                    if (method != null && method.contextualParams == receivers.size - 1) {
+                        return IrExpr.Call(
+                            methodSymbol,
+                            receivers + expr.args.map { lowerExpr(it) },
+                            method.returnType,
+                        )
+                    }
                     val callable = table.lookupVariable(expr.name)?.type as? IrType.Function
                     if (callable != null && callable.receivers.isNotEmpty()) {
                         val args = expr.args.map { lowerExpr(it) } +
-                            bracketTarget.elements.map { lowerExpr(it) }
+                            receivers
                         return IrExpr.Call(
                             "",
                             args,
@@ -2992,7 +3025,11 @@ class IrGenerator(private val table: SymbolTable) {
                 val inheritsReceivers = bracketReceivers.isEmpty() && callableType.receivers.isNotEmpty()
                 val receiverSources = if (inheritsReceivers) {
                     callableType.receivers.indices.map {
-                        Param(lambdaReceiverName(expr.line, expr.column, it), TypeRef.Named("Any", synthesized = true))
+                        Param(
+                            if (callableType.receivers.size == 1) "self"
+                            else lambdaReceiverName(expr.line, expr.column, it),
+                            TypeRef.Named("Any", synthesized = true),
+                        )
                     }
                 } else {
                     bracketReceivers
@@ -3000,9 +3037,26 @@ class IrGenerator(private val table: SymbolTable) {
                 val receiverParams = receiverSources.mapIndexed { index, p ->
                     val t = callableType.receivers.getOrNull(index) ?: resolveType(p.type)
                     val m = registerName(p.name)
-                    table.defineVariable(VariableSymbol(p.name, t, mutable = false))
+                    table.defineVariable(
+                        VariableSymbol(
+                            p.name,
+                            t,
+                            mutable = false,
+                            valueMutable = p.modifier != ParamModifier.SHARED,
+                        ),
+                    )
                     m to t
                 }
+                val positionalSelf = if (inheritsReceivers && receiverParams.size > 1) {
+                    val selfType = IrType.Tuple(receiverParams.map { it.second })
+                    val selfName = registerName("self")
+                    table.defineVariable(VariableSymbol("self", selfType, mutable = false, valueMutable = false))
+                    IrStmt.FinDecl(
+                        selfName,
+                        selfType,
+                        IrExpr.TupleLit(receiverParams.map { (name, type) -> IrExpr.Var(name, type) }, selfType),
+                    )
+                } else null
                 // A lambda's receivers are contextual values for its body whether it
                 // named them or inherited them, matching how the resolver typed it -
                 // otherwise a bare call that type-checked would fail to lower.
@@ -3011,13 +3065,14 @@ class IrGenerator(private val table: SymbolTable) {
                         ContextFrame(receiverParams.map { (name, t) -> IrExpr.Var(name, t) }, prefersMembers = true),
                     )
                 }
-                val body = lowerBody(expr.body)
+                val loweredBody = lowerBody(expr.body)
+                val body = if (positionalSelf == null) loweredBody else listOf(positionalSelf) + loweredBody
                 if (receiverParams.isNotEmpty()) contextualValues.removeLast()
                 popNameScope()
                 table.popScope()
                 val retType = body.mapNotNull { (it as? IrStmt.Return)?.value?.type }.firstOrNull() ?: IrType.Unit
                 val irParams = ordinaryParams + receiverParams
-                // A referenced capture (`[; n.&]`, `[; n.!]`) is the original binding,
+                // A referenced capture (`[n.&]`, `[n.!]`) is the original binding,
                 // so the backends put its address in the environment rather than a
                 // copy. Defaults have already been expanded to the exact free
                 // variables they cover by the resolver; lowering never guesses.
@@ -3207,10 +3262,16 @@ class IrGenerator(private val table: SymbolTable) {
             expr
         }
 
-    /** True for an integer constant the resolver would have let adopt another type. */
+    /**
+     * True for a numeric constant the resolver would have let adopt another type.
+     *
+     * A literal still sitting at the default is one nothing has said a width
+     * for; one that carries any other width was told what it is, and coercing
+     * it would be discarding what the source said.
+     */
     private fun isUntypedIntConstant(expr: IrExpr): Boolean = when (expr) {
-        is IrExpr.DoubleLiteral -> expr.type == IrType.Double
-        is IrExpr.IntLiteral -> expr.type == IrType.Int
+        is IrExpr.DoubleLiteral -> expr.type == IrType.defaultFloat
+        is IrExpr.IntLiteral -> expr.type == IrType.defaultInt
         is IrExpr.Unary -> expr.op == IrUnaryOp.NEG && isUntypedIntConstant(expr.operand)
         else -> false
     }

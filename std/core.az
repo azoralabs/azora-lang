@@ -79,7 +79,7 @@ impl Type {
      * chose for it, and nothing afterwards remembers which that was.
      */
     @Since("0.1")
-    bridge deepinline prop typeName[&]: String
+    bridge deepinline prop &.typeName: String
 }
 
 @Since("0.1")
@@ -88,7 +88,7 @@ variant enum Option<T> {
     None
 }
 
-deepinline func Nullable<T>(b: Bool): Type {
+deepinline func<T> Nullable(b: Bool): Type {
     return when b {
         true => Option<T?>
         false => Option<T>
@@ -158,13 +158,13 @@ enum PartialCompare {
  */
 @Since("0.1")
 impl Compare {
-    prop isLess[self&]: Bool = self == .Less
-    prop isLessOrEqual[self&]: Bool = self != .Greater
-    prop isGreater[self&]: Bool = self == .Greater
-    prop isGreaterOrEqual[self&]: Bool = self != .Less
+    prop &.isLess: Bool = self == .Less
+    prop &.isLessOrEqual: Bool = self != .Greater
+    prop &.isGreater: Bool = self == .Greater
+    prop &.isGreaterOrEqual: Bool = self != .Less
 
     /** The comparison with its operands swapped. `Less` becomes `Greater`. */
-    prop reversed[self&]: Compare {
+    prop &.reversed: Compare {
         return when self {
             .Less -> .Greater
             .Greater -> .Less
@@ -173,7 +173,7 @@ impl Compare {
     }
 
     /** `self` when it is decisive, otherwise `next`. Lexicographic chaining. */
-    func then[self&](next: Compare): Compare {
+    func &.then(next: Compare): Compare {
         return if self == .Equal { next } else { self }
     }
 }
@@ -189,16 +189,16 @@ impl Compare {
  */
 @Since("0.1")
 impl PartialCompare {
-    prop isLess[self&]: Bool = self == .Less
-    prop isLessOrEqual[self&]: Bool = self == .Less || self == .Equal
-    prop isGreater[self&]: Bool = self == .Greater
-    prop isGreaterOrEqual[self&]: Bool = self == .Greater || self == .Equal
+    prop &.isLess: Bool = self == .Less
+    prop &.isLessOrEqual: Bool = self == .Less || self == .Equal
+    prop &.isGreater: Bool = self == .Greater
+    prop &.isGreaterOrEqual: Bool = self == .Greater || self == .Equal
 
     /** True when the two values do not relate at all. */
-    prop isUnordered[self&]: Bool = self == .Unordered
+    prop &.isUnordered: Bool = self == .Unordered
 
     /** The comparison with its operands swapped. `Unordered` stays unordered. */
-    prop reversed[self&]: PartialCompare {
+    prop &.reversed: PartialCompare {
         return when self {
             .Less -> .Greater
             .Greater -> .Less
@@ -213,7 +213,7 @@ impl PartialCompare {
      * `Unordered` is decisive: a lexicographic order over a partial one is
      * unordered as soon as any field is.
      */
-    func then[self&](next: PartialCompare): PartialCompare {
+    func &.then(next: PartialCompare): PartialCompare {
         return if self == .Equal { next } else { self }
     }
 }
@@ -228,7 +228,7 @@ impl PartialCompare {
  *
  * ```azora
  * impl Into<String> for Label {
- *     func into[self: Self&](): String { return "Label(" + self.value + ")" }
+ *     func &.into(): String { return "Label(" + self.value + ")" }
  * }
  * label.toString      // the `use as` alias
  * ```
@@ -237,7 +237,7 @@ impl PartialCompare {
  */
 @Experimental(since: "0.1")
 spec Into<T> {
-    prop into<T>[self: Self&]: T
+    prop<T> &.into: T
 
     /**
      * The conversion under a name that says what it converts *to*.
@@ -293,7 +293,7 @@ spec From<T> {
  */
 @Since("0.1")
 bridge spec Cast<TO> {
-    prop castValue<TO>[self&]: TO
+    prop<TO> &.castValue: TO
 }
 
 /**
@@ -304,7 +304,7 @@ bridge spec Cast<TO> {
  */
 @Since("0.1")
 bridge spec CheckedCast<TO> {
-    prop castValue<TO>[self&]: TO?
+    prop<TO> &.castValue: TO?
 }
 
 /**
@@ -315,7 +315,7 @@ bridge spec CheckedCast<TO> {
  */
 @Since("0.1")
 bridge spec BitCast<TO> {
-    prop castValue<TO>[self&]: TO
+    prop<TO> &.castValue: TO
 }
 
 @Experimental(since: "0.1")

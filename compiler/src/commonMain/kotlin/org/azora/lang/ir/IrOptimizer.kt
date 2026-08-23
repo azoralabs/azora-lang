@@ -230,7 +230,7 @@ class IrOptimizer {
             // A closure that captures by reference may write the original binding
             // whenever it is called, which is not a write this pass can see. Its
             // referenced captures therefore stop being known constants here - a
-            // `[; &]` or `[; !]` captures invalidate the exact borrowed names.
+            // `[&]` or `[!]` captures invalidate the exact borrowed names.
             forEachLambda(stmt) { lambda ->
                 constants.keys.removeAll(lambda.byRefCaptures)
             }

@@ -24,6 +24,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.io.convert
 
 import std.container.array::*
@@ -39,7 +40,7 @@ import std.container.array::*
  * @return The padded string.
  */
 @Experimental(since: "0.1")
-func padLeft<T>(s: T, count: Int, char: T): T {
+func<T> padLeft(s: T, count: Int, char: T): T {
     var result = s
     for i in 0..<count {
         result = char + result
@@ -56,7 +57,7 @@ func padLeft<T>(s: T, count: Int, char: T): T {
  * @return The padded string.
  */
 @Experimental(since: "0.1")
-func padRight<T>(s: T, count: Int, char: T): T {
+func<T> padRight(s: T, count: Int, char: T): T {
     var result = s
     for i in 0..<count {
         result = result + char
@@ -72,7 +73,7 @@ func padRight<T>(s: T, count: Int, char: T): T {
  * @return The repeated string.
  */
 @Experimental(since: "0.1")
-func repeatString<T>(s: T, count: Int): T {
+func<T> repeatString(s: T, count: Int): T {
     var result = ""
     for i in 0..<count {
         result = result + s
@@ -88,7 +89,7 @@ func repeatString<T>(s: T, count: Int): T {
  * @return The joined string.
  */
 @Experimental(since: "0.1")
-func join<T>(arr: Array<T>, sep: T): T {
+func<T> join(arr: Array<T>, sep: T): T {
     if arr.size == 0 { return "" }
     var result = arr[0]
     for i in 1..<arr.size {

@@ -199,7 +199,7 @@ class AstValidator {
         // A bodyless declaration is compiler-provided (`bridge func`, `bridge prop`):
         // the backend supplies the implementation, so there is no body to return
         // from and nothing here to check.
-        if (!func.isFlow && declaredReturn != null && !returnsUnit && func.body.isNotEmpty()) {
+        if (declaredReturn != null && !returnsUnit && func.body.isNotEmpty()) {
             if (!hasReturnInBody(func.body)) {
                 errors.add("line ${func.line}: function '${func.name}' declares return type " +
                         "'${func.returnType}' but has no return statement")
@@ -307,7 +307,7 @@ class AstValidator {
             is Stmt.DerefAssign -> {}
             is Stmt.RemDecl -> {}
             is Stmt.Effect -> {}
-            is Stmt.WithContext -> stmt.body.forEach { validateStmt(it, funcName, errors) }
+            is Stmt.UsingContext -> stmt.body.forEach { validateStmt(it, funcName, errors) }
             is Stmt.When -> {
                 for (branch in stmt.branches) {
                     branch.body.forEach { validateStmt(it, funcName, errors) }
@@ -341,9 +341,9 @@ class AstValidator {
             is Stmt.DeepInlineIf -> hasReturnInBody(stmt.thenBranch) ||
                     (stmt.elseBranch != null && hasReturnInBody(stmt.elseBranch))
             is Stmt.Scope -> hasReturnInBody(stmt.body)
-            // `with value { … }` opens a receiver, not a function, so a return
+            // `using value { … }` opens a receiver, not a function, so a return
             // inside it returns from the function the block is written in.
-            is Stmt.WithContext -> hasReturnInBody(stmt.body)
+            is Stmt.UsingContext -> hasReturnInBody(stmt.body)
             is Stmt.While -> hasReturnInBody(stmt.body)
             is Stmt.For -> hasReturnInBody(stmt.body)
             is Stmt.Loop -> hasReturnInBody(stmt.body)

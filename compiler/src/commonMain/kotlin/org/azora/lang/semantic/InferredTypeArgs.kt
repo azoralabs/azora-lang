@@ -89,7 +89,7 @@ object InferredTypeArgs {
             is Stmt.For -> s.copy(body = s.body.map(::stmt))
             is Stmt.Loop -> s.copy(body = s.body.map(::stmt))
             is Stmt.Scope -> s.copy(body = s.body.map(::stmt))
-            is Stmt.WithContext -> s.copy(body = s.body.map(::stmt))
+            is Stmt.UsingContext -> s.copy(body = s.body.map(::stmt))
             is Stmt.When -> s.copy(
                 branches = s.branches.map { it.copy(body = it.body.map(::stmt)) },
                 elseBranch = s.elseBranch?.map(::stmt),

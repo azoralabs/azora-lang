@@ -75,7 +75,7 @@ class ImplAndDeriveFormsTest {
     }
 
     @Test fun aBracketedTargetListRepeatsMethodsToo() {
-        val impls = impls("impl [A, B] {\n    func f[self: Self&](): Int { return 1 }\n}")
+        val impls = impls("impl [A, B] {\n    func &.f(): Int { return 1 }\n}")
         assertEquals(listOf("A", "B"), impls.map { it.typeName })
         assertTrue(impls.all { it.methods.map { m -> m.name } == listOf("f") })
     }

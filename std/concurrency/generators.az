@@ -25,12 +25,12 @@
  * return type says what kind of stream it is:
  *
  * ```azora
- * func values(): Sequence<Int> = sequence<Int> [s: SequenceScope<Int>!] {
+ * func values(): Sequence<Int> = sequence<Int> [!] s: SequenceScope<Int> {
  *     yield(1)
  *     yield(2)
  * }
  *
- * func countdown(from: Int): Flow<Int> = flow<Int> [c: FlowCollector<Int>!] {
+ * func countdown(from: Int): Flow<Int> = flow<Int> [!] c: FlowCollector<Int> {
  *     for n in from..0 {
  *         emit(n)
  *     }
@@ -44,6 +44,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.concurrency.generators
 
 import std.container.list::*
@@ -91,7 +92,7 @@ pack Flow<T> {
  * @param value The value to append.
  */
 @Experimental(since: "0.1")
-func yield[builder: SequenceScope<T>!](value: T) {
+func (builder: SequenceScope<T>!).yield(value: T) {
     builder.items.add(value)
 }
 
@@ -102,7 +103,7 @@ func yield[builder: SequenceScope<T>!](value: T) {
  * @param value The value to append.
  */
 @Experimental(since: "0.1")
-func emit[collector: FlowCollector<T>!](value: T) {
+func (collector: FlowCollector<T>!).emit(value: T) {
     collector.items.add(value)
 }
 
@@ -117,9 +118,9 @@ func emit[collector: FlowCollector<T>!](value: T) {
  * @return The sequence of every yielded value, in order.
  */
 @Experimental(since: "0.1")
-func sequence<T>(produce: [SequenceScope<T>!]() -> Unit): Sequence<T> {
+func<T> sequence(produce: SequenceScope<T>!.() -> Unit): Sequence<T> {
     var builder = SequenceScope<T>(arrayListOf<T>())
-    with builder { produce() }
+    using builder { produce() }
     return Sequence<T>(builder.items)
 }
 
@@ -131,16 +132,16 @@ func sequence<T>(produce: [SequenceScope<T>!]() -> Unit): Sequence<T> {
  * @return The flow of every emitted value, in order.
  */
 @Experimental(since: "0.1")
-func flow<T>(builder: [FlowCollector<T>!]() -> Unit): Flow<T> {
+func<T> flow(builder: FlowCollector<T>!.() -> Unit): Flow<T> {
     var collector = FlowCollector<T>(arrayListOf<T>())
-    with collector { builder() }
+    using collector { builder() }
     return Flow<T>(collector.items)
 }
 
 impl Sequence {
     /** Number of values in this sequence. */
     @Experimental(since: "0.1")
-    prop size[self: Self&]: Int = self.items.size
+    prop &.size: Int = self.items.size
 
     /**
      * Invokes `action` once for every value, in order.
@@ -148,7 +149,7 @@ impl Sequence {
      * @param action Receives each value in turn.
      */
     @Experimental(since: "0.1")
-    func collect[self: Self&](action: (T) -> Unit) {
+    func &.collect(action: (T) -> Unit) {
         self.items.forEach(action)
     }
 }
@@ -156,7 +157,7 @@ impl Sequence {
 impl Flow {
     /** Number of values in this flow. */
     @Experimental(since: "0.1")
-    prop size[self: Self&]: Int = self.items.size
+    prop &.size: Int = self.items.size
 
     /**
      * Invokes `action` once for every value, in order.
@@ -164,13 +165,13 @@ impl Flow {
      * @param action Receives each value in turn.
      */
     @Experimental(since: "0.1")
-    func collect[self: Self&](action: (T) -> Unit) {
+    func &.collect(action: (T) -> Unit) {
         self.items.forEach(action)
     }
 }
 
 test "sequence collects every yielded value in order" {
-    fin values = sequence<Int> [s: SequenceScope<Int>!] {
+    fin values = sequence<Int> [!] s: SequenceScope<Int> {
         yield(1)
         yield(2)
         yield(3)
@@ -181,7 +182,7 @@ test "sequence collects every yielded value in order" {
 }
 
 test "flow collects every emitted value in order" {
-    fin events = flow<Int> [c: FlowCollector<Int>!] {
+    fin events = flow<Int> [!] c: FlowCollector<Int> {
         emit(10)
         emit(20)
     }
@@ -191,7 +192,7 @@ test "flow collects every emitted value in order" {
 }
 
 test "an empty producer yields an empty stream" {
-    fin values = sequence<Int> [s: SequenceScope<Int>!] { }
+    fin values = sequence<Int> [!] s: SequenceScope<Int> { }
     assert values.size == 0 { "a producer that yields nothing must be empty" }
 }
 

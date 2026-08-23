@@ -37,7 +37,7 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var n = 1
-            fin bump = [; n.!] { x: Int -> n = n + x
+            fin bump = [n.!] { x: Int -> n = n + x
                 return n }
             println(bump(4))
             println(n)
@@ -52,7 +52,7 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var n = 1
-            fin show = [; n.&] { x: Int -> n }
+            fin show = [n.&] { x: Int -> n }
             n = 99
             println(show(0))
         }
@@ -66,7 +66,7 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var retries = 3
-            fin show = [; retries] { retries }
+            fin show = [retries] { retries }
             retries = 5
             println(show())
         }
@@ -80,7 +80,7 @@ class LlvmCaptureParityTest {
         import std.io
         func main() {
             var n = 1
-            fin worker = async [; n.!] {
+            fin worker = async [n.!] {
                 n = n + 4
                 n
             }

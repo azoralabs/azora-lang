@@ -33,6 +33,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.filesystem
 
 import std.container.array::*
@@ -86,10 +87,10 @@ pack FileInfo {
 
 impl FileInfo {
     /** True when this entry is an ordinary file. */
-    prop isFile[self: Self&]: Bool = self.kind == FileKind.File
+    prop &.isFile: Bool = self.kind == FileKind.File
 
     /** True when this entry is a directory. */
-    prop isDirectory[self: Self&]: Bool = self.kind == FileKind.Directory
+    prop &.isDirectory: Bool = self.kind == FileKind.Directory
 }
 
 // ── Paths ───────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ impl Path {
      * building a path from configuration expects.
      */
     @Experimental(since: "0.1")
-    func join[self: Self&](segment: String): Path {
+    func &.join(segment: String): Path {
         if stringLength(segment) == 0 {
             return Path(self.text)
         }
@@ -140,7 +141,7 @@ impl Path {
 
     /** The directory holding this path; `"."` when there is no separator. */
     @Experimental(since: "0.1")
-    prop parent[self: Self&]: Path {
+    prop &.parent: Path {
         fin cut = _lastSeparator(self.text)
         if cut < 0 {
             return Path(".")
@@ -154,7 +155,7 @@ impl Path {
 
     /** The final segment: `a/b/c.az` → `c.az`. */
     @Experimental(since: "0.1")
-    prop fileName[self: Self&]: String {
+    prop &.fileName: String {
         fin cut = _lastSeparator(self.text)
         if cut < 0 {
             return self.text
@@ -164,7 +165,7 @@ impl Path {
 
     /** The final segment without its extension: `a/b/c.az` → `c`. */
     @Experimental(since: "0.1")
-    prop stem[self: Self&]: String {
+    prop &.stem: String {
         fin name = self.fileName
         fin dot = _lastDot(name)
         if dot <= 0 {
@@ -180,7 +181,7 @@ impl Path {
      * stem `.gitignore` and no extension.
      */
     @Experimental(since: "0.1")
-    prop extension[self: Self&]: String {
+    prop &.extension: String {
         fin name = self.fileName
         fin dot = _lastDot(name)
         if dot <= 0 {
@@ -191,7 +192,7 @@ impl Path {
 
     /** This path with its extension replaced (or added when it had none). */
     @Experimental(since: "0.1")
-    func withExtension[self: Self&](extension: String): Path {
+    func &.withExtension(extension: String): Path {
         fin base = self.parent
         fin name = self.stem
         fin renamed = if stringLength(extension) == 0 { name } else { name + "." + extension }
@@ -203,7 +204,7 @@ impl Path {
 
     /** True when this path starts at a filesystem root. */
     @Experimental(since: "0.1")
-    prop isAbsolute[self: Self&]: Bool {
+    prop &.isAbsolute: Bool {
         if stringLength(self.text) == 0 {
             return false
         }
@@ -225,7 +226,7 @@ impl Path {
      * and gives a different answer. [canonical] is the one that asks.
      */
     @Experimental(since: "0.1")
-    prop normalized[self: Self&]: Path {
+    prop &.normalized: Path {
         fin rooted = self.isAbsolute
         var kept: MutableList<String> = mutableListOf<String>()
         fin total = stringLength(self.text)

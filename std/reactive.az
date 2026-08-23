@@ -39,6 +39,7 @@
  * - `effect [a, b] { ... }` observes an explicit dependency list.
  * - `effect defer { ... }` runs when its owner is disposed.
  */
+@Supress(.Unused)
 module std.reactive
 
 import std.container.list::*
@@ -88,23 +89,23 @@ pack ReactiveSnapshot<T> {
 @Experimental(since: "0.1")
 spec Read<T> {
     /** Current value. Reading it never mutates the source. */
-    prop value[self: Self&]: T
+    prop &.value: T
 
     /** Monotonic revision incremented after each distinct write. */
-    prop version[self: Self&]: Int
+    prop &.version: Int
 
     /** Registers an observer and immediately emits the current value. */
-    func subscribe[self: Self!](observer: (T) -> Unit): Subscription
+    func !.subscribe(observer: (T) -> Unit): Subscription
 }
 
 /** Mutable observable value contract. */
 @Experimental(since: "0.1")
 spec Write<T> : Read<T> {
     /** Replaces the value and synchronously notifies active observers. */
-    func set[self: Self!](value: T)
+    func !.set(value: T)
 
     /** Computes and stores a replacement from the current value. */
-    func update[self: Self!](transform: (T) -> T)
+    func !.update(transform: (T) -> T)
 }
 
 /** Internal observer record retained by a [State]. */
@@ -130,7 +131,7 @@ pack Subscription {
 impl Subscription {
     /** Stops future notifications. Calling this more than once is harmless. */
     @Experimental(since: "0.1")
-    func dispose[self: Self!]() {
+    func !.dispose() {
         if self.active {
             self.active = false
             self.cancel()
@@ -154,17 +155,17 @@ pack State<T> {
 }
 
 impl Read<T> for State<T> {
-    prop value[self: Self&]: T = self.current
-    prop version[self: Self&]: Int = self.revision
+    prop &.value: T = self.current
+    prop &.version: Int = self.revision
 
-    func subscribe[self: Self!](observer: (T) -> Unit): Subscription {
+    func !.subscribe(observer: (T) -> Unit): Subscription {
         fin id = self.nextObserverId
         self.nextObserverId += 1
         self.observers.add(ReactiveObserver<T>(id, true, observer))
         observer(self.current)
         // The disposer reaches back into the state it was made from, so it
         // says so: `self` by mutable reference, `id` copied.
-        return Subscription(true) [; self.!, id] {
+        return Subscription(true) [self.!, id] {
             for i in 0..<self.observers.size {
                 let item: ReactiveObserver<T> = self.observers.get(i)
                 if item.id == id {
@@ -176,7 +177,7 @@ impl Read<T> for State<T> {
 }
 
 impl Write<T> for State<T> {
-    func set[self: Self!](value: T) {
+    func !.set(value: T) {
         self.current = value
         self.revision += 1
         fin count = self.observers.size
@@ -188,7 +189,7 @@ impl Write<T> for State<T> {
         }
     }
 
-    func update[self: Self!](transform: (T) -> T) {
+    func !.update(transform: (T) -> T) {
         self.set(transform(self.current))
     }
 }
@@ -202,40 +203,40 @@ pack Derived<T> {
 impl Derived<T> {
     /** Returns the producer's latest result. */
     @Experimental(since: "0.1")
-    prop value[self: Self&]: T = self.producer()
+    prop &.value: T = self.producer()
 }
 
 /** Abstract persistence boundary for hosts that store preserved snapshots. */
 @Experimental(since: "0.1")
 spec PreserveStore {
     /** Whether the store has a snapshot for `key`. */
-    func contains[self: Self&](key: ReactiveKey): Bool
+    func &.contains(key: ReactiveKey): Bool
 
     /** Stores an erased snapshot payload. */
-    func write[self: Self!](key: ReactiveKey, value: Any)
+    func !.write(key: ReactiveKey, value: Any)
 
     /** Reads an erased snapshot payload. */
-    func read[self: Self&](key: ReactiveKey): Any
+    func &.read(key: ReactiveKey): Any
 
     /** Deletes one persisted key. */
-    func remove[self: Self!](key: ReactiveKey)
+    func !.remove(key: ReactiveKey)
 }
 
 /** Creates mutable observable state. */
 @Experimental(since: "0.1")
-func state<T>(value: T): State<T> {
+func<T> state(value: T): State<T> {
     return State<T>(value, 0, 0, ArrayList<ReactiveObserver<T>>())
 }
 
 /** Creates a derived value from a producer. */
 @Experimental(since: "0.1")
-func computed<T>(producer: () -> T): Derived<T> {
+func<T> computed(producer: () -> T): Derived<T> {
     return Derived<T>(producer)
 }
 
 /** Registers an observer and returns its deterministic disposal handle. */
 @Experimental(since: "0.1")
-func observe<T>(source: State<T>!, observer: (T) -> Unit): Subscription {
+func<T> observe(source: State<T>!, observer: (T) -> Unit): Subscription {
     return source.subscribe(observer)
 }
 
@@ -247,25 +248,25 @@ func batch(action: () -> Unit) {
 
 /** Executes a calculation without introducing a language-level effect. */
 @Experimental(since: "0.1")
-func untracked<T>(producer: () -> T): T {
+func<T> untracked(producer: () -> T): T {
     return producer()
 }
 
 /** Associates a stable key with a value for owner and persistence APIs. */
 @Experimental(since: "0.1")
-func keyed<T>(key: String, value: T): ReactiveSnapshot<T> {
+func<T> keyed(key: String, value: T): ReactiveSnapshot<T> {
     return ReactiveSnapshot<T>(ReactiveKey(key), value, ReactiveLifetime.Preserved, 0)
 }
 
 /** Captures the current state value and revision. */
 @Experimental(since: "0.1")
-func snapshot<T>(key: String, source: State<T>&): ReactiveSnapshot<T> {
+func<T> snapshot(key: String, source: State<T>&): ReactiveSnapshot<T> {
     return ReactiveSnapshot<T>(ReactiveKey(key), source.value, ReactiveLifetime.Preserved, source.version)
 }
 
 /** Creates new state initialized from a snapshot. */
 @Experimental(since: "0.1")
-func restore<T>(saved: ReactiveSnapshot<T>): State<T> {
+func<T> restore(saved: ReactiveSnapshot<T>): State<T> {
     return State<T>(saved.value, saved.version, 0, ArrayList<ReactiveObserver<T>>())
 }
 
@@ -293,7 +294,7 @@ pack Combined<A, B> {
 
 /** Creates a typed pair without requiring tuple grammar. */
 @Experimental(since: "0.1")
-func combine<A, B>(first: A, second: B): Combined<A, B> {
+func<A, B> combine(first: A, second: B): Combined<A, B> {
     return Combined<A, B>(first, second)
 }
 

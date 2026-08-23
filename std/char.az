@@ -28,7 +28,7 @@
 @Supress(.Unused)
 exposed module std.char
 
-import std.traits::[PartialEqual, Equal, Order, Hash]
+import std.traits::{PartialEqual, Equal, Order, Hash}
 
 /**
  * A Unicode code point.
@@ -38,7 +38,7 @@ import std.traits::[PartialEqual, Equal, Order, Hash]
  * `<` does.
  */
 @Since("0.1")
-bridge pack Char derives [PartialEqual, Equal, Order, Hash]
+bridge pack Char derives (PartialEqual, Equal, Order, Hash)
 
 /**
  * Returns the Unicode code point of a character.

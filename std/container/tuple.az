@@ -24,13 +24,14 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 exposed module std.container.tuple
 
-import std.[
+import std::{
     serializer::Serializable
     traits::PrettyPrint
     reflection::reflect
-]
+}
 
 /**
  * A fixed-size, ordered collection of heterogeneous values.
@@ -59,7 +60,7 @@ impl PrettyPrint for Tuple<...T> {
      * @return This tuple formatted as `(fields...)`.
      */
     @Experimental(since: "0.1")
-    prop pretty[self: Self&]: String {
+    prop &.pretty: String {
         var res = "("
         inline for field in reflect<Self>.fields with index {
             if index > 0 {
@@ -83,7 +84,7 @@ impl PrettyPrint for Tuple<...T> {
  * @return A Tuple whose element types match the provided values.
  */
 @Experimental(since: "0.1")
-func tupleOf<...T>(...elements: ...T): Tuple<...T>
+func<...T> tupleOf(...elements: ...T): Tuple<...T>
 where (...T).size >= 2 {
     return Tuple(elements)
 }

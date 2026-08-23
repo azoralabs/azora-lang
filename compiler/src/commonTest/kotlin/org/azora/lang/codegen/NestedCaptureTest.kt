@@ -14,7 +14,7 @@ import kotlin.test.assertIs
  * lambdas deep has to be captured at *both* boundaries. Two independent places
  * assumed one was enough:
  *
- *  - the resolver recorded `[; &]` on the innermost frame only, so the outer
+ *  - the resolver recorded `[&]` on the innermost frame only, so the outer
  *    closure never learned it had to take the binding;
  *  - the LLVM backend's free-variable scan skipped nested lambda bodies, so the
  *    outer closure's environment was built without them.
@@ -41,11 +41,11 @@ class NestedCaptureTest {
             """
             import std.io
 
-            func run<R>(body: () -> R) { body() }
+            func<R> run(body: () -> R) { body() }
 
             func outer(h: Double) {
-                run [; &] {
-                    run [; &] {
+                run [&] {
+                    run [&] {
                         println(h)
                     }
                 }
@@ -65,11 +65,11 @@ class NestedCaptureTest {
             """
             import std.io
 
-            func run<R>(body: () -> R) { body() }
+            func<R> run(body: () -> R) { body() }
 
             func outer(label: String, n: Int) {
-                run [; &] {
-                    run [; &] {
+                run [&] {
+                    run [&] {
                         var i = 0
                         while i < n {
                             println(label)
@@ -93,12 +93,12 @@ class NestedCaptureTest {
             """
             import std.io
 
-            func run<R>(body: () -> R) { body() }
+            func<R> run(body: () -> R) { body() }
 
             func outer(h: Double) {
-                run [; &] {
-                    run [; &] { println("first") }
-                    run [; &] { println(h) }
+                run [&] {
+                    run [&] { println("first") }
+                    run [&] { println(h) }
                 }
             }
 
@@ -116,11 +116,11 @@ class NestedCaptureTest {
             """
             import std.io
 
-            func run<R>(body: () -> R) { body() }
+            func<R> run(body: () -> R) { body() }
 
             func outer(h: Int) {
-                run [; &] {
-                    run [; &] {
+                run [&] {
+                    run [&] {
                         var h = 99
                         println(h)
                     }
@@ -141,12 +141,12 @@ class NestedCaptureTest {
             """
             import std.io
 
-            func run<R>(body: () -> R) { body() }
+            func<R> run(body: () -> R) { body() }
 
             func outer(h: Int) {
-                run [; &] {
-                    run [; &] {
-                        run [; &] {
+                run [&] {
+                    run [&] {
+                        run [&] {
                             println(h)
                         }
                     }

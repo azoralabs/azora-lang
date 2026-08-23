@@ -48,7 +48,7 @@ class DeclaredPropertyTypeTest {
         val message = rejection(
             """
             impl Compare {
-                prop isLess[self: Self&] = self == .Less
+                prop &.isLess = self == .Less
             }
             """.trimIndent()
         )
@@ -61,7 +61,7 @@ class DeclaredPropertyTypeTest {
             "must declare its type" in rejection(
                 """
                 impl Compare {
-                    prop isLess[self: Self&] { return self == .Less }
+                    prop &.isLess { return self == .Less }
                 }
                 """.trimIndent()
             )
@@ -72,7 +72,7 @@ class DeclaredPropertyTypeTest {
         val prop = property(
             """
             impl Compare {
-                prop isLess[self: Self&]: Bool = self == Compare.Less
+                prop &.isLess: Bool = self == Compare.Less
             }
             """.trimIndent(),
             "isLess",
@@ -86,7 +86,7 @@ class DeclaredPropertyTypeTest {
         val prop = property(
             """
             impl Compare {
-                prop isLess[self: Self&]: Bool { return self == .Less }
+                prop &.isLess: Bool { return self == .Less }
             }
             """.trimIndent(),
             "isLess",

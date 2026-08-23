@@ -151,7 +151,7 @@ class StaticAccessTest {
                     var n: Int = 2
                 }
                 impl Counter {
-                    func scaled[self: Self&](): Int { return math.triple(self.n) }
+                    func &.scaled(): Int { return math.triple(self.n) }
                 }
                 func main() {
                     println(Counter(2).scaled())

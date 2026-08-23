@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
  * A `when` in a type computation may name a scrutinee.
  *
  * ```
- * deepinline func Nullable<T>(b: Bool): Type {
+ * deepinline func<T> Nullable(b: Bool): Type {
  *     return when b {
  *         true  => Option<T?>
  *         false => Option<T>
@@ -56,7 +56,7 @@ class TypeComputationWhenTest {
         // `std/core.az:90`.
         val value = returnedValue(
             """
-            deepinline func Nullable<T>(b: Bool): Type {
+            deepinline func<T> Nullable(b: Bool): Type {
                 return when b {
                     true => Option<T?>
                     false => Option<T>
@@ -73,7 +73,7 @@ class TypeComputationWhenTest {
         val conditional = assertIs<TypeFunctionExpr.Conditional>(
             returnedValue(
                 """
-                deepinline func Nullable<T>(b: Bool): Type {
+                deepinline func<T> Nullable(b: Bool): Type {
                     return when b {
                         true => Option<T?>
                         false => Option<T>
@@ -94,7 +94,7 @@ class TypeComputationWhenTest {
         val conditional = assertIs<TypeFunctionExpr.Conditional>(
             returnedValue(
                 """
-                deepinline func Pick<T>(b: Bool): Type {
+                deepinline func<T> Pick(b: Bool): Type {
                     return when b {
                         false => T
                         true => T?
@@ -110,7 +110,7 @@ class TypeComputationWhenTest {
         val conditional = assertIs<TypeFunctionExpr.Conditional>(
             returnedValue(
                 """
-                deepinline func Pick<T>(b: Bool): Type {
+                deepinline func<T> Pick(b: Bool): Type {
                     return when b {
                         true => T?
                         else => T
@@ -128,7 +128,7 @@ class TypeComputationWhenTest {
         val conditional = assertIs<TypeFunctionExpr.Conditional>(
             returnedValue(
                 """
-                deepinline prop Widen<T>: Type {
+                deepinline prop<T> Widen: Type {
                     return when T {
                         Int => Long
                         else => T
@@ -146,7 +146,7 @@ class TypeComputationWhenTest {
         val outer = assertIs<TypeFunctionExpr.Conditional>(
             returnedValue(
                 """
-                deepinline prop Widen<T>: Type {
+                deepinline prop<T> Widen: Type {
                     return when T {
                         Int => Long
                         Float => Double
@@ -168,7 +168,7 @@ class TypeComputationWhenTest {
         val conditional = assertIs<TypeFunctionExpr.Conditional>(
             returnedValue(
                 """
-                deepinline prop Widest<A, B>: Type {
+                deepinline prop<A, B> Widest: Type {
                     return when {
                         A.rank >= B.rank => A
                         else => B
@@ -184,7 +184,7 @@ class TypeComputationWhenTest {
         val e = assertFailsWith<IllegalStateException> {
             typeFunction(
                 """
-                deepinline prop Widest<A, B>: Type {
+                deepinline prop<A, B> Widest: Type {
                     return when {
                         A.rank >= B.rank => A
                     }
@@ -200,7 +200,7 @@ class TypeComputationWhenTest {
         val e = assertFailsWith<IllegalStateException> {
             typeFunction(
                 """
-                deepinline func Pick<T>(b: Bool): Type {
+                deepinline func<T> Pick(b: Bool): Type {
                     return when b {
                         true => T?
                     }
@@ -215,7 +215,7 @@ class TypeComputationWhenTest {
         val e = assertFailsWith<IllegalStateException> {
             typeFunction(
                 """
-                deepinline prop Widen<T>: Type {
+                deepinline prop<T> Widen: Type {
                     return when T {
                         Int => Long
                     }

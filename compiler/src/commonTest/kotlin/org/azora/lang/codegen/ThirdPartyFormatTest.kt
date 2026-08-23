@@ -46,14 +46,14 @@ class ThirdPartyFormatTest {
             pack PointSerializer
 
             impl Serializer<Point> for PointSerializer {
-                func toSerialValue[self: Self&](value: Point&): SerialValue ?! SerializationError {
+                func &.toSerialValue(value: Point&): SerialValue ?! SerializationError {
                     var fields = ArrayList<SerialField>()
                     fields.add(SerialField("x", try serialNumber(convert::toString(value.x))))
                     fields.add(SerialField("y", try serialNumber(convert::toString(value.y))))
                     return SerialValue.Object(fields)
                 }
 
-                func fromSerialValue[self: Self&](value: SerialValue&): Point ?! SerializationError {
+                func &.fromSerialValue(value: SerialValue&): Point ?! SerializationError {
                     fin x = try serialAsInt(try serialField(value, "x"))
                     fin y = try serialAsInt(try serialField(value, "y"))
                     return Point(x, y)
@@ -93,7 +93,7 @@ class ThirdPartyFormatTest {
             pack Kv
 
             impl Kv {
-                func encode[self: Self&](value: SerialValue&): String ?! SerializationError {
+                func &.encode(value: SerialValue&): String ?! SerializationError {
                     when value {
                         SerialValue.Object(fields) -> {
                             var text = ""
@@ -107,7 +107,7 @@ class ThirdPartyFormatTest {
                     }
                 }
 
-                func scalar[self: Self&](value: SerialValue&): String ?! SerializationError {
+                func &.scalar(value: SerialValue&): String ?! SerializationError {
                     when value {
                         SerialValue.Text(t) -> { return t }
                         SerialValue.Number(n) -> { return n }
@@ -116,7 +116,7 @@ class ThirdPartyFormatTest {
                 }
 
                 /** Reads `key=value` lines back into the format-independent tree. */
-                func decode[self: Self&](input: String): SerialValue ?! SerializationError {
+                func &.decode(input: String): SerialValue ?! SerializationError {
                     var fields = ArrayList<SerialField>()
                     var name = ""
                     var raw = ""
@@ -141,7 +141,7 @@ class ThirdPartyFormatTest {
                 }
 
                 /** Digits are a number node; anything else is text. */
-                func node[self: Self&](raw: String): SerialValue {
+                func &.node(raw: String): SerialValue {
                     if stringLength(raw) == 0 { return SerialValue.Text(raw) }
                     for i in 0..<stringLength(raw) {
                         if !isDigit(charAt(raw, i)) { return SerialValue.Text(raw) }
@@ -194,7 +194,7 @@ class ThirdPartyFormatTest {
             pack Kv
 
             impl Kv {
-                func encode[self: Self&](value: SerialValue&): String ?! SerializationError {
+                func &.encode(value: SerialValue&): String ?! SerializationError {
                     when value {
                         SerialValue.Object(fields) -> {
                             var text = ""

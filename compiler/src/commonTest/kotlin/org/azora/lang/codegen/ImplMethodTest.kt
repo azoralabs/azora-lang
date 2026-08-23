@@ -23,7 +23,7 @@ class ImplMethodTest {
                 var y: Int
             }
             impl Point {
-                func getX[self: Self&](): Int {
+                func &.getX(): Int {
                     return self.x
                 }
             }
@@ -42,7 +42,7 @@ class ImplMethodTest {
                 var y: Int
             }
             impl Point {
-                func lengthSquared[self: Self&](): Int {
+                func &.lengthSquared(): Int {
                     return self.x * self.x + self.y * self.y
                 }
             }
@@ -61,11 +61,11 @@ class ImplMethodTest {
                 var y: Int
             }
             impl Point {
-                func moveBy[self: Self!](dx: Int, dy: Int) {
+                func !.moveBy(dx: Int, dy: Int) {
                     self.x = self.x + dx
                     self.y = self.y + dy
                 }
-                func sum[self: Self&](): Int {
+                func &.sum(): Int {
                     return self.x + self.y
                 }
             }
@@ -86,7 +86,7 @@ class ImplMethodTest {
                 var y: Int
             }
             impl Point {
-                func lengthSquared[self: Self&](): Int {
+                func &.lengthSquared(): Int {
                     return self.x * self.x + self.y * self.y
                 }
             }
@@ -105,7 +105,7 @@ class ImplMethodTest {
                 var y: Int
             }
             impl Point {
-                func lengthSquared[self: Self&](): Int {
+                func &.lengthSquared(): Int {
                     return self.x * self.x + self.y * self.y
                 }
             }
@@ -124,7 +124,7 @@ class ImplMethodTest {
                 var y: Int
             }
             impl Point {
-                func lengthSquared[self: Self&](): Int {
+                func &.lengthSquared(): Int {
                     return self.x * self.x + self.y * self.y
                 }
             }

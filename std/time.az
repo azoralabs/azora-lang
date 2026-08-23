@@ -30,14 +30,15 @@
  * the year-2262 overflow of a single signed 64-bit nanosecond counter and keeps
  * sub-second arithmetic exact.
  */
+@Supress(.Unused)
 module std.time
 
-import std.[
+import std::{
     char::*
     container.list::*
     serializer::*
     string::*
-]
+}
 
 /** Errors raised by validation, parsing, and unsafe temporal arithmetic. */
 @Experimental(since: "0.1")
@@ -129,10 +130,10 @@ pack DateTime {
 @Experimental(since: "0.1")
 spec Clock {
     /** Returns the current Unix instant. */
-    func now[self: Self&](): Instant
+    func &.now(): Instant
 
     /** Returns an opaque monotonic reading. */
-    func monotonicNow[self: Self&](): MonotonicInstant
+    func &.monotonicNow(): MonotonicInstant
 }
 
 /** Host-backed implementation of `Clock`. */
@@ -141,11 +142,11 @@ pack SystemClock
 
 @Experimental(since: "0.1")
 impl Clock for SystemClock {
-    func now[self: Self&](): Instant {
+    func &.now(): Instant {
         return instantFromEpochNanoseconds(azoraTimeUnixNanoseconds())
     }
 
-    func monotonicNow[self: Self&](): MonotonicInstant {
+    func &.monotonicNow(): MonotonicInstant {
         return MonotonicInstant(azoraTimeMonotonicNanoseconds())
     }
 }
@@ -196,77 +197,77 @@ func days(value: Long): Duration { return duration(value * 86400) }
 
 /** This many whole nanoseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop nanoseconds[self: Int&]: Duration = nanoseconds(self as Long)
+prop (self: Int&).nanoseconds: Duration = nanoseconds(self as Long)
 
 /** This many whole microseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop microseconds[self: Int&]: Duration = microseconds(self as Long)
+prop (self: Int&).microseconds: Duration = microseconds(self as Long)
 
 /** This many whole milliseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop milliseconds[self: Int&]: Duration = milliseconds(self as Long)
+prop (self: Int&).milliseconds: Duration = milliseconds(self as Long)
 
 /** This many whole seconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop seconds[self: Int&]: Duration = seconds(self as Long)
+prop (self: Int&).seconds: Duration = seconds(self as Long)
 
 /** This many whole minutes, as a [Duration]. */
 @Experimental(since: "0.1")
-prop minutes[self: Int&]: Duration = minutes(self as Long)
+prop (self: Int&).minutes: Duration = minutes(self as Long)
 
 /** This many fixed 60-minute hours, as a [Duration]. */
 @Experimental(since: "0.1")
-prop hours[self: Int&]: Duration = hours(self as Long)
+prop (self: Int&).hours: Duration = hours(self as Long)
 
 /** This many fixed 24-hour days, as a [Duration]. */
 @Experimental(since: "0.1")
-prop days[self: Int&]: Duration = days(self as Long)
+prop (self: Int&).days: Duration = days(self as Long)
 
 /** This many whole nanoseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop nanoseconds[self: Long&]: Duration = nanoseconds(self)
+prop (self: Long&).nanoseconds: Duration = nanoseconds(self)
 
 /** This many whole microseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop microseconds[self: Long&]: Duration = microseconds(self)
+prop (self: Long&).microseconds: Duration = microseconds(self)
 
 /** This many whole milliseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop milliseconds[self: Long&]: Duration = milliseconds(self)
+prop (self: Long&).milliseconds: Duration = milliseconds(self)
 
 /** This many whole seconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop seconds[self: Long&]: Duration = seconds(self)
+prop (self: Long&).seconds: Duration = seconds(self)
 
 /** This many whole minutes, as a [Duration]. */
 @Experimental(since: "0.1")
-prop minutes[self: Long&]: Duration = minutes(self)
+prop (self: Long&).minutes: Duration = minutes(self)
 
 /** This many fixed 60-minute hours, as a [Duration]. */
 @Experimental(since: "0.1")
-prop hours[self: Long&]: Duration = hours(self)
+prop (self: Long&).hours: Duration = hours(self)
 
 /** This many fixed 24-hour days, as a [Duration]. */
 @Experimental(since: "0.1")
-prop days[self: Long&]: Duration = days(self)
+prop (self: Long&).days: Duration = days(self)
 
 impl Duration {
     /** Whether this duration is exactly zero. */
-    prop isZero[self&]: Bool = self.seconds == 0 && self.nanosecondAdjustment == 0
+    prop &.isZero: Bool = self.seconds == 0 && self.nanosecondAdjustment == 0
 
     /** Whether this duration is strictly negative. */
-    prop isNegative[self&]: Bool = self.seconds < 0
+    prop &.isNegative: Bool = self.seconds < 0
 
     /** Whole milliseconds truncated toward negative infinity. */
-    prop inWholeMilliseconds[self&]: Long = self.seconds * 1000 + (self.nanosecondAdjustment / 1000000) as Long
+    prop &.inWholeMilliseconds: Long = self.seconds * 1000 + (self.nanosecondAdjustment / 1000000) as Long
 
     /** Returns the magnitude with its sign reversed. */
-    func negated[self&](): Duration {
+    func &.negated(): Duration {
         return duration(0 - self.seconds, 0 - self.nanosecondAdjustment as Long)
     }
 
     /** Adds another exact duration. */
-    func plus[self&](other: Duration&): Duration {
+    func &.plus(other: Duration&): Duration {
         return duration(
             self.seconds + other.seconds,
             self.nanosecondAdjustment as Long + other.nanosecondAdjustment as Long
@@ -274,7 +275,7 @@ impl Duration {
     }
 
     /** Subtracts another exact duration. */
-    func minus[self&](other: Duration&): Duration {
+    func &.minus(other: Duration&): Duration {
         return self.plus(other.negated())
     }
 }
@@ -302,10 +303,10 @@ func monotonicNow(): MonotonicInstant { return SystemClock().monotonicNow() }
 
 impl Instant {
     /** Whole Unix milliseconds, truncated toward negative infinity. */
-    prop epochMilliseconds[self&]: Long = self.epochSecond * 1000 + (self.nanosecond / 1000000) as Long
+    prop &.epochMilliseconds: Long = self.epochSecond * 1000 + (self.nanosecond / 1000000) as Long
 
     /** Adds an exact duration while retaining the normalized representation. */
-    func plus[self&](value: Duration&): Instant {
+    func &.plus(value: Duration&): Instant {
         return instant(
             self.epochSecond + value.seconds,
             self.nanosecond as Long + value.nanosecondAdjustment as Long
@@ -313,12 +314,12 @@ impl Instant {
     }
 
     /** Subtracts an exact duration. */
-    func minus[self: Self&](value: Duration&): Instant {
+    func &.minus(value: Duration&): Instant {
         return self.plus(value.negated())
     }
 
     /** Returns the exact elapsed duration from `earlier` to this instant. */
-    func durationSince[self: Self&](earlier: Instant&): Duration {
+    func &.durationSince(earlier: Instant&): Duration {
         return duration(
             self.epochSecond - earlier.epochSecond,
             self.nanosecond as Long - earlier.nanosecond as Long
@@ -326,19 +327,19 @@ impl Instant {
     }
 
     /** Converts this instant to civil time at a fixed UTC offset. */
-    func atOffset[self: Self&](offset: UtcOffset): DateTime {
+    func &.atOffset(offset: UtcOffset): DateTime {
         return atOffset(self, offset)
     }
 
     /** Formats this instant as canonical UTC ISO-8601 text. */
-    func formatIso[self: Self&](): String {
+    func &.formatIso(): String {
         return formatIsoInstant(self)
     }
 }
 
 impl MonotonicInstant {
     /** Returns elapsed time; fails if the readings are not ordered. */
-    func elapsedSince[self: Self&](earlier: MonotonicInstant&): Duration ?! TimeError {
+    func &.elapsedSince(earlier: MonotonicInstant&): Duration ?! TimeError {
         if self.readingNanoseconds < earlier.readingNanoseconds { return .InvalidDuration }
         return nanoseconds(self.readingNanoseconds - earlier.readingNanoseconds)
     }
@@ -419,17 +420,17 @@ func dateTime(date: LocalDate, time: LocalTime, offset: UtcOffset): DateTime {
 
 impl LocalDate {
     /** ISO weekday corresponding to this date. */
-    prop weekday[self: Self&]: Weekday = weekday(self)
+    prop &.weekday: Weekday = weekday(self)
 }
 
 impl DateTime {
     /** Converts this fixed-offset civil value to its unique Unix instant. */
-    func toInstant[self: Self&](): Instant {
+    func &.toInstant(): Instant {
         return toInstant(self)
     }
 
     /** Formats this value as canonical ISO-8601 offset date-time text. */
-    func formatIso[self: Self&](): String {
+    func &.formatIso(): String {
         return formatIsoDateTime(self)
     }
 }
@@ -590,11 +591,11 @@ pack InstantSerializer
 
 @Experimental(since: "0.1")
 impl Serializer<Instant> for InstantSerializer {
-    func toSerialValue[self: Self&](value: Instant&): SerialValue ?! SerializationError {
+    func &.toSerialValue(value: Instant&): SerialValue ?! SerializationError {
         return SerialValue.Text(formatIsoInstant(value))
     }
 
-    func fromSerialValue[self: Self&](value: SerialValue&): Instant ?! SerializationError {
+    func &.fromSerialValue(value: SerialValue&): Instant ?! SerializationError {
         when value {
             SerialValue.Text(text) -> {
                 try {
@@ -614,11 +615,11 @@ pack DateTimeSerializer
 
 @Experimental(since: "0.1")
 impl Serializer<DateTime> for DateTimeSerializer {
-    func toSerialValue[self: Self&](value: DateTime&): SerialValue ?! SerializationError {
+    func &.toSerialValue(value: DateTime&): SerialValue ?! SerializationError {
         return SerialValue.Text(formatIsoDateTime(value))
     }
 
-    func fromSerialValue[self: Self&](value: SerialValue&): DateTime ?! SerializationError {
+    func &.fromSerialValue(value: SerialValue&): DateTime ?! SerializationError {
         when value {
             SerialValue.Text(text) -> {
                 try {
@@ -638,14 +639,14 @@ pack DurationSerializer
 
 @Experimental(since: "0.1")
 impl Serializer<Duration> for DurationSerializer {
-    func toSerialValue[self: Self&](value: Duration&): SerialValue ?! SerializationError {
+    func &.toSerialValue(value: Duration&): SerialValue ?! SerializationError {
         var fields = List<SerialField>()
         fields.add(SerialField("seconds", SerialValue.Number(value.seconds as String)))
         fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(value.nanosecondAdjustment as String)))
         return SerialValue.Object(fields)
     }
 
-    func fromSerialValue[self: Self&](value: SerialValue&): Duration ?! SerializationError {
+    func &.fromSerialValue(value: SerialValue&): Duration ?! SerializationError {
         fin secondsValue = try serialField(value, "seconds")
         fin nanosValue = try serialField(value, "nanosecondAdjustment")
         when secondsValue {

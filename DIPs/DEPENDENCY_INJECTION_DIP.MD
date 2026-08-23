@@ -18,10 +18,12 @@ graph AppGraph {
     scoped  ProfileViewModel(inject Api, inject Session)
 }
 
-func main() with AppGraph {
-    fin api      = inject Api
-    lazy fin cache = inject Cache
-    fin allViews = inject Many<ViewModel>
+func main() {
+    using AppGraph {
+        fin api = inject Api
+        lazy fin cache = inject Cache
+        fin allViews = inject Many<ViewModel>
+    }
 }
 ```
 
@@ -47,7 +49,7 @@ solo pack Counter {
 }
 
 impl Counter {
-    func bump[self: Self!]() { self.n += 1 }
+    func !.bump() { self.n += 1 }
 }
 
 fin a = inject Counter
@@ -113,8 +115,10 @@ file happened to load last.
 ⬜ **Proposed.** The entry point declares which graph it runs under:
 
 ```azora
-func main() with AppGraph {
-    …
+func main() {
+    using AppGraph {
+        …
+    }
 }
 ```
 
@@ -140,7 +144,7 @@ solo pack Clock {
 }
 
 impl Clock {
-    func elapsed[self: Self&](): Long { … }
+    func &.elapsed(): Long { … }
 }
 ```
 
@@ -207,7 +211,7 @@ type, so nothing can be substituted.
 
 ```azora
 spec Api {
-    func fetch[self: Self&](path: String): String
+    func &.fetch(path: String): String
 }
 
 graph AppGraph {
@@ -352,7 +356,7 @@ declared by whichever library owns navigation:
 
 ```azora
 spec ViewModel {
-    func onCleared[self: Self!]()
+    func !.onCleared()
 }
 ```
 
@@ -483,7 +487,7 @@ works, and the pool is never starved by construction.
 | `include` | ✅ **contextual**, parsed | graph composition                   |
 | `lazy`    | ✅ reserved, implemented  | first-read `fin` and `let` bindings  |
 | `replace` | ✅ **contextual**, parsed | graph substitution                  |
-| `with`    | ✅ reserved               | `func main() with AppGraph`         |
+| `using`   | ✅ reserved               | `using AppGraph { ... }`            |
 
 `Many<T>` is deliberately **not** a keyword: it is a type in `std.di`, so it can
 grow filtering, qualifiers and conversions without touching the grammar.
@@ -522,7 +526,7 @@ Ordered by how much they block.
 - ⬜ **`include` is parsed and ignored** (§2.1), and `replace` (§2.2) has no
   keyword. A `graph`'s name is still recorded and never read, so two graphs
   defining one type collide silently
-- ⬜ **`func main() with AppGraph`** (§2.3) - static selection, so an
+- ⬜ **`func main() { using AppGraph { ... } }`** (§2.3) - static selection, so an
   unsatisfiable injection is a compile error rather than a runtime surprise
 - ⬜ **Resolution is keyed by a string.** `__inject("TypeName")` looks the
   instance up in a `typeName → instance` map, which is why a scope-scoped

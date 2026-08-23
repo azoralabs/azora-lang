@@ -14,7 +14,7 @@
 | §10 `take` | **done** - move recorded, use-after-take reported, including across control flow: a move inside a loop is rejected (the next iteration would use it), and a move every branch makes outlives the branch |
 | §11 moving a field out | **done** - a field is spent on its own (`take a.db` leaves the rest of `a` usable and only `a.db` unreadable), and moving one out asks the same access a write does, so a shared borrow of the owner is rejected |
 | §12 borrows, including the exclusivity rules | **done** - a mutable borrow is exclusive for its lifetime, the owner cannot be read or moved while one is live, shared borrows coexist, and a borrow cannot give the value away: `take`/`lend` on a borrowed parameter, receiver or binding is rejected |
-| §13 borrow origins `T&[a]` | **done** - an origin must name a borrowed parameter or the receiver, and a `return` rooted in a binding must be one of them. Lifetimes themselves stay inferred |
+| §13 borrow origins `T&|a|` | **done** - an origin must name a borrowed parameter or the receiver, and a `return` rooted in a binding must be one of them. Lifetimes themselves stay inferred |
 | §13 lending (`a: return T` / `lend a`) | **done** - ownership goes to the callee and comes back, so a non-`Copy` value can be passed in more than once; `lend` and `return` are required to agree |
 | §20 capabilities as generic constraints | **done** |
 | §21 derivation rules | **done** for packs, enums and tagged unions |
@@ -53,7 +53,7 @@ Three places where the implementation deliberately differs from the text below:
   moving: every value can be given away with `take`.
 
 An `impl` of a spec member may omit its return type and take the one the spec
-declared. That is what makes `func clone[self: Self&]()` in §21 legal without
+declared. That is what makes `func &.clone()` in §21 legal without
 contradicting "return types are never inferred" (`DO_NOT_INFER_RETURN_TYPE.MD`):
 the type *is* declared, once, on the contract.
 
@@ -68,8 +68,45 @@ The model is built around:
 - shared borrows with `T&`;
 - mutable borrows with `T!`;
 - compiler-inferred lifetimes;
-- optional borrow-origin annotations such as `T&[source]` or `T&[...sources]`;
+- concrete borrow-origin fences such as `T&|source|` or `T&|...sources|`
+  (required on public/spec borrow returns, inferable in private implementations
+  with one proven source);
 - ownership-safe asynchronous functions.
+
+### Lifecycle ownership is never borrowed
+
+Lifecycle declarations have only static and owned-instance forms:
+
+```azora
+ctor () { /* static startup */ }
+ctor .(value: T) { /* initialize owned self */ }
+
+dtor () { /* static shutdown */ }
+dtor .() { /* destroy owned self */ }
+```
+
+`ctor .(...)` receives a special, compiler-checked initialization privilege. It
+may initialize each previously uninitialized `fin` field exactly once and may
+initialize `var` fields; this does not make the constructor a `Self!` borrow.
+Every required field must be initialized on every successful exit, and no field
+may be read before initialization. Moving a named owned argument into owned
+storage is explicit (`self.value = take value`), while literals and temporaries
+are already owned rvalues.
+
+`dtor .()` consumes the lifetime of one owned `self` and runs exactly once.
+It cannot move, return, store, or otherwise resurrect `self`. Fields remaining
+initialized after its body are destroyed exactly once by the compiler. A failed
+partial construction cleans up only fields proven initialized; it never calls
+the full instance destructor on an incompletely constructed value.
+
+`ctor ()` and `dtor ()` have no receiver or parameters. They are type-level
+startup and shutdown hooks, ordered by dependencies and torn down in reverse
+successful-initialization order.
+
+The forms `ctor &.`, `ctor !.`, `dtor &.`, and `dtor !.` are invalid. Creating
+or ending a borrow must not invoke user lifecycle code. Reference behavior is an
+ordinary `func &.` or `func !.` method; scoped cleanup that needs user code is
+modeled by an owned guard pack with `dtor .()`.
 
 ---
 
@@ -77,7 +114,7 @@ The model is built around:
 
 ```azora
 bridge spec Clone {
-    func clone[self: Self&](): Self
+    func &.clone(): Self
 }
 
 bridge spec Copy requires Clone
@@ -123,7 +160,7 @@ A type whose duplication needs saying writes its own `clone`, and that one wins:
 
 ```azora
 impl Clone for UserProfile {
-    func clone[self: Self&]() {          // the result type comes from the spec
+    func &.clone() {          // the result type comes from the spec
         return UserProfile(
             name: self.name.clone(),
             tags: self.tags.clone()
@@ -530,7 +567,7 @@ After assigning with `take`, the parameter no longer owns the database.
 ### Moving into an existing mutable field
 
 ```azora
-func replaceDatabase[self: App!](database: Database) {
+func App!.replaceDatabase(database: Database) {
     self.database = take database
 }
 ```
@@ -542,7 +579,7 @@ The previous field value is destroyed before or during replacement according to 
 Moving a field out of an owner should require exclusive access to the owner:
 
 ```azora
-func detachDatabase[self: App!](): Database {
+func App!.detachDatabase(): Database {
     return take self.database
 }
 ```
@@ -556,7 +593,7 @@ pack App {
     var database: Database?
 }
 
-func detachDatabase[self: App!](): Database {
+func App!.detachDatabase(): Database {
     return take self.database.require()
 }
 ```
@@ -718,11 +755,25 @@ Most borrow relationships are inferred automatically.
 When a public API must state the origin of a returned borrow, the return type may name its source:
 
 ```azora
-
-
+func &.name(): String&|self| {
+    return self.name.&
+}
 ```
 
-`String&[a]` means that the returned borrow originates from `a`.
+`String&|a|` means that the returned borrow originates from `a`.
+
+The canonical grammar is:
+
+```text
+BORROW_TYPE   ::= TYPE ('&' | '!') ORIGIN_FENCE? '?'?
+ORIGIN_FENCE  ::= '|' ORIGIN (',' ORIGIN)* '|'
+ORIGIN        ::= NAME | 'self' ('.' INTEGER)? | '...' NAME
+```
+
+The fence is written without surrounding spaces: `T&|source|`. It is not a
+runtime pipe expression and it is not a lifetime parameter. An empty fence
+`T&||` is rejected, so it cannot be confused with logical `||`. For a nullable
+borrow, nullability follows the origin fence: `T&|source|?`.
 
 ### Lending: ownership that comes back
 
@@ -801,7 +852,7 @@ func relay(h: Handle&): Int {
 ```
 
 The same applies to an exclusive borrow, to a borrowed receiver (`take self` in
-a `[self: Self&]` method), and to a binding that holds a borrow - that last one
+a `func &.method()`), and to a binding that holds a borrow - that last one
 names the owner it is standing in for:
 
 ```
@@ -836,7 +887,7 @@ can take ownership to go to.
 ### Method receiver origin
 
 ```azora
-func value[self: Self&](): Int&[self] {
+func &.value(): Int&|self| {
     return self.value.&
 }
 ```
@@ -848,7 +899,7 @@ func choose(
     a: String&,
     b: String&,
     chooseA: Bool
-): String&[a, b] {
+): String&|a, b| {
     return if chooseA { a } else { b }
 }
 ```
@@ -861,7 +912,7 @@ The returned borrow is valid only while every possible source required by the AP
 func pair(
     a: String&,
     b: String&
-): Tuple(String&[a], String&[b]) {
+): Tuple(String&|a|, String&|b|) {
     return tupleOf(a, b)
 }
 ```
@@ -875,7 +926,7 @@ func slice(
     text: String&,
     start: Int,
     end: Int
-): StringView&[text] {
+): StringView&|text| {
     ...
 }
 ```
@@ -1015,7 +1066,7 @@ When this cannot be proven, the compiler should reject the code and suggest:
 ```azora
 async func process(data: Data&) {
     scope {
-        let name: String&[data] = data.name.&
+        let name: String&|data| = data.name.&
         trace name
     }
 
@@ -1205,20 +1256,20 @@ be held behind a handle that owns it, rather than being made unmovable itself.
 Capabilities may be used as generic constraints.
 
 ```azora
-func transfer<T>(value: T): T {
+func<T> transfer(value: T): T {
     return take value          // no constraint: every value can be given away
 }
 ```
 
 ```azora
-func duplicate<T>(value: T&): T
+func<T> duplicate(value: T&): T
 where T: Clone {
     return value.clone()
 }
 ```
 
 ```azora
-func repeat<T>(value: T, count: Int): List<T>
+func<T> repeat(value: T, count: Int): List<T>
 where T: Copy {
     var result: List<T> = listOf()
 
@@ -1233,7 +1284,7 @@ where T: Copy {
 For type varargs:
 
 ```azora
-deepinline prop AllCopy<...T>: Bool
+deepinline prop<...T> AllCopy: Bool
 where T: Copy {
     return true
 }
@@ -1287,7 +1338,7 @@ pack UserProfile {
 }
 
 impl Clone for UserProfile {
-    func clone[self: Self&]() {
+    func &.clone() {
         return UserProfile(
             name: self.name.clone(),
             tags: self.tags.clone()
@@ -1428,7 +1479,7 @@ Ownership stays with `a`.
 ### Borrowed return
 
 ```azora
-func front(list: List<T>&): T&[list]
+func front(list: List<T>&): T&|list|
 ```
 
 The returned reference may not outlive `list`.
@@ -1485,7 +1536,7 @@ The design goals are:
 
 ```azora
 impl Clone for Int {
-    func clone[self: Self&]() {
+    func &.clone() {
         return self
     }
 }

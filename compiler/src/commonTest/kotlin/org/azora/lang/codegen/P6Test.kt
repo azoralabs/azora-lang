@@ -8,7 +8,7 @@ class P6Test {
             import std.format
             pack Vec2 { var x: Int }
             impl Display for Vec2 {
-                func display[self: Self&](formatter: Formatter!) { formatter.write("v") }
+                func &.display(formatter: Formatter!) { formatter.write("v") }
             }
             func main() { println("${'$'}{Vec2(1)}") }
         """.trimIndent(), release = false)

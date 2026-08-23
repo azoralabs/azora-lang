@@ -22,6 +22,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.ai
 
 import std.container.list::ArrayList
@@ -78,13 +79,13 @@ prop conversation: Conversation = .(ArrayList<Message>())
 impl Conversation {
     /** Appends one structured message. */
     @Experimental(since: "0.1")
-    func add[self: Self!](message: Message): Unit {
+    func !.add(message: Message): Unit {
         self.messages.add(message)
     }
 
     /** Returns the number of messages currently stored. */
     @Experimental(since: "0.1")
-    prop size[self: Self&]: Int = self.messages.size
+    prop &.size: Int = self.messages.size
 }
 
 /** Connects to a provider/model pair; the selected backend supplies it. */

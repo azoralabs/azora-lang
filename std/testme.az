@@ -1,5 +1,10 @@
+@Supress(.Unused)
 module std.testme
 
+import std.io::println
+
 func main() {
-    fin x: Int = 2
+    var x = 2
+    fin y = 7.
+    println(x + y)
 }

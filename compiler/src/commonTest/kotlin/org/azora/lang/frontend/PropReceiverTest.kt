@@ -42,8 +42,8 @@ class PropReceiverTest {
         parse(
             """
             impl Point {
-                prop magnitude[self&]: Double = self.x
-                prop scaled[self: Self&]: Double = self.x
+                prop &.magnitude: Double = self.x
+                prop &.scaled: Double = self.x
             }
             """,
         )
@@ -53,7 +53,7 @@ class PropReceiverTest {
         val message = refusal(
             """
             impl Cursor {
-                prop next[self!]: Int = self.index
+                prop !.next: Int = self.index
             }
             """,
         )
@@ -66,7 +66,7 @@ class PropReceiverTest {
         val message = refusal(
             """
             impl Compare {
-                prop reversed[self]: Compare = self
+                prop .reversed: Compare = self
             }
             """,
         )
@@ -80,7 +80,7 @@ class PropReceiverTest {
         val message = refusal(
             """
             impl Compare {
-                prop reversed[self: Self]: Compare = self
+                prop .reversed: Compare = self
             }
             """,
         )
@@ -91,7 +91,7 @@ class PropReceiverTest {
         val message = refusal(
             """
             spec Walker {
-                prop next[self: Self!]: Int
+                prop !.next: Int
             }
             """,
         )
@@ -109,9 +109,9 @@ class PropReceiverTest {
         parse(
             """
             impl Cursor {
-                func peek[self&](): Int { return self.index }
-                func advance[self!]() { self.index = self.index + 1 }
-                func into[self](): Int { return self.index }
+                func &.peek(): Int { return self.index }
+                func !.advance() { self.index = self.index + 1 }
+                func .into(): Int { return self.index }
             }
             """,
         )

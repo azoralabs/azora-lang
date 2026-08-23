@@ -269,7 +269,7 @@ error HttpError {
 }
 
 spec HttpClient {
-    async func execute[self: Self&](request: HttpRequest): HttpResponse ?! HttpError
+    async func &.execute(request: HttpRequest): HttpResponse ?! HttpError
 }
 ```
 
@@ -320,22 +320,22 @@ the endpoint or HTTP core types.
 
 ```azora
 spec HttpHandler {
-    async func handle[self: Self&](request: HttpRequest): HttpResponse ?! HttpError
+    async func &.handle(request: HttpRequest): HttpResponse ?! HttpError
 }
 
 pack Router
 
 impl Router {
-    func route[self: Self!](method: HttpMethod, path: String, handler: HttpHandler)
-    func handle<Request, Response, Failure>[self: Self!](
+    func !.route(method: HttpMethod, path: String, handler: HttpHandler)
+    func<Request, Response, Failure> !.handle(
         endpoint: Endpoint<Request, Response, Failure>,
         handler: (Request) -> Response ?! Failure
     )
 }
 
 spec HttpServer {
-    async func serve[self: Self!](handler: HttpHandler) ?! HttpError
-    func stop[self: Self!]()
+    async func !.serve(handler: HttpHandler) ?! HttpError
+    func !.stop()
 }
 ```
 
@@ -362,7 +362,7 @@ fin app = router
 
 ```azora
 spec HttpMiddleware {
-    func wrap[self: Self&](next: HttpHandler): HttpHandler
+    func &.wrap(next: HttpHandler): HttpHandler
 }
 ```
 
@@ -466,17 +466,17 @@ pack TransactionOptions {
 }
 
 spec Database {
-    async func read<T>[self: Self&](
+    async func<T> &.read(
         options: TransactionOptions,
         action: (Transaction&) -> T ?! DbError
     ): T ?! DbError
 
-    async func write<T>[self: Self&](
+    async func<T> &.write(
         options: TransactionOptions,
         action: (Transaction!) -> T ?! DbError
     ): T ?! DbError
 
-    async func close[self: Self!]() ?! DbError
+    async func !.close() ?! DbError
 }
 ```
 
@@ -548,12 +548,12 @@ impl<Row, T> DbExpression<T> for Column
 impl<T> DbExpression<T> for DbValue
 
 impl<Row, T> Column {
-    func equal[self: Self&](value: T): DbExpression<Bool>
-    func notEqual[self: Self&](value: T): DbExpression<Bool>
-    func lessThan[self: Self&](value: T): DbExpression<Bool>
-    func lessOrEqual[self: Self&](value: T): DbExpression<Bool>
-    func greaterThan[self: Self&](value: T): DbExpression<Bool>
-    func greaterOrEqual[self: Self&](value: T): DbExpression<Bool>
+    func &.equal(value: T): DbExpression<Bool>
+    func &.notEqual(value: T): DbExpression<Bool>
+    func &.lessThan(value: T): DbExpression<Bool>
+    func &.lessOrEqual(value: T): DbExpression<Bool>
+    func &.greaterThan(value: T): DbExpression<Bool>
+    func &.greaterOrEqual(value: T): DbExpression<Bool>
 }
 ```
 
@@ -707,12 +707,12 @@ transaction semantics.
 
 ```azora
 spec SqlDialect {
-    func compile[self: Self&](statement: DbStatement&): SqlCommand ?! DbError
-    func capabilities[self: Self&](): DbCapabilities
+    func &.compile(statement: DbStatement&): SqlCommand ?! DbError
+    func &.capabilities(): DbCapabilities
 }
 
 spec SqlDriver {
-    async func connect[self: Self&](options: DbConnectOptions&): SqlConnection ?! DbError
+    async func &.connect(options: DbConnectOptions&): SqlConnection ?! DbError
 }
 ```
 
@@ -822,7 +822,7 @@ pack UserRepository {
 }
 
 impl UserRepository {
-    async func create[self: Self&](input: CreateUser): User ?! CreateUserFailure {
+    async func &.create(input: CreateUser): User ?! CreateUserFailure {
         return try await self.db.write { tx ->
             if try tx.from(Users).where(Users[User::email] == input.email).exists() {
                 return .EmailAlreadyUsed

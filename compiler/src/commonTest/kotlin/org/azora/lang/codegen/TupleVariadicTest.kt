@@ -15,9 +15,9 @@ class TupleVariadicTest {
 
     @Test fun genericImplReflectedFieldLoopParses() {
         val program = Parser(Lexer("""
-            spec PrettyPrint { prop pretty[self: Self&]: String }
+            spec PrettyPrint { prop &.pretty: String }
             impl PrettyPrint for Tuple<...T> {
-                prop pretty[self: Self&]: String {
+                prop &.pretty: String {
                     inline for field in reflect<Self>.fields with index {
                         trace { field.value }
                     }
@@ -55,7 +55,7 @@ class TupleVariadicTest {
             import std.io
             import std.container::*
             func main() {
-                fin x: Tuple<Int, Double> = tupleOf(1, 2.0)
+                fin x: Tuple<Int, Float> = tupleOf(1, 2.0)
                 println(x.0)
                 println(x.1)
             }
@@ -143,7 +143,7 @@ class TupleVariadicTest {
             }
 
             impl App {
-                func greet[self: Self&](): String {
+                func &.greet(): String {
                     return "Hello from ${self.name}!"
                 }
             }
@@ -208,8 +208,8 @@ class TupleVariadicTest {
         val src = """
             import std.io
             import std.container.tuple
-            func swap(t: Tuple<Int, Double>): Tuple<Double, Int> {
-                return tupleOf<Double, Int>(t.1, t.0)
+            func swap(t: Tuple<Int, Float>): Tuple<Float, Int> {
+                return tupleOf<Float, Int>(t.1, t.0)
             }
             func main() {
                 fin r = swap(tupleOf(7, 9.0))

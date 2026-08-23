@@ -343,6 +343,39 @@ class StdlibInjectionTest {
     @Test fun importStdWildcardExposesAllModules() =
         assertEquals("5\n9", run("import std.io\nimport std.*\nfunc main() {\n    println(abs(-5))\n    println(max(2, 9))\n}"))
 
+    private val wildcardFilterLibrary = LibrarySource(
+        "lib/filter.az",
+        """
+            module lib.filter
+
+            func kept(): Int { return 1 }
+            func removed(): Int { return 2 }
+        """.trimIndent(),
+    )
+
+    @Test fun groupedWildcardWithoutKeepsTheOtherSymbolsVisible() {
+        val result = Compiler(listOf(wildcardFilterLibrary)).compile(
+            "import lib.filter::{*, without removed}\nfunc main() {\n    fin value = kept()\n}",
+        )
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+    }
+
+    @Test fun groupedWildcardWithoutRemovesTheExcludedSymbol() {
+        val result = Compiler(listOf(wildcardFilterLibrary)).compile(
+            "import lib.filter::{*, without removed}\nfunc main() {\n    removed()\n}",
+        )
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertTrue(failure.errors.any { "undefined function 'removed'" in it }, failure.errors.toString())
+    }
+
+    @Test fun groupedWildcardWithoutRejectsAnUnknownExcludedSymbol() {
+        val result = Compiler(listOf(wildcardFilterLibrary)).compile(
+            "import lib.filter::{*, without missing}\nfunc main() {}",
+        )
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertTrue(failure.errors.any { "wildcard does not provide a symbol named 'missing'" in it }, failure.errors.toString())
+    }
+
     @Test fun importStdNamespaceWithoutModuleIsRejected() {
         val result = Compiler().compile("import std\nfunc main() {}")
         assertIs<CompilationResult.Failure>(result)
@@ -408,12 +441,12 @@ class StdlibInjectionTest {
             module lib.model
 
             pack Model {
-                var width = 0.0
-                var _secret = 42.0
+                var width: Double = 0.0
+                var _secret: Double = 42.0
             }
 
             impl Model {
-                prop secret[self: Self&]: Double = self._secret
+                prop &.secret: Double = self._secret
             }
         """.trimIndent(),
     )
@@ -424,7 +457,7 @@ class StdlibInjectionTest {
         val result = Compiler(listOf(modelLibrary)).compile("""
             import std.io
             import lib.model
-            prop leaked[self: Model&]: Double = self._secret
+            prop (self: Model&).leaked: Double = self._secret
             func main() {
                 println(Model(3.0, 1.0).leaked)
             }
@@ -440,7 +473,7 @@ class StdlibInjectionTest {
         val result = Compiler(listOf(modelLibrary)).compile("""
             import std.io
             import lib.model
-            prop doubled[self: Model&]: Double = self.width * 2.0
+            prop (self: Model&).doubled: Double = self.width * 2.0
             func main() {
                 fin m = Model(3.0, 1.0)
                 println(m.doubled)
@@ -619,7 +652,7 @@ class StdlibInjectionTest {
             }
 
             impl Clone for Point {
-                func clone[self&](): Point { return Point(x: self.x) }
+                func &.clone(): Point { return Point(x: self.x) }
             }
         """.trimIndent())
         val failure = assertIs<CompilationResult.Failure>(result)

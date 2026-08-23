@@ -9,7 +9,7 @@ examples:
 func countdown(from: Int): Flow<Int> = flow {
     reverse for n in from..0 {
         emit(n)
-        delay(1.seconds) // seconds to be in std.time an extension to Int (prop) and be type Duration, something like this: "func seconds[self: Int]() = Duration(self)"
+        delay(1.seconds) // seconds to be in std.time an extension to Int (prop) and be type Duration, something like this: "func Int.seconds() = Duration(self)"
     }
 }
 ```

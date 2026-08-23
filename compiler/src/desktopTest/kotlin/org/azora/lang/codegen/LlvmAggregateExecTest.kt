@@ -124,7 +124,7 @@ class LlvmAggregateExecTest {
             var z: Double
         }
         impl Vec3 {
-            func lengthSq[self: Self&](): Double {
+            func &.lengthSq(): Double {
                 return self.x * self.x + self.y * self.y + self.z * self.z
             }
         }
@@ -144,7 +144,7 @@ class LlvmAggregateExecTest {
             var y: Double
         }
         impl Vec2 {
-            func plus[self: Self&](o: Vec2): Vec2 {
+            func &.plus(o: Vec2): Vec2 {
                 return Vec2(self.x + o.x, self.y + o.y)
             }
         }

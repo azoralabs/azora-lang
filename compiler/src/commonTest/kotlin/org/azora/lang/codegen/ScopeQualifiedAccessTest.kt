@@ -146,10 +146,10 @@ class ScopeQualifiedAccessTest {
             run(
                 """
                 import std.io
-                spec Area { func area[self: Self&](): Int }
+                spec Area { func &.area(): Int }
                 scope shapes { pack Square { fin side: Int = 0 } }
                 impl Area for shapes::Square {
-                    func area[self: Self&](): Int { return self.side * self.side }
+                    func &.area(): Int { return self.side * self.side }
                 }
                 func main() { println(shapes::Square(4).area()) }
                 """.trimIndent(),
@@ -254,10 +254,10 @@ class ScopeQualifiedAccessTest {
             run(
                 """
                 import std.io
-                scope caps { spec Named { func label[self: Self&](): String } }
+                scope caps { spec Named { func &.label(): String } }
                 pack Tag
                 impl caps::Named for Tag {
-                    func label[self: Self&](): String { return "ok" }
+                    func &.label(): String { return "ok" }
                 }
                 func main() { println(Tag().label()) }
                 """.trimIndent(),

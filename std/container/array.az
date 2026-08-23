@@ -27,6 +27,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.container.array
 
 /**
@@ -68,7 +69,7 @@ impl Array<T, N: Int> {
      * @return `true` when `size` is zero.
      */
     @Experimental(since: "0.1")
-    prop isEmpty[self: Self&]: Bool = self.size == 0
+    prop &.isEmpty: Bool = self.size == 0
 
     /**
      * True when the array holds at least one element.
@@ -79,7 +80,7 @@ impl Array<T, N: Int> {
      * @return `true` when `size` is greater than zero.
      */
     @Experimental(since: "0.1")
-    prop isNotEmpty[self: Self&]: Bool = self.size > 0
+    prop &.isNotEmpty: Bool = self.size > 0
 
     /**
      * The number of elements the array holds.

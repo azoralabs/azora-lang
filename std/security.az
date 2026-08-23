@@ -24,9 +24,10 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.security
 
-import std.[char::*, container.array::*]
+import std::{char::*, container.array::*}
 
 /** Data classification used by policies and audit records. */
 @Experimental(since: "0.1")
@@ -240,19 +241,19 @@ bridge func constantTimeEqual(left: Array<UByte>, right: Array<UByte>): Bool
 
 /** Loads a secret from an approved manager by reference, not by plaintext. */
 @Experimental(since: "0.1")
-bridge func loadSecret<T>(name: String): Secret<T>
+bridge func<T> loadSecret(name: String): Secret<T>
 
 /** Derives or unwraps an opaque key without exposing raw key material. */
 @Experimental(since: "0.1")
-bridge func deriveKey<T>(secret: Secret<T>, purpose: String): KeyHandle
+bridge func<T> deriveKey(secret: Secret<T>, purpose: String): KeyHandle
 
 /** Hashes a password using a memory-hard provider implementation. */
 @Experimental(since: "0.1")
-bridge func passwordHash<T>(secret: Secret<T>, options: PasswordHashOptions): Digest
+bridge func<T> passwordHash(secret: Secret<T>, options: PasswordHashOptions): Digest
 
 /** Verifies a password hash using a constant-time provider operation. */
 @Experimental(since: "0.1")
-bridge func verifyPassword<T>(secret: Secret<T>, stored: Digest): Bool
+bridge func<T> verifyPassword(secret: Secret<T>, stored: Digest): Bool
 
 /** Encrypts and authenticates bytes with caller-supplied associated data. */
 @Experimental(since: "0.1")
@@ -325,4 +326,4 @@ bridge func revoke(capability: Capability): Unit
 
 /** Explicitly wipes provider-managed sensitive storage. */
 @Experimental(since: "0.1")
-bridge func wipe<T>(secret: Secret<T>): Unit
+bridge func<T> wipe(secret: Secret<T>): Unit

@@ -215,12 +215,12 @@ func main() {
     @Test fun generators() = assertEquals("30", run("""module playground
 import std.io
 import std.concurrency.generators
-func squares(n: Int): Sequence<Int> = sequence<Int> [s: SequenceScope<Int>!; n.&] {
+func squares(n: Int): Sequence<Int> = sequence<Int> [!, n.&] s: SequenceScope<Int> {
     for i in 0..<n { yield(i * i) }
 }
 func main() {
     var sum = 0
-    squares(5).collect [; sum.!] { x -> sum += x }
+    squares(5).collect [sum.!] { x -> sum += x }
     println(sum)
 }"""))
 
@@ -230,7 +230,7 @@ solo pack Counter {
     var n: Int = 0
 }
 impl Counter {
-    func inc[self: Self!](): Int {
+    func !.inc(): Int {
         self.n = self.n + 1
         return self.n
     }
@@ -252,7 +252,7 @@ func main() {
 
     @Test fun variadic() = assertEquals("6\n100", run("""module playground
 import std.io
-func sumAll<...T>(first: Int, rest: ...T): Int {
+func<...T> sumAll(first: Int, rest: ...T): Int {
     var total = first
     for x in rest { total = total + x }
     return total

@@ -43,4 +43,23 @@ object Literals {
 
     /** What a `bridge pack Name(…)` may say it is written as. */
     val KINDS = setOf(INT, UINT, REAL)
+
+    /**
+     * The width an [INT] is read at where nothing says which.
+     *
+     * A declared type, a parameter, a cast or a named width all say so; where
+     * nothing does, `4` is this.
+     */
+    const val DEFAULT_INT = "Int"
+
+    /**
+     * The width a [REAL] is read at where nothing says which.
+     *
+     * `7.` is a [DEFAULT_FLOAT] and `var x: Double = 7.` is a `Double` - the
+     * literal states no width and takes the one the place it lands in asks for.
+     * Every pass that has to answer for a literal standing alone answers from
+     * here, so the parser, the collector, the resolver and the IR cannot drift
+     * into three different defaults.
+     */
+    const val DEFAULT_FLOAT = "Float"
 }

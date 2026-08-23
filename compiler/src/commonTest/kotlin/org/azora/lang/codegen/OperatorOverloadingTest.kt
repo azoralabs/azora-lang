@@ -22,7 +22,7 @@ class OperatorOverloadingTest {
                 var y: Int
             }
             impl Vec2 {
-                func plus[self: Self&](other: Vec2): Vec2 {
+                func &.plus(other: Vec2): Vec2 {
                     return Vec2(self.x + other.x, self.y + other.y)
                 }
             }
@@ -44,7 +44,7 @@ class OperatorOverloadingTest {
                 var y: Int
             }
             impl Vec2 {
-                func minus[self: Self&](other: Vec2): Vec2 {
+                func &.minus(other: Vec2): Vec2 {
                     return Vec2(self.x - other.x, self.y - other.y)
                 }
             }
@@ -66,7 +66,7 @@ class OperatorOverloadingTest {
                 var y: Int
             }
             impl Vec2 {
-                func times[self: Self&](other: Vec2): Vec2 {
+                func &.times(other: Vec2): Vec2 {
                     return Vec2(self.x * other.x, self.y * other.y)
                 }
             }
@@ -88,7 +88,7 @@ class OperatorOverloadingTest {
                 var y: Int
             }
             impl Vec2 {
-                func equals[self: Self&](other: Vec2): Bool {
+                func &.equals(other: Vec2): Bool {
                     return self.x == other.x && self.y == other.y
                 }
             }
@@ -110,7 +110,7 @@ class OperatorOverloadingTest {
                 var y: Int
             }
             impl Vec2 {
-                func equals[self: Self&](other: Vec2): Bool {
+                func &.equals(other: Vec2): Bool {
                     return self.x == other.x && self.y == other.y
                 }
             }
@@ -132,7 +132,7 @@ class OperatorOverloadingTest {
                 var y: Int
             }
             impl Vec2 {
-                func plus[self: Self&](other: Vec2): Vec2 {
+                func &.plus(other: Vec2): Vec2 {
                     return Vec2(self.x + other.x, self.y + other.y)
                 }
             }

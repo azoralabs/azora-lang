@@ -88,7 +88,7 @@ them such code could only be tested by a native build.
 ### 2.3 Reflection
 
 ```azora
-bridge func reflect<T>(includeInherited: Bool = false): Reflected<T>
+bridge func<T> reflect(includeInherited: Bool = false): Reflected<T>
 ```
 
 `reflect<T>` is a compile-time handle, not a runtime value. The parser

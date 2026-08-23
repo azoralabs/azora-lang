@@ -203,7 +203,7 @@ scope std {
 
         /** Whether the thread has finished, without waiting. */
         @Since("0.1")
-        prop isFinished[self: Self&]: Bool
+        prop &.isFinished: Bool
     }
 
     /**
@@ -213,7 +213,7 @@ scope std {
      * must be `Send`; the result comes back the same way, so `T` must be too.
      */
     @Since("0.1")
-    func spawn<T>(body: () -> T): JoinHandle<T> where T is Send
+    func<T> spawn(body: () -> T): JoinHandle<T> where T is Send
 
     /** Blocks the calling thread. Not `delay` - nothing here suspends. */
     @Since("0.1")
@@ -245,12 +245,12 @@ pack ThreadScope { var _threads: List<Int> }
 impl ThreadScope {
     /** Spawns inside the scope. Captures need only outlive the scope. */
     @Since("0.1")
-    func spawn<T>[self: Self!](body: () -> T): JoinHandle<T> where T is Send
+    func<T> !.spawn(body: () -> T): JoinHandle<T> where T is Send
 }
 
 /** Runs `body`, then joins every thread it spawned before returning. */
 @Since("0.1")
-func withThreads<R>(body: (ThreadScope!) -> R): R
+func<R> withThreads(body: (ThreadScope!) -> R): R
 ```
 
 Used:
@@ -341,7 +341,7 @@ scope std {
     /**
      * Proof that the lock is held, and the only way to reach the value.
      *
-     * The guard borrows from the mutex - `[self]` - so it cannot outlive it,
+     * The guard borrows from the mutex - `|self|` - so it cannot outlive it,
      * and unlocking happens when the guard's scope ends rather than when
      * someone remembers.
      */
@@ -353,24 +353,24 @@ scope std {
     impl Mutex<T> {
         /** Blocks until the lock is held. */
         @Since("0.1")
-        func lock[self: Self&](): Guard<T>&[self]
+        func &.lock(): Guard<T>&|self|
 
         /** Takes the lock if it is free, otherwise returns null. */
         @Since("0.1")
-        func tryLock[self: Self&](): Guard<T>&?[self]
+        func &.tryLock(): Guard<T>&|self|?
 
         /** The value, without locking - sound only because `self` is exclusive. */
         @Since("0.1")
-        func get[self: Self!](): T![self]
+        func !.get(): T!|self|
     }
     
     impl Guard<T> {
         @Since("0.1")
-        func value[self: Self!](): T![self]
+        func !.value(): T!|self|
     }
 
     @Since("0.1")
-    func mutexOf<T>(value: T): Mutex<T> where mutexCond<T>
+    func<T> mutexOf(value: T): Mutex<T> where mutexCond<T>
 }
 ```
 
@@ -378,11 +378,11 @@ Three things fall out of that shape, each a bug class removed:
 
 1. **The lock cannot be forgotten** - `_value` is private, so `lock()` is the
    only route in.
-2. **The lock cannot be leaked** - `Guard<T>&[self]` borrows from the mutex, so
+2. **The lock cannot be leaked** - `Guard<T>&|self|` borrows from the mutex, so
    §13's origin check rejects returning a guard from the function that locked.
 3. **The lock is released on scope exit**, including on an early `return`.
 
-`get[self: Self!]` is the exception that proves it: if you hold the *exclusive*
+`func !.get()` is the exception that proves it: if you hold the *exclusive*
 borrow of the mutex, no other thread can hold anything, so locking would be pure
 ceremony. The type says why it is safe.
 
@@ -402,10 +402,10 @@ pack RwLock<T> { var _value: T
 
 impl RwLock<T> {
     @Since("0.1")
-    func read[self: Self&](): ReadGuard<T>&[self]
+    func &.read(): ReadGuard<T>&|self|
 
     @Since("0.1")
-    func write[self: Self&](): WriteGuard<T>&[self]
+    func &.write(): WriteGuard<T>&|self|
 }
 
 /** Runs its initializer exactly once, however many threads arrive. */
@@ -414,7 +414,7 @@ pack Once { var _state: Atomic<Int> }
 
 impl Once {
     @Since("0.1")
-    func call[self: Self&](body: () -> Unit)
+    func &.call(body: () -> Unit)
 }
 
 /** Waits until a count reaches zero. Replaces the `delay`-based CountDownLatch. */
@@ -435,20 +435,20 @@ pack Atomic<T> where T: Copy { var _value: T }
 
 impl Atomic<T> {
     @Since("0.1")
-    func load[self: Self&](order: Ordering = .Acquire): T
+    func &.load(order: Ordering = .Acquire): T
 
     @Since("0.1")
-    func store[self: Self&](value: T, order: Ordering = .Release)
+    func &.store(value: T, order: Ordering = .Release)
 
     @Since("0.1")
-    func swap[self: Self&](value: T, order: Ordering = .AcqRel): T
+    func &.swap(value: T, order: Ordering = .AcqRel): T
 
     /** Compare-and-swap. Returns whether it happened. */
     @Since("0.1")
-    func cas[self: Self&](expected: T, desired: T, order: Ordering = .AcqRel): Bool
+    func &.cas(expected: T, desired: T, order: Ordering = .AcqRel): Bool
 
     @Since("0.1")
-    func add[self: Self&](delta: T, order: Ordering = .AcqRel): T where T: Number
+    func &.add(delta: T, order: Ordering = .AcqRel): T where T: Number
 }
 
 @Since("0.1")
@@ -485,15 +485,15 @@ pack Channel<T> where T: Send { … }
 impl Channel<T> {
     /** Hands the value to the channel. The sender no longer owns it. */
     @Since("0.1")
-    func send[self: Self&](value: T) ?! ChannelClosed
+    func &.send(value: T) ?! ChannelClosed
 
     /** Blocks until a value arrives, or the channel closes. */
     @Since("0.1")
-    func receive[self: Self&](): T ?! ChannelClosed
+    func &.receive(): T ?! ChannelClosed
 
     /** Takes a value if one is waiting. */
     @Since("0.1")
-    func tryReceive[self: Self&](): T?
+    func &.tryReceive(): T?
 }
 ```
 
@@ -596,7 +596,7 @@ Independent of any new feature, and worth doing whether or not the rest lands:
 
 - fix `module std.pareallelism.sync` → `module std.parallelism.sync`;
 - delete `joinAll`, which sleeps and calls it joining;
-- rename `sleep` to `sleepMillis`, splitting the task version (`delay`) from the
+- rename `sleep` to `sleepMillis`, splitting the suspending version (`delay`) from the
   thread version (blocks);
 - rename `spawnAsync` to `launchAfter`, since a scheduling delay is what it
   actually adds;

@@ -122,8 +122,10 @@ This proposal does not:
 - replace ordinary vararg construction such as `List<T>(1, 2, 3)`;
 - add list, set, or map comprehensions;
 - define slicing syntax beyond preserving existing index/slice operators;
-- redesign function parameter syntax, receiver declarations, or lambda capture
-  lists except where they collide directly with a bare collection expression;
+- redesign function parameter syntax, named-function receiver declarations, or
+  lambda capture lists except where they collide directly with a bare
+  collection expression; the canonical receiver head from `FUNCTIONS_DIP.MD`,
+  `func<T> (self: T&).name(...)`, is assumed here;
 - make braces into an expression-precedence operator;
 - infer a heterogeneous collection as `List<Any>` merely to make it compile.
 
@@ -230,8 +232,10 @@ oper[]= [self: Vector<T>!](index: Int, value: T)
 oper[:] [self: Vector<T>&](range: Range): Vector<T>
 ```
 
-The receiver syntax shown above is outside this proposal. Its brackets occur in
-a declaration-only position and do not compete with a primary expression.
+The operator receiver syntax shown above is outside this proposal. Its brackets
+occur in a declaration-only position and do not compete with a primary
+expression. Named functions instead use the parenthesized/type receiver heads
+defined by `FUNCTIONS_DIP.MD`.
 
 ### 6.3 Parentheses
 
@@ -579,7 +583,7 @@ of the normal capability and borrow system. A generic group is accepted only
 when its constraints prove the required operation:
 
 ```azora
-func broadcast<T>(value: T): (T, T)
+func<T> broadcast(value: T): (T, T)
 where T: Copy {
     fin {left, right}: T <- value
     return (left, right)
@@ -685,7 +689,7 @@ fin {leftView, rightView}: Document& <- owner.&
 Both borrows retain `owner` as their origin. They do not own `Document`, and
 neither may outlive, move, or destroy `owner`. The broadcast does not create a
 new lifetime region and does not erase the origin recorded by an API return
-type such as `T&[source]`.
+type such as `T&|source|`.
 
 Repeated creation is also valid:
 
@@ -1315,7 +1319,7 @@ used even if this DIP is not involved. Conceptually:
 
 ```azora
 spec List<T> {
-    bridge ctor(...elements: T): Self {
+    bridge ctor .(...elements: T): Self {
         return ArrayList<T>(...elements)
     }
 }
@@ -1600,7 +1604,7 @@ fin pair = (take socket, address)
 Borrow tuples preserve an origin per element:
 
 ```azora
-func names(a: User&, b: User&): (String&[a], String&[b]) {
+func names(a: User&, b: User&): (String&|a|, String&|b|) {
     return (a.name.&, b.name.&)
 }
 ```
@@ -2015,26 +2019,40 @@ The current expression form `[a, b].method()` is used as a contextual-receiver
 call. Under this proposal it unambiguously means “construct a list, then call
 `method` on that list.” The contextual-receiver shorthand is removed.
 
-Its replacement is the already structured form:
+Its replacements are structured, non-value receiver forms:
 
 ```azora
-with (a, b) {
+using (a, b) {
     method()
 }
+
+{a, b}.method()
 ```
 
-Here `(a, b)` is a tuple of contextual values supplied to the `with` block.
+After `using`, `(a, b)` is a keyword-delimited receiver list, not a tuple
+expression. Before `.method`, `{a, b}` is a direct receiver group, not a runtime
+value. By contrast, `(a, b).method()` invokes a method on one tuple and
+`[a, b].method()` invokes a method on one collection.
 
-Declaration-only receiver lists and lambda capture lists remain parseable
-because their grammar positions are not primary expressions. A later callable
-syntax DIP may migrate them, but collection literals must not wait on that
-unrelated redesign.
+The receiver types supplied by one `using` clause or direct brace group must be
+pairwise distinct after alias normalization and generic substitution. `using (primaryLogger,
+fallbackLogger)` is rejected when both have type `Logger`; use a wrapper context
+or pass one logger as an ordinary argument. Borrow capability does not make two
+otherwise equal receiver types distinct.
+
+Named-function receiver heads and lambda capture lists remain parseable because
+their grammar positions are not primary expressions. The function form is now
+`func<T> (self: T&).method(...)`: the parenthesized receiver head follows
+optional function generics and the mandatory dot introduces the member name. Lambda
+headers keep their separate `[receivers; captures] { ... }` grammar. Neither
+form competes with a collection literal in primary-expression position.
 
 ### 13.7 Group versus lambda/body
 
-There is no general `{a, b}` group expression. A brace group is recognized only
-where the grammar explicitly expects grouped syntax. Everywhere else the
-existing body/lambda grammar wins.
+There is no general `{a, b}` value expression. A brace group is recognized only
+where the grammar explicitly expects grouped syntax, including the direct
+receiver position `{a, b}.method()`. It has no runtime tuple/collection value.
+Everywhere else the existing body/lambda grammar wins.
 
 ### 13.8 Broadcast left arrow
 
@@ -2168,7 +2186,7 @@ generation. IR generation must not rediscover overload or factory selection.
 Expected type parameters constrain literals normally:
 
 ```azora
-func singleton<T>(value: T): List<T> {
+func<T> singleton(value: T): List<T> {
     return [value]
 }
 ```
@@ -2177,7 +2195,7 @@ For an unconstrained generic target, the literal defaults before generic
 inference completes:
 
 ```azora
-func accept<C>(value: C) { ... }
+func<C> accept(value: C) { ... }
 accept([1, 2, 3]) // C is List<Int>
 ```
 
@@ -2443,12 +2461,12 @@ fin {a, b} = {left, right}
 Use `fin (a, b) = pair` only when the RHS is one tuple/destructurable runtime
 value rather than two grouped initializer expressions.
 
-### 17.3 `with` member extraction
+### 17.3 `using` member extraction
 
 Current grouped extraction:
 
 ```azora
-fin [oldKeys, oldValues, oldCapacity] = with self {
+fin [oldKeys, oldValues, oldCapacity] = using self {
     [keys, values, capacity]
 }
 ```
@@ -2464,7 +2482,7 @@ fin (
 ```
 
 This is shorter, gives the operation a first-class semantic model, and removes
-the special `with receiver { [members] }` parser path.
+the special `using receiver { [members] }` parser path.
 
 ### 17.4 Choosing `=` or `<-`
 
@@ -2852,8 +2870,7 @@ separate features and defines how they interact with ownership, borrowing,
 effects, evaluation order, and the lexer.
 
 The proposed companion features are `===`, `!==`, `<>`, `???`, `<-`, `|>`,
-`<|`, `<|>`, and `///`. This proposal deliberately assigns no meaning and makes
-no reservation for `<==`, `==>`, or `<==>`.
+`<|`, `<|>`, and `///`.
 
 ### 23.1 Equality, identity, and type tests
 
@@ -2870,17 +2887,17 @@ Their negations are correspondingly different:
 ```azora
 left != right
 left !== right
-value !is User
+value is! User
 ```
 
 `==` and `!=` use value semantics and the ordinary `Equal` contract. They may
 run type-defined equality logic and may report whatever effects the equality
 contract permits.
 
-`is` and `!is` test runtime type conformance. Their right operand is a type or
+`is` and `is!` test runtime type conformance. Their right operand is a type or
 type pattern, not a value. They answer whether a boxed/spec value, variant, or
 other dynamically typed representation can be viewed as that type. They say
-nothing about whether two values have equal contents or share storage. `!is`
+nothing about whether two values have equal contents or share storage. `is!`
 may lex as `BANG` followed by `IS`; it does not require a combined token.
 
 #### 23.1.1 Identity equality with `===` and `!==`
@@ -3047,7 +3064,7 @@ set, and effect requirements of its position without claiming that an actual
 implementation exists. For example:
 
 ```azora
-func transform<T, R>(value: T): R {
+func<T, R> transform(value: T): R {
     return ???
 }
 ```
@@ -3121,12 +3138,12 @@ closure, optional, aggregate, failure, and cleanup rules are normative in
 §7.4.
 
 
-### 23.6 Pipelines with `|>` and `<|`
+### 23.5 Pipelines with `|>` and `<|`
 
 Pipelines change the written order of an ordinary call; they do not introduce a
 new calling, ownership, failure, or dispatch convention.
 
-#### 23.6.1 Forward pipeline `|>`
+#### 23.5.1 Forward pipeline `|>`
 
 The forward form sends the left value into the first argument position of the
 right call target:
@@ -3161,7 +3178,7 @@ save(normalize(validate(request)), database.&)
 except that the typed AST should retain source spans for each pipeline stage so
 errors point to the failing stage rather than to one synthesized nested call.
 
-#### 23.6.2 Reverse application `<|`
+#### 23.5.2 Reverse application `<|`
 
 The reverse form permits the callable to be written first while keeping a large
 argument expression unparenthesized:
@@ -3182,7 +3199,7 @@ save(normalize(request), database.&)
 one level SHOULD require parentheses because otherwise visually plausible code
 can have surprising grouping.
 
-#### 23.6.3 Ownership and borrowing through a pipeline
+#### 23.5.3 Ownership and borrowing through a pipeline
 
 Pipeline lowering preserves the exact argument expression. It never inserts
 `take`, `lend`, `.&`, `.!`, or `.clone()`:
@@ -3204,7 +3221,7 @@ non-piped arguments follow the same evaluation order as the equivalent ordinary
 call. Failures and effects propagate normally; `|>` and `<|` do not catch,
 retry, roll back, or parallelize anything.
 
-#### 23.6.4 Pipeline typing and precedence
+#### 23.5.4 Pipeline typing and precedence
 
 The result type of one stage becomes the first-argument input type of the next.
 Generic inference uses that input normally. Overload resolution is performed one
@@ -3222,7 +3239,7 @@ Pipeline precedence is lower than arithmetic, member access, calls, comparison,
 and null coalescing, but higher than assignment and group operators. `|>` is
 left-associative and `<|` is right-associative.
 
-### 23.7 Alternative choice with `<|>`
+### 23.6 Alternative choice with `<|>`
 
 `<|>` selects the first successful failable expression:
 
@@ -3264,7 +3281,7 @@ uses `??`; `<|>` is reserved for language-level recoverable failure/alternative
 semantics. It associates left to right and has lower precedence than `|>`/`<|`
 but higher precedence than assignment.
 
-### 23.8 Documentation comments with `///`
+### 23.7 Documentation comments with `///`
 
 `///` begins a documentation comment that runs to the end of the physical line:
 
@@ -3304,16 +3321,13 @@ Documentation comments have no ownership, borrowing, evaluation, or effect
 semantics. They must not change whether code compiles except for documentation
 validation configured as warnings/errors.
 
-### 23.9 Lexical priority and token names
+### 23.8 Lexical priority and token names
 
 The lexer uses maximal munch. These spellings must be checked before any token
 that is their prefix:
 
 | Priority family, longest first | Suggested token |
 |---|---|
-| `<==>` | `REACTIVE_BOTH_ARROW` |
-| `<==` | `REACTIVE_LEFT_ARROW` |
-| `==>` | `REACTIVE_RIGHT_ARROW` |
 | `===` | `IDENTICAL` |
 | `!==` | `NOT_IDENTICAL` |
 | `???` | `TYPED_HOLE` |
@@ -3327,9 +3341,6 @@ that is their prefix:
 Important prefix relationships include:
 
 ```text
-<==> before <==, <=>, <=, <-, <
-<==  before <= and <
-==>  before ==, =>, and =
 ===  before == and =
 !==  before != and !
 ???  before ?? and ?
@@ -3344,11 +3355,14 @@ Whitespace does not change tokenization inside one ligature. For example,
 `LEFT_ARROW`. The formatter places one space around binary/statement operators
 and preserves `///` at the beginning of its documentation line.
 
-The reactive tokens may be emitted before the feature is implemented so the
-parser can say “reserved for reactive binding” rather than misdiagnosing a
-sequence of comparison and assignment tokens.
+Borrow-origin fences are contextual type syntax, not ligatures:
+`T&|self|` tokenizes as the borrow `&`, an opening `|`, the origin name, and a
+closing `|`. The lexer must not invent an `&|` token. Empty `T&||` is invalid;
+therefore maximal-munch `||` remains logical OR and never denotes an empty
+origin set. The formatter emits origin fences without internal edge spaces and
+places nullable `?` after them: `T&|source|?`.
 
-### 23.10 Overloading policy
+### 23.9 Overloading policy
 
 These constructs are semantic syntax, not arbitrary overload names:
 
@@ -3356,17 +3370,16 @@ These constructs are semantic syntax, not arbitrary overload names:
 - `<>` performs compiler-verified storage exchange;
 - `???` is a compiler hole;
 - `<-` is brace-group broadcast;
-- `<==`/`==>`/`<==>` are reserved graph relationships;
 - `|>`/`<|` lower to ordinary calls;
 - `<|>` uses the language's recoverable-failure model;
 - `///` is documentation trivia.
 
 None may be declared with `oper` in version 1. This keeps ownership and
 evaluation guarantees independent of user code. Libraries customize behavior
-through the ordinary call targets, failure contracts, reactive source/sink
-interfaces, or identity-bearing standard types—not by redefining punctuation.
+through the ordinary call targets, failure contracts, or identity-bearing
+standard types—not by redefining punctuation.
 
-### 23.11 Diagnostics
+### 23.10 Diagnostics
 
 Recommended operator-specific diagnostics include:
 
@@ -3383,9 +3396,6 @@ typed hole has expected type 'File' and must produce an owned value
 '<-' broadcasts one value only after a brace group; it is not channel receive
 or ordinary assignment
 
-'<==' is reserved for future persistent reactive binding; use '<-' for a
-one-shot brace-group broadcast
-
 pipeline stage 'save' expects first argument 'Document' but incoming pipeline
 value has type 'Document&'
 
@@ -3395,7 +3405,7 @@ cannot take it; lend, clone, or share the value explicitly
 documentation comment does not attach to a declaration
 ```
 
-### 23.12 Required tests
+### 23.11 Required tests
 
 Before stabilization, tests must cover:
 
@@ -3430,16 +3440,11 @@ Before stabilization, tests must cover:
 - mandatory compilation failure and absence of generated IR;
 - maximal munch against `??` and `?`.
 
-#### Broadcast and reactive reservations
+#### Broadcast
 
 - all group broadcast tests required by §19;
-- lexical distinction among `<-`, `<==`, `<==>`, `<=>`, and `<=`;
-- targeted reserved-feature errors for every reactive spelling;
-- no accidental parsing as comparison plus assignment.
-
-When the reactive runtime is implemented, add lifecycle, dependency capture,
-coalescing, ordering, cycles, conflicts, backpressure, async ownership, thread
-affinity, and exact-once teardown tests before enabling the tokens.
+- lexical distinction among `<-`, `<=>`, and `<=`;
+- no accidental parsing as comparison, subtraction, or assignment.
 
 #### Pipelines and alternatives
 

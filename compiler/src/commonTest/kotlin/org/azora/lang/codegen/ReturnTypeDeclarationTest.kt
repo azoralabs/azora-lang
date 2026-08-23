@@ -199,7 +199,7 @@ class ReturnTypeDeclarationTest {
     @Test fun aPropFollowsTheSameRule() = rejects("""
         pack Counter { var n: Int }
         impl Counter {
-            prop doubled[self: Self&] {
+            prop &.doubled {
                 return self.n * 2
             }
         }
@@ -209,7 +209,7 @@ class ReturnTypeDeclarationTest {
         import std.io
         pack Counter { var n: Int }
         impl Counter {
-            prop doubled[self: Self&]: Int {
+            prop &.doubled: Int {
                 return self.n * 2
             }
         }

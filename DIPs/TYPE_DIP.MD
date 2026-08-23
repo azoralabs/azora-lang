@@ -10,8 +10,8 @@ TYPE ::= NAME
        | NAME < TYPE, … >             // generic instantiation
        | NAME < TYPE, N >             // const-generic (value) argument
        | TYPE ?                        // nullable
-       | TYPE &                        // immutable borrow
-       | TYPE !                        // mutable borrow
+       | TYPE & ORIGIN_FENCE?          // immutable borrow, optionally rooted
+       | TYPE ! ORIGIN_FENCE?          // mutable borrow, optionally rooted
        | TYPE *                        // pointer
        | TYPE ?! ERRSET                // failable (ERRSET = E | [E1, E2])
        | ...T                          // variadic pack (prefix)
@@ -23,6 +23,8 @@ TYPE ::= NAME
        | TYPE without FILTER
 
 TYPEALIAS ::= typealias NAME <...GENERICS>? = TYPE
+ORIGIN_FENCE ::= '|' ORIGIN (',' ORIGIN)* '|'
+ORIGIN ::= NAME | self (. INTEGER)? | ...NAME
 ```
 
 ---
@@ -57,7 +59,15 @@ func read(x: Int&)  { … }    // immutable borrow
 func write(x: Int!) { x = 1 } // mutable borrow (propagates back)
 fin borrowed: Buffer& = owned
 var exclusive: Buffer! = owned
+
+func &.name(): String&|self| = self.name.&
+func choose(a: Node&, b: Node&): Node&|a, b| { … }
 ```
+
+An origin fence names the input storage from which a returned borrow may be
+derived. It is written without spaces, cannot be empty, and precedes trailing
+nullability: `Node&|source|?`. It is not a collection, union, pipe expression,
+or user-declared lifetime.
 
 (`shared`/`weak` reference kinds are planned via `std.memory`.)
 

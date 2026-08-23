@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+@Supress(.Unused)
 module std.container.queue
 
 import std.serializer::Serializable
@@ -40,17 +41,17 @@ impl Queue<T> {
 
     /** Whether the queue contains no elements. */
     @Since("0.1")
-    prop isEmpty[self&]: Bool = self.size == 0
+    prop &.isEmpty: Bool = self.size == 0
 
     /** Whether the queue contains at least one element. */
     @Since("0.1")
-    prop isNotEmpty[self&]: Bool = self.size > 0
+    prop &.isNotEmpty: Bool = self.size > 0
 
     // --- Internal ---
 
     /** Doubles the backing buffer's capacity, copying existing elements. */
     @Experimental(since: "0.1")
-    func growQueue[self!]() {
+    func !.growQueue() {
         fin newCap = self.capacity * 2
         let newData: T* = alloc .() * newCap
         for i in 0..<self.size {
@@ -70,7 +71,7 @@ impl Queue<T> {
      * @param element The element to enqueue.
      */
     @Experimental(since: "0.1")
-    func enqueue[self!](element: T) {
+    func !.enqueue(element: T) {
         if self.size >= self.capacity {
             self.growQueue()
         }
@@ -85,7 +86,7 @@ impl Queue<T> {
      * @throws AssertionError if the queue is empty.
      */
     @Experimental(since: "0.1")
-    func dequeue[self&](): T
+    func &.dequeue(): T
     in {
         assert self.size > 0 { "Queue is empty" }
     } scope {
@@ -104,13 +105,13 @@ impl Queue<T> {
      * @throws AssertionError if the queue is empty.
      */
     @Experimental(since: "0.1")
-    func peek[self&](): T {
+    func &.peek(): T {
         return self.data[0]
     }
 
     /** Removes all elements from the queue. */
     @Experimental(since: "0.1")
-    func clear[self!]() {
+    func !.clear() {
         fin oldData = self.data
         self.data = alloc .() * 8
         self.size = 0
@@ -126,7 +127,7 @@ impl Queue<T> {
      * @return A string in the format "[front, ..., back]".
      */
     @Experimental(since: "0.1")
-    func toString[self&](): String {
+    func &.toString(): String {
         var s = "["
         for i in 0..<self.size {
             if i > 0 {
@@ -177,10 +178,10 @@ test "queue clear permits reuse" {
 }
 
 test "queue serialization metadata is declared" {
-    import std.[
+    import std::{
         reflection::reflect // still not blue - and with this comment here "Serializable" looses color too
         serializer::Serializable // cannot find the definition to go
-    ]
+    }
     inline assert reflect<Queue>.hasAnnot<Serializable> { "Queue must carry Serializable metadata" } // missing reflect Serializable color, and hasAnnot underline and italic, cannot find the definition to go on reflect and hasAnnot
 }
 

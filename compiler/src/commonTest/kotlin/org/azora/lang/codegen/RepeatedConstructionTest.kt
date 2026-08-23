@@ -56,11 +56,11 @@ class RepeatedConstructionTest {
         }
 
         impl Buffer {
-            ctor[self: Self!]() * count {
+            ctor .() * count {
                 self.size = count
             }
 
-            ctor[self: Self!](fill: Int) * count {
+            ctor .(fill: Int) * count {
                 self.size = count
                 self.fill = fill
             }
@@ -253,7 +253,7 @@ class RepeatedConstructionTest {
                     var cap: Int = 0
                 }
                 impl Buf {
-                    ctor[self: Self!]() * count {
+                    ctor .() * count {
                         self.data = alloc .() * count
                         self.cap = count
                     }
@@ -294,17 +294,17 @@ class RepeatedConstructionTest {
                     var _n: Int = 0
                 }
                 impl Box<T> {
-                    prop count[self: Self&]: Int = self._n
+                    prop &.count: Int = self._n
 
-                    func put[self: Self!](at: Int, value: T) {
+                    func !.put(at: Int, value: T) {
                         self._d.*[at] = value
                     }
 
-                    func at[self: Self&](index: Int): T {
+                    func &.at(index: Int): T {
                         return self._d.*[index]
                     }
 
-                    ctor[self: Self!]() * count {
+                    ctor .() * count {
                         let fresh: T* = alloc .() * count
                         self._d = fresh
                         self._n = count

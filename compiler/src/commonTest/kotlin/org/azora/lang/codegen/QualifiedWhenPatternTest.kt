@@ -46,7 +46,7 @@ $member
     @Test fun aBareCaseIsAValueOnTheRightOfAnEquals() {
         assertEquals(
             "Colour.Green",
-            run(program("            prop next[self: Self&]: Colour = .Green", "Colour.Red.next")),
+            run(program("            prop &.next: Colour = .Green", "Colour.Red.next")),
         )
     }
 
@@ -55,7 +55,7 @@ $member
             "Colour.Green",
             run(
                 program(
-                    """            prop next[self: Self&]: Colour {
+                    """            prop &.next: Colour {
                 fin answer: Colour = .Green
                 return answer
             }""",
@@ -70,7 +70,7 @@ $member
             "Colour.Green",
             run(
                 program(
-                    """            prop next[self: Self&]: Colour {
+                    """            prop &.next: Colour {
                 fin answer: Colour = when self {
                     .Red -> .Green
                     .Green -> .Red
@@ -89,7 +89,7 @@ $member
             "Colour.Green",
             run(
                 program(
-                    """            prop next[self: Self&]: Colour {
+                    """            prop &.next: Colour {
                 return when self {
                     .Red -> .Green
                     .Green -> .Red

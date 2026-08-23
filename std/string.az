@@ -26,14 +26,15 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 exposed module std.string
 
 import std.container.array::*
-import std.traits::[PartialEqual, Equal, Order, Hash]
+import std.traits::{PartialEqual, Equal, Order, Hash}
 
 /** A string of Unicode code points, ordered lexicographically by code point. */
 @Since("0.1")
-bridge pack String derives [PartialEqual, Equal, Order, Hash]
+bridge pack String derives (PartialEqual, Equal, Order, Hash)
 
 /**
  *
@@ -411,7 +412,7 @@ impl StringBuilder {
      * Appends a string to the builder.
      */
     @Experimental(since: "0.1")
-    func append[self: Self!](s: String): Unit {
+    func !.append(s: String): Unit {
         self.parts[self.count] = s
         self.count += 1
     }
@@ -420,7 +421,7 @@ impl StringBuilder {
      * Appends a string followed by a newline.
      */
     @Experimental(since: "0.1")
-    func appendLine[self: Self!](s: String): Unit {
+    func !.appendLine(s: String): Unit {
         self.parts[self.count] = s
         self.count += 1
         self.parts[self.count] = "\n"
@@ -431,7 +432,7 @@ impl StringBuilder {
      * Builds the final concatenated string.
      */
     @Experimental(since: "0.1")
-    func build[self&](): String {
+    func &.build(): String {
         var result: String = ""
         for i in 0..<self.count {
             result += self.parts[i]
@@ -443,14 +444,14 @@ impl StringBuilder {
      * Returns the number of parts.
      */
     @Since("0.1")
-    prop length[self&]: Int = self.count
+    prop &.length: Int = self.count
 
     /**
      * Clears the builder.
      */
     @Since("0.1")
-    func clear[self!](): Unit {
-        self.[parts, count] = [.() * 16, 0]
+    func !.clear(): Unit {
+        self.{parts, count} = {.() * 16, 0}
     }
 }
 

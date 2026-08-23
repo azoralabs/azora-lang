@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
  * state and which were arguments. The receiver is declared; writing it is what
  * that declaration is for.
  *
- * `with anchor { … }` is the exception, and stays: there the receiver was named
+ * `using anchor { … }` is the exception, and stays: there the receiver was named
  * on purpose, which is the whole point of the form. See UPGRADE_PLAN S7.2.
  */
 class SelfQualificationTest {
@@ -51,7 +51,7 @@ class SelfQualificationTest {
             $pack
 
             impl Counter {
-                func total[self: Self&](): Int {
+                func &.total(): Int {
                     return count
                 }
             }
@@ -70,7 +70,7 @@ class SelfQualificationTest {
             $pack
 
             impl Counter {
-                func total[self: Self&](): Int {
+                func &.total(): Int {
                     return self.count + self.step
                 }
             }
@@ -88,7 +88,7 @@ class SelfQualificationTest {
             $pack
 
             impl Counter {
-                func advance[self: Self!](step: Int) {
+                func !.advance(step: Int) {
                     self.count = self.count + step
                 }
             }
@@ -104,11 +104,11 @@ class SelfQualificationTest {
             $pack
 
             impl Counter {
-                func bump[self: Self!]() {
+                func !.bump() {
                     self.count = self.count + 1
                 }
 
-                func bumpTwice[self: Self!]() {
+                func !.bumpTwice() {
                     bump()
                     self.bump()
                 }
@@ -132,7 +132,7 @@ class SelfQualificationTest {
             }
 
             impl Counter {
-                func doubled[self: Self&](): Int {
+                func &.doubled(): Int {
                     return double(self.count)
                 }
             }

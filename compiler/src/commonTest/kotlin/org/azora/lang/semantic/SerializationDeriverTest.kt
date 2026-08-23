@@ -222,7 +222,7 @@ class SerializationDeriverTest {
                 var size: Int = 0
             }
             impl List<T> {
-                func add[self: Self!](element: T): Unit {
+                func !.add(element: T): Unit {
                     self.data[self.size] = element
                     self.size += 1
                 }
@@ -233,7 +233,7 @@ class SerializationDeriverTest {
                 var size: Int = 0
             }
             impl Set<T> {
-                func add[self: Self!](element: T): Bool {
+                func !.add(element: T): Bool {
                     self.data[self.size] = element
                     self.size += 1
                     return true
@@ -246,12 +246,12 @@ class SerializationDeriverTest {
                 var size: Int = 0
             }
             impl Map<K, V> {
-                func put[self: Self!](key: K, value: V): Unit {
+                func !.put(key: K, value: V): Unit {
                     self.keysData[self.size] = key
                     self.valuesData[self.size] = value
                     self.size += 1
                 }
-                func keys[self: Self&](): Array<K> {
+                func &.keys(): Array<K> {
                     var result = [].fill<K>(self.size)
                     var index = 0
                     while index < self.size {

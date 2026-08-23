@@ -114,16 +114,16 @@ class OwnershipTest {
     """, "'Q' cannot implement 'Third' until it also implements 'Derived'")
 
     @Test fun aBridgeSpecCanBeDerivedFromItsCompilerLowering() = accepts("""
-        bridge spec Clone { func clone[self: Self&](): Self }
+        bridge spec Clone { func &.clone(): Self }
         pack P { var x: Int }
         derive Clone for P
     """)
 
     @Test fun anImplInheritsItsReturnTypeFromTheSpec() = accepts("""
-        bridge spec Clone { func clone[self: Self&](): Self }
+        bridge spec Clone { func &.clone(): Self }
         pack P { var x: Int }
         impl Clone for P {
-            func clone[self: Self&]() { return P(self.x) }
+            func &.clone() { return P(self.x) }
         }
     """)
 
@@ -133,7 +133,7 @@ class OwnershipTest {
         import std.traits
         pack Vec2 { var x: Double
             var y: Double }
-        func requiresCopy<T>(v: T): Int where T is Copy { return 1 }
+        func<T> requiresCopy(v: T): Int where T is Copy { return 1 }
         func main() { fin n = requiresCopy(Vec2(1.0, 2.0)) }
     """)
 
@@ -267,7 +267,7 @@ class OwnershipTest {
         import std.traits
         pack UserProfile { var name: String }
         impl Clone for UserProfile {
-            func clone[self: Self&]() { return UserProfile(self.name.clone()) }
+            func &.clone() { return UserProfile(self.name.clone()) }
         }
         func main() {
             fin u = UserProfile("ana")
@@ -421,40 +421,60 @@ class OwnershipTest {
 
     // -- borrow origins (§13) ------------------------------------------------
 
-    // `String&[a]` says the result is borrowed from `a` - part of the signature,
+    // `String&|a|` says the result is borrowed from `a` - part of the signature,
     // so it binds the body as much as the type does.
 
     @Test fun aReturnedBorrowMayNameItsOrigin() = accepts("""
-        func first(a: String&, b: String&): String&[a] { return a }
+        func first(a: String&, b: String&): String&|a| { return a }
         func main() {}
     """)
 
     @Test fun returningTheOtherBorrowBreaksTheSignature() = rejects("""
-        func first(a: String&, b: String&): String&[a] { return b }
+        func first(a: String&, b: String&): String&|a| { return b }
         func main() {}
     """, "returns a borrow of 'b', but the signature says the result is borrowed from 'a'")
 
     @Test fun anOriginMustNameAParameter() = rejects("""
-        func first(a: String&, b: String&): String&[c] { return a }
+        func first(a: String&, b: String&): String&|c| { return a }
         func main() {}
     """, "names borrow origin 'c', which is not one of its borrowed parameters (a, b)")
 
     @Test fun aByValueParameterCannotBeAnOrigin() = rejects("""
-        func first(a: String, b: String&): String&[a] { return b }
+        func first(a: String, b: String&): String&|a| { return b }
         func main() {}
     """, "cannot borrow from 'a' - it is passed by value, so it does not outlive the call")
 
     @Test fun aBorrowMayComeFromEitherOfSeveralOrigins() = accepts("""
-        func choose(a: String&, b: String&, pick: Bool): String&[a, b] {
+        func choose(a: String&, b: String&, pick: Bool): String&|a, b| {
             return if pick { a } else { b }
         }
         func main() {}
     """)
 
+    @Test fun aMutableReturnedBorrowUsesTheSameOriginFence() = accepts("""
+        func identity(value: Int!): Int!|value| { return value }
+        func main() {}
+    """)
+
+    @Test fun bracketedBorrowOriginsAreRejectedWithTheReplacement() = rejects("""
+        func first(a: String&): String&[a] { return a }
+        func main() {}
+    """, "replace '[source]' with '|source|'")
+
+    @Test fun anEmptyBorrowOriginFenceIsRejected() = rejects("""
+        func first(a: String&): String&|| { return a }
+        func main() {}
+    """, "borrow-origin fence cannot be empty")
+
+    @Test fun duplicateBorrowOriginsAreRejected() = rejects("""
+        func first(a: String&): String&|a, a| { return a }
+        func main() {}
+    """, "Duplicate borrow origin")
+
     @Test fun theReceiverIsAnOrigin() = accepts("""
         pack Box { var v: Int }
         impl Box {
-            func value[self: Self&](): Int&[self] { return self.v.& }
+            func &.value(): Int&|self| { return self.v.& }
         }
         func main() {}
     """)
@@ -462,7 +482,7 @@ class OwnershipTest {
     @Test fun aMethodMayNotReturnABorrowOfSomethingElse() = rejects("""
         pack Box { var v: Int }
         impl Box {
-            func value[self: Self&](other: Int&): Int&[self] { return other }
+            func &.value(other: Int&): Int&|self| { return other }
         }
         func main() {}
     """, "returns a borrow of 'other', but the signature says the result is borrowed from 'self'")
@@ -604,7 +624,7 @@ class OwnershipTest {
     @Test fun aFieldCannotBeMovedThroughASharedReceiver() = rejects("""
         $app
         impl App {
-            func detach[self: Self&](): Int { return consume(take self.db) }
+            func &.detach(): Int { return consume(take self.db) }
         }
         func main() {}
     """, "cannot take 'self.db' - 'self' is a shared borrow, which may not be changed")
@@ -612,7 +632,7 @@ class OwnershipTest {
     @Test fun anExclusiveReceiverMayMoveAFieldOut() = accepts("""
         $app
         impl App {
-            func detach[self: Self!](): Int { return consume(take self.db) }
+            func !.detach(): Int { return consume(take self.db) }
         }
         func main() {}
     """)
@@ -663,7 +683,7 @@ class OwnershipTest {
         $nonCopyable
         func sink(h: Handle): Int { return 1 }
         impl Handle {
-            func give[self: Self&](): Int { return sink(take self) }
+            func &.give(): Int { return sink(take self) }
         }
         func main() {}
     """, "cannot take 'self' - 'self' is borrowed, so this function does not own it")
@@ -857,7 +877,7 @@ class OwnershipTest {
     @Test fun aDeclaredTakeMethodIsNotTheOptionalOne() = assertEquals("1", run("""
         import std.io
         pack Lexer { var at: Int }
-        impl Lexer { func take[self: Self!](): Int { return 1 } }
+        impl Lexer { func !.take(): Int { return 1 } }
         func main() {
             var lexer = Lexer(0)
             println(lexer.take())
@@ -928,7 +948,7 @@ class OwnershipTest {
         pack User { var name: String }
         func main() {
             var user = User("ana")
-            fin printName = [; user.&] { println(user.name) }
+            fin printName = [user.&] { println(user.name) }
             println(user.name)
         }
     """)
@@ -938,7 +958,7 @@ class OwnershipTest {
         import std.traits
         func main() {
             var message = "Hello"
-            fin callback = [; message.&] {
+            fin callback = [message.&] {
                 fin owned: String = message.clone()
                 println(owned)
             }
@@ -972,7 +992,7 @@ class OwnershipTest {
 
     @Test fun aGenericBodyMayTakeItsParameter() = accepts("""
         import std.traits
-        func transfer<T>(value: T): T where T is Clone {
+        func<T> transfer(value: T): T where T is Clone {
             return take value
         }
         func main() { fin n = transfer(5) }

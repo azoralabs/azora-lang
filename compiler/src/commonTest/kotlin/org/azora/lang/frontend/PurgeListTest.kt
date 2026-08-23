@@ -24,14 +24,13 @@ import kotlin.test.assertTrue
  * Releasing a type's buffers is one act, so it is one statement.
  *
  * `purge [a, b, c]` names the things released in the order they are released,
- * and `with self` supplies the receiver once instead of on every line:
+ * and `using self` supplies the receiver once instead of on every line:
  *
  * ```
- * with self purge [keys, values, hashes, occupied]
+ * using self { purge [keys, values, hashes, occupied] }
  * ```
  *
- * A `with` whose body is a single statement on the same line needs no braces -
- * the braces would only wrap the one line that says something.
+ * A `using` scope always has braces, even when its body is one statement.
  */
 class PurgeListTest {
 
@@ -42,7 +41,7 @@ class PurgeListTest {
     private fun purged(statements: List<Stmt>): List<String> = statements.flatMap { statement ->
         when (statement) {
             is Stmt.Scope -> purged(statement.body)
-            is Stmt.WithContext -> purged(statement.body)
+            is Stmt.UsingContext -> purged(statement.body)
             is Stmt.ExprStmt -> {
                 val call = statement.expr as? Expr.Call
                 if (call?.callee == "__purge") listOf(render(call.args.single())) else emptyList()
@@ -79,38 +78,46 @@ class PurgeListTest {
         assertEquals(listOf("self.keys"), purged(statements))
     }
 
-    @Test fun withSuppliesTheReceiverForABracelessStatement() {
+    @Test fun usingSuppliesTheReceiverForASingleStatementBody() {
         val statements = body(
             """
             func release(self: Buffers!) {
-                with self purge [keys, values, hashes, occupied]
+                using self { purge [keys, values, hashes, occupied] }
             }
             """.trimIndent()
         )
-        val context = statements.single() as Stmt.WithContext
+        val context = statements.single() as Stmt.UsingContext
         assertEquals("self", render(context.values.single()))
         assertEquals(listOf("keys", "values", "hashes", "occupied"), purged(context.body))
     }
 
-    @Test fun withStillTakesABracedBody() {
+    @Test fun usingTakesABracedBody() {
         val statements = body(
             """
             func release(self: Buffers!) {
-                with self {
+                using self {
                     purge [keys, values]
                 }
             }
             """.trimIndent()
         )
-        val context = statements.single() as Stmt.WithContext
+        val context = statements.single() as Stmt.UsingContext
         assertEquals(listOf("keys", "values"), purged(context.body))
     }
 
-    @Test fun aWithWithNeitherBracesNorAStatementSaysSo() {
+    @Test fun usingRequiresBraces() {
         val failure = runCatching {
-            body("func release(self: Buffers!) {\n    with self\n    purge self.keys\n}")
+            body("func release(self: Buffers!) {\n    using self\n    purge self.keys\n}")
         }.exceptionOrNull()
-        assertTrue(failure != null, "a `with` with nothing after it is an error")
-        assertTrue("with <value>" in failure.message.orEmpty(), failure?.message.orEmpty())
+        assertTrue(failure != null, "a `using` without braces is an error")
+        assertTrue("Expected '{' after contextual values" in failure.message.orEmpty(), failure?.message.orEmpty())
+    }
+
+    @Test fun oldWithContextSyntaxNamesItsReplacement() {
+        val failure = runCatching {
+            body("func release(self: Buffers!) {\n    with self { purge self.keys }\n}")
+        }.exceptionOrNull()
+        assertTrue(failure != null)
+        assertTrue("Context receivers use 'using'" in failure.message.orEmpty(), failure?.message.orEmpty())
     }
 }

@@ -68,14 +68,14 @@ class OperatorFamilyTest {
     @Test fun aNamedMemberIsStillRequired() {
         val result = compile("""
             spec Sized {
-                func size[self: Self&](): Int
-                func capacity[self: Self&](): Int
+                func &.size(): Int
+                func &.capacity(): Int
             }
             pack Buffer {
                 var n: Int
             }
             impl Sized for Buffer {
-                func size[self: Self&](): Int { return self.n }
+                func &.size(): Int { return self.n }
             }
             func main() {}
         """.trimIndent())
@@ -139,7 +139,7 @@ class OperatorFamilyTest {
             impl Arithmetic for N {
                 oper+ [self: Self&](rhs: Self&): N { return N(self.v + rhs.v) }
             }
-            func total<T>(a: T, b: T): T where T: Arithmetic {
+            func<T> total(a: T, b: T): T where T: Arithmetic {
                 return a + b
             }
             func main() {

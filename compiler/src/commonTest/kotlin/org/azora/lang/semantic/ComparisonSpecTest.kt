@@ -92,8 +92,8 @@ class ComparisonSpecTest {
             """
             spec Container {
                 oper[] [self: Self&](index: Int): Int
-                func size[self: Self&](): Int
-                prop empty[self: Self&]: Bool
+                func &.size(): Int
+                prop &.empty: Bool
             }
             func main() {}
             """.trimIndent(),
@@ -139,7 +139,7 @@ class ComparisonSpecTest {
                     return self.major - rhs.major
                 }
             }
-            func newest<T>(a: T, b: T): T where T: Order {
+            func<T> newest(a: T, b: T): T where T: Order {
                 return a
             }
             func main() {}
@@ -161,7 +161,7 @@ class ComparisonSpecTest {
                     return self.v == rhs.v
                 }
             }
-            func same<T, U>(a: T, b: U): Bool where T: PartialEqual<U> {
+            func<T, U> same(a: T, b: U): Bool where T: PartialEqual<U> {
                 return true
             }
             func main() {}
@@ -177,9 +177,9 @@ class ComparisonSpecTest {
                 oper<=> [self: Self&](rhs: Self&): Int
             }
             spec Tagged {
-                prop tag[self: Self&]: Int
+                prop &.tag: Int
             }
-            func sortable<K>(k: K): Bool where K: [Order, Tagged] {
+            func<K> sortable(k: K): Bool where K: [Order, Tagged] {
                 return true
             }
             func main() {}

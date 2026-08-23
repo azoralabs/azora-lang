@@ -35,12 +35,13 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.decimal
 
-import std.[
+import std::{
     char::*
     string::*
-]
+}
 
 /** What exact arithmetic refuses to do rather than answer approximately. */
 @Experimental(since: "0.1")
@@ -182,10 +183,10 @@ func decimalOf(text: String): Decimal ?! DecimalError {
 impl Decimal {
 
     /** Whether the value is zero, at whatever scale it is written. */
-    prop isZero[self&]: Bool = self.coefficient == 0
+    prop &.isZero: Bool = self.coefficient == 0
 
     /** `-1`, `0` or `1` as the value is negative, zero or positive. */
-    prop signum[self&]: Int {
+    prop &.signum: Int {
         if self.coefficient < 0 {
             return -1
         }
@@ -196,12 +197,12 @@ impl Decimal {
     }
 
     /** The same magnitude with the other sign, at the same scale. */
-    func negated[self&](): Decimal {
+    func &.negated(): Decimal {
         return .(-self.coefficient, self.scale)
     }
 
     /** The magnitude, at the same scale. */
-    func absolute[self&](): Decimal {
+    func &.absolute(): Decimal {
         return .(_magnitude(self.coefficient), self.scale)
     }
 
@@ -211,7 +212,7 @@ impl Decimal {
      * `2.500` becomes `2.5`; `200` at scale `0` is left alone, because those
      * zeroes are digits of the number rather than of its scale.
      */
-    func trimmed[self&](): Decimal {
+    func &.trimmed(): Decimal {
         var coefficient = self.coefficient
         var scale = self.scale
         while scale > 0 && coefficient % 10 == 0 {
@@ -226,7 +227,7 @@ impl Decimal {
      *
      * Widening is exact or it overflows; narrowing rounds by [rounding].
      */
-    func rescaled[self&](scale: Int, rounding: Rounding): Decimal ?! DecimalError {
+    func &.rescaled(scale: Int, rounding: Rounding): Decimal ?! DecimalError {
         if scale < 0 || scale > Decimal.maxScale {
             return .ScaleOutOfRange
         }
@@ -246,7 +247,7 @@ impl Decimal {
      * Compares the numbers, not the fields: `1.5` and `1.50` are equal here
      * and are two different [Decimal]s.
      */
-    func compareTo[self&](rhs: Decimal&): Int ?! DecimalError {
+    func &.compareTo(rhs: Decimal&): Int ?! DecimalError {
         var scale = self.scale
         if rhs.scale > scale {
             scale = rhs.scale
@@ -267,7 +268,7 @@ impl Decimal {
      *
      * `Decimal(1999, 2)` is `"19.99"` and `Decimal(5, 3)` is `"0.005"`.
      */
-    func text[self&](): String {
+    func &.text(): String {
         fin digits = "${_magnitude(self.coefficient)}"
         var sign = ""
         if self.coefficient < 0 {
@@ -289,7 +290,7 @@ impl Decimal {
 impl Decimal {
 
     /** The sum, at the wider of the two scales. Exact. */
-    func plus[self&](rhs: Decimal&): Decimal ?! DecimalError {
+    func &.plus(rhs: Decimal&): Decimal ?! DecimalError {
         var scale = self.scale
         if rhs.scale > scale {
             scale = rhs.scale
@@ -300,7 +301,7 @@ impl Decimal {
     }
 
     /** The difference, at the wider of the two scales. Exact. */
-    func minus[self&](rhs: Decimal&): Decimal ?! DecimalError {
+    func &.minus(rhs: Decimal&): Decimal ?! DecimalError {
         return try self.plus(rhs.negated())
     }
 
@@ -312,7 +313,7 @@ impl Decimal {
      * rounded to it, half to even - the alternative is refusing to multiply
      * two ordinary numbers.
      */
-    func times[self&](rhs: Decimal&): Decimal ?! DecimalError {
+    func &.times(rhs: Decimal&): Decimal ?! DecimalError {
         fin coefficient = try _checkedMultiply(self.coefficient, rhs.coefficient)
         fin scale = self.scale + rhs.scale
         if scale <= Decimal.maxScale {
@@ -328,7 +329,7 @@ impl Decimal {
      * Division is the one operation with no exact scale of its own - `1 / 3`
      * has no last digit - so the caller says how far to take it.
      */
-    func dividedBy[self&](rhs: Decimal&, scale: Int, rounding: Rounding): Decimal ?! DecimalError {
+    func &.dividedBy(rhs: Decimal&, scale: Int, rounding: Rounding): Decimal ?! DecimalError {
         if rhs.coefficient == 0 {
             return .DivideByZero
         }
@@ -354,7 +355,7 @@ impl Decimal {
      * `a % b` is what `a` has left after taking away every whole `b`, so it
      * carries `a`'s sign and satisfies `a == (a / b truncated) * b + a % b`.
      */
-    func remainder[self&](rhs: Decimal&): Decimal ?! DecimalError {
+    func &.remainder(rhs: Decimal&): Decimal ?! DecimalError {
         if rhs.coefficient == 0 {
             return .DivideByZero
         }

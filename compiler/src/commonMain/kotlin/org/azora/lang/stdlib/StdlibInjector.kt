@@ -20,6 +20,8 @@ import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.ImportSpec
+import org.azora.lang.frontend.Literals
 import org.azora.lang.frontend.ScopeAccessRewriter
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.ModuleVisibility
@@ -87,6 +89,22 @@ class StdlibInjector private constructor(
     ) {
         val qualifiedName: String get() = "$qualifier::$shortName"
     }
+
+    /** One flattened import clause with wildcard exclusions preserved. */
+    private data class ImportRequest(
+        val path: String,
+        val selected: String?,
+        val without: Set<String> = emptySet(),
+    )
+
+    private fun importRequests(item: TopLevel.UseImport): List<ImportRequest> =
+        item.importSpecs.map { spec ->
+            ImportRequest(
+                spec.path,
+                if (spec.selector is ImportSpec.Selector.All) "*" else null,
+                spec.without.toSet(),
+            )
+        }
 
     companion object {
         internal var DEBUG_INJECT = false
@@ -273,7 +291,7 @@ class StdlibInjector private constructor(
          * pair here is also imported transitively - e.g. `std.char` re-exporting
          * `std.char.core` so a bare `import std.char` suffices.
          */
-        val exportedImportsByModule = LinkedHashMap<String, MutableList<Pair<String, String?>>>()
+        val exportedImportsByModule = LinkedHashMap<String, MutableList<ImportRequest>>()
         /** Modules published via `export exposed module …` (auto-injected into every unit). */
         val alwaysOnModules = mutableListOf<String>()
     }
@@ -322,9 +340,31 @@ class StdlibInjector private constructor(
         val errors = mutableListOf<String>()
         for (item in program.items) {
             if (item !is TopLevel.UseImport) continue
-            for ((path, selected) in item.imports) {
+            for (request in importRequests(item)) {
+                val (path, selected, without) = request
                 // Wildcard and selective-item forms are validated by name resolution.
-                if (selected != null) continue
+                if (selected != null) {
+                    if (selected == "*" && without.isNotEmpty()) {
+                        val reachesKnownModule = path in known || known.any { it.startsWith("$path.") }
+                        if (reachesKnownModule) {
+                            val available = linkedSetOf<String>()
+                            available.addAll(itemsVisibleFromImport(path, selected).keys.map { it.substringAfterLast("__") })
+                            modulesForPath(path).forEach { module ->
+                                available.addAll(index.typeFunctionsByModule[module].orEmpty().map { it.name.substringAfterLast("__") })
+                                available.addAll(index.typeMacrosByModule[module].orEmpty().mapNotNull { it.name?.substringAfterLast("__") })
+                            }
+                            for (name in without) {
+                                if (name !in available) {
+                                    errors.add(
+                                        "cannot exclude '$name' from 'import $path::{*, without $name}': " +
+                                            "the wildcard does not provide a symbol named '$name' (line ${item.line})",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    continue
+                }
                 val isExactModule = path in known && isExternallyImportable(path)
                 val isSelectedItem = resolveSelectedLibraryPath(path)
                     ?.let { isExternallyImportable(it.first) && index.modules[it.first]?.containsKey(it.second) == true } == true
@@ -355,7 +395,7 @@ class StdlibInjector private constructor(
         val edges = linkedSetOf<String>()
         for (item in program.items) {
             if (item !is TopLevel.UseImport) continue
-            for ((path, selector) in item.imports) {
+            for ((path, selector) in importRequests(item)) {
                 when {
                     selector == "*" -> known.filterTo(edges) { it.startsWith("$path.") }
                     path in known -> edges.add(path)
@@ -469,16 +509,16 @@ class StdlibInjector private constructor(
      * it.
      */
     private fun reachableImportPaths(program: Program): Set<String> {
-        val seeds = ArrayDeque<Pair<String, String?>>()
+        val seeds = ArrayDeque<ImportRequest>()
         for (item in program.items) {
-            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
+            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
         }
         val visited = linkedSetOf<String>()
         while (seeds.isNotEmpty()) {
-            val (path, _) = seeds.removeFirst()
+            val path = seeds.removeFirst().path
             if (!visited.add(path)) continue
             for (module in modulesForPath(path)) {
                 seeds.addAll(index.exportedImportsByModule[module].orEmpty())
@@ -887,7 +927,7 @@ class StdlibInjector private constructor(
                         stmt.dependencies?.forEach { expression(it, typeParams, currentScope) }
                         stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
-                    is Stmt.WithContext -> {
+                    is Stmt.UsingContext -> {
                         stmt.values.forEach { expression(it, typeParams, currentScope) }
                         stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
@@ -1131,7 +1171,7 @@ class StdlibInjector private constructor(
             // import propagation, and (if always-on) the module name itself.
             for (item in program.items) {
                 if (item is TopLevel.UseImport && item.exported && evalExportIf(item.condition, boolOverrides)) {
-                    idx.exportedImportsByModule.getOrPut(module) { mutableListOf() }.addAll(item.imports)
+                    idx.exportedImportsByModule.getOrPut(module) { mutableListOf() }.addAll(importRequests(item))
                 }
             }
             if (alwaysOn) {
@@ -1157,9 +1197,9 @@ class StdlibInjector private constructor(
         // Seed with the program's own imports, plus the re-exports of any
         // `exposed module` library that is auto-injected into every unit - its
         // `exposed import …` declarations apply to importers transitively.
-        val seeds = ArrayDeque<Pair<String, String?>>()
+        val seeds = ArrayDeque<ImportRequest>()
         for (item in program.items) {
-            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
+            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
@@ -1168,14 +1208,17 @@ class StdlibInjector private constructor(
         // re-exports, and so on (visited guards against cycles).
         val visited = mutableSetOf<String>()
         while (seeds.isNotEmpty()) {
-            val (path, selected) = seeds.removeFirst()
-            val key = "$path::${selected ?: "*"}"
+            val (path, selected, without) = seeds.removeFirst()
+            val key = "$path::${selected ?: "*"}::${without.sorted().joinToString(",")}"
             if (!visited.add(key)) continue
             for ((name, declaration) in itemsVisibleFromImport(path, selected)) {
+                if (name in without || name.substringAfterLast("__") in without) continue
                 visible.putIfAbsentCompat(name, declaration)
             }
             for (module in modulesForPath(path)) {
-                seeds.addAll(index.exportedImportsByModule[module].orEmpty())
+                for (reExport in index.exportedImportsByModule[module].orEmpty()) {
+                    seeds.add(reExport.copy(without = reExport.without + without))
+                }
             }
         }
         return visible
@@ -1192,17 +1235,17 @@ class StdlibInjector private constructor(
     private fun reachableModules(program: Program): Set<String> {
         val reached = mutableSetOf<String>()
         reached.addAll(index.alwaysOnModules)
-        val seeds = ArrayDeque<Pair<String, String?>>()
+        val seeds = ArrayDeque<ImportRequest>()
         for (item in program.items) {
-            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
+            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
         }
         val visited = mutableSetOf<String>()
         while (seeds.isNotEmpty()) {
-            val (path, selected) = seeds.removeFirst()
-            if (!visited.add("$path::${selected ?: "*"}")) continue
+            val (path, selected, without) = seeds.removeFirst()
+            if (!visited.add("$path::${selected ?: "*"}::${without.sorted().joinToString(",")}")) continue
             for (module in modulesForPath(path)) {
                 reached.add(module)
                 seeds.addAll(index.exportedImportsByModule[module].orEmpty())
@@ -1220,14 +1263,18 @@ class StdlibInjector private constructor(
         val visible = mutableListOf<TypeFunctionDecl>()
         for (item in program.items) {
             if (item !is TopLevel.UseImport) continue
-            for ((path, selected) in item.imports) {
+            for ((path, selected, without) in importRequests(item)) {
                 val modules = when {
                     index.typeFunctionsByModule.containsKey(path) -> listOf(path)
                     else -> index.typeFunctionsByModule.keys.filter { it.startsWith("$path.") }
                 }.filter(::isExternallyImportable)
                 for (module in modules) {
                     val declarations = index.typeFunctionsByModule[module].orEmpty()
-                    val selectedDeclarations = if (selected == null || selected == "*") declarations else declarations.filter { declaration ->
+                    val selectedDeclarations = if (selected == null || selected == "*") {
+                        declarations.filterNot { declaration ->
+                            declaration.name in without || declaration.name.substringAfterLast("__") in without
+                        }
+                    } else declarations.filter { declaration ->
                         declaration.name == selected || declaration.name.substringAfterLast("__") == selected
                     }
                     for (declaration in selectedDeclarations) {
@@ -1241,9 +1288,9 @@ class StdlibInjector private constructor(
 
     private fun importedTypeMacros(program: Program): List<TypeTypeArm> {
         val visible = mutableListOf<TypeTypeArm>()
-        val seeds = ArrayDeque<Pair<String, String?>>()
+        val seeds = ArrayDeque<ImportRequest>()
         for (item in program.items) {
-            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(item.imports)
+            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
@@ -1254,16 +1301,20 @@ class StdlibInjector private constructor(
         // library-defined grammar without copying or compiler-registering it.
         val visited = mutableSetOf<String>()
         while (seeds.isNotEmpty()) {
-            val (path, selected) = seeds.removeFirst()
-            val key = "$path::${selected ?: "*"}"
+            val (path, selected, without) = seeds.removeFirst()
+            val key = "$path::${selected ?: "*"}::${without.sorted().joinToString(",")}"
             if (!visited.add(key)) continue
             for (module in modulesForPath(path).filter(::isExternallyImportable)) {
                 val declarations = index.typeMacrosByModule[module].orEmpty()
                 visible.addAll(
-                    if (selected == null || selected == "*") declarations
+                    if (selected == null || selected == "*") declarations.filterNot {
+                        it.name?.let { name -> name in without || name.substringAfterLast("__") in without } == true
+                    }
                     else declarations.filter { it.name == selected },
                 )
-                seeds.addAll(index.exportedImportsByModule[module].orEmpty())
+                for (reExport in index.exportedImportsByModule[module].orEmpty()) {
+                    seeds.add(reExport.copy(without = reExport.without + without))
+                }
             }
         }
         return visible
@@ -1932,7 +1983,7 @@ class StdlibInjector private constructor(
                 stmt.dependencies?.forEach { collectNamesFromExpr(it, names) }
                 stmt.body.forEach { collectNamesFromStmt(it, names) }
             }
-            is Stmt.WithContext -> {
+            is Stmt.UsingContext -> {
                 stmt.values.forEach { collectNamesFromExpr(it, names) }
                 stmt.body.forEach { collectNamesFromStmt(it, names) }
             }
@@ -1992,8 +2043,8 @@ class StdlibInjector private constructor(
         when (expr) {
             // A literal names the default width: it states none of its own, and
             // is read at whatever the place it lands in says.
-            is Expr.IntLiteral -> names.add("Int")
-            is Expr.DoubleLiteral -> names.add("Double")
+            is Expr.IntLiteral -> names.add(Literals.DEFAULT_INT)
+            is Expr.DoubleLiteral -> names.add(Literals.DEFAULT_FLOAT)
             is Expr.CharLiteral -> names.add("Char")
             is Expr.StringLiteral -> names.add("String")
             is Expr.BoolLiteral -> names.add("Bool")

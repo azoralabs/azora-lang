@@ -384,7 +384,7 @@ sealed class Expr {
      *
      * [params] are ordinary call parameters. [receivers] are contextual
      * parameters which may be supplied explicitly after the ordinary
-     * arguments or resolved from an enclosing `with` block.
+     * arguments or resolved from an enclosing `using` block.
      */
     data class Lambda(
         val params: List<Param>,
@@ -403,10 +403,12 @@ sealed class Expr {
          * "declared nothing" - only the second may be given parameters.
          */
         val paramsWritten: Boolean = true,
-        /** Entries written after `;` in the bracket list. */
+        /** Explicit entries written in the lambda's single ownership header. */
         val captures: List<Capture> = emptyList(),
-        /** `[; =]` / `[; &]` / `[; !]` / `[; take]` for otherwise unnamed free variables. */
+        /** `[=]` / `[&]` / `[!]` / `[take]` for otherwise unnamed free variables. */
         val captureDefault: CaptureMode? = null,
+        /** Hard capture fences written as `without name` in the ownership header. */
+        val captureExclusions: List<CaptureExclusion> = emptyList(),
         /** Generic parameters declared by `<T, U>` before the receiver/capture list. */
         val typeParams: List<String> = emptyList(),
         /** The variadic generic pack from `<...T>`, when present. */
@@ -1256,8 +1258,8 @@ sealed class Stmt {
         val condition: Expr? = null,
     ) : Stmt()
 
-    /** `with value { ... }` / `with [a, b] { ... }` contextual receiver scope. */
-    data class WithContext(
+    /** `using value { ... }` / `using (a, b) { ... }` contextual receiver scope. */
+    data class UsingContext(
         val values: List<Expr>,
         val body: List<Stmt>,
         override val line: Int,
@@ -1413,7 +1415,11 @@ sealed class TypeRef {
     ) : TypeRef() {
         override fun toString(): String {
             val prefix = if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
-            val context = if (receivers.isEmpty()) "" else receivers.joinToString(", ", "[", "]")
+            val context = when (receivers.size) {
+                0 -> ""
+                1 -> "${receivers.single()}."
+                else -> receivers.joinToString(", ", "(", ").")
+            }
             val arguments = params.joinToString(", ", "(", ")")
             return "$prefix$context$arguments -> $ret"
         }
@@ -1496,8 +1502,8 @@ sealed class TypeRef {
     /**
      * A checked reference. Ownership is carried by the qualifier, not punctuation.
      *
-     * [origins] names the parameters a returned borrow comes from - the `[a, b]`
-     * in `func choose(a: String&, b: String&): String&[a, b]`. Azora infers most
+     * [origins] names the parameters a returned borrow comes from - the `|a, b|`
+     * in `func choose(a: String&, b: String&): String&|a, b|`. Azora infers most
      * borrow relationships, so this is written only where a public signature has
      * to state one; empty means "inferred".
      */
@@ -1518,7 +1524,7 @@ sealed class TypeRef {
 
         override fun toString() =
             if (origins.isEmpty()) "$inner$sigil"
-            else "$inner$sigil[${origins.joinToString(", ")}]"
+            else "$inner$sigil|${origins.joinToString(", ")}|"
     }
 
     /** Human-readable name for diagnostics (the simple name for [Named]). */
@@ -1536,7 +1542,7 @@ sealed class TypeRef {
 data class TypeFunctionParam(val name: String, val variadic: Boolean = false)
 
 /**
- * A compile-time type property (`deepinline prop Name<...T>: Type { … }`).
+ * A compile-time type property (`deepinline prop<...T> Name: Type { … }`).
  *
  * A type property receives types and returns a [TypeRef]. It is erased before
  * IR generation and can therefore never be called at runtime; a use site spells
@@ -1546,7 +1552,7 @@ data class TypeFunctionDecl(
     val name: String,
     val params: List<TypeFunctionParam>,
     /**
-     * Value parameters - `prop Name<T>(hasDefault: Bool): Type`.
+     * Value parameters - `prop<T> Name(hasDefault: Bool): Type`.
      *
      * A type can depend on an answer that is not itself a type: whether a
      * parameter has a default is a `Bool`, and what type its default has depends
@@ -1816,19 +1822,19 @@ enum class ReactiveKind(val spelling: String) {
  * / `!` the call-site borrow sigils.
  */
 enum class CaptureMode(val spelling: String) {
-    /** `[; value]` / `[; =]` - an independent copy, taken when the closure is created. */
+    /** `[value]` / `[=]` - an independent copy, taken when the closure is created. */
     COPY("="),
 
-    /** `[; value.&]` / `[; &]` - a shared reference to the original binding. */
+    /** `[value.&]` / `[&]` - a shared reference to the original binding. */
     SHARED("&"),
 
-    /** `[; value.!]` / `[; !]` - a mutable reference to the original binding. */
+    /** `[value.!]` / `[!]` - a mutable reference to the original binding. */
     MUTABLE("!"),
 
-    /** `[; value.clone()]` - an independent value, cloned when the closure is created. */
+    /** `[value.clone()]` - an independent value, cloned when the closure is created. */
     CLONE("clone()"),
 
-    /** `[; take value]` / `[; take]` - ownership moves into the closure. */
+    /** `[take value]` / `[take]` - ownership moves into the closure. */
     MOVE("take"),
 }
 
@@ -1836,13 +1842,20 @@ enum class CaptureMode(val spelling: String) {
  * One capture entry in a lambda's bracket list.
  *
  * @property name the name the body uses - the alias where one was written
- *   (`[; ownedMessage = message.clone()]`), otherwise [source]
+ *   (`[ownedMessage = message.clone()]`), otherwise [source]
  * @property source the outer binding being captured
  */
 data class Capture(
     val name: String,
     val source: String,
     val mode: CaptureMode,
+    val line: Int,
+    val column: Int = 0,
+)
+
+/** One source binding barred from a lambda's usage-driven default capture. */
+data class CaptureExclusion(
+    val source: String,
     val line: Int,
     val column: Int = 0,
 )
@@ -2027,8 +2040,6 @@ data class FuncDecl(
     val length: Int = 0,
     /** Decorator/annotation applications (`@Name` / `@Name(args)`). Not yet enforced. */
     val annotations: List<Annotation> = emptyList(),
-    /** `flow` generator: calling it returns a (eagerly-built) list of `yield`ed values. */
-    val isFlow: Boolean = false,
     /** `repl func` - overrides a parent node's method. */
     val isOverride: Boolean = false,
     /** `virt func` - virtual method (dynamic dispatch). */
@@ -2068,11 +2079,11 @@ data class FuncDecl(
     /**
      * Bracketed extension receiver: `func m()[self: Type&]: R`. When present, the
      * function is an extension method on the receiver's type (callable as
-     * `value.m()` or inside `with value { m() }`). The param's type carries the
+     * `value.m()` or inside `using value { m() }`). The param's type carries the
      * borrow (`Type&` → `ref`, `Type!` → `mut ref`).
      */
     val extensionReceiver: Param? = null,
-    /** Name of the variadic type param (`T` in `func name<...T>`), or null for a fixed function. */
+    /** Name of the variadic type param (`T` in `func<...T> name`), or null for a fixed function. */
     val variadicParam: String? = null,
     /** Minimum element count from a `where <var>.length >= N` clause, or null if unconstrained. */
     val minVariadicLength: Int? = null,
@@ -2328,7 +2339,7 @@ data class SpecCallback(
  * import std.io.*                             All
  * import std.math.abs                         Path
  * import std.container.[list.*, map.*]        Group
- * import std.x.* without [Y, Z]               All + without
+ * import std.x::{*, without (Y, Z)}            All + without
  * import std.container.[list.*, map.*] as std alias
  * ```
  *
@@ -2368,13 +2379,23 @@ data class ImportSpec(
     }
 
     /**
-     * The flat `(path, selector)` pairs the import machinery consumes, where the
-     * second element is `"*"` for a wildcard and null for a dotted path.
+     * Compatibility `(path, selector)` pairs, where the second element is `"*"`
+     * for a wildcard and null for a dotted path. This view intentionally cannot
+     * carry [without]; semantic import resolution uses [leaves] instead.
      */
     fun flatten(): List<Pair<String, String?>> = when (selector) {
         is Selector.All -> listOf(path to "*")
         is Selector.Path -> listOf(path to null)
         is Selector.Group -> selector.members.flatMap { it.flatten() }
+    }
+
+    /**
+     * Leaf clauses with metadata intact. Unlike [flatten], this preserves
+     * wildcard exclusions for import resolution and transitive re-exports.
+     */
+    fun leaves(): List<ImportSpec> = when (selector) {
+        is Selector.All, is Selector.Path -> listOf(this)
+        is Selector.Group -> selector.members.flatMap { it.leaves() }
     }
 
     companion object {
@@ -2718,8 +2739,9 @@ sealed class TopLevel {
      * `import path` - one import statement, holding one [ImportSpec] per
      * comma-separated clause.
      *
-     * [imports] is the flattened `(path, selector)` view every semantic pass reads
-     * today; [specs] is the structure the import grammar is written against.
+     * [imports] is the legacy flattened `(path, selector)` compatibility view;
+     * [specs] is the structure semantic passes must use so wildcard exclusions
+     * and future clause metadata are not discarded.
      *
      * When [exported] is true (written `exposed use …`), the import is re-exported:
      * any module that imports this module also transitively imports [imports]. This lets
@@ -2734,10 +2756,13 @@ sealed class TopLevel {
         val condition: Expr? = null,
     ) : TopLevel() {
         /**
-         * The flat `(path, selector)` pairs the import machinery consumes, where the
-         * second element is `"*"` for a wildcard and null for a dotted path.
+         * Legacy flat `(path, selector)` pairs. Wildcard exclusions are available
+         * only through [importSpecs].
          */
         val imports: List<Pair<String, String?>> get() = specs.flatMap { it.flatten() }
+
+        /** Flat leaf clauses with wildcard exclusions and future metadata intact. */
+        val importSpecs: List<ImportSpec> get() = specs.flatMap { it.leaves() }
 
         companion object {
             /** Builds an import statement from already-flattened pairs. */

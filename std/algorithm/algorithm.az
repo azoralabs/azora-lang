@@ -31,7 +31,7 @@ import std.traits::Order
  * Merge sort - O(n log n) stable sorting algorithm.
  */
 @Experimental(since: "0.1")
-func mergeSort<T>(arr: Array<T>): Array<T> {
+func<T> mergeSort(arr: Array<T>): Array<T> {
     if arr.size <= 1 {
         return arr
     }
@@ -54,9 +54,9 @@ func mergeSort<T>(arr: Array<T>): Array<T> {
  * Merges two sorted arrays into one sorted array.
  */
 @Experimental(since: "0.1")
-func merge<T: Order>(a: Array<T>, b: Array<T>): Array<T> {
+func<T: Order> merge(a: Array<T>, b: Array<T>): Array<T> {
     var result: Array<T> = .() * a.size + b.size
-    var [ri, ai, bi] = 0
+    var {ri, ai, bi} = 0
     while ai < a.size && bi < b.size {
         if a[ai] <= b[bi] {
             result[ri] = a[ai]
@@ -97,7 +97,7 @@ func merge<T: Order>(a: Array<T>, b: Array<T>): Array<T> {
  * @return A new array ordered by [key]; the original is unchanged.
  */
 @Experimental(since: "0.1")
-func sortBy<T, K>(arr: Array<T>, key: (T) -> K): Array<T> where K: Order
+func<T, K> sortBy(arr: Array<T>, key: (T) -> K): Array<T> where K: Order
 out {
     assert it.size == arr.size { "sortBy must preserve length" }
 } scope {
@@ -171,7 +171,7 @@ out {
  * Returns array of arrays where each sub-array has elements with the same key.
  */
 @Experimental(since: "0.1")
-func groupBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
+func<T> groupBy(arr: Array<T>, key: (T) -> T): Array<T> {
     var keys: Array<T> = .() * arr.size
     var groups: Array<T> = .() * arr.size
     var keyCount = 0
@@ -205,7 +205,7 @@ func groupBy<T>(arr: Array<T>, key: (T) -> T): Array<T> {
  * Interleaves two arrays: [a1, b1, a2, b2, ...].
  */
 @Experimental(since: "0.1")
-func interleave<T>(a: Array<T>, b: Array<T>): Array<T> {
+func<T> interleave(a: Array<T>, b: Array<T>): Array<T> {
     var result: Array<T> = .() * a.size + b.size
     var ri = 0
     var maxLen: Int = a.size
@@ -229,7 +229,7 @@ func interleave<T>(a: Array<T>, b: Array<T>): Array<T> {
  * Returns a sliding window of given size over the array.
  */
 @Experimental(since: "0.1")
-func windows<T>(arr: Array<T>, size: Int): Array<T> {
+func<T> windows(arr: Array<T>, size: Int): Array<T> {
     fin count = if arr.size >= size {
         arr.size - size + 1
     } else {
@@ -254,7 +254,7 @@ func windows<T>(arr: Array<T>, size: Int): Array<T> {
  * Returns array with elements at even indices.
  */
 @Experimental(since: "0.1")
-func evens<T>(arr: Array<T>): Array<T> {
+func<T> evens(arr: Array<T>): Array<T> {
     fin count = (arr.size + 1) / 2
     var result: Array<T> = .() * count
     var ri = 0
@@ -271,7 +271,7 @@ func evens<T>(arr: Array<T>): Array<T> {
  * Returns array with elements at odd indices.
  */
 @Experimental(since: "0.1")
-func odds<T>(arr: Array<T>): Array<T> {
+func<T> odds(arr: Array<T>): Array<T> {
     fin count = arr.size / 2
     var result: Array<T> = .() * count
     var ri = 0

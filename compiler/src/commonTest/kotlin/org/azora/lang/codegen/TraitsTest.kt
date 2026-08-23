@@ -29,7 +29,7 @@ class TraitsTest {
                 var y: Int
             }
             spec Describable {
-                func describe[self: Self&](): String
+                func &.describe(): String
             }
             impl Describable for Point {
                 func describe(): String {
@@ -51,8 +51,8 @@ class TraitsTest {
                 var brightness: Int
             }
             spec Device {
-                func status[self: Self&](): String
-                func level[self: Self&](): Int
+                func &.status(): String
+                func &.level(): Int
             }
             impl Device for Light {
                 func status(): String {
@@ -74,8 +74,8 @@ class TraitsTest {
         val errors = expectFailure("""
             import std.io
             spec Describable {
-                func describe[self: Self&](): String
-                func detail[self: Self&](): String
+                func &.describe(): String
+                func &.detail(): String
             }
             pack P {
                 var x: Int
@@ -113,7 +113,7 @@ class TraitsTest {
                 var x: Int
             }
             impl P {
-                func getX[self: Self&](): Int {
+                func &.getX(): Int {
                     return self.x
                 }
             }
@@ -152,7 +152,7 @@ class TraitsTest {
                 fin value: Long
             }
             impl Serializable for UserId {
-                func generated[self: Self&](): Unit {
+                func &.generated(): Unit {
                     return
                 }
             }

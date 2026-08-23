@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
  * `in { … }` above it reads as a clause and not as the body:
  *
  * ```
- * ctor[self: Self!](capacity: Int)
+ * ctor .(capacity: Int)
  * in {
  *     assert capacity > 0 { "capacity must be positive" }
  * } scope {
@@ -59,7 +59,7 @@ class ContractScopeBodyTest {
         val ctor = member(
             """
             impl Arena {
-                ctor[self: Self!](capacity: Int)
+                ctor .(capacity: Int)
                 in {
                     assert capacity > 0 { "Arena capacity must be positive" }
                 } scope {
@@ -80,7 +80,7 @@ class ContractScopeBodyTest {
         val ctor = member(
             """
             impl Arena {
-                ctor[self: Self!](capacity: Int) {
+                ctor .(capacity: Int) {
                     self.capacity = capacity
                 }
             }
@@ -94,7 +94,7 @@ class ContractScopeBodyTest {
         val dtor = member(
             """
             impl Arena {
-                dtor[self: Self&] scope {
+                dtor .()scope {
                     self.offset = 0
                 }
             }
@@ -108,7 +108,7 @@ class ContractScopeBodyTest {
         val prop = member(
             """
             impl Arena {
-                prop remaining[self: Self&]: Int
+                prop &.remaining: Int
                 in {
                     assert self.capacity > 0 { "capacity must be positive" }
                 } scope {
@@ -142,7 +142,7 @@ class ContractScopeBodyTest {
             parse(
                 """
                 impl Arena {
-                    ctor[self: Self!](capacity: Int) scope { self! ->
+                    ctor .(capacity: Int) scope { self! ->
                         self.capacity = capacity
                     }
                 }
@@ -151,7 +151,7 @@ class ContractScopeBodyTest {
         }
         assertTrue(
             "in-brace receiver is not a declaration" in e.message.orEmpty() &&
-                "ctor[self: Self!]" in e.message.orEmpty(),
+                "ctor ." in e.message.orEmpty(),
             "expected the message to name the bracket spelling, got: ${e.message}",
         )
     }
@@ -161,7 +161,7 @@ class ContractScopeBodyTest {
             parse(
                 """
                 impl Arena {
-                    dtor[self: Self&] { self& ->
+                    dtor .(){ self& ->
                         self.offset = 0
                     }
                 }
@@ -176,7 +176,7 @@ class ContractScopeBodyTest {
             parse(
                 """
                 impl Arena {
-                    prop used[self: Self&]: Int { self& ->
+                    prop &.used: Int { self& ->
                         return self.offset
                     }
                 }

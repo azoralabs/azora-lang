@@ -27,7 +27,7 @@ class FunctionReceiverSyntaxTest {
             }
 
             impl Language {
-                func greeting[self: Self&](): String {
+                func &.greeting(): String {
                     return self.name
                 }
             }
@@ -48,7 +48,7 @@ class FunctionReceiverSyntaxTest {
                 pack Language
 
                 impl Language {
-                    func greeting[self: Self&](): String { self& ->
+                    func &.greeting(): String { self& ->
                         return "hello"
                     }
                 }
@@ -57,7 +57,7 @@ class FunctionReceiverSyntaxTest {
         }
 
         assertTrue(
-            failure.message.orEmpty().contains("func greeting[self: Self&](...)"),
+            failure.message.orEmpty().contains("func &.greeting(...)"),
             failure.message,
         )
     }

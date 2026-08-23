@@ -150,7 +150,7 @@ One more rule must be, in a public module like "module a" we can have "exposed f
 * (*freeStack)[i] - wrong syntax, for pointer deref we must use freeStack.*[i]
 * var freeStack: Int* = alloc Int[0] - is wrong syntax, we must use var freeStack: Int* = alloc Int() // or alloc .() // or alloc .() * 3 or alloc Int() * 4
 * spec Allocator must be bridge spec Allocator because we want this " var p = alloc Point(1.0, 2.0) in arena" which is a compiler feature, but only works if connecting with bridge ofc
-* - func count<T>(arr: Array<T>, target: T): Int where T: Order and func count<T: Order>(arr: Array<T>, target: T): Int - both avaliable, just like in rust
+* - func<T> count(arr: Array<T>, target: T): Int where T: Order and func<T: Order> count(arr: Array<T>, target: T): Int - both avaliable, just like in rust
 * only one impl per file please, maximum one impl
 
 // STEPS - TODOS
@@ -198,7 +198,8 @@ Failed to parse standard library source allocator/allocator.az
 (bundled with the compiler): Expected '{' after ctor, got 'scope' at line 124
 ```
 
-That is `std/allocator/allocator.az:121-126` - a `ctor[self: Self!](capacity: Int)` with
+That is `std/allocator/allocator.az:121-126` - then written as the legacy
+`ctor[self: Self!](capacity: Int)` (now `ctor .(capacity: Int)`) with
 an `in { … } scope { … }` body and no `self! ->` arrow, i.e. exactly **S5.5**. Parsing
 aborts at the first error in a file, so there are almost certainly more behind it; each
 one surfaces as its predecessor is fixed.
@@ -264,7 +265,7 @@ one surfaces as its predecessor is fixed.
 > **Then ctor overloads (2026-08-18): 221 -> 208.** `impl ArrayList<T>` declares three
 > `ctor`s and all three mangled to `ArrayList_ctor`. The cause was mine: S6 appended the
 > repetition as an ordinary trailing `count` parameter, which made
-> `ctor[…]() * count` indistinguishable from `ctor[…](initial: Int)` - same arity, same
+> `ctor .() * count` indistinguishable from `ctor .(initial: Int)` - same arity, same
 > symbol. Fixed by making the repetition part of the ctor's *identity*
 > (`FuncDecl.isRepeated`), and keying both the emitted symbol and the factory on
 > `(arity, repeated)` through one shared rule in `ir/Mangling` (`ctorSymbol`,
@@ -305,7 +306,7 @@ one surfaces as its predecessor is fixed.
 > `__serialFields` and friends were never the cause. Every one of those failures began
 > with the *same first error* - `'ArrayList' has no argument for 'args'` - and the
 > serializer names were cascade. Three real bugs sat under it:
-> - **A variadic ctor is satisfied by zero arguments.** `ctor[self](...args: T)` was
+> - **A variadic ctor is satisfied by zero arguments.** `ctor .(...args: T)` was
 >   treated as requiring one, so `ArrayList<T>()` - an empty list, and what the
 >   generated code builds - was rejected. Fixed in both the resolver and the generator,
 >   which each had their own copy of the check; the ctor factory never carried
@@ -387,9 +388,9 @@ one surfaces as its predecessor is fixed.
   - `allocator/allocator.az:124` `Expected '{' after ctor, got 'scope'` -> **S5.5, done**
   - `allocator/allocator.az:165` `Unexpected token '++'` -> **S7.3, done**
   - `allocator/allocator.az:223` `Expected member name after '.', got '['` -> **S7.1, done**
-  - `allocator/allocator.az:306` `Expected '{' after dtor, got '('` -> **fixed in `std/`**,
-    not in the compiler: a `dtor` takes no parameter list, so `dtor[self: Self!] {` is the
-    spelling and the `()` was dropped
+  - `allocator/allocator.az:306` `Expected '{' after dtor, got '('` -> the historical
+    workaround dropped `()`, but the finalized owned-instance spelling is
+    `dtor .() { ... }`; static shutdown is `dtor () { ... }`
   - `allocator/allocator.az:546` `got 'factory' at top level` -> **fixed in `std/`**:
     `solo pack Alloc` + `impl Alloc { … }`, no new declaration form (see S5.6)
   - **`allocator/allocator.az` now parses end to end.** The queue moves on:
@@ -724,9 +725,9 @@ neutralising the new behaviour and diffing the names rather than the count.
 
 ### S5.4 `[DROP]` Remove `impl ctor` / `impl dtor` top-level forms
 - **Touch** `Parser.kt:3110-3194`
-- **Do** `ctor` and `dtor` are declared **inside** `impl T { }` only - the spelling
-  `std/allocator/allocator.az:121` already uses (`ctor[self: Self!](capacity: Int)`).
-  Delete both top-level branches.
+- **Do** Instance `ctor` and `dtor` are declared **inside** `impl T { }` as
+  `ctor .(capacity: Int)` and `dtor .()`. Static lifecycle hooks are `ctor ()` and
+  `dtor ()`. Delete both legacy top-level `impl ctor` / `impl dtor` branches.
 - **Accept** `ObjectModelTest`: in-impl `ctor`/`dtor` work; `impl ctor() for T {}` errors.
 
 ### S5.5 `[DROP]` Remove the in-brace `scope { self! -> }` receiver - **DONE 2026-08-18**
@@ -877,7 +878,7 @@ to say, or relaxing a list to separate its elements as every other list does:
 > - **S6.8**: `bridge spec Allocator` already parses (`std/allocator/allocator.az:69`).
 
 ### S6.1/S6.3/S6.4 `[ADD]` Repeated construction - **PARSER DONE 2026-08-18**
-- **`ctor[self: Self!](…) * count { … }`** - the declaration `.(…) * n` selects. The
+- **`ctor .(…) * count { … }`** - the declaration `.(…) * n` selects. The
   repetition is appended to the parameter list as `count: Int`, and **the name is fixed**:
   writing `* n` is an error naming `count`. A repetition of none builds nothing, so an
   `assert count >= 1` precondition leads the body, ahead of any the author wrote.
@@ -1029,9 +1030,10 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
 - **Suite** 1609 failed / 1785. The single delta is `EnumWhenTest` again - see the
   accidental-pass note in Baseline; its `"C"` has nothing to match in the new message.
 - **Next stdlib blocker moved on:** `allocator/allocator.az:223` -> **`:306`,
-  `Expected '{' after dtor, got '('`** - `dtor[self: Self!]()`, a dtor written with an
-  empty parameter list. The impl-body `dtor` parser reads a receiver and then demands the
-  body brace. Small, and adjacent to the S5.5 code.
+  `Expected '{' after dtor, got '('`** - the file then used legacy
+  `dtor[self: Self!]()`. Under the finalized lifecycle grammar this migrates to
+  `dtor .()`: owned destruction always has the empty parameter list and never has a
+  shared or mutable-reference receiver.
 
 ### S7.2 `[FIX]` `self.` is mandatory on both sides - **DONE 2026-08-20**
 - **Touch** `TypeResolver.kt` (identifier resolution inside methods)
@@ -1049,9 +1051,10 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
   and errors when it finds none, so `offset = 1` never reached the field. Only reads were
   lenient - the bug in the plan is one word doing two things on *one* line, and it took
   only the read half to make that happen.
-- **`with` is the exception, and had to be.** `with self purge [keys, values, hashes]`
+- **A contextual receiver is the exception, and had to be.** The contextual
+  member-purge form is now `using self { purge [keys, values, hashes] }`,
   (S7.1) resolves those names as bare identifiers, and the first cut of this step rejected
-  every one of them in `map.az`. A `with` names its receiver *on purpose* - that is what
+  every one of them in `map.az`. A `using` scope names its receiver *on purpose* - that is what
   the form is for - so both branches now let a `prefersMembers` frame answer and reject
   only the implicit self. A member delegating to a free function of its own name
   (`func atOffset[self](…) { return atOffset(self, offset) }`, 3 sites in `time.az`) was
@@ -1060,7 +1063,7 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
   `container/queue.az` (16), `memory/unique.az` (5), `parallelism/sync.az` (2),
   `memory/slice.az` (2). Found by compiling each `std/` file on its own and collecting the
   new error, then cross-checked by a static scan of every `impl` block against its pack's
-  field and method names - the scan's only other hits were the `with` lines, the
+  field and method names - the scan's only other hits were the contextual-receiver lines, the
   self-delegating calls, and parameters that legitimately shadow a field (`sub(start,
   count)` in `slice.az`). `examples/`, `app/` and `azls/` scanned clean.
 - **Accepted** new `semantic/SelfQualificationTest.kt`, 5 tests. Suite 1989 tests / 140
@@ -1119,34 +1122,47 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
   capitalised form. Mirrors the existing annotation rule (`Parser.kt:1096,1162`).
 - **Also** azls diagnostic + plugin annotator (semantic, not lexical - per the plugin's
   rule 2, this belongs in `AzoraSemanticModel`/annotator).
-- **Accept** `TypeFunctionTest`: `deepinline prop promote<T,U>: Type` errors,
+- **Accept** `TypeFunctionTest`: `deepinline prop<T,U> promote: Type` errors,
   `Promote<T,U>` compiles.
 
 ### S7.7 `[ADD]` `where T: Order` and `<T: Order>` are interchangeable
 - **Touch** `Parser.kt:6140 parseWhereClause`, `ConstraintEvaluator.kt`
-- **Do** Both `func count<T>(arr: Array<T>, target: T): Int where T: Order` and
-  `func count<T: Order>(arr: Array<T>, target: T): Int` are accepted, and combining them
+- **Do** Both `func<T> count(arr: Array<T>, target: T): Int where T: Order` and
+  `func<T: Order> count(arr: Array<T>, target: T): Int` are accepted, and combining them
   unions the bounds (Rust semantics). Verify `where T is X` vs `where T: X` spelling and
   document the canonical one.
 - **Accept** `GenericsTest`: both declarations produce identical constraint sets.
 
-### S7.8 `[ADD]` `using`, `[DROP]` `use`
+### S7.8 `[ADD]` contextual `using`, `[DROP]` `use` - **CONTEXT GRAMMAR DONE**
 - **Touch** `AzoraSyntaxVocabulary.kt:96` (drop `use`, add `using` -> `TokenType.USING`),
   `Token.kt:118`, `Parser.kt:4900,4949,5044` (`use as` in spec members),
   `frontend/UseAsTemplate.kt`, `MacroExpander.kt`
-- **Do** Add `using` as a **reserved keyword with no standalone grammar yet** - reserved
-  now so introducing its meaning later breaks nothing (the same treatment
-  `TokenType.DERIVE` already gets, `Token.kt:155`). Its only legal position today is
-  inside **macro declarations**, exactly like `with` / `without` / `by`:
+- **Done** Reserve `using` and remove `use`, so introducing its contextual
+  meaning does not break identifiers. Macro declarations may continue to use it
+  as a quoted/infix macro name.
+- **Done** Give `using` its standalone contextual-receiver grammar:
+  `using value { ... }` for one receiver and `using (a, b, ...) { ... }` for
+  several. The parenthesized list is syntax owned by `using`, not a tuple value.
+  Also parse `{a, b, ...}.method()` as one direct receiver-group call. The brace
+  group is not a runtime value; `(a, b).method()` remains a tuple method and
+  `[a, b].method()` remains a collection method.
+- **Preserve** Its legal macro-name positions, exactly like `with` / `without` / `by`:
   - infix macro name: `macro $a @using $b => …` (`parseMacroName`, `Parser.kt:4633`,
     already accepts keyword lexemes after `@` - verify `using` flows through and add the case)
   - type-macro arm separator: `meta type { $Base using $Filter => … }`
-  Outside a macro declaration, `using` errors: *"`using` is reserved"*.
 - **Do** Remove `use` entirely, including the `use as` spec-member alias. Its last user is
   the compact one-line spec form ([[Azora spec member alias]]) - replace that with the
   `inline prop to${T.typeName}: T = into<T>` spelling **first**, or the compact form breaks.
-- **Accept** `MacroTest`: `macro $a @using $b => …` declares and expands; `meta type` arm
-  with `using` matches. `KeywordReservationTest`: bare `using x` errors, `use as` errors.
+- **Accept** Parser/semantic tests cover single and multiple `using`, direct
+  brace receiver calls, tuple/collection non-equivalence, receiver-type
+  uniqueness, ownership/borrowing, and retained macro-name use. `use` as an
+  import and both removed `use as` spellings still error naming their
+  replacement.
+- **Done as written.** `parseMacroName` needed no change - it already takes any keyword
+  lexeme after `@`. The compact one-line spec went with the word, its only user being two
+  `Feature003SyntaxTest` cases, rewritten to the block form. Note a keyword-named infix
+  macro does not work at a *value* call site (`1 using 2` fails, and so do `1 with 2` and
+  `1 by 2`); that is pre-existing and not specific to `using`.
 
 ---
 
@@ -1155,7 +1171,7 @@ Not in the original plan; the stdlib named it. A type computation's `when` accep
 only the conditionless `when { cond => Type }`; `std/core.az:90` writes a scrutinee:
 
 ```azora
-deepinline func Nullable<T>(b: Bool): Type {
+deepinline func<T> Nullable(b: Bool): Type {
     return when b {
         true  => Option<T?>
         false => Option<T>
@@ -1321,7 +1337,8 @@ Phase 8 (macros) ──┘   S8.1 independent; S8.2 needs 5+6+7
 for stdlib injection), S5.9 (one inherent impl per pack - measure the stdlib cost first),
 S7.2 (mandatory `self.` - widest stdlib diff), S7.5 (underscores vs. mangling).
 
-**All open questions are now settled** (2026-08-18): `using` is reserved-only, legal in
-macro declarations alongside `with`/`without`/`by` (S7.8); the one-impl rule covers only
+**All open questions are now settled** (updated 2026-08-23): `using` introduces
+lexical contextual receivers and remains legal as a macro name alongside
+`with`/`without`/`by` (S7.8); the one-impl rule covers only
 inherent `impl X { }` for `pack X { }`, with spec impls and derives unlimited (S5.9);
 compose auto-registration is engine work, deferred to Phase 10 (S10.1).

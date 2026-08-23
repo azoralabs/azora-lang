@@ -501,7 +501,7 @@ alone does not imply emission.
 Conceptually, the engine declaration carries this contract:
 
 ```azora
-func emit[self: Self!](event: E) effect [Emit<E>]
+func !.emit(event: E) effect [Emit<E>]
 ```
 
 The same rule applies to event readers, resources, clocks, random streams,
@@ -682,7 +682,7 @@ Conceptually:
 ```azora
 spec AttemptSource
 
-func attempt<T, E, S>(
+func<T, E, S> attempt(
     source: S!,
     body: (Attempt<S>!) -> T ?! E
 ): T ?! E

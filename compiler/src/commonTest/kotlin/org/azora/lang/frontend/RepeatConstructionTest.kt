@@ -54,7 +54,7 @@ class RepeatConstructionTest {
         val ctor = ctors(
             """
             impl ArrayList<T> {
-                ctor[self: Self!]() * count {
+                ctor .() * count {
                     self._size = count
                 }
             }
@@ -68,7 +68,7 @@ class RepeatConstructionTest {
         val ctor = ctors(
             """
             impl ArrayList<T> {
-                ctor[self: Self!](fill: T) * count {
+                ctor .(fill: T) * count {
                     self._size = count
                 }
             }
@@ -81,7 +81,7 @@ class RepeatConstructionTest {
         val ctor = ctors(
             """
             impl ArrayList<T> {
-                ctor[self: Self!]() * count {
+                ctor .() * count {
                     self._size = count
                 }
             }
@@ -96,13 +96,13 @@ class RepeatConstructionTest {
 
     @Test fun theRepetitionMustBeCalledCount() {
         val e = assertFailsWith<IllegalStateException> {
-            parse("impl A {\n    ctor[self: Self!]() * n {\n        self.x = n\n    }\n}")
+            parse("impl A {\n    ctor .() * n {\n        self.x = n\n    }\n}")
         }
         assertTrue("binds its repetition as 'count'" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun anOrdinaryCtorIsUnchanged() {
-        val ctor = ctors("impl A {\n    ctor[self: Self!](x: Int) {\n        self.x = x\n    }\n}").single()
+        val ctor = ctors("impl A {\n    ctor .(x: Int) {\n        self.x = x\n    }\n}").single()
         assertEquals(listOf("x"), ctor.params.map { it.name })
         assertTrue(ctor.body.none { it is Stmt.Assert })
     }
@@ -111,7 +111,7 @@ class RepeatConstructionTest {
         val ctor = ctors(
             """
             impl A {
-                ctor[self: Self!](fill: Int) * count
+                ctor .(fill: Int) * count
                 in {
                     assert fill > 0 { "fill must be positive" }
                 } scope {

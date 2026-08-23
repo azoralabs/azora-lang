@@ -24,7 +24,7 @@ class Tier3DiTest {
                 var count: Int = 0
             }
             impl Counter {
-                func inc[self: Self!](): Int {
+                func !.inc(): Int {
                     self.count = self.count + 1
                     return self.count
                 }
@@ -46,7 +46,7 @@ class Tier3DiTest {
                 var value: Int = 42
             }
             impl Config {
-                func get[self: Self!](): Int {
+                func !.get(): Int {
                     return self.value
                 }
             }
@@ -160,10 +160,10 @@ class Tier3DiTest {
     fun everyProviderLifetimeAndGraphCompositionParse() {
         assertEquals("https://api", run("""
             import std.io
-            spec Api { func host[self: Self&](): String }
+            spec Api { func &.host(): String }
             pack Config { fin url: String = "" }
             pack HttpClient { fin url: String = "" }
-            impl Api for HttpClient { func host[self: Self&](): String { return self.url } }
+            impl Api for HttpClient { func &.host(): String { return self.url } }
             pack LoginViewModel { fin tag: String = "" }
 
             graph NetworkGraph {

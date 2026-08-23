@@ -26,6 +26,7 @@ import org.azora.lang.frontend.OwnershipOp
 import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Capture
+import org.azora.lang.frontend.CaptureExclusion
 import org.azora.lang.frontend.CaptureMode
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
@@ -194,6 +195,13 @@ class TypeResolver(private val table: SymbolTable) {
                         val mutable = name != "self" || method.receiverModifier != ParamModifier.SHARED
                         table.defineVariable(VariableSymbol(name, type, mutable = mutable))
                     }
+                    val unnamedReceiverTuple = method.contextualParams > 0 && method.receiverName == "__receiver0"
+                    val receiverTupleType = if (unnamedReceiverTuple) {
+                        IrType.Tuple(func.params.take(1 + method.contextualParams).map { it.second })
+                    } else null
+                    if (receiverTupleType != null) {
+                        table.defineVariable(VariableSymbol("self", receiverTupleType, mutable = false))
+                    }
                     val savedReceiver = currentReceiverType
                     val savedReactive = reactiveContext
                     val savedModule = currentModule
@@ -206,7 +214,10 @@ class TypeResolver(private val table: SymbolTable) {
                     asyncContext = method.isTask
                     contextualValues.addLast(
                         ContextFrame(
-                            listOf(Expr.Identifier("self", method.line, method.column) to IrType.Named(item.typeName)),
+                            listOf(
+                                Expr.Identifier("self", method.line, method.column) to
+                                    (receiverTupleType ?: IrType.Named(item.typeName)),
+                            ),
                             prefersMembers = false,
                         ),
                     )
@@ -353,7 +364,7 @@ class TypeResolver(private val table: SymbolTable) {
 
         table.pushScope()
 
-        // A const type parameter (`func axis<I: Int>`) is an integer the body may
+        // A const type parameter (`func<I: Int> axis`) is an integer the body may
         // read. Its value is only known at a call site, but its type is not, so it is
         // in scope here - otherwise the declaration cannot be checked at all.
         for (constParam in func.constParams) {
@@ -423,13 +434,13 @@ class TypeResolver(private val table: SymbolTable) {
      * The borrow origins the current function's return type names, or null when
      * it returns no borrow or names no origin.
      *
-     * `func first(a: String&, b: String&): String&[a]` promises the caller that
+     * `func first(a: String&, b: String&): String&|a|` promises the caller that
      * what comes back is borrowed from `a` and nothing else, so a `return b`
      * breaks the signature even though both have the same type.
      */
     private var declaredOrigins: List<String>? = null
 
-    /** The `[a, b]` on a returned borrow, looking through `?!` and `?`. */
+    /** The `|a, b|` on a returned borrow, looking through `?!` and `?`. */
     private fun returnedBorrowOrigins(ref: TypeRef?): List<String>? = when (ref) {
         is TypeRef.Reference -> ref.origins.takeIf { it.isNotEmpty() }
         is TypeRef.Failable -> returnedBorrowOrigins(ref.ok)
@@ -670,12 +681,14 @@ class TypeResolver(private val table: SymbolTable) {
      * @property floor the scope depth the lambda's own bindings start at; anything
      *   declared below it (but above the globals in scope 0) belongs to the
      *   enclosing scope and needs a capture
-     * @property defaultMode the mode after `;`, applied lazily to used free variables
+     * @property defaultMode the ownership-header default, applied lazily to used free variables
+     * @property excluded hard fences which the default may never capture
      * @property inferred source names actually selected by that default
      */
     private data class LambdaFrame(
         val floor: Int,
         val defaultMode: CaptureMode?,
+        val excluded: Map<String, CaptureExclusion> = emptyMap(),
         val inferred: MutableMap<String, CaptureMode> = linkedMapOf(),
     )
 
@@ -684,7 +697,7 @@ class TypeResolver(private val table: SymbolTable) {
     /**
      * A lambda reaches the scope around it only through its capture list.
      *
-     * Capture is never implicit: `[; =]`, `[; &]`, `[; !]`, and `[; take]` ask
+     * Capture is never implicit: `[=]`, `[&]`, `[!]`, and `[take]` ask
      * for it, and writing no capture section asks for none (LAMBDA_CONTEXT_CAPTURE_DIP.MD
      * §4.5). Globals are not captured - they belong to the program, not to the
      * scope the closure was made in - so scope 0 is always visible.
@@ -709,12 +722,21 @@ class TypeResolver(private val table: SymbolTable) {
                 mode = already
                 continue
             }
+            val exclusion = frame.excluded[name]
+            if (exclusion != null) {
+                errors.add(
+                    "line $line: '$name' is excluded from this lambda's captures by " +
+                        "'without $name' at line ${exclusion.line}; remove that fence, pass the value, " +
+                        "or supply it as a receiver",
+                )
+                return null
+            }
             val default = frame.defaultMode
             if (default == null) {
                 errors.add(
                     "line $line: '$name' is not in scope - a lambda with no capture list cannot " +
-                        "reach the scope around it; write '[; $name.&]' to reference it, " +
-                        "'[; $name.!]' to write it, '[; $name]' to copy it, or '[; &]' to capture " +
+                        "reach the scope around it; write '[$name.&]' to reference it, " +
+                        "'[$name.!]' to write it, '[$name]' to copy it, or '[&]' to capture " +
                         "what the body reads",
                 )
                 return null
@@ -1094,8 +1116,12 @@ class TypeResolver(private val table: SymbolTable) {
      * own position keeps the frontend and IR generator in step without threading
      * a counter between them.
      */
-    private fun lambdaReceiverRef(lambda: Expr.Lambda, index: Int): Expr.Identifier =
-        Expr.Identifier(lambdaReceiverName(lambda.line, lambda.column, index), lambda.line, lambda.column)
+    private fun lambdaReceiverRef(lambda: Expr.Lambda, index: Int, count: Int): Expr.Identifier =
+        Expr.Identifier(
+            if (count == 1) "self" else lambdaReceiverName(lambda.line, lambda.column, index),
+            lambda.line,
+            lambda.column,
+        )
 
     private fun inferredContexts(expected: List<IrType>): List<Pair<Expr, IrType>>? {
         if (expected.isEmpty()) return emptyList()
@@ -1142,7 +1168,7 @@ class TypeResolver(private val table: SymbolTable) {
         }
         for (i in args.indices) {
             val actual = resolveContextualArgument(args[i], function.params[i]) ?: return null
-            if (!isCompatible(function.params[i], actual)) {
+            if (!isCompatible(function.params[i], adoptLiteralType(args[i], actual, function.params[i]))) {
                 errors.add("line $line: arg ${i + 1} of '$label': expected ${function.params[i]}, got $actual")
             }
         }
@@ -1385,7 +1411,7 @@ class TypeResolver(private val table: SymbolTable) {
                 stmt.dependencies?.forEach(::resolveExpr)
                 resolveBody(stmt.body, returnType)
             }
-            is Stmt.WithContext -> {
+            is Stmt.UsingContext -> {
                 val values = stmt.values.mapNotNull { value ->
                     resolveExpr(value)?.let { value to it }
                 }
@@ -1969,8 +1995,8 @@ class TypeResolver(private val table: SymbolTable) {
                 )
                 null
             }
-            is Expr.IntLiteral -> IrType.Int
-            is Expr.DoubleLiteral -> IrType.Double
+            is Expr.IntLiteral -> IrType.defaultInt
+            is Expr.DoubleLiteral -> IrType.defaultFloat
             is Expr.StringLiteral -> IrType.String
             is Expr.BoolLiteral -> IrType.Bool
             is Expr.NullLiteral -> IrType.Any  // null is compatible with any nullable type
@@ -1983,9 +2009,9 @@ class TypeResolver(private val table: SymbolTable) {
                 val sym = table.lookupVariable(expr.name)
                     ?: throughTypeAlias(expr.name)?.let { table.lookupVariable(it) }
                 if (sym == null) {
-                    // `with self purge [keys, values]` names its receiver once
+                    // `using self { purge [keys, values] }` names its receiver once
                     // and reaches into it for the rest of the form - that is
-                    // the whole point of `with`, and the names inside it are
+                    // the whole point of `using`, and the names inside it are
                     // already qualified by the line they are written on.
                     val opened = contextualValues.asReversed()
                         .filter { it.prefersMembers }
@@ -2144,7 +2170,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val calleeName = selfToReceiver(expr.callee)
                 // A member of a receiver in scope answers a bare call before a
                 // free function or a pack of the same name: inside `impl Text` or
-                // `with anchor { … }` the member is what was meant, and reaching
+                // `using anchor { … }` the member is what was meant, and reaching
                 // past it to something free would need the free one to be named.
                 //
                 // The exception is the member the call is written inside, which
@@ -2214,7 +2240,7 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                         if (scoped) {
                             // Each argument is resolved against the parameter it
-                            // fills, so a block passed for `children: [Anchor&]() -> R`
+                            // fills, so a block passed for `children: Anchor&.() -> R`
                             // learns the receiver it is to inherit.
                             val slots = bindCtorArguments(expr, factory) ?: return null
                             for ((i, argument) in slots.withIndex()) {
@@ -2370,8 +2396,8 @@ class TypeResolver(private val table: SymbolTable) {
                         for (arg in expr.args) { resolveExpr(arg) ?: return null }
                         return IrType.Any
                     }
-                    // Inside `with value { … }`, a bare call may be an extension method
-                    // on one of the contextual values: `with c { bump() }` == `c.bump()`.
+                    // Inside `using value { … }`, a bare call may be an extension method
+                    // on a contextual value: `using c { bump() }` == `c.bump()`.
                     // A scope-qualified call reaches its contextual receiver too:
                     // `yield(1)` names the member `yield`, and the scope only
                     // says where it was declared, not what it is called on.
@@ -2836,14 +2862,35 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.MethodCall -> {
-                // `[2, 3].add()` - a receiver call supplying several contextual
-                // receivers. A bare bracket list is not a value anywhere else, so
-                // the only thing it can be here is the receivers `add` declares.
-                val bracketTarget = expr.target as? Expr.ArrayLiteral
-                if (bracketTarget != null) {
+                // `{2, 3}.add()` - a grouping call supplying several contextual receivers.
+                val groupTarget = expr.target as? Expr.TupleLit
+                if (groupTarget != null) {
+                    val given = groupTarget.elements.map { resolveExpr(it) ?: return null }
+                    val owner = given.firstOrNull() as? IrType.Named
+                    val methodSymbol = owner?.let { table.lookupMethod(it.name, expr.name) }
+                    val method = methodSymbol?.let(table::lookupFunction)
+                    if (method != null && method.contextualParams == given.size - 1) {
+                        val expectedReceivers = method.params.take(given.size).map { it.second }
+                        expectedReceivers.zip(given).forEachIndexed { index, (expected, actual) ->
+                            if (!isCompatible(expected, actual)) {
+                                errors.add("line ${expr.line}: receiver ${index + 1} of '${expr.name}' expects $expected, got $actual")
+                            }
+                        }
+                        val written = method.params.drop(given.size)
+                        if (expr.args.size != written.size) {
+                            errors.add("line ${expr.line}: method '${expr.name}' expects ${written.size} args, got ${expr.args.size}")
+                            return null
+                        }
+                        expr.args.zip(written).forEachIndexed { index, (argument, parameter) ->
+                            val actual = resolveContextualArgument(argument, parameter.second) ?: return null
+                            if (!isCompatible(parameter.second, adoptLiteralType(argument, actual, parameter.second))) {
+                                errors.add("line ${expr.line}: arg ${index + 1} of '${expr.name}': expected ${parameter.second}, got $actual")
+                            }
+                        }
+                        return method.returnType
+                    }
                     val callable = table.lookupVariable(expr.name)?.type as? IrType.Function
                     if (callable != null && callable.receivers.isNotEmpty()) {
-                        val given = bracketTarget.elements.map { resolveExpr(it) ?: return null }
                         return resolveCallableArguments(
                             expr.name,
                             callable,
@@ -2946,7 +2993,7 @@ class TypeResolver(private val table: SymbolTable) {
                             val argument = positioned[i] ?: continue
                             val paramType = func.params[i + writtenFrom].second
                             val argType = resolveContextualArgument(argument, paramType) ?: return null
-                            if (!methodIsGeneric && !isCompatible(paramType, argType)) {
+                            if (!methodIsGeneric && !isCompatible(paramType, adoptLiteralType(argument, argType, paramType))) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
                             }
                         }
@@ -3017,7 +3064,7 @@ class TypeResolver(private val table: SymbolTable) {
                         for (i in expr.args.indices) {
                             val paramType = specMethod.paramTypes[i]
                             val argType = resolveContextualArgument(expr.args[i], paramType) ?: return null
-                            if (!isCompatible(paramType, argType)) {
+                            if (!isCompatible(paramType, adoptLiteralType(expr.args[i], argType, paramType))) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
                             }
                         }
@@ -3042,7 +3089,7 @@ class TypeResolver(private val table: SymbolTable) {
                         for (i in expr.args.indices) {
                             val paramType = func.params[i + 1].second
                             val argType = resolveContextualArgument(expr.args[i], paramType) ?: return null
-                            if (!isCompatible(paramType, argType)) {
+                            if (!isCompatible(paramType, adoptLiteralType(expr.args[i], argType, paramType))) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
                             }
                         }
@@ -3260,6 +3307,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val expectedReceivers = expectedLambdaReceiverTypes
                 val bracketReceivers = expr.receivers
                 val bracketCaptures = expr.captures
+                val exclusions = expr.captureExclusions
                 val duplicateReceiver = bracketReceivers.groupBy { it.name }.entries.firstOrNull { it.value.size > 1 }
                 if (duplicateReceiver != null) {
                     errors.add("line ${expr.line}: duplicate lambda receiver '${duplicateReceiver.key}'")
@@ -3275,6 +3323,22 @@ class TypeResolver(private val table: SymbolTable) {
                 val receiverNames = bracketReceivers.mapTo(mutableSetOf()) { it.name }
                 bracketCaptures.firstOrNull { it.name in receiverNames }?.let {
                     errors.add("line ${it.line}: '${it.name}' cannot be both a receiver and a capture")
+                }
+                val duplicateExclusion = exclusions.groupBy { it.source }.entries.firstOrNull { it.value.size > 1 }
+                if (duplicateExclusion != null) {
+                    errors.add("line ${duplicateExclusion.value[1].line}: '${duplicateExclusion.key}' is excluded more than once")
+                }
+                exclusions.firstOrNull { it.source in receiverNames }?.let {
+                    errors.add("line ${it.line}: '${it.source}' cannot be both a receiver name and a capture exclusion")
+                }
+                exclusions.forEach { exclusion ->
+                    val scope = table.variableScopeIndex(exclusion.source)
+                    if (scope == null || scope == 0) {
+                        errors.add(
+                            "line ${exclusion.line}: 'without ${exclusion.source}' must name a local binding " +
+                                "in the scope around this lambda",
+                        )
+                    }
                 }
                 val paramTypes = expr.params.mapIndexed { i, p ->
                     val expected = expectedParams?.getOrNull(i)
@@ -3292,6 +3356,12 @@ class TypeResolver(private val table: SymbolTable) {
                 // as its own contextual receivers, which is what the builder APIs rely on.
                 val inheritsReceivers = bracketReceivers.isEmpty() && !expectedReceivers.isNullOrEmpty()
                 val receiverTypes = if (inheritsReceivers) expectedReceivers!! else declaredReceivers
+                receiverTypes.groupBy { it }.entries.firstOrNull { it.value.size > 1 }?.let {
+                    errors.add(
+                        "line ${expr.line}: contextual receiver type '${it.key}' occurs more than once; " +
+                            "wrap each role in a distinct nominal type or make one an ordinary parameter",
+                    )
+                }
                 // `{ body }` with no parameter list carries the parser's implicit `it`.
                 // Where the expected callable takes no parameters there is nothing for
                 // `it` to stand for, so it is dropped rather than reported as an arity
@@ -3360,8 +3430,15 @@ class TypeResolver(private val table: SymbolTable) {
                 if (inheritsReceivers) {
                     receiverTypes.forEachIndexed { i, t ->
                         table.defineVariable(
-                            VariableSymbol(lambdaReceiverName(expr.line, expr.column, i), t, mutable = false),
+                            VariableSymbol(
+                                if (receiverTypes.size == 1) "self" else lambdaReceiverName(expr.line, expr.column, i),
+                                t,
+                                mutable = false,
+                            ),
                         )
+                    }
+                    if (receiverTypes.size > 1) {
+                        table.defineVariable(VariableSymbol("self", IrType.Tuple(receiverTypes), mutable = false))
                     }
                 }
                 // Resolve the body with locals in scope, capturing return-value types to infer retType.
@@ -3373,7 +3450,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // and an inherited receiver both reach `push` without naming it.
                 val bodyContexts = receiverTypes.mapIndexed { i, t ->
                     val ref = if (inheritsReceivers) {
-                        lambdaReceiverRef(expr, i)
+                        lambdaReceiverRef(expr, i, receiverTypes.size)
                     } else {
                         Expr.Identifier(bracketReceivers[i].name, expr.line, expr.column)
                     }
@@ -3390,6 +3467,7 @@ class TypeResolver(private val table: SymbolTable) {
                         // reaches the scope around it the way a loop body does
                         // and needs no capture list to say so.
                         defaultMode = expr.captureDefault ?: inlineCallableDefault,
+                        excluded = exclusions.associateBy { it.source },
                     ),
                 )
                 resolveBody(expr.body, IrType.Unit)
@@ -4436,7 +4514,7 @@ class TypeResolver(private val table: SymbolTable) {
             errors.add(
                 "line $captureLine: this closure $what while borrowing " +
                     "'$source' through '${mode.spelling}', which does not outlive it; write " +
-                    "'[; $source.clone()]' or '[; take $source]'",
+                    "'[$source.clone()]' or '[take $source]'",
             )
         }
     }
@@ -4453,9 +4531,9 @@ class TypeResolver(private val table: SymbolTable) {
                 if (currentFuncTypeParams.contains(name)) return
                 if (table.conformsTo(name, "Copy")) return
                 val fixes = buildList {
-                    add("'[; ${capture.source}.&]'")
-                    if (table.conformsTo(name, "Clone")) add("'[; ${capture.source}.clone()]'")
-                    add("'[; take ${capture.source}]'")
+                    add("'[${capture.source}.&]'")
+                    if (table.conformsTo(name, "Clone")) add("'[${capture.source}.clone()]'")
+                    add("'[take ${capture.source}]'")
                 }
                 errors.add(
                     "line ${capture.line}: '${capture.source}' cannot be captured by copy - " +
@@ -4469,8 +4547,8 @@ class TypeResolver(private val table: SymbolTable) {
                 if (table.conformsTo(name, "Clone")) return
                 errors.add(
                     "line ${capture.line}: '${capture.source}' cannot be captured by clone - " +
-                        "'$name' is not Clone; write '[; ${capture.source}.&]' to reference it, " +
-                        "or '[; take ${capture.source}]' to move it",
+                        "'$name' is not Clone; write '[${capture.source}.&]' to reference it, " +
+                        "or '[take ${capture.source}]' to move it",
                 )
             }
         }
@@ -4478,7 +4556,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun checkNotMoved(name: String, line: Int) {
         val movedAt = movedBindings[name] ?: return
-        // `[; take s] { … s … }` - inside the closure, `s` is the closure's own
+        // `[take s] { … s … }` - inside the closure, `s` is the closure's own
         // binding, not the one the move emptied. Only the outer name is stale.
         if (isBoundInsideCurrentLambda(name)) return
         errors.add(

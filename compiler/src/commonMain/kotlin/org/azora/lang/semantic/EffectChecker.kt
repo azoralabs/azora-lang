@@ -126,7 +126,7 @@ class EffectChecker {
                 stmt.dependencies?.forEach { collectCallsFromExpr(it, calls) }
                 stmt.body.forEach { collectCallsFromStmt(it, calls) }
             }
-            is Stmt.WithContext -> {
+            is Stmt.UsingContext -> {
                 stmt.values.forEach { collectCallsFromExpr(it, calls) }
                 stmt.body.forEach { collectCallsFromStmt(it, calls) }
             }

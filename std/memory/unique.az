@@ -12,6 +12,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.memory.unique
 
 @Since("0.1")
@@ -35,7 +36,7 @@ oper.* [self: Unique<T>&]: T {
  */
 @Since("0.1")
 impl Clone for Unique<T> {
-    func clone[self: Self&]() {
+    func &.clone() {
         assert self.active { "Unique pointer was released" }
         return Unique<T>(alloc self._raw.*, true)
     }
@@ -44,21 +45,21 @@ impl Clone for Unique<T> {
 impl Unique<T> {
     /** Returns the owned value (panics if already released). */
     @Experimental(since: "0.1")
-    prop get[self: Self&]: T {
+    prop &.get: T {
         assert self.active { "Unique pointer was released" }
         return self._raw.*
     }
 
     /** Overwrites the owned value (panics if already released). */
     @Experimental(since: "0.1")
-    func set[self: Self!](value: T) {
+    func !.set(value: T) {
         assert self.active { "Unique pointer was released" }
         self._raw[0] = value
     }
 
     /** Returns the raw `T*` without relinquishing ownership. */
     @Experimental(since: "0.1")
-    prop ptr[self: Self&]: T* {
+    prop &.ptr: T* {
         assert self.active { "Unique pointer was released" }
         return self._raw
     }
@@ -68,7 +69,7 @@ impl Unique<T> {
      * (the value is no longer freed by the Unique).
      */
     @Experimental(since: "0.1")
-    func release[self: Self!](): T* {
+    func !.release(): T* {
         assert self.active { "Unique pointer was already released" }
         self.active = false
         return self._raw
@@ -76,7 +77,7 @@ impl Unique<T> {
 
     /** Frees the owned value now (a no-op if already released/disposed). */
     @Experimental(since: "0.1")
-    func dispose[self: Self!]() {
+    func !.dispose() {
         if self.active {
             purge self._raw
             self.active = false
@@ -86,6 +87,6 @@ impl Unique<T> {
 
 /** Constructs a `Unique<T>` that takes ownership of a copy of [value]. */
 @Experimental(since: "0.1")
-func uniqueOf<T>(value: T): Unique<T> {
+func<T> uniqueOf(value: T): Unique<T> {
     return Unique(alloc value, true)
 }

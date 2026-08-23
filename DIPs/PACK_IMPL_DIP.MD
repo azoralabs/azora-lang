@@ -17,14 +17,21 @@ impl DECO(args)? for NAME { … }                          // decorator applicat
 impl oper SYMBOL [by SPEC] for NAME { self&, rhs -> … }  // operator overload
 
 spec NAME <...GENERICS> [: PARENT<ARGS>] {
-    func METHOD(...PARAMS): RET                          // required method (no body)
-    prop NAME: Type                                       // required property
+    func GENERICS? RECEIVER_HEAD? NAME(...PARAMS): RET    // required function (no body)
+    prop SHARED_RECEIVER_HEAD? NAME<...GENERICS>?: Type   // required observational property
 }
+
+ctor () { STATIC_STARTUP_BODY }
+ctor .(...PARAMS) { INSTANCE_INITIALIZATION_BODY }
+dtor () { STATIC_SHUTDOWN_BODY }
+dtor .() { INSTANCE_DESTRUCTION_BODY }
 ```
 
 - `VISIBILITY` ::= `expose` | `confine` | `protect` (default `expose`).
 - `FIELD_VISIBILITY` per field ::= `expose` | `confine`.
 - `opaque pack` forces every field to `confine`.
+- `SHARED_RECEIVER_HEAD` has the normal receiver-head shape, but every receiver
+  type must end in `&`; mutable `!` and owned receiver slots are invalid.
 
 ---
 
@@ -64,15 +71,29 @@ var b = Box<Int>(42)
 
 ### 2.1 Inherent methods
 
-The receiver is `self`; its borrow is a postfix sigil (`self&` immutable,
-`self!` mutable):
+Methods declare a receiver head before the dot and method name. Inside an
+`impl` or `spec`, `&.` and `!.` are the canonical shorthands for immutable and
+mutable implicit `self`; `Self.` is the owned form:
 
 ```azora
 impl Point {
-    func magnitudeSquared(): Int { self& -> return self.x * self.x + self.y * self.y }
-    func moveBy(dx: Int, dy: Int)  { self! -> self.x = self.x + dx; self.y = self.y + dy }
+    func &.magnitudeSquared(): Int {
+        return self.x * self.x + self.y * self.y
+    }
+    func !.moveBy(dx: Int, dy: Int) {
+        self.x = self.x + dx
+        self.y = self.y + dy
+    }
 }
 ```
+
+The receiver head may contain multiple explicitly typed receivers, and function
+generics precede it: `func<T, U> (first: T&, second: U&).combine()`. Receiver
+base types must be pairwise distinct after aliases and generic substitution;
+`T` and `U` therefore carry an implicit distinctness requirement. Borrow versus
+owned capability does not distinguish an otherwise equal type. A function
+without receivers remains `func helper()` and has neither receiver syntax nor
+dot.
 
 ### 2.2 Computed properties (`prop`)
 
@@ -80,20 +101,102 @@ Accessed without parentheses:
 
 ```azora
 impl Duration {
-    prop isZero: Bool = self.seconds == 0L
-    prop inMillis: Long = self.seconds * 1000L
+    prop &.isZero: Bool = self.seconds == 0L
+    prop &.inMillis: Long = self.seconds * 1000L
 }
 d.isZero        // no parentheses
 ```
 
+Properties use only the observational subset of the function receiver-head
+grammar. In an `impl` or `spec`, `prop &.name` introduces `self: Self&`.
+`prop !.name` and owned `prop Self.name` are invalid: field-like access must
+neither mutate nor consume its receiver. Such behavior is declared as
+`func !.name()` or `func Self.name()` so its call site has parentheses. Every
+receiver of a multi-receiver property must likewise be a shared `T&`. A
+borrowed result names its origin with bars: `prop &.name: String&|self|`.
+
 ### 2.3 Constructors & destructors
 
 ```azora
-impl Resource {
-    ctor(path: String) { … }     // secondary constructor
-    dtor { … }                    // destructor, runs on `drop`
+pack Sheep {
+    var naked: Bool = false
+    fin name: String
+}
+
+impl Sheep {
+    ctor .(name: String) {
+        self.name = take name
+    }
+
+    dtor .() {
+        // owned Sheep is being destroyed
+    }
 }
 ```
+
+Azora has exactly two constructor modes and two matching destructor modes:
+
+| Declaration | Meaning | Receiver |
+|---|---|---|
+| `ctor ()` | static startup hook, run once when the program initializes the type | none |
+| `ctor .(...)` | construct a new owned instance | implicit initializing `self: Self` |
+| `dtor ()` | static shutdown hook, run once after successful startup | none |
+| `dtor .()` | destroy one owned instance | implicit destroying `self: Self` |
+
+`ctor .(...)` is the only instance constructor. The dot denotes owned/move
+construction; it is not a mutable-reference receiver. During its body, `self`
+has **initialization privilege**:
+
+- a previously uninitialized `fin` field may be assigned exactly once;
+- a `var` field may be initialized;
+- a field default is applied before the body unless the constructor supplies
+  that field through the compiler's definite-initialization plan;
+- an uninitialized field may not be read;
+- every required field must be initialized on every successful exit.
+
+Moving a named owned parameter into an owned field remains explicit:
+`self.name = take name`. A literal or other temporary at the call site needs no
+`take`, because it is already an owned rvalue:
+
+```azora
+var dolly: Sheep = .(name: "Dolly")
+```
+
+For a simple pack, a custom constructor is unnecessary. The generated owned
+field constructor accepts every field without a default and applies defaults:
+
+```azora
+pack Sheep {
+    var naked: Bool = false
+    fin name: String
+}
+
+var dolly = Sheep(name: "Dolly")
+```
+
+`dtor .()` runs exactly once when an owned value reaches deterministic scope
+exit or is explicitly dropped. It has destruction privilege but may not return,
+store, or resurrect `self`. Initialized fields that the body does not consume
+are destroyed exactly once afterward.
+
+`ctor ()` has no parameters, no `self`, and runs once during normal program
+startup before `main`, after the static constructors it depends on. `dtor ()`
+has no parameters or `self`; it runs at normal shutdown only if the matching
+static constructor completed, in reverse initialization order. Static
+initialization cycles are compile-time errors.
+
+The following forms are always rejected:
+
+```azora
+ctor &.()  // no reference constructors
+ctor !.()  // no mutable-reference constructors
+dtor &.()  // no reference destructors
+dtor !.()  // no mutable-reference destructors
+```
+
+Ordinary shared and mutable borrows remain zero-cost lifetime operations and do
+not execute user code. Reference-specific behavior belongs in `func &.name()` /
+`func !.name()` or in a separate owned guard pack with its own `dtor .()`.
 
 ### 2.4 `impl pack` (privileged mutation)
 
@@ -104,13 +207,13 @@ the same file.
 
 ```azora
 spec Serializer<T> {
-    func toValue(value: T&): SerialValue
-    func fromValue(value: SerialValue&): T
+    func &.toValue(value: T&): SerialValue
+    func &.fromValue(value: SerialValue&): T
 }
 
 spec MutableMap<K, V> : Map<K, V> {     // spec inheritance
-    func put(key: K, value: V): V?
-    func putAll(other: Map<K, V>&)
+    func !.put(key: K, value: V): V?
+    func !.putAll(other: Map<K, V>&)
 }
 ```
 
@@ -119,8 +222,8 @@ Conformance:
 ```azora
 pack JsonWriter
 impl Serializer<Value> for JsonWriter {
-    func toValue(value: Value&): SerialValue { self& -> … }
-    func fromValue(value: SerialValue&): Value { self& -> … }
+    func &.toValue(value: Value&): SerialValue { … }
+    func &.fromValue(value: SerialValue&): Value { … }
 }
 ```
 
@@ -130,11 +233,11 @@ A `spec`-typed value carries its concrete type and dispatches at runtime - even
 in the native LLVM backend (fat-pointer representation):
 
 ```azora
-spec Shape { func area(): Double }
+spec Shape { func &.area(): Double }
 pack Circle { var r: Double }
 pack Square { var s: Double }
-impl Shape for Circle { func area(): Double { self& -> return 3.14159 * self.r * self.r } }
-impl Shape for Square { func area(): Double { self& -> return self.s * self.s } }
+impl Shape for Circle { func &.area(): Double { return 3.14159 * self.r * self.r } }
+impl Shape for Square { func &.area(): Double { return self.s * self.s } }
 
 func totalArea(shapes: Array<Shape>): Double {
     var t = 0.0

@@ -347,7 +347,6 @@ class DecoratorResolver {
                 function.name == "ctor" -> DecoTarget.Ctor
                 function.name == "dtor" -> DecoTarget.Dtor
                 function.isTask -> DecoTarget.AsyncFunc
-                function.isFlow -> DecoTarget.AsyncFunc
                 else -> DecoTarget.Func
             }
             val returnType = (function.returnType as? TypeAnnotation.Explicit)?.ref ?: TypeRef.Named("Any")

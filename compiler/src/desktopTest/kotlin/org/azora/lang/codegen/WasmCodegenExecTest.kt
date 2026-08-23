@@ -131,7 +131,7 @@ class WasmCodegenExecTest {
     @Test fun softwareSinAndCos() = check(
         "0.0\n0.841470984807901\n1.0\n-0.989992496600445",
         "import std.math\n" + main(
-            "var a = 0.0\nvar b = 1.0\nvar c = 3.0\n" +
+            "var a: Double = 0.0\nvar b: Double = 1.0\nvar c: Double = 3.0\n" +
                 "println(sin(a))\nprintln(sin(b))\n" +
                 "println(cos(a))\nprintln(cos(c))"
         )
@@ -141,8 +141,8 @@ class WasmCodegenExecTest {
     @Test fun softwareExpAndLog() = check(
         "2.718281828459045\n0.999999999999926\n2.0\n3.0\n8.0\n3.0",
         "import std.math\n" + main(
-            "var one = 1.0\nvar e = 2.718281828459045\nvar four = 4.0\n" +
-                "var thousand = 1000.0\nvar three = 3.0\nvar twentyseven = 27.0\n" +
+            "var one: Double = 1.0\nvar e: Double = 2.718281828459045\nvar four: Double = 4.0\n" +
+                "var thousand: Double = 1000.0\nvar three: Double = 3.0\nvar twentyseven: Double = 27.0\n" +
                 "println(exp(one))\nprintln(log(e))\n" +
                 "println(log2(four))\nprintln(log10(thousand))\n" +
                 "println(exp2(three))\nprintln(cbrt(twentyseven))"
@@ -156,8 +156,8 @@ class WasmCodegenExecTest {
     @Test fun softwareInverseTrigAndHypot() = check(
         "0.785398131668175\n1.570796326794896\n0.0\n2.356194521921618\n5.0",
         "import std.math\n" + main(
-            "var one = 1.0\nvar zero = 0.0\nvar neg = 0.0 - 1.0\n" +
-                "var three = 3.0\nvar four = 4.0\nvar two = 2.0\n" +
+            "var one: Double = 1.0\nvar zero: Double = 0.0\nvar neg: Double = 0.0 - 1.0\n" +
+                "var three: Double = 3.0\nvar four: Double = 4.0\nvar two: Double = 2.0\n" +
                 "println(atan(one))\nprintln(asin(one))\n" +
                 "println(acos(one))\nprintln(atan2(one, neg))\n" +
                 "println(hypot(three, four))"
@@ -171,7 +171,7 @@ class WasmCodegenExecTest {
     @Test fun vhaTrigIsMoreAccurateThanTheDefault() = check(
         "0.841470984807901\n0.841470984807896\n-0.989992496600445\n-0.989992496600445",
         "import std.math\n" + main(
-            "var one = 1.0\nvar three = 3.0\n" +
+            "var one: Double = 1.0\nvar three: Double = 3.0\n" +
                 "println(sin(one))\nprintln(vha::sin(one))\n" +
                 "println(cos(three))\nprintln(vha::cos(three))"
         )

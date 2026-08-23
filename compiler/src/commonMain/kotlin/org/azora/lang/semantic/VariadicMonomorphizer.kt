@@ -19,6 +19,7 @@ package org.azora.lang.semantic
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.Literals
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.NamedTypeMacroCall
@@ -470,10 +471,16 @@ private class MonoContext(
             "${renderType(type.ok)}![${type.errSets.joinToString(", ")}]"
         }
         // What is rendered here is re-parsed, so a borrow is written the way
-        // the language spells one: postfix `&`, and `!` when exclusive.
-        is TypeRef.Reference -> when (type.kind) {
-            TypeRef.RefKind.MUTABLE -> "${renderType(type.inner)}!"
-            else -> "${renderType(type.inner)}&"
+        // the language spells one: postfix `&`/`!`, followed by its optional
+        // `|source, ...|` origin fence.
+        is TypeRef.Reference -> buildString {
+            append(renderType(type.inner))
+            append(if (type.kind == TypeRef.RefKind.MUTABLE) '!' else '&')
+            if (type.origins.isNotEmpty()) {
+                append('|')
+                append(type.origins.joinToString(", "))
+                append('|')
+            }
         }
         is TypeRef.Const -> type.value.toString()
     }
@@ -1011,7 +1018,7 @@ private class MonoContext(
                 dependencies = stmt.dependencies?.map(::expr),
                 body = nested(stmt.body),
             )
-            is Stmt.WithContext -> stmt.copy(values = stmt.values.map(::expr), body = nested(stmt.body))
+            is Stmt.UsingContext -> stmt.copy(values = stmt.values.map(::expr), body = nested(stmt.body))
             is Stmt.NoInline -> stmt.copy(stmt = expandReflectedStmt(stmt.stmt, fields, binding).single())
             is Stmt.Break, is Stmt.Continue -> stmt
         }
@@ -1661,8 +1668,8 @@ private class MonoContext(
      * positional access into a tuple, nested variadic calls, and groupings.
      */
     private fun inferExprType(e: Expr): TypeRef? = when (e) {
-        is Expr.IntLiteral -> TypeRef.Named("Int")
-        is Expr.DoubleLiteral -> TypeRef.Named("Double")
+        is Expr.IntLiteral -> TypeRef.Named(Literals.DEFAULT_INT)
+        is Expr.DoubleLiteral -> TypeRef.Named(Literals.DEFAULT_FLOAT)
         is Expr.StringLiteral -> TypeRef.Named("String")
         is Expr.BoolLiteral -> TypeRef.Named("Bool")
         is Expr.CharLiteral -> TypeRef.Named("Char")
@@ -1820,7 +1827,7 @@ private class MonoContext(
             dependencies = s.dependencies?.map(::rewriteExpr),
             body = s.body.map(::rewriteStmt),
         )
-        is Stmt.WithContext -> s.copy(values = s.values.map(::rewriteExpr), body = s.body.map(::rewriteStmt))
+        is Stmt.UsingContext -> s.copy(values = s.values.map(::rewriteExpr), body = s.body.map(::rewriteStmt))
         is Stmt.NoInline -> s.copy(stmt = rewriteStmt(s.stmt))
         is Stmt.Break, is Stmt.Continue -> s
         }

@@ -179,7 +179,7 @@ object SignatureAccessChecker {
             is Stmt.For -> { walkExpr(s.iterable, out); walkStmts(s.body, out) }
             is Stmt.Loop -> walkStmts(s.body, out)
             is Stmt.Scope -> walkStmts(s.body, out)
-            is Stmt.WithContext -> { s.values.forEach { walkExpr(it, out) }; walkStmts(s.body, out) }
+            is Stmt.UsingContext -> { s.values.forEach { walkExpr(it, out) }; walkStmts(s.body, out) }
             is Stmt.Effect -> walkStmts(s.body, out)
             is Stmt.Defer -> walkStmts(s.body, out)
             is Stmt.Try -> { walkStmts(s.body, out); s.catchBody?.let { walkStmts(it, out) } }

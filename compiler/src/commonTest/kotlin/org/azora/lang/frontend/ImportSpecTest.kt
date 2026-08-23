@@ -23,13 +23,13 @@ import kotlin.test.assertTrue
 
 /**
  * An `import` statement parses to one [ImportSpec] per clause, and every semantic
- * pass reads those specs back through [ImportSpec.flatten] as `(path, selector)`
- * pairs.
+ * pass reads those specs through their metadata-preserving leaf view. The
+ * compatibility [ImportSpec.flatten] view remains for older callers.
  *
  * The structure is what the import grammar is written against - a wildcard, a
  * dotted path, and a group are three different things, and a group member carries
- * its own full path so nesting needs no base-path bookkeeping. The flat view is
- * what the machinery downstream still consumes, so the two must agree exactly.
+ * its own full path so nesting needs no base-path bookkeeping. The flat view
+ * still agrees for path/selector data, but cannot represent wildcard exclusions.
  */
 class ImportSpecTest {
 
@@ -116,11 +116,10 @@ class ImportSpecTest {
         )
     }
 
-    // -- the fields the grammar will fill in next ---------------------------
+    // -- wildcard metadata --------------------------------------------------
 
     @Test fun withoutAndAliasStartEmpty() {
-        // S1.3 and S1.4 give these a grammar; until then every spec parses
-        // unfiltered and unaliased, and nothing downstream reads them.
+        // Ordinary clauses are unfiltered and unaliased.
         val all = specs(
             """
             import std.io::*
@@ -130,6 +129,13 @@ class ImportSpecTest {
         )
         assertTrue(all.all { it.without.isEmpty() }, "no clause filters yet")
         assertTrue(all.all { it.alias == null }, "no clause aliases yet")
+    }
+
+    @Test fun leafSpecsPreserveWildcardExclusionsThatTheCompatibilityPairsCannotCarry() {
+        val statement = Parser(Lexer("import a.b::{*, without (x, y)}").tokenize()).parse().items
+            .filterIsInstance<TopLevel.UseImport>().single()
+        assertEquals(listOf("a.b" to "*"), statement.imports)
+        assertEquals(listOf("x", "y"), statement.importSpecs.single().without)
     }
 
     // -- construction from flat pairs ---------------------------------------

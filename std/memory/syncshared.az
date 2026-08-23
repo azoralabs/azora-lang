@@ -28,6 +28,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.memory.syncshared
 
 /**
@@ -57,7 +58,7 @@ oper.* [self: SyncShared<T>&]: T {
  */
 @Since("0.1")
 impl Clone for SyncShared<T> {
-    func clone[self: Self&]() {
+    func &.clone() {
         return SyncShared<T>(self.raw, self.count)
     }
 }
@@ -65,22 +66,22 @@ impl Clone for SyncShared<T> {
 impl SyncShared<T> {
     /** The pointed-to value. */
     @Since("0.1")
-    prop get[self: Self&]: T = self.raw.*
+    prop &.get: T = self.raw.*
 
     /** Replaces the pointed-to value without changing ownership. */
     @Experimental(since: "0.1")
-    func set[self: Self!](value: T) { self.raw[0] = value }
+    func !.set(value: T) { self.raw[0] = value }
 
     /** Records a new shared owner. Returns the new reference count. */
     @Experimental(since: "0.1")
-    func retain[self: Self!](): Int {
+    func !.retain(): Int {
         self.count = self.count + 1
         return self.count
     }
 
     /** Drops a shared owner; reclaims the allocation when the count reaches zero. */
     @Experimental(since: "0.1")
-    func release[self: Self!](): Int {
+    func !.release(): Int {
         self.count = self.count - 1
         if self.count <= 0 {
             purge self.raw
@@ -90,14 +91,14 @@ impl SyncShared<T> {
 
     /** The current number of live references. */
     @Since("0.1")
-    prop refCount[self: Self&]: Int = self.count
+    prop &.refCount: Int = self.count
 
     /** The underlying `T*` (escapes the counting). */
     @Since("0.1")
-    prop ptr[self: Self&]: T* = self.raw
+    prop &.ptr: T* = self.raw
 }
 
 @Experimental(since: "0.1")
-func syncSharedOf<T>(value: T): SyncShared<T> {
+func<T> syncSharedOf(value: T): SyncShared<T> {
     return SyncShared(alloc value, 1)
 }

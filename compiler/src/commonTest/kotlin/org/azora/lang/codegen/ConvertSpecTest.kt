@@ -71,7 +71,7 @@ class ConvertSpecTest {
                 var value: String
             }
             impl Into<String> for Label {
-                prop into[self: Self&]: String {
+                prop &.into: String {
                     return "Label(" + self.value + ")"
                 }
             }

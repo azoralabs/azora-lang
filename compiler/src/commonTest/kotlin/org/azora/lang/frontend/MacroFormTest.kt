@@ -88,7 +88,7 @@ class MacroFormTest {
 
     @Test fun aSourceFragmentMacroIsUnaffected() {
         // `macro @name => inline "…"` has no arms at all and keeps its own path.
-        val items = parse("macro @react => inline \"[; &]\"")
+        val items = parse("macro @react => inline \"[&]\"")
         assertTrue(items.filterIsInstance<TopLevel.Meta>().single().name.startsWith("__fragment__"))
     }
 

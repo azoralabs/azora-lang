@@ -13,6 +13,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.memory.weak
 
 @Since("0.1")
@@ -32,7 +33,7 @@ oper.* [self: Weak<T>&]: T { // here we need to implement mandatory deref...
  */
 @Since("0.1")
 impl Clone for Weak<T> {
-    func clone[self: Self&]() { // return type must be specified mandatory, it is not Unit, fix in compiler
+    func &.clone() { // return type must be specified mandatory, it is not Unit, fix in compiler
         return Weak<T>(self._raw)
     }
 }
@@ -40,22 +41,22 @@ impl Clone for Weak<T> {
 impl Weak<T> {
     /** Returns the referenced value (panics if the pointer is null). */
     @Experimental(since: "0.1")
-    prop get[self: Self&]: T {
+    prop &.get: T {
         assert self._raw != null { "Weak pointer is null" }
         return self._raw.*
     }
 
     /** Returns the raw `T*` (may be null). */
     @Since("0.1")
-    prop ptr[self: Self&]: T* = self._raw
+    prop &.ptr: T* = self._raw
 
     /** `true` when the pointer is null (does not own a reference). */
     @Since("0.1")
-    prop isNull[self: Self&]: Bool = self._raw == null
+    prop &.isNull: Bool = self._raw == null
 }
 
 /** Wraps a raw `T*` as a non-owning `Weak<T>`. */
 @Experimental(since: "0.1")
-func weakOf<T>(ptr: T*): Weak<T> {
+func<T> weakOf(ptr: T*): Weak<T> {
     return Weak(ptr)
 }

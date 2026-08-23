@@ -66,7 +66,7 @@ class IgnoredParameterTest {
             }
 
             impl Box {
-                func constant[_: Self&](_: Int): Int {
+                func (_: Self&).constant(_: Int): Int {
                     return 7
                 }
             }

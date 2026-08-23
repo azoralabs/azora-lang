@@ -237,7 +237,7 @@ fields the compiler owns, so field-wise reasoning would be a guess.
 
 ```azora
 bridge spec Equal requires PartialEqual
-bridge spec Clone { func clone[self: Self&](): Self }
+bridge spec Clone { func &.clone(): Self }
 ```
 
 Implementing a bridge spec does not require writing its members - the compiler

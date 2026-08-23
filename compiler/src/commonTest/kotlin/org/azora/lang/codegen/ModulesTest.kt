@@ -62,7 +62,7 @@ class ModulesTest {
                 var _cache: Int
             }
             impl Body {
-                func bumped[self: Self&](): Int {
+                func &.bumped(): Int {
                     return self._cache + 1
                 }
             }

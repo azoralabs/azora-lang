@@ -24,6 +24,7 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 module std.algorithm.search
 
 import std.container.array::*
@@ -45,7 +46,7 @@ error SearchError {
  * @return The index of the first occurrence, or -1 if not found.
  */
 @Experimental(since: "0.1")
-func linearSearch<T: Order>(arr: Array<T>, target: T): Int {
+func<T: Order> linearSearch(arr: Array<T>, target: T): Int {
     for i in 0..<arr.size {
         if arr[i] == target {
             return i
@@ -64,7 +65,7 @@ func linearSearch<T: Order>(arr: Array<T>, target: T): Int {
  * @return The index of the target, or -1 if not found.
  */
 @Experimental(since: "0.1")
-func binarySearch<T: Order>(arr: Array<T>, target: T): Int {
+func<T: Order> binarySearch(arr: Array<T>, target: T): Int {
     var lo = 0
     var hi = arr.size - 1
     while lo <= hi {
@@ -88,7 +89,7 @@ func binarySearch<T: Order>(arr: Array<T>, target: T): Int {
  * @return The smallest element.
  */
 @Experimental(since: "0.1")
-func minOf<T: Order>(arr: Array<T>): T
+func<T: Order> minOf(arr: Array<T>): T
 in {
     assert arr.size > 0 { "Input must not be empty" }
 } scope {
@@ -108,7 +109,7 @@ in {
  * @return The largest element.
  */
 @Experimental(since: "0.1")
-func maxOf<T: Order>(arr: Array<T>): T
+func<T: Order> maxOf(arr: Array<T>): T
 in {
     assert arr.size > 0 { "Input must not be empty" }
 } scope {
@@ -129,7 +130,7 @@ in {
  * @return The number of times target appears in the array.
  */
 @Experimental(since: "0.1")
-func count<T: Order>(arr: Array<T>, target: T): Int
+func<T: Order> count(arr: Array<T>, target: T): Int
 out {
     assert it >= 0 { "count must return non-negative" }
 } scope {
@@ -150,7 +151,7 @@ out {
  * @return The index of the first match, or -1 if none found.
  */
 @Experimental(since: "0.1")
-func findIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+func<T> findIndex(arr: Array<T>, pred: (T) -> Bool): Int {
     for i in 0..<arr.size {
         if pred(arr[i]) {
             return i
@@ -167,7 +168,7 @@ func findIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
  * @return The index of the last match, or -1 if none found.
  */
 @Experimental(since: "0.1")
-func findLastIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
+func<T> findLastIndex(arr: Array<T>, pred: (T) -> Bool): Int {
     var result = -1
     for i in 0..<arr.size {
         if pred(arr[i]) {
@@ -185,6 +186,6 @@ func findLastIndex<T>(arr: Array<T>, pred: (T) -> Bool): Int {
  * @return true if the element is found.
  */
 @Experimental(since: "0.1")
-func arrayContains<T: Order>(arr: Array<T>, target: T): Bool {
+func<T: Order> arrayContains(arr: Array<T>, target: T): Bool {
     return linearSearch<T>(arr, target) >= 0
 }

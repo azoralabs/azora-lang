@@ -269,7 +269,7 @@ pack User {
 }
 
 impl User {
-    prop displayName: String = self.name
+    prop &.displayName: String = self.name
 }
 
 fin id = bind User::id
@@ -454,7 +454,7 @@ An inherent computed property can be referenced:
 
 ```azora
 impl User {
-    prop displayName: String = self.name
+    prop &.displayName: String = self.name
 }
 
 fin display = bind User::displayName
@@ -468,7 +468,7 @@ A property required by a spec preserves normal witness dispatch when the owner
 type is generic:
 
 ```azora
-func render<T>(value: T&) where T is PrettyPrint {
+func<T> render(value: T&) where T is PrettyPrint {
     fin pretty = bind T::pretty
     println(pretty.read(value))
 }
@@ -551,7 +551,7 @@ pack Box<T> {
     var value: T
 }
 
-func property<T>(): MutablePropertyRef<Box<T>, T> {
+func<T> property(): MutablePropertyRef<Box<T>, T> {
     return bind Box<T>::value
 }
 ```

@@ -128,14 +128,14 @@ A bracketed list stands for the lines it would have been written as. It works
 on either side, and nothing past the parser knows about it.
 
 ```azora
-fin [oldKeys, oldValues] = with self { [keys, values] }   // read members of one value
+fin [oldKeys, oldValues] = using self { [keys, values] }  // read members of one value
 let [keys: K*, values: V*] = alloc .() * capacity         // each name may state its type
 fin [a, b] = [1, 2]                                       // one value per name
 
 self.[keys, values] = alloc .() * capacity                // the expression, per member
 self.[capacity, size] = [newCapacity, 0]                  // one value per member
-self.[keys[i], values[i]] = with self { [keys[i + 1], values[i + 1]] }
-[newKeys[i], newValues[i]] = with self { [keys[i], values[i]] }
+self.[keys[i], values[i]] = using self { [keys[i + 1], values[i + 1]] }
+[newKeys[i], newValues[i]] = using self { [keys[i], values[i]] }
 purge [oldKeys, oldValues]                                // release several at once
 ```
 
@@ -150,7 +150,7 @@ func add(a: Int, b: Int = 0): Int {
     return a + b
 }
 
-func identity<T>(value: T): T { return value }
+func<T> identity(value: T): T { return value }
 ```
 
 - Default parameters, named arguments (`add(b: 2, a: 1)`)

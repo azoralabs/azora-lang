@@ -21,13 +21,14 @@
  *
  * @since 0.1
  */
+@Supress(.Unused)
 exposed module std.primitive
 
 import std.traits::*
 
 /** Boolean truth value: `true` or `false`, ordered `false < true`. */
 @Since("0.1")
-bridge pack Bool derives [PartialEqual, Equal, Order, Hash]
+bridge pack Bool derives (PartialEqual, Equal, Order, Hash)
 
 /**
  * Signed integer of `N` bits. The default integer type is `Int<32>`.
@@ -39,12 +40,12 @@ bridge pack Bool derives [PartialEqual, Equal, Order, Hash]
  */
 @Since("0.1")
 bridge pack Int<N: __uint = 32>(__int)
-derives [Integer, SignedInteger, SignedNumber, PartialEqual, Equal, Order, Hash]
+derives (Integer, SignedInteger, SignedNumber, PartialEqual, Equal, Order, Hash)
 
 /** Unsigned integer of `N` bits. */
 @Since("0.1")
 bridge pack UInt<N: __uint = 32>(__uint)
-derives [Integer, UnsignedInteger, UnsignedNumber, PartialEqual, Equal, Order, Hash]
+derives (Integer, UnsignedInteger, UnsignedNumber, PartialEqual, Equal, Order, Hash)
 
 /**
  * Signed integer as wide as a pointer on the target.
@@ -55,12 +56,12 @@ derives [Integer, UnsignedInteger, UnsignedNumber, PartialEqual, Equal, Order, H
  */
 @Experimental(since: "0.1")
 bridge pack ISize(__int)
-derives [Integer, SignedInteger, SignedNumber, PartialEqual, Equal, Order, Hash]
+derives (Integer, SignedInteger, SignedNumber, PartialEqual, Equal, Order, Hash)
 
 /** Unsigned integer as wide as a pointer on the target. */
 @Experimental(since: "0.1")
 bridge pack USize(__uint)
-derives [Integer, UnsignedInteger, UnsignedNumber, PartialEqual, Equal, Order, Hash]
+derives (Integer, UnsignedInteger, UnsignedNumber, PartialEqual, Equal, Order, Hash)
 
 /** Marker spec for the integer types (signed and unsigned). */
 @Since("0.1")
@@ -153,7 +154,7 @@ inline for name in ["Byte", "Short", "Int", "Long", "Cent"] with index {
      * @member sizeBits Size in bits.
      */
     @Since("0.1")
-    impl [$name, U$name] {
+    impl ($name, U$name) {
         inline fin sizeBytes: Int = 1 << index
         inline fin sizeBits: Int = 8 << index
     }
@@ -176,7 +177,7 @@ inline for name in ["Half", "Float", "Double", "Quad"] with index {
     /** ${16 << index}-bit IEEE-754 binary floating-point number. */
     @Since("0.1")
     bridge pack $name(__float)
-    derives [FloatingPoint, SignedNumber, UnsignedNumber, PartialEqual, PartialOrder]
+    derives (FloatingPoint, SignedNumber, UnsignedNumber, PartialEqual, PartialOrder)
 
     /**
      * $name limits and special values.

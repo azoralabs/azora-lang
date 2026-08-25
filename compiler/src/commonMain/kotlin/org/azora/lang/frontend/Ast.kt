@@ -1347,6 +1347,10 @@ sealed class TypeRef {
          * depends on it. Empty for every ordinary type reference.
          */
         val valueArgs: List<Expr> = emptyList(),
+        /** Exact written name token, absent for compiler-synthesized references. */
+        val line: Int = 0,
+        val column: Int = 0,
+        val length: Int = 0,
     ) : TypeRef() {
         override fun toString() = when {
             TypeFunctionCall.isCall(this) -> "${TypeFunctionCall.name(this)}<${args.joinToString(", ")}>"
@@ -2068,16 +2072,16 @@ data class FuncDecl(
     /** Receiver name for impl/extension methods (conventionally `self`, but arbitrary). */
     val receiverName: String = "self",
     /**
-     * Whether the declaration *wrote* a receiver (`func f[self: Self&]()`).
+     * Whether the declaration *wrote* a receiver (`func &.f()`).
      *
      * [receiverModifier] and [receiverName] always hold a value, so they cannot
      * answer this - and inside an `impl` the answer is what separates a member of
      * a *value* from a member of the *type*: `func make(): Arena` is
-     * `Arena.make()`, `func size[self: Self&](): Int` is `arena.size()`.
+     * `Arena.make()`, `func &.size(): Int` is `arena.size()`.
      */
     val declaresReceiver: Boolean = true,
     /**
-     * Bracketed extension receiver: `func m()[self: Type&]: R`. When present, the
+     * Extension receiver: `func<T> T&.m(): R`. When present, the
      * function is an extension method on the receiver's type (callable as
      * `value.m()` or inside `using value { m() }`). The param's type carries the
      * borrow (`Type&` → `ref`, `Type!` → `mut ref`).
@@ -2102,13 +2106,13 @@ data class FuncDecl(
     /**
      * How many leading [params] the call site does not write.
      *
-     * A `ctor` may name receivers beyond its own - `ctor[self: Self&, scope: Scope&]`
-     * - and those arrive as leading parameters filled from the `with` block or
+     * A callable may name contextual receivers beyond its own - `func (Self&, Scope&).render()`
+     * - and those arrive as leading parameters filled from the `using` block or
      * receiver lambda the call sits in. Zero for everything else.
      */
     val contextualParams: Int = 0,
     /**
-     * `ctor[self: Self!](…) * count` - the ctor a repeated construction selects.
+     * `ctor .(…) * count` - the ctor a repeated construction selects.
      *
      * The repetition arrives as a trailing `count` parameter, so without this a
      * repeated ctor is indistinguishable from an ordinary one of the same arity
@@ -2149,7 +2153,7 @@ enum class MemberCallStyle {
      * A property reached through the type rather than a value - `Type::name`.
      *
      * A spec requirement written without a receiver (`prop rank: Int`) asks for one
-     * of these, and `impl Spec for Type:: { … }` supplies it.
+     * of these, and a receiver-free member in `impl Spec for Type { … }` supplies it.
      */
     STATIC_PROPERTY,
 
@@ -2157,7 +2161,7 @@ enum class MemberCallStyle {
      * A method reached through the type rather than a value - `Type::name(args)`.
      *
      * A spec requirement written without a receiver (`func from(value: T): Self`)
-     * asks for one of these, and `impl Spec for Type:: { … }` supplies it. It is
+     * asks for one of these, and `impl Spec for Type { … }` supplies it. It is
      * the only shape a *constructing* conversion can have: `From` builds a value,
      * so there is no `self` to build it from.
      */
@@ -2338,9 +2342,9 @@ data class SpecCallback(
  * ```
  * import std.io.*                             All
  * import std.math.abs                         Path
- * import std.container.[list.*, map.*]        Group
+ * import std.container::{list::*, map::*}     Group
  * import std.x::{*, without (Y, Z)}            All + without
- * import std.container.[list.*, map.*] as std alias
+ * import std.container::{list::*, map::*} as std alias
  * ```
  *
  * A [Selector.Group] member carries its own fully-joined [path], so a group nests
@@ -2858,6 +2862,10 @@ sealed class TopLevel {
         val declaringModule: String? = null,
         /** Source scope path of the implemented spec/decorator, when qualified. */
         val traitQualifier: String? = null,
+        /** Exact written location of [traitName], independent of the `impl`/`pack` declaration head. */
+        val traitLine: Int = line,
+        val traitColumn: Int = column,
+        val traitLength: Int = traitName?.length ?: 0,
         /** Generated-conformance request written with `derive` or a declaration's `derives` clause. */
         val isDerived: Boolean = false,
         /** Whether the source contained an implementation body, including an explicitly empty `{}`. */

@@ -22,6 +22,7 @@ import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.TokenType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -65,7 +66,7 @@ class ComparisonSpecTest {
         val program = parse(
             """
             spec Order {
-                oper<=> [self: Self&](rhs: Self&): Compare
+                oper<=> &.(rhs: Self&): Compare
             }
             func main() {}
             """.trimIndent(),
@@ -74,24 +75,26 @@ class ComparisonSpecTest {
         assertEquals(listOf("oper<=>"), spec.methods.map { it.name })
     }
 
-    @Test fun specOperatorRequirementMayOmitTheReceiver() {
-        val program = parse(
-            """
-            spec Negate {
-                oper-: Self
-            }
-            func main() {}
-            """.trimIndent(),
-        )
-        val spec = program.items.filterIsInstance<org.azora.lang.frontend.TopLevel.Spec>().single()
-        assertEquals(listOf("oper-"), spec.methods.map { it.name })
+    @Test fun specOperatorRequirementMustDeclareTheReceiver() {
+        val failure = assertFailsWith<IllegalStateException> {
+            parse("spec Negate {\n    oper-: Self\n}\n")
+        }
+        assertTrue("oper- &.(…)" in failure.message.orEmpty(), failure.message.orEmpty())
+    }
+
+    @Test fun bracketedOperatorReceiverIsRejectedWithTheCanonicalReplacement() {
+        val failure = assertFailsWith<IllegalStateException> {
+            parse("spec Bitwise<Rhs, Out> {\n    oper& [self: Self&](rhs: Rhs&): Out\n}\n")
+        }
+        assertTrue("operator receivers no longer use brackets" in failure.message.orEmpty())
+        assertTrue("oper& &.(…)" in failure.message.orEmpty(), failure.message.orEmpty())
     }
 
     @Test fun specMixesOperFuncAndProp() {
         val program = parse(
             """
             spec Container {
-                oper[] [self: Self&](index: Int): Int
+                oper[] &.(index: Int): Int
                 func &.size(): Int
                 prop &.empty: Bool
             }
@@ -106,14 +109,14 @@ class ComparisonSpecTest {
         val result = analyze(
             """
             spec Eq {
-                oper== [self: Self&](rhs: Self&): Bool
+                oper== &.(rhs: Self&): Bool
             }
             pack Point {
                 var x: Int
                 var y: Int
             }
             impl Eq for Point {
-                oper== [self: Self&](rhs: Self&): Bool {
+                oper== &.(rhs: Self&): Bool {
                     return self.x == rhs.x && self.y == rhs.y
                 }
             }
@@ -129,13 +132,13 @@ class ComparisonSpecTest {
         val result = analyze(
             """
             spec Order {
-                oper<=> [self: Self&](rhs: Self&): Int
+                oper<=> &.(rhs: Self&): Int
             }
             pack Version {
                 var major: Int
             }
             impl Order for Version {
-                oper<=> [self: Self&](rhs: Self&): Int {
+                oper<=> &.(rhs: Self&): Int {
                     return self.major - rhs.major
                 }
             }
@@ -152,12 +155,12 @@ class ComparisonSpecTest {
         val result = analyze(
             """
             spec PartialEqual<Rhs> {
-                oper== [self: Self&](rhs: Rhs&): Bool
+                oper== &.(rhs: Rhs&): Bool
             }
             pack A { var v: Int }
             pack B { var v: Int }
             impl PartialEqual<B> for A {
-                oper== [self: Self&](rhs: B&): Bool {
+                oper== &.(rhs: B&): Bool {
                     return self.v == rhs.v
                 }
             }
@@ -174,7 +177,7 @@ class ComparisonSpecTest {
         val result = analyze(
             """
             spec Order {
-                oper<=> [self: Self&](rhs: Self&): Int
+                oper<=> &.(rhs: Self&): Int
             }
             spec Tagged {
                 prop &.tag: Int

@@ -553,7 +553,7 @@ private class MonoContext(
     /**
      * Emits one copy of each member that is generic over its own const parameters.
      *
-     * `oper * <N: Int> [self: Int&](rhs: Vec<Ty, N>&)` is not a member of a
+     * `oper * <N: Int> Int&.(rhs: Vec<Ty, N>&)` is not a member of a
      * monomorphised pack - it lives on `Int` - yet its body depends on `N`, which
      * only a `Vec` specialization fixes. So the specializations are what drive it:
      * one copy per `Vec<Ty, N>` that exists, with `N` bound.
@@ -698,7 +698,7 @@ private class MonoContext(
     /**
      * Emits every static member once per specialization of the pack it is on.
      *
-     * `impl Vec<T, N>:: { fin zero = Vec<T, N>(0) }` describes one value per layout,
+     * `impl Vec<T, N> { fin zero = Vec<T, N>(0) }` describes one value per layout,
      * not one value: `Vec<Int, 2>::zero` and `Vec<Int, 3>::zero` differ in type and
      * in field count. Each copy has the pack's parameters bound, so `N` is a number
      * the compile-time machinery can act on rather than a name.

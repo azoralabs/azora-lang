@@ -31,7 +31,32 @@ data class SemanticResult(
     val program: Program,
     val symbolTable: SymbolTable,
     val effects: List<EffectChecker.EffectInfo>,
-    val errors: List<String>
+    val errors: List<String>,
+    val unresolvedSymbols: List<SemanticUnresolvedSymbol> = emptyList(),
+    val redundantVariantQualifiers: List<SemanticRedundantVariantQualifier> = emptyList(),
+)
+
+enum class SemanticSymbolNamespace { FUNCTION, VALUE }
+
+/** Exact source occurrence retained by semantic name resolution for tooling. */
+data class SemanticUnresolvedSymbol(
+    val internalName: String,
+    val sourceName: String,
+    val namespace: SemanticSymbolNamespace,
+    val line: Int,
+    val column: Int,
+    val length: Int,
+    val renderedMessage: String,
+)
+
+/** A compiler-proven `Type.Case` occurrence whose expected type permits `.Case`. */
+data class SemanticRedundantVariantQualifier(
+    val qualifier: String,
+    val variant: String,
+    val line: Int,
+    val column: Int,
+    /** Source length of `Type.`; replacing this span with `.` retains the case. */
+    val length: Int,
 )
 
 /**
@@ -196,10 +221,18 @@ class SemanticPipeline(
         }
 
         // Type Resolution + Inference (on the CTCE-stabilized AST)
-        val typeErrors = TypeResolver(table).resolve(currentProgram)
+        val typeResolver = TypeResolver(table)
+        val typeErrors = typeResolver.resolve(currentProgram)
         if (typeErrors.isNotEmpty()) {
             allErrors.addAll(typeErrors)
-            return SemanticResult(currentProgram, table, emptyList(), allErrors)
+            return SemanticResult(
+                currentProgram,
+                table,
+                emptyList(),
+                allErrors,
+                unresolvedSymbols = typeResolver.unresolvedSymbols,
+                redundantVariantQualifiers = typeResolver.redundantVariantQualifiers,
+            )
         }
 
         if (iteration >= maxCtfeIterations) {
@@ -223,6 +256,12 @@ class SemanticPipeline(
         val effectResult = EffectChecker().check(currentProgram)
         allErrors.addAll(effectResult.errors)
 
-        return SemanticResult(currentProgram, table, effectResult.effects, allErrors)
+        return SemanticResult(
+            currentProgram,
+            table,
+            effectResult.effects,
+            allErrors,
+            redundantVariantQualifiers = typeResolver.redundantVariantQualifiers,
+        )
     }
 }

@@ -230,9 +230,7 @@ impl ReflectedParam {
      */
     @Experimental(since: "0.1")
     bridge deepinline prop<D> &.annotMeta: D
-}
 
-impl ReflectedParam:: {
     /**
      * The type of a parameter's default, given what is known about the
      * parameter itself.

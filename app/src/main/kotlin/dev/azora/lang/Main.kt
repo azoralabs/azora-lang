@@ -122,6 +122,13 @@ private data class SourceCompilation(
     val libraries: List<LibrarySource>,
 )
 
+private val MODULE_HEADER = Regex(
+    """(?m)^\s*(?:(?:export|exposed|confined|protected)\s+)*module\s+([A-Za-z_][\w.]*)""",
+)
+
+private fun declaredModule(source: String): String? =
+    MODULE_HEADER.find(source)?.groupValues?.get(1)
+
 /**
  * The directory a module's own path is relative to.
  *
@@ -139,14 +146,17 @@ private data class SourceCompilation(
  */
 private fun sourceRootOf(entryFile: File, source: String): File? {
     val dir = entryFile.absoluteFile.parentFile ?: return null
-    val declared = Regex("""(?m)^\s*module\s+([A-Za-z_][\w.]*)""").find(source)
-        ?.groupValues?.get(1)
-        ?: return dir
+    val declared = declaredModule(source) ?: return dir
 
     val segments = declared.split('.')
     var current: File = dir
     var index = segments.lastIndex
-    if (current.name != segments[index] && entryFile.absoluteFile.nameWithoutExtension == segments[index]) {
+    // The IR preview writes an unsaved buffer beside its source as
+    // `.azora-preview-<name>.az`; it is still that source for module-root
+    // purposes. Treating the scratch name literally makes `std/reflection.az`
+    // look rooted at `std/` and feeds the whole standard library back twice.
+    val sourceStem = entryFile.absoluteFile.nameWithoutExtension.removePrefix(".azora-preview-")
+    if (current.name != segments[index] && sourceStem == segments[index]) {
         index--
     }
     while (index >= 0 && current.name == segments[index]) {
@@ -163,6 +173,22 @@ private fun resolveCompilation(entryFile: File): SourceCompilation {
     // and every cross-module `import` fails with "undefined function".
     val sourceDir = sourceRootOf(entryFile, entrySource)
         ?: return SourceCompilation(entrySource, emptyList())
+
+    // A file under the active `std/` package is already one of AzStdlib's
+    // modules. Feeding every sibling back as an additional library parses the
+    // same standard library twice (once from AzStdlib, once from this scan),
+    // producing duplicate type functions in the IR preview. It also used to
+    // scan unrelated examples because `module std.x` correctly makes the
+    // repository/package directory the source root. Standard-library imports
+    // are resolved by AzStdlib itself, so the entry is the only extra source.
+    val moduleName = declaredModule(entrySource)
+    val stdRoot = File(sourceDir, "std").canonicalFile
+    val entry = entryFile.canonicalFile
+    val isStdModule = moduleName == "std" || moduleName?.startsWith("std.") == true
+    val isInsideStdRoot = entry.toPath().startsWith(stdRoot.toPath())
+    if (isStdModule && isInsideStdRoot) {
+        return SourceCompilation(entrySource, emptyList())
+    }
 
     // Find all `.az` files in the source directory and subdirectories (except the entry file itself)
     val siblingFiles = sourceDir.walkTopDown()

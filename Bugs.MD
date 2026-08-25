@@ -89,7 +89,7 @@ compiler/src/desktopTest/kotlin/org/azora/lang/codegen/LlvmRegressionExecTest.kt
 ## 3. Removed constructs still exercised (2)
 
 `impl oper... for Type` was removed; an operator is declared beside its type as
-`oper[] [self: Type&](index: Int): T { ... }`.
+`oper[] Type&.(index: Int): T { ... }`.
 
 ```
 compiler/src/commonTest/kotlin/org/azora/lang/codegen/Tier1PolishTest.kt:480            operIndexGetAndSet

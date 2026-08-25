@@ -16,6 +16,7 @@
 
 package org.azora.lang.stdlib
 
+import org.azora.lang.LibrarySource
 import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
@@ -37,6 +38,29 @@ import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.TypeTypeArm
 import org.azora.lang.putIfAbsentCompat
 
+/** A written conformance reference that resolves to a library declaration but is not imported. */
+data class UnresolvedContractAccess(
+    val name: String,
+    val module: String,
+    val line: Int,
+    val column: Int,
+    val length: Int,
+)
+
+/** A written type reference that names a known library type outside the visible imports. */
+data class UnresolvedTypeAccess(
+    val name: String,
+    val module: String,
+    val line: Int,
+    val column: Int,
+    val length: Int,
+)
+
+data class TypeAccessValidation(
+    val errors: List<String>,
+    val unresolved: List<UnresolvedTypeAccess>,
+)
+
 /**
  * Injects standard-library declarations into a user compilation unit.
  *
@@ -44,9 +68,9 @@ import org.azora.lang.putIfAbsentCompat
  * only after importing it. With the bundled stdlib that looks like:
  *
  * - `import std.math` - access to that module while preserving its scope path (`math::abs(x)`),
- * - `import std.*` / `import std.{math, concurrency}` - wildcard/grouped module imports,
+ * - `import std::*` / `import std::{math, concurrency}` - wildcard/grouped module imports,
  * - `import std.math.abs` - selective import of listed names,
- * - `import std.*` - every module below that namespace,
+ * - `import std::*` - every module below that namespace,
  * - importing a module never creates bare aliases for declarations inside a scope,
  * - compile-time type functions may instead use a complete module-plus-scope path,
  *   such as `std.traits.promote!(Int, Double)`.
@@ -119,7 +143,7 @@ class StdlibInjector private constructor(
          * exactly the same rules as bundled standard-library modules.
          */
         fun create(
-            additionalSources: List<Pair<String, String>> = emptyList(),
+            additionalSources: List<LibrarySource> = emptyList(),
             configOverrides: Map<String, String> = emptyMap(),
         ): StdlibInjector {
             if (additionalSources.isEmpty() && configOverrides.isEmpty()) return standard
@@ -137,7 +161,9 @@ class StdlibInjector private constructor(
             // know it exists. The failure is kept and reported by
             // [unusableLibraries] against what the entry actually reaches.
             val skipped = mutableListOf<SkippedSource>()
-            val additionalPrograms = additionalSources.mapNotNull { (path, source) ->
+            val additionalPrograms = additionalSources.mapNotNull { library ->
+                val path = library.path
+                val source = library.source
                 val program = try {
                     Parser(Lexer(source).tokenize(), typeListEnv, enumEnv, typeListScope = listScopes).parse()
                 } catch (error: Exception) {
@@ -150,13 +176,15 @@ class StdlibInjector private constructor(
                     )
                     return@mapNotNull null
                 }
-                try {
-                    checkFileMatchesModule(path, program.moduleName)
-                } catch (error: Exception) {
-                    skipped.add(
-                        SkippedSource(path, program.moduleName, error.message ?: error.toString())
-                    )
-                    return@mapNotNull null
+                if (library.validateModulePath) {
+                    try {
+                        checkFileMatchesModule(path, program.moduleName)
+                    } catch (error: Exception) {
+                        skipped.add(
+                            SkippedSource(path, program.moduleName, error.message ?: error.toString())
+                        )
+                        return@mapNotNull null
+                    }
                 }
                 program
             }
@@ -199,6 +227,19 @@ class StdlibInjector private constructor(
             if (segments.isEmpty()) return
             val moduleSegments = moduleName.split('.')
 
+            // IDE/build integrations commonly keep the canonical absolute path
+            // as LibrarySource.path.  In that representation the source-root
+            // prefix is intentionally opaque to this validator; only the tail
+            // that spells the declared module is meaningful.  Treating every
+            // directory before that tail as part of the module produced false
+            // errors such as
+            // `/workspace/std/container/array.az` vs `std.container.array`.
+            if (segments.size >= moduleSegments.size &&
+                segments.takeLast(moduleSegments.size) == moduleSegments
+            ) {
+                return
+            }
+
             // The path spells the end of the module; the segments it leaves out
             // are the package prefix, which a single source root cannot know.
             if (segments.size <= moduleSegments.size &&
@@ -213,6 +254,15 @@ class StdlibInjector private constructor(
                 segments.size <= moduleSegments.size + 1 &&
                 segments.last() == segments[segments.size - 2] &&
                 segments.dropLast(1) == moduleSegments.takeLast(segments.size - 1)
+            ) {
+                return
+            }
+
+            // Absolute folder-index form: `/workspace/a/b/b.az` denotes
+            // `module a.b` just as the relative `a/b/b.az` form does.
+            if (segments.size >= moduleSegments.size + 1 &&
+                segments.last() == segments[segments.lastIndex - 1] &&
+                segments.dropLast(1).takeLast(moduleSegments.size) == moduleSegments
             ) {
                 return
             }
@@ -528,11 +578,44 @@ class StdlibInjector private constructor(
     }
 
     /**
+     * Resolves every written `derives`/`impl … for …` contract independently.
+     *
+     * This is structured compiler data, not rendered diagnostic text. The
+     * parser retained the exact token location for every contract head, so two
+     * names on one line remain two distinct source locations all the way to an
+     * IDE client.
+     */
+    fun unresolvedContracts(program: Program): List<UnresolvedContractAccess> {
+        val visibleDeclarations = buildSet {
+            addAll(index.implicitRootItems.values)
+            addAll(importedItems(program).values)
+        }
+        val localGlobalTypes = program.items.mapNotNull(::typeDeclarationName)
+            .filterTo(mutableSetOf()) { it !in program.scopeTypeNamespaces }
+        return program.items.mapNotNull { item ->
+            val impl = item as? TopLevel.Impl ?: return@mapNotNull null
+            val name = impl.traitName ?: return@mapNotNull null
+            if (impl.traitQualifier != null || name in localGlobalTypes) return@mapNotNull null
+            if (program.scopeTypeNamespaces.containsKey(name)) return@mapNotNull null
+            val declaration = index.items[name] ?: return@mapNotNull null
+            if (declaration in visibleDeclarations) return@mapNotNull null
+            val module = index.moduleOfName[name] ?: return@mapNotNull null
+            UnresolvedContractAccess(
+                name = name,
+                module = module,
+                line = impl.traitLine,
+                column = impl.traitColumn,
+                length = impl.traitLength,
+            )
+        }.distinct()
+    }
+
+    /**
      * Validates source-level type qualification independently from declaration
      * injection. Importing a module makes a type visible, but a type declared in
      * a named scope must still be written as `Scope::Type` outside that scope.
      */
-    fun validateTypeAccess(program: Program): List<String> {
+    fun validateTypeAccess(program: Program): TypeAccessValidation {
         val visibleDeclarations = buildSet {
             addAll(index.implicitRootItems.values)
             addAll(importedItems(program).values)
@@ -540,30 +623,9 @@ class StdlibInjector private constructor(
         val localGlobalTypes = program.items.mapNotNull(::typeDeclarationName)
             .filterTo(mutableSetOf()) { it !in program.scopeTypeNamespaces }
         val errors = linkedSetOf<String>()
+        val unresolved = linkedSetOf<UnresolvedTypeAccess>()
 
         class Validator {
-
-            /**
-             * The contract of an `impl Spec for Type` or a `derives [Spec]`.
-             *
-             * A spec is named like anything else, so it is imported like
-             * anything else. Nothing else made this true: the specs of the
-             * standard library arrive in a unit anyway, pulled in behind the
-             * implementations `Int` and its siblings carry, so `derives [Equal]`
-             * would compile in a file that never mentioned `std.traits` while
-             * the very same name in a signature would not.
-             */
-            fun contract(name: String, qualifier: String?, line: Int) {
-                if (qualifier != null || name in localGlobalTypes) return
-                if (program.scopeTypeNamespaces.containsKey(name)) return
-                val declaration = index.items[name] ?: return
-                if (declaration in visibleDeclarations) return
-                val module = index.moduleOfName[name] ?: return
-                errors.add(
-                    "line $line: undefined spec or decorator '$name' - '$name' is provided by " +
-                        "'$module': add 'import $module::$name'",
-                )
-            }
 
             fun scopeSymbol(
                 name: String,
@@ -641,6 +703,26 @@ class StdlibInjector private constructor(
                             ref.name != Intrinsics.ARRAY &&
                             ref.name !in localGlobalTypes
                         ) {
+                            val libraryDeclaration = index.items[ref.name]
+                                ?.takeIf { typeDeclarationName(it) == ref.name }
+                            if (
+                                ref.qualifier == null &&
+                                libraryDeclaration != null &&
+                                libraryDeclaration !in visibleDeclarations &&
+                                ref.line > 0
+                            ) {
+                                index.moduleOfName[ref.name]?.let { module ->
+                                    unresolved.add(
+                                        UnresolvedTypeAccess(
+                                            name = ref.name,
+                                            module = module,
+                                            line = ref.line,
+                                            column = ref.column,
+                                            length = ref.length.takeIf { it > 0 } ?: ref.name.length,
+                                        ),
+                                    )
+                                }
+                            }
                             val localScope = program.scopeTypeNamespaces[ref.name]
                             val exports = index.scopeTypesByShortName[ref.name].orEmpty()
                             val visibleExports = exports.filter { it.declaration in visibleDeclarations }
@@ -977,7 +1059,6 @@ class StdlibInjector private constructor(
                     item.annotations.forEach { validator.appliedAnnotation(it, currentScope) }
                     item.traitName?.let {
                         validator.scopeSymbol(it, item.traitQualifier, item.line, currentScope, "spec or decorator")
-                        validator.contract(it, item.traitQualifier, item.line)
                     }
                     val typeParams = item.typeParams.toSet()
                     item.traitArgs.forEach { validator.type(it, item.line, typeParams, currentScope) }
@@ -1019,7 +1100,7 @@ class StdlibInjector private constructor(
                 else -> {}
             }
         }
-        return errors.toList()
+        return TypeAccessValidation(errors.toList(), unresolved.toList())
     }
 
     /** The name a top-level item declares, whatever kind of declaration it is. */
@@ -1581,7 +1662,7 @@ class StdlibInjector private constructor(
     /**
      * Top-level items grouped by the type whose `::` block declared them.
      *
-     * `impl Vec<T, N>:: { fin zero = … }` becomes the top-level `Vec__zero`, so the
+     * `impl Vec<T, N> { fin zero = … }` becomes the top-level `Vec__zero`, so the
      * owner is everything before the last `__`.
      */
     private val staticMembersByOwner: Map<String, List<String>> by lazy {

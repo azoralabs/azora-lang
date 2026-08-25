@@ -565,10 +565,9 @@ class SymbolCollector {
                         // One factory per arity the ctor can be called at, because
                         // the call site finds it by the number of arguments
                         // written. A parameter with a default makes the arity
-                        // below it callable too, and a receiver the ctor reads
-                        // from scope is not written at all - so `ctor[self: Self&,
-                        // scope: Scope&](value: String, key: String = "")` answers
-                        // `Text("hi")` as well as `Text("hi", "k")`.
+                        // below it callable too, so `ctor .(value: String,
+                        // key: String = "")` answers `Text("hi")` as well as
+                        // `Text("hi", "k")`.
                         if (method.name == "ctor" && method.params.isNotEmpty() && !item.isBridge) {
                             val written = method.params.drop(method.contextualParams)
                             // A ctor that declared a return type yields that; one
@@ -582,7 +581,7 @@ class SymbolCollector {
                                     params.drop(1),
                                     yields,
                                     false,
-                                    // `ctor[self](...args: T)` - a variadic ctor is
+                                    // `ctor .(...args: T)` - a variadic ctor is
                                     // satisfied by any number of arguments, none
                                     // included, exactly as a variadic `func` is.
                                     isVariadic = method.params.lastOrNull()?.variadic == true,
@@ -713,6 +712,8 @@ class SymbolCollector {
                         continue
                     }
                     val provided = item.methods.map { it.name }.toSet()
+                    val specDeclaration = program.items.filterIsInstance<TopLevel.Spec>()
+                        .firstOrNull { it.name == item.traitName }
                     val required = if (contract.callback != null) {
                         listOf(callbackTraitMethodName(item.traitName, item.traitArgs, contract.callback))
                     } else {
@@ -720,6 +721,13 @@ class SymbolCollector {
                     }
                     var complete = true
                     for (req in required) {
+                        val requirementStyle = specDeclaration?.methods
+                            ?.firstOrNull { it.name == req }
+                            ?.memberCallStyle
+                        val staticRequirement = requirementStyle == MemberCallStyle.STATIC_METHOD ||
+                            requirementStyle == MemberCallStyle.STATIC_PROPERTY
+                        val supplied = req in provided ||
+                            (staticRequirement && table.lookupTypeStatic(item.typeName, req) != null)
                         // A `bridge spec` is compiler-provided: its members have a
                         // default lowering, so an implementor states the capability
                         // and only writes a member when the default is wrong.
@@ -733,7 +741,7 @@ class SymbolCollector {
                         // and that is reported precisely where one is used, naming
                         // the member. A `func` or `prop` member stays required:
                         // its absence would surface as a worse error at a call.
-                        if (req !in provided && !contract.isBridge && !isOperatorMember(req)) {
+                        if (!supplied && !contract.isBridge && !isOperatorMember(req)) {
                             complete = false
                             errors.add("line ${item.line}: '${item.typeName}' does not implement '${item.traitName}.${req}'")
                         }

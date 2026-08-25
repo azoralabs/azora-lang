@@ -31,8 +31,8 @@ import org.azora.lang.frontend.TypeRef
 /**
  * Field-wise `Equal`, `Order` and `Hash` for a pack that asked for them.
  *
- * `DIPs/OPERATOR_OVERLOADING_DIP.MD` §7: `T derives [Equal, Order]` or the
- * standalone `derive [Equal, Order] for T` is the derive request, and an `impl`
+ * `DIPs/OPERATOR_OVERLOADING_DIP.MD` §7: `T derives (Equal, Order)` or the
+ * standalone `derive (Equal, Order) for T` is the derive request, and an `impl`
  * always contains the author's own implementation. The
  * generated members are ordinary Azora AST, so the resolver, the lowerer and
  * all three backends see nothing new - the same approach `SerializationDeriver`
@@ -144,7 +144,7 @@ object ComparisonDeriver {
     private fun field(target: Expr, name: String, line: Int) =
         Expr.Member(target, name, line, 0)
 
-    /** `oper== [self: P&](rhs: P&): Bool { return self.a == rhs.a && … }` */
+    /** `oper== P&.(rhs: P&): Bool { return self.a == rhs.a && … }` */
     private fun equalsImpl(pack: TopLevel.Pack): TopLevel.Impl {
         val line = pack.line
         val comparison = pack.fields

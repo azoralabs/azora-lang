@@ -183,6 +183,10 @@ else
     echo "  Warning: no standard library sources found; IDE tooling will not"
     echo "           be able to resolve std symbols."
 fi
+if [ -f "$SCRIPT_DIR/package.azon" ]; then
+    mkdir -p "$INSTALL_DIR/Internal"
+    cp "$SCRIPT_DIR/package.azon" "$INSTALL_DIR/Internal/package.azon"
+fi
 rm -rf "$INSTALL_DIR/Internal/Std/docs/node_modules" 2>/dev/null || true
 rm -rf "$INSTALL_DIR/Internal/Std/docs/dist" 2>/dev/null || true
 
@@ -204,14 +208,18 @@ else
     echo "         bundled copy and users could not read or patch the library."
     exit 1
 fi
+if [ -f "$SCRIPT_DIR/package.azon" ]; then
+    STDLIB_MANIFEST_SRC="$SCRIPT_DIR/package.azon"
+elif [ -f "$INSTALL_DIR/Internal/package.azon" ]; then
+    STDLIB_MANIFEST_SRC="$INSTALL_DIR/Internal/package.azon"
+else
+    echo "  Error: package.azon is missing; the standard library package has no metadata."
+    exit 1
+fi
 echo "  Installing standard library sources..."
 rm -rf "$INSTALL_DIR/std"
 cp -R "$STD_SRC" "$INSTALL_DIR/std"
-if [ ! -f "$INSTALL_DIR/std/STDLIB_VERSION" ]; then
-    echo "  Error: $INSTALL_DIR/std/STDLIB_VERSION is missing; the compiler cannot"
-    echo "         verify the standard library matches it."
-    exit 1
-fi
+cp "$STDLIB_MANIFEST_SRC" "$INSTALL_DIR/package.azon"
 
 # ---------------------------------------------------------------------------
 # Write VERSION

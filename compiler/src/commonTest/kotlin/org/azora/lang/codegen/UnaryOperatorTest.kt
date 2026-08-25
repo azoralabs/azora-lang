@@ -49,7 +49,7 @@ class UnaryOperatorTest {
                 var x: Int
                 var y: Int
             }
-            oper- [self: Vec2&]: Vec2 {
+            oper- Vec2&.(): Vec2 {
                 return Vec2(0 - self.x, 0 - self.y)
             }
             func main() {
@@ -67,7 +67,7 @@ class UnaryOperatorTest {
             pack Flag {
                 var on: Bool
             }
-            oper! [self: Flag&]: Flag {
+            oper! Flag&.(): Flag {
                 return Flag(!self.on)
             }
             func main() {
@@ -83,7 +83,7 @@ class UnaryOperatorTest {
             pack Mask {
                 var bits: Int
             }
-            oper~ [self: Mask&]: Mask {
+            oper~ Mask&.(): Mask {
                 return Mask(5)
             }
             func main() {
@@ -102,10 +102,10 @@ class UnaryOperatorTest {
             pack Num {
                 var v: Int
             }
-            oper- [self: Num&]: Num {
+            oper- Num&.(): Num {
                 return Num(0 - self.v)
             }
-            oper- [self: Num&](rhs: Num&): Num {
+            oper- Num&.(rhs: Num&): Num {
                 return Num(self.v - rhs.v)
             }
             func main() {

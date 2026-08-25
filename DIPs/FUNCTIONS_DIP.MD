@@ -211,7 +211,7 @@ to read:
 | Form | Result type | Why |
 |------|-------------|-----|
 | **lambda** - `{ n: Int -> n * 2 }` | inferred from the body | there is no declaration; the body is all there is |
-| **operator overload** - `oper.* [self: Self&] { … }` | inferred from the body | the result is fixed by the operator's contract, not chosen by the author, and some are not nameable at the declaration (the deref of a variadic pack has no spelling for its member's type) |
+| **operator overload** - `oper.* &. { … }` | inferred from the body | the result is fixed by the operator's contract, not chosen by the author, and some are not nameable at the declaration (the deref of a variadic pack has no spelling for its member's type) |
 
 See `DIPs/DO_NOT_INFER_RETURN_TYPE.MD`.
 

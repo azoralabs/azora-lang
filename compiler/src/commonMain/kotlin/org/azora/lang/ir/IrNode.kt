@@ -70,7 +70,7 @@ sealed class IrType {
     object String : IrType() { override fun toString() = "String" }
     /** Boolean type. */
     object Bool : IrType() { override fun toString() = "Bool" }
-    /** Unit (void) type -- represents no meaningful value. */
+    /** Unit singleton type -- its sole value is [IrExpr.UnitLiteral]. */
     object Unit : IrType() { override fun toString() = "Unit" }
     /**
      * The bottom type -- no value has it, and nothing can be done with one.
@@ -500,6 +500,12 @@ sealed class IrExpr {
     /** The resolved type of this expression. */
     abstract val type: IrType
 
+    /** The sole value of [IrType.Unit]. Backends may erase it at ABI boundaries. */
+    object UnitLiteral : IrExpr() {
+        override val type: IrType = IrType.Unit
+        override fun toString(): kotlin.String = "Unit"
+    }
+
     /**
      * Integer literal (covers Int, UInt, Short, UShort, Long, ULong, Cent, UCent).
      *
@@ -793,6 +799,7 @@ sealed class IrExpr {
 
     /** Pretty-prints this expression as Azora IR text. */
     fun prettyPrint(): String = when (this) {
+        UnitLiteral -> "Unit"
         is IntLiteral -> "$value"
         is DoubleLiteral -> "$value"
         is StringLiteral -> "\"$value\""
@@ -1634,6 +1641,7 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
 
 private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
     when (expr) {
+        IrExpr.UnitLiteral -> sb.appendLine("${indent}IrUnitLiteral : Unit")
         is IrExpr.IntLiteral -> sb.appendLine("${indent}IrIntLiteral(${expr.value}) : ${expr.type}")
         is IrExpr.DoubleLiteral -> sb.appendLine("${indent}IrDoubleLiteral(${expr.value}) : ${expr.type}")
         is IrExpr.StringLiteral -> sb.appendLine("${indent}IrStringLiteral(\"${expr.value}\") : String")

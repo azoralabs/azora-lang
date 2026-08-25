@@ -103,22 +103,27 @@ direct spec Number {
 // these lists rather than computed: a `Cent`'s limit needs arithmetic wider
 // than the compile-time evaluator has, and `1 << 127` would be folded wrong
 // rather than refused.
-inline fin _minimums: Array<String> = @arr["-128", "-32_768", "-2_147_483_648", "-9_223_372_036_854_775_808", "-170_141_183_460_469_231_731_687_303_715_884_105_728"]
+inline fin _minimums: Array<String> = ["-128", "-32_768", "-2_147_483_648", "-9_223_372_036_854_775_808", "-170_141_183_460_469_231_731_687_303_715_884_105_728"]
 
 // The largest value of each signed width.
-inline fin _maximums: Array<String> = @arr["127", "32_767", "2_147_483_647", "9_223_372_036_854_775_807", "170_141_183_460_469_231_731_687_303_715_884_105_727"]
+inline fin _maximums: Array<String> = ["127", "32_767", "2_147_483_647", "9_223_372_036_854_775_807", "170_141_183_460_469_231_731_687_303_715_884_105_727"]
 
 // The largest value of each unsigned width.
-inline fin _unsignedMaximums: Array<String> = @arr["255", "65_535", "4_294_967_295", "18_446_744_073_709_551_615", "340_282_366_920_938_463_463_374_607_431_768_211_455"]
+inline fin _unsignedMaximums: Array<String> = ["255", "65_535", "4_294_967_295", "18_446_744_073_709_551_615", "340_282_366_920_938_463_463_374_607_431_768_211_455"]
 
 inline for name in ["Byte", "Short", "Int", "Long", "Cent"] with index {
-    /** Signed ${8 << index}-bit integer (`${_minimums[index]} … ${_maximums[index]}`). */
-    @Since("0.1")
-    typealias $name = Int<${8 << index}>
+    // Int and UInt are the generic bridge packs declared above. Their default
+    // width is already 32, so generating aliases with the same names would
+    // redeclare both symbols and duplicate their @Since metadata.
+    inline if index != 2 {
+        /** Signed ${8 << index}-bit integer (`${_minimums[index]} … ${_maximums[index]}`). */
+        @Since("0.1")
+        typealias $name = Int<${8 << index}>
 
-    /** Unsigned ${8 << index}-bit integer (`0 … ${_unsignedMaximums[index]}`). */
-    @Since("0.1")
-    typealias U$name = UInt<${8 << index}>
+        /** Unsigned ${8 << index}-bit integer (`0 … ${_unsignedMaximums[index]}`). */
+        @Since("0.1")
+        typealias U$name = UInt<${8 << index}>
+    }
 
     /**
      * $name limits.
@@ -161,10 +166,10 @@ inline for name in ["Byte", "Short", "Int", "Long", "Cent"] with index {
 }
 
 // The smallest positive normal value of each float width.
-inline fin _floatMinimums: Array<String> = @arr["6.103515625E-5", "1.4E-45", "4.9E-324", "3.36210314311209350626267781732175260E-4932"]
+inline fin _floatMinimums: Array<String> = ["6.103515625E-5", "1.4E-45", "4.9E-324", "3.36210314311209350626267781732175260E-4932"]
 
 // The largest finite value of each float width.
-inline fin _floatMaximums: Array<String> = @arr["65504.", "3.4028235E38", "1.7976931348623157E308", "1.18973149535723176508575932662800702E4932"]
+inline fin _floatMaximums: Array<String> = ["65504.", "3.4028235E38", "1.7976931348623157E308", "1.18973149535723176508575932662800702E4932"]
 
 /**
  * The limits and special values of every float width.
@@ -241,7 +246,7 @@ typealias FloatingPoints = [Half, Float, Double, Quad]
 @Since("0.1")
 typealias Numbers = Integers + FloatingPoints
 
-inline fin _ranks: Array<Int> = @arr[0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 6, 7, 8]
+inline fin _ranks: Array<Int> = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 6, 7, 8]
 
 // Promotion ranks for every numeric type.
 inline for Ty in Numbers with index {
@@ -261,7 +266,7 @@ inline for Ty in Numbers with index {
     }
 }
 
-inline for op in @arr["==", "!=", "&", "|", "^"] {
+inline for op in ["==", "!=", "&", "|", "^"] {
     /**
      * Boolean operator $op over Bool operands.
      *
@@ -270,10 +275,10 @@ inline for op in @arr["==", "!=", "&", "|", "^"] {
      * @return Bool
      */
     @Experimental(since: "0.1")
-    bridge oper$op [self: Bool&](rhs: Bool): Bool
+    bridge oper$op Bool&.(rhs: Bool): Bool
 }
 
-inline for op in @arr["+", "-"] {
+inline for op in ["+", "-"] {
     inline for Ty in SignedIntegers {
         /**
          * Unary arithmetic operator $op on a signed integer type.
@@ -282,7 +287,7 @@ inline for op in @arr["+", "-"] {
          * @return the operand type
          */
         @Experimental(since: "0.1")
-        bridge oper$op [self: Ty&]: Ty
+        bridge oper$op Ty&.(): Ty
     }
 }
 
@@ -294,10 +299,10 @@ inline for Ty in Integers {
      * @return the operand type
      */
     @Experimental(since: "0.1")
-    bridge oper~ [self: Ty&]: Ty
+    bridge oper~ Ty&.(): Ty
 }
 
-inline for op in @arr["+", "-", "*", "/", "%"] {
+inline for op in ["+", "-", "*", "/", "%"] {
     inline for LhsTy in Numbers {
         inline for RhsTy in Numbers {
             /**
@@ -308,12 +313,12 @@ inline for op in @arr["+", "-", "*", "/", "%"] {
              * @return promote<LhsTy, RhsTy> - the wider of the two operand types
              */
             @Experimental(since: "0.1")
-            bridge oper$op [self: LhsTy&](rhs: RhsTy): promote<LhsTy, RhsTy>
+            bridge oper$op LhsTy&.(rhs: RhsTy): promote<LhsTy, RhsTy>
         }
     }
 }
 
-inline for op in @arr["&", "|", "^"] {
+inline for op in ["&", "|", "^"] {
     inline for LhsTy in Integers {
         inline for RhsTy in Integers {
             /**
@@ -324,12 +329,12 @@ inline for op in @arr["&", "|", "^"] {
              * @return promote<LhsTy, RhsTy> - the wider of the two operand types
              */
             @Experimental(since: "0.1")
-            bridge oper$op [self: LhsTy&](rhs: RhsTy): promote<LhsTy, RhsTy>
+            bridge oper$op LhsTy&.(rhs: RhsTy): promote<LhsTy, RhsTy>
         }
     }
 }
 
-inline for op in @arr["<<", ">>"] {
+inline for op in ["<<", ">>"] {
     inline for Ty in Integers {
         /**
          * Shift operator $op on an integer type; the shift count is a UInt.
@@ -339,11 +344,11 @@ inline for op in @arr["<<", ">>"] {
          * @return the operand type
          */
         @Experimental(since: "0.1")
-        bridge oper$op [self: Ty&](rhs: UInt): Ty
+        bridge oper$op Ty&.(rhs: UInt): Ty
     }
 }
 
-inline for op in @arr["<", ">", "<=", ">=", "==", "!="] {
+inline for op in ["<", ">", "<=", ">=", "==", "!="] {
     inline for LhsTy in Numbers {
         inline for RhsTy in Numbers {
             /**
@@ -354,7 +359,7 @@ inline for op in @arr["<", ">", "<=", ">=", "==", "!="] {
              * @return Bool
              */
             @Experimental(since: "0.1")
-            bridge oper$op [self: LhsTy&](rhs: RhsTy): Bool
+            bridge oper$op LhsTy&.(rhs: RhsTy): Bool
         }
     }
 }

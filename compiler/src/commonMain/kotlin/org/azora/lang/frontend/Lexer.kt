@@ -555,6 +555,7 @@ class Lexer(private val source: String) {
     private fun match(expected: Char): Boolean {
         if (isAtEnd() || source[current] != expected) return false
         current++
+        column++
         return true
     }
 }

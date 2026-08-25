@@ -448,7 +448,7 @@ class LlvmCodegen {
             if (libm != null) {
                 val ps = item.params.mapIndexed { i, (_, t) -> "${mapType(t)} %a$i" }
                 val args = item.params.mapIndexed { i, (_, t) -> "${mapType(t)} %a$i" }
-                val ret = mapType(item.returnType)
+                val ret = abiReturnType(item.returnType)
                 body.appendLine("define $ret @${item.name}(${ps.joinToString(", ")}) {")
                 body.appendLine("entry:")
                 body.appendLine("  %r = call $ret @$libm(${args.joinToString(", ")})")
@@ -464,7 +464,7 @@ class LlvmCodegen {
                 continue
             }
             val params = item.params.joinToString(", ") { (_, t) -> mapType(t) }
-            body.appendLine("declare ${mapType(item.returnType)} @${item.name}($params)")
+            body.appendLine("declare ${abiReturnType(item.returnType)} @${item.name}($params)")
         }
 
 
@@ -577,6 +577,7 @@ class LlvmCodegen {
     private fun emitGlobalVar(name: String, type: IrType, initializer: IrExpr) {
         val llvmType = mapType(type)
         val value = when (initializer) {
+            IrExpr.UnitLiteral -> "0"
             // A 128-bit literal is wider than a Long, so its digits travel
             // with it and are what LLVM is given: `i128` holds them.
             is IrExpr.IntLiteral -> initializer.text ?: "${initializer.value}"
@@ -670,15 +671,15 @@ class LlvmCodegen {
         for (stmt in stmts) {
             when (stmt) {
                 is IrStmt.VarDecl -> {
-                    slots.add(stmt.name to mapType(stmt.type))
+                    if (stmt.type != IrType.Nothing) slots.add(stmt.name to mapType(stmt.type))
                     if (stmt.lazy) slots.add(lazyFlagName(stmt.name) to "i1")
                 }
                 is IrStmt.FinDecl -> {
-                    slots.add(stmt.name to mapType(stmt.type))
+                    if (stmt.type != IrType.Nothing) slots.add(stmt.name to mapType(stmt.type))
                     if (stmt.lazy) slots.add(lazyFlagName(stmt.name) to "i1")
                 }
                 is IrStmt.LetDecl -> {
-                    slots.add(stmt.name to mapType(stmt.type))
+                    if (stmt.type != IrType.Nothing) slots.add(stmt.name to mapType(stmt.type))
                     if (stmt.lazy) slots.add(lazyFlagName(stmt.name) to "i1")
                 }
                 is IrStmt.If -> {
@@ -745,7 +746,7 @@ class LlvmCodegen {
         currentIsFailable = func.isFailable
         errorHandlers.clear()
         currentReturnType = if (isMain) null else func.returnType
-        val retType = if (isMain) "i32" else mapType(func.returnType)
+        val retType = if (isMain) "i32" else abiReturnType(func.returnType)
 
         val params = func.params.joinToString(", ") { (name, type) ->
             "${mapType(type)} %arg.$name"
@@ -785,6 +786,10 @@ class LlvmCodegen {
             func.returnType == IrType.Unit -> {
                 emitFunctionExitCleanup()
                 emitTerminator("  ret void")
+            }
+            func.returnType == IrType.Nothing -> {
+                emitFunctionExitCleanup()
+                emitTerminator("  unreachable")
             }
             else -> {
                 emitFunctionExitCleanup()
@@ -840,6 +845,9 @@ class LlvmCodegen {
         if (func.returnType == IrType.Unit) {
             emit("  call void @$bodyName($args)")
             emitTerminator("  ret i8* null")
+        } else if (func.returnType == IrType.Nothing) {
+            emit("  call void @$bodyName($args)")
+            emitTerminator("  unreachable")
         } else {
             val retType = mapType(func.returnType)
             val result = "%task.result"
@@ -963,7 +971,11 @@ class LlvmCodegen {
                     val declared = currentReturnType
                     val raw = emitExpr(stmt.value)
                     emitFunctionExitCleanup()
-                    if (declared != null && declared != IrType.Unit) {
+                    if (declared == IrType.Nothing) {
+                        // A genuine Nothing expression has already terminated
+                        // this block; never manufacture a return value for it.
+                        emitTerminator("  unreachable")
+                    } else if (declared != null && declared != IrType.Unit) {
                         val value = coerceNumeric(raw, stmt.value.type, declared)
                         emitTerminator("  ret ${mapType(declared)} $value")
                     } else if (stmt.value.type == IrType.Unit) {
@@ -1083,6 +1095,10 @@ class LlvmCodegen {
             emitTerminator("  ret void")
             return
         }
+        if (declared == IrType.Nothing) {
+            emitTerminator("  unreachable")
+            return
+        }
         emitTerminator("  ret ${mapType(declared)} ${defaultValue(declared)}")
     }
 
@@ -1178,7 +1194,7 @@ class LlvmCodegen {
         emitTerminator("  br label %$done")
 
         startBlock(done)
-        if (expr.type == IrType.Unit) return ""
+        if (expr.type == IrType.Unit) return "0"
         val result = nextTmp()
         emit("  $result = phi $type [ $primaryValue, %$primaryBlock ], [ $fallbackValue, %$fallbackBlock ]")
         return result
@@ -1189,6 +1205,11 @@ class LlvmCodegen {
     }
 
     private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr, lazy: Boolean = false) {
+        if (type == IrType.Nothing) {
+            // There can be no slot: evaluating the initializer must terminate.
+            emitExpr(initializer)
+            return
+        }
         val t = mapType(type)
         // The slot was hoisted to the entry block (see emitEntryAllocas).
         val alloca = allocaSlots[name to t] ?: run {
@@ -1862,6 +1883,7 @@ class LlvmCodegen {
 
     /** Emits LLVM IR for an expression and returns the register/value. */
     private fun emitExpr(expr: IrExpr): String = when (expr) {
+        IrExpr.UnitLiteral -> "0"
         is IrExpr.IntLiteral -> expr.text ?: "${expr.value}"
         is IrExpr.CharLiteral -> "${expr.value.code}"
         is IrExpr.DoubleLiteral -> floatConst(expr.value, expr.type, expr.text)
@@ -2015,7 +2037,7 @@ class LlvmCodegen {
 
     private fun closureFunctionType(type: IrType.Function): String {
         val params = listOf("i8*") + (type.params + type.receivers).map(::mapType)
-        return "${mapType(type.ret)} (${params.joinToString(", ")})"
+        return "${abiReturnType(type.ret)} (${params.joinToString(", ")})"
     }
 
     private fun emitClosureBody(
@@ -2041,7 +2063,7 @@ class LlvmCodegen {
             "${mapType(type)} %arg.$paramName"
         }
         val suffix = if (parameters.isEmpty()) "" else ", $parameters"
-        line("define ${mapType(callableType.ret)} @$name(i8* %env.raw$suffix) {")
+        line("define ${abiReturnType(callableType.ret)} @$name(i8* %env.raw$suffix) {")
         line("entry:")
 
         if (captures.isNotEmpty()) {
@@ -2075,8 +2097,11 @@ class LlvmCodegen {
         }
         emitEntryAllocas(lambda.body)
         emitStmts(lambda.body)
-        if (callableType.ret == IrType.Unit) emitTerminator("  ret void")
-        else emitTerminator("  ret ${mapType(callableType.ret)} ${defaultValue(callableType.ret)}")
+        when (callableType.ret) {
+            IrType.Unit -> emitTerminator("  ret void")
+            IrType.Nothing -> emitTerminator("  unreachable")
+            else -> emitTerminator("  ret ${mapType(callableType.ret)} ${defaultValue(callableType.ret)}")
+        }
         line("}")
     }
 
@@ -2258,6 +2283,9 @@ class LlvmCodegen {
         if (resultType == IrType.Unit) {
             emit("  call void @$bodyName($args)")
             emitTerminator("  ret i8* null")
+        } else if (resultType == IrType.Nothing) {
+            emit("  call void @$bodyName($args)")
+            emitTerminator("  unreachable")
         } else {
             val result = "%task.result"
             emit("  $result = call ${mapType(resultType)} @$bodyName($args)")
@@ -2286,7 +2314,7 @@ class LlvmCodegen {
         currentIsFailable = false
 
         val params = captures.joinToString(", ") { "${it.fieldType} %arg.${it.name}" }
-        line("define ${mapType(resultType)} @$name($params) {")
+        line("define ${abiReturnType(resultType)} @$name($params) {")
         line("entry:")
         for (capture in captures) {
             if (capture.byRef) {
@@ -2301,8 +2329,11 @@ class LlvmCodegen {
         emitEntryAllocas(body)
         emitStmts(body)
         emitFunctionExitCleanup()
-        if (resultType == IrType.Unit) emitTerminator("  ret void")
-        else emitTerminator("  ret ${mapType(resultType)} ${defaultValue(resultType)}")
+        when (resultType) {
+            IrType.Unit -> emitTerminator("  ret void")
+            IrType.Nothing -> emitTerminator("  unreachable")
+            else -> emitTerminator("  ret ${mapType(resultType)} ${defaultValue(resultType)}")
+        }
         line("}")
     }
 
@@ -2522,7 +2553,7 @@ class LlvmCodegen {
             is IrExpr.Await -> collectReferencedVars(expr.value, refs)
             is IrExpr.Spread -> collectReferencedVars(expr.array, refs)
             is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral, is IrExpr.EnumLiteral,
-            is IrExpr.BoolLiteral, is IrExpr.CharLiteral, is IrExpr.SlotPattern -> {}
+            is IrExpr.BoolLiteral, is IrExpr.CharLiteral, IrExpr.UnitLiteral, is IrExpr.SlotPattern -> {}
         }
     }
 
@@ -3117,6 +3148,11 @@ class LlvmCodegen {
             val property = table.methods.firstOrNull { it.name == expr.name && it.paramTypes.isEmpty() }
             if (property != null) {
                 val box = emitExpr(expr.target)
+                if (property.returnType == IrType.Unit || property.returnType == IrType.Nothing) {
+                    emit("  call void @${specDispatcherName(targetType.name, expr.name)}(i8* $box)")
+                    if (property.returnType == IrType.Nothing) emitTerminator("  unreachable")
+                    return "0"
+                }
                 val r = nextTmp()
                 emit("  $r = call ${mapType(property.returnType)} @${specDispatcherName(targetType.name, expr.name)}(i8* $box)")
                 return r
@@ -3152,7 +3188,7 @@ class LlvmCodegen {
      * `impl` body. Unknown ids return a zero value (unreachable in practice).
      */
     private fun renderSpecDispatcher(t: IrSpecTable, m: IrSpecMethod): String {
-        val ret = mapType(m.returnType)
+        val ret = abiReturnType(m.returnType)
         val paramTypes = m.paramTypes.map { mapType(it) }
         val sigParams = (listOf("i8* %box") + paramTypes.mapIndexed { i, ty -> "$ty %a$i" }).joinToString(", ")
         val forwardArgs = paramTypes.mapIndexed { i, ty -> "$ty %a$i" }
@@ -3175,17 +3211,21 @@ class LlvmCodegen {
             sb.appendLine("case_$id:")
             sb.appendLine("  %self_$id = bitcast i8* %data to $st")
             val callArgs = (listOf("$st %self_$id") + forwardArgs).joinToString(", ")
-            if (m.returnType == IrType.Unit) {
+            if (m.returnType == IrType.Unit || m.returnType == IrType.Nothing) {
                 sb.appendLine("  call void @$fn($callArgs)")
-                sb.appendLine("  ret void")
+                if (m.returnType == IrType.Nothing) sb.appendLine("  unreachable")
+                else sb.appendLine("  ret void")
             } else {
                 sb.appendLine("  %r_$id = call $ret @$fn($callArgs)")
                 sb.appendLine("  ret $ret %r_$id")
             }
         }
         sb.appendLine("default:")
-        if (m.returnType == IrType.Unit) sb.appendLine("  ret void")
-        else sb.appendLine("  ret $ret ${defaultValue(m.returnType)}")
+        when (m.returnType) {
+            IrType.Unit -> sb.appendLine("  ret void")
+            IrType.Nothing -> sb.appendLine("  unreachable")
+            else -> sb.appendLine("  ret $ret ${defaultValue(m.returnType)}")
+        }
         sb.appendLine("}")
         return sb.toString()
     }
@@ -3201,7 +3241,14 @@ class LlvmCodegen {
         val result = emitMethodCallValue(expr)
         val owner = (expr.target.type as? IrType.Named)?.name
         if (owner != null && "${owner}_${expr.name}" in failableFunctions) emitErrorCheck()
-        return result
+        return when (expr.type) {
+            IrType.Unit -> "0"
+            IrType.Nothing -> {
+                emitTerminator("  unreachable")
+                "0"
+            }
+            else -> result
+        }
     }
 
     private fun emitMethodCallValue(expr: IrExpr.MethodCall): String {
@@ -3218,7 +3265,7 @@ class LlvmCodegen {
                 }
                 val argList = (listOf("i8* $box") + args).joinToString(", ")
                 val disp = specDispatcherName(recvType.name, expr.name)
-                if (method.returnType == IrType.Unit) {
+                if (method.returnType == IrType.Unit || method.returnType == IrType.Nothing) {
                     emit("  call void @$disp($argList)")
                     return "void"
                 }
@@ -4210,6 +4257,16 @@ class LlvmCodegen {
                     else -> error("Unsupported bool op: ${expr.op}")
                 }
             }
+            leftType == IrType.Unit -> {
+                // Unit has one value, encoded as i8 zero. Equality is therefore
+                // always true and inequality always false, but an icmp keeps the
+                // ordinary expression shape and validates both operands.
+                when (expr.op) {
+                    IrBinaryOp.EQ -> emit("  $tmp = icmp eq i8 $left, $right")
+                    IrBinaryOp.NEQ -> emit("  $tmp = icmp ne i8 $left, $right")
+                    else -> error("Unsupported Unit op: ${expr.op}")
+                }
+            }
             else -> {
                 // Unsupported operand type (e.g. arithmetic on a nullable/boxed
                 // value). The LLVM backend has no unboxing model yet, so degrade
@@ -4231,17 +4288,34 @@ class LlvmCodegen {
         val elseLabel = nextLabel("ifx_else")
         val endLabel = nextLabel("ifx_end")
         emitTerminator("  br i1 $cond, label %$thenLabel, label %$elseLabel")
+
+        val incoming = mutableListOf<Pair<String, String>>()
         startBlock(thenLabel)
-        val thenValue = coerceNumeric(emitExpr(expr.thenExpr), expr.thenExpr.type, expr.type)
+        val thenRaw = emitExpr(expr.thenExpr)
         val thenBlock = currentBlock
-        emitTerminator("  br label %$endLabel")
+        if (!terminated) {
+            val thenValue = coerceNumeric(thenRaw, expr.thenExpr.type, expr.type)
+            incoming += thenValue to thenBlock
+            emitTerminator("  br label %$endLabel")
+        }
+
         startBlock(elseLabel)
-        val elseValue = coerceNumeric(emitExpr(expr.elseExpr), expr.elseExpr.type, expr.type)
+        val elseRaw = emitExpr(expr.elseExpr)
         val elseBlock = currentBlock
-        emitTerminator("  br label %$endLabel")
+        if (!terminated) {
+            val elseValue = coerceNumeric(elseRaw, expr.elseExpr.type, expr.type)
+            incoming += elseValue to elseBlock
+            emitTerminator("  br label %$endLabel")
+        }
+
         startBlock(endLabel)
+        if (incoming.isEmpty()) {
+            emitTerminator("  unreachable")
+            return defaultValue(expr.type)
+        }
         val tmp = nextTmp()
-        emit("  $tmp = phi ${mapType(expr.type)} [ $thenValue, %$thenBlock ], [ $elseValue, %$elseBlock ]")
+        val arms = incoming.joinToString(", ") { (value, block) -> "[ $value, %$block ]" }
+        emit("  $tmp = phi ${mapType(expr.type)} $arms")
         return tmp
     }
 
@@ -4334,7 +4408,18 @@ class LlvmCodegen {
     private fun emitCall(expr: IrExpr.Call): String {
         val result = emitCallValue(expr)
         if (expr.name in failableFunctions) emitErrorCheck()
-        return result
+        return when (expr.type) {
+            // Unit remains a first-class singleton even where the ABI erases
+            // the return slot. Zero is its private native representation.
+            IrType.Unit -> "0"
+            // A Nothing call cannot continue. This terminator also gives a
+            // bottom-typed branch the exact control-flow shape LLVM expects.
+            IrType.Nothing -> {
+                emitTerminator("  unreachable")
+                "0"
+            }
+            else -> result
+        }
     }
 
     private fun emitCallValue(expr: IrExpr.Call): String {
@@ -4360,7 +4445,7 @@ class LlvmCodegen {
                 "${mapType(type)} $value"
             }
             val callArgs = (listOf("i8* $environment") + args).joinToString(", ")
-            return if (expr.type == IrType.Unit) {
+            return if (expr.type == IrType.Unit || expr.type == IrType.Nothing) {
                 emit("  call void $functionPointer($callArgs)")
                 "void"
             } else {
@@ -4478,7 +4563,7 @@ class LlvmCodegen {
             "${mapType(paramType)} $value"
         }.joinToString(", ")
         val retType = mapType(expr.type)
-        return if (expr.type == IrType.Unit) {
+        return if (expr.type == IrType.Unit || expr.type == IrType.Nothing) {
             emit("  call void @${expr.name}($args)")
             "void"
         } else {
@@ -4747,12 +4832,28 @@ class LlvmCodegen {
         }
     }
 
-    private fun widenToI64(value: String, type: IrType): String = when (type) {
-        IrType.Long, IrType.ULong, IrType.ISize, IrType.USize -> value
-        IrType.Cent, IrType.UCent -> { val t = nextTmp(); emit("  $t = trunc i128 $value to i64"); t }
-        IrType.UInt, IrType.UByte, IrType.UShort, IrType.Char ->
-            { val t = nextTmp(); emit("  $t = zext ${mapType(type)} $value to i64"); t }
-        else -> { val t = nextTmp(); emit("  $t = sext ${mapType(type)} $value to i64"); t }
+    private fun widenToI64(value: String, type: IrType): String {
+        val llvmType = mapType(type)
+        // Erased generics and all aggregate/reference values use a pointer ABI.
+        // LLVM does not permit an integer extension (`sext`/`zext`) from a
+        // pointer; preserving its opaque bits requires `ptrtoint`.
+        if (llvmType.endsWith("*")) {
+            val tmp = nextTmp()
+            emit("  $tmp = ptrtoint $llvmType $value to i64")
+            return tmp
+        }
+        return when (type) {
+            IrType.Long, IrType.ULong, IrType.ISize, IrType.USize -> value
+            IrType.Cent, IrType.UCent -> {
+                val tmp = nextTmp(); emit("  $tmp = trunc i128 $value to i64"); tmp
+            }
+            IrType.UInt, IrType.UByte, IrType.UShort, IrType.Char -> {
+                val tmp = nextTmp(); emit("  $tmp = zext $llvmType $value to i64"); tmp
+            }
+            else -> {
+                val tmp = nextTmp(); emit("  $tmp = sext $llvmType $value to i64"); tmp
+            }
+        }
     }
 
     /** Selects the `"true"`/`"false"` C string for a boolean value. */
@@ -5204,6 +5305,10 @@ class LlvmCodegen {
     // Low-level helpers
     // -----------------------------------------------------------------------
 
+    /** Function ABI result; Unit is erased and Nothing has no return edge. */
+    private fun abiReturnType(type: IrType): String =
+        if (type == IrType.Unit || type == IrType.Nothing) "void" else mapType(type)
+
     private fun mapType(type: IrType): String = when (type) {
         // An integer's width *is* its LLVM type: `Int<7>` is `i7` and `Byte` is
         // `i8`, because `Byte` is `Int<8>`. Signedness is not part of the type
@@ -5214,7 +5319,9 @@ class LlvmCodegen {
         IrType.Double -> "double"
         IrType.Bool -> "i1"
         IrType.String -> "i8*"
-        IrType.Unit -> "void"
+        // Unit has one first-class value. It is an i8 zero in storage and
+        // parameters, while [abiReturnType] erases it from function results.
+        IrType.Unit -> "i8"
         // No value has type `Nothing`, so nothing is ever loaded or stored at
         // it; `void` is the only lowering a value-less type can have.
         IrType.Nothing -> "void"
@@ -5229,7 +5336,6 @@ class LlvmCodegen {
         IrType.Cent -> "i128"
         IrType.UCent -> "i128"
         IrType.Float -> "float"
-        IrType.Quad -> "fp128"
         IrType.Any -> "i8*"
         is IrType.Array -> "i8*"
         is IrType.Map, is IrType.Set -> "i8*"
@@ -5262,9 +5368,13 @@ class LlvmCodegen {
         in IrType.floatTypes -> floatConst(0.0, type)
         IrType.Bool -> "false"
         IrType.String -> "null"
-        IrType.Unit -> ""
+        IrType.Unit -> "0"
+        // Every pointer-shaped ABI value must use LLVM's `null` token.  The
+        // integer spelling `0` is not a polymorphic zero in LLVM IR: writing
+        // `i8* 0` makes the whole module invalid before it can run.
         is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Function,
-        is IrType.Tuple, is IrType.Nullable, is IrType.Named, IrType.Any -> "null"
+        is IrType.Tuple, is IrType.Variant, is IrType.Nullable, is IrType.Pointer,
+        is IrType.Named, IrType.Any -> "null"
         is IrType.Task -> "null"
         else -> "0"
     }

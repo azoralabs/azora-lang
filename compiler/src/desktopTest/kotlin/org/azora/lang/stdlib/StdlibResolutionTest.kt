@@ -16,7 +16,6 @@
 
 package org.azora.lang.stdlib
 
-import dev.azora.lang.BuildConfig
 import java.io.File
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -34,6 +33,21 @@ import kotlin.test.assertTrue
  */
 class StdlibResolutionTest {
 
+    @Test fun packageManifestReaderIgnoresCommentsAndAdditionalObjects() {
+        val manifest = parseStdlibPackageManifest(
+            """
+            // The std package owns its version.
+            package: {
+                name: "std"
+                metadata: { channel: "development" }
+                version: "0.1.0-dev.1"
+            }
+            dependencies: { local: { path: "../local" } }
+            """.trimIndent(),
+        )
+        assertEquals(StdlibPackageManifest("std", "0.1.0-dev.1"), manifest)
+    }
+
     /**
      * Puts the shared standard library back, parsed.
      *
@@ -50,10 +64,17 @@ class StdlibResolutionTest {
         AzStdlib.loadPrograms()
     }
 
-    /** A minimal but real stdlib root: one module and a version marker. */
-    private fun writeTree(version: String = BuildConfig.VERSION, moduleBody: String = ""): File {
-        val root = File.createTempFile("azstd", "").let { it.delete(); it.mkdirs(); it }
-        File(root, STDLIB_VERSION_FILE).writeText("$version\n")
+    /** A minimal package with `package.azon` beside its `std/` source root. */
+    private fun writeTree(
+        version: String = AzStdlibBundle.VERSION,
+        moduleBody: String = "",
+        packageName: String = AzStdlibBundle.PACKAGE_NAME,
+    ): File {
+        val packageRoot = File.createTempFile("azstd-package", "").let { it.delete(); it.mkdirs(); it }
+        File(packageRoot, STDLIB_PACKAGE_MANIFEST).writeText(
+            "package: { name: \"$packageName\" version: \"$version\" }\n",
+        )
+        val root = File(packageRoot, "std").also(File::mkdirs)
         File(root, "core.az").writeText("module std.core\n$moduleBody")
         return root
     }
@@ -75,7 +96,7 @@ class StdlibResolutionTest {
         AzStdlib.overrideRoot = null
         AzStdlib.invalidate()
         val tree = AzStdlib.tree()
-        assertEquals(BuildConfig.VERSION, tree.version)
+        assertEquals(AzStdlibBundle.VERSION, tree.version)
         assertTrue(tree.files.size > 1, "the bundled standard library must not be empty")
     }
 
@@ -86,13 +107,20 @@ class StdlibResolutionTest {
         assertContains(failure.message.orEmpty(), "9.9.9")
     }
 
-    @Test fun aNamedRootWithoutAVersionMarkerIsRejectedRatherThanSkipped() {
-        val root = File.createTempFile("azstd", "").let { it.delete(); it.mkdirs(); it }
+    @Test fun aNamedRootWithoutAPackageManifestIsRejectedRatherThanSkipped() {
+        val packageRoot = File.createTempFile("azstd-package", "").let { it.delete(); it.mkdirs(); it }
+        val root = File(packageRoot, "std").also(File::mkdirs)
         File(root, "core.az").writeText("module std.core\n")
         AzStdlib.overrideRoot = root.path
 
         val failure = assertFailsWith<IllegalStateException> { AzStdlib.tree() }
-        assertContains(failure.message.orEmpty(), STDLIB_VERSION_FILE)
+        assertContains(failure.message.orEmpty(), STDLIB_PACKAGE_MANIFEST)
+    }
+
+    @Test fun aNamedRootForAnotherPackageIsRejected() {
+        AzStdlib.overrideRoot = writeTree(packageName = "not-std").path
+        val failure = assertFailsWith<IllegalStateException> { AzStdlib.tree() }
+        assertContains(failure.message.orEmpty(), "belongs to package 'not-std'")
     }
 
     @Test fun switchingRootsReparsesInsteadOfServingTheOldTree() {

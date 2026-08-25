@@ -43,6 +43,18 @@ class AzHighlighterRolesTest {
     private fun textsOf(source: String, role: String): List<String> =
         AzHighlighter.highlight(source).filter { it.type == role }.map { source.substring(it.start, it.end) }
 
+    @Test
+    fun `decimal hexadecimal and binary integers are complete number spans`() {
+        val source = "fin decimal = 1\nfin hexadecimal = 0xFF\nfin binary = 0b1010\n"
+        assertEquals(listOf("1", "0xFF", "0b1010"), textsOf(source, "number"))
+    }
+
+    @Test
+    fun `fractional scientific and trailing dot floats are complete number spans`() {
+        val source = "fin fraction = 3.14\nfin scientific = 1.5e3\nfin trailing = 2.\n"
+        assertEquals(listOf("3.14", "1.5e3", "2."), textsOf(source, "number"))
+    }
+
     // -- import: path versus selection ---------------------------------------
 
     @Test
@@ -62,25 +74,25 @@ class AzHighlighterRolesTest {
     }
 
     @Test
-    fun `a dotted group holds modules`() {
-        val source = "import std.container.[list, map]"
-        assertEquals("modulePath", roleOf(source, "list"))
-        assertEquals("modulePath", roleOf(source, "map"))
+    fun `a grouped selector does not repaint its members as the module path`() {
+        val source = "import std.container::{list, map}"
+        assertTrue(roleOf(source, "list") != "modulePath")
+        assertTrue(roleOf(source, "map") != "modulePath")
     }
 
     @Test
     fun `a colons group holds selections`() {
-        val source = "import std.format::[Display, Debug]"
+        val source = "import std.format::{Display, Debug}"
         assertTrue(roleOf(source, "Display") != "modulePath")
         assertTrue(roleOf(source, "Debug") != "modulePath")
     }
 
     @Test
     fun `a member may select inside its own module`() {
-        val source = "import std.[math::abs, io::*]"
-        assertEquals("modulePath", roleOf(source, "math"))
+        val source = "import std::{math::abs, io::*}"
+        assertEquals("scope", roleOf(source, "math"))
         assertTrue(roleOf(source, "abs") != "modulePath")
-        assertEquals("modulePath", roleOf(source, "io"))
+        assertEquals("scope", roleOf(source, "io"))
     }
 
     @Test
@@ -142,5 +154,83 @@ class AzHighlighterRolesTest {
             },
             "the name inside the hole is code, not string text",
         )
+    }
+
+    @Test
+    fun `an associated type is distinct at declaration and every use`() {
+        val source = """
+            spec Iterator assoc Item {
+                func &.current(): Item
+            }
+
+            impl Iterator for Rows assoc Item = Row {
+                func &.current(): Item { return self.row }
+            }
+        """.trimIndent()
+        val roles = AzHighlighter.highlight(source)
+            .filter { source.substring(it.start, it.end) == "Item" }
+            .map { it.type }
+
+        assertTrue(roles.isNotEmpty())
+        assertTrue(roles.all { it == "associatedType" }, roles.toString())
+    }
+
+    @Test
+    fun `decorators enum cases receivers parameters and generics keep distinct roles`() {
+        val source = """
+            @Supress(.Unused)
+            @Since("0.1")
+            enum PartialCompare {
+                Less
+                Equal
+                Greater
+                Unordered
+            }
+
+            func<T, U, S> (self: T&, other: U&).compare(value: S): PartialCompare {
+                fin left: T = self
+                fin right: U = other
+                fin input: S = value
+                return PartialCompare.Less
+            }
+        """.trimIndent()
+        val spans = AzHighlighter.highlight(source)
+        fun roles(word: String) = spans
+            .filter { source.substring(it.start, it.end) == word }
+            .map { it.type }
+
+        for (decorator in listOf("@Supress", "@Since")) {
+            assertTrue(
+                spans.any { it.type == "annotation" && source.substring(it.start, it.end) == decorator },
+                "$decorator: $spans",
+            )
+        }
+        for (entry in listOf("Less", "Equal", "Greater", "Unordered")) {
+            assertTrue(roles(entry).all { it == "enumMember" }, "$entry: ${roles(entry)}")
+        }
+        for (generic in listOf("T", "U", "S")) {
+            assertTrue(roles(generic).isNotEmpty() && roles(generic).all { it == "generic" }, "$generic: ${roles(generic)}")
+        }
+        for (receiver in listOf("self", "other")) {
+            assertTrue(
+                roles(receiver).isNotEmpty() && roles(receiver).all { it == "contextParameter" },
+                "$receiver: ${roles(receiver)}",
+            )
+        }
+        assertTrue(roles("value").all { it == "parameter" }, roles("value").toString())
+    }
+
+    @Test
+    fun `grouped import selections and uses retain their type role`() {
+        val source = """
+            import std.traits::{PartialEqual, Equal, Order, Hash}
+            bridge pack Char derives (PartialEqual, Equal, Order, Hash)
+        """.trimIndent()
+        val types = setOf("PartialEqual", "Equal", "Order", "Hash")
+        val spans = AzHighlighter.highlight(source, visibleTypes = types)
+        for (name in types) {
+            val roles = spans.filter { source.substring(it.start, it.end) == name }.map { it.type }
+            assertEquals(listOf("type", "type"), roles, "$name: $roles")
+        }
     }
 }

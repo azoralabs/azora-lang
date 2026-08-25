@@ -19,9 +19,8 @@
  *
  * Fixed-size contiguous array storage.
  *
- * Defines the canonical `Array<T>` type and the `arrayOf` factory. Array values
- * are built with `arrayOf(a, b, c)` or the `@arr[a, b, c]` macro (see
- * `std.macro`); bracket value literals are not array syntax. Arrays expose their
+ * Defines the canonical `Array<T>` type and the [] factory. Array values
+ * are built with `[a, b, c]`; bracket value literals are not array syntax. Arrays expose their
  * element count through `size` and provide low-level access to contiguous
  * storage through `data`.
  *
@@ -29,6 +28,8 @@
  */
 @Supress(.Unused)
 module std.container.array
+
+import std.traits::Clone
 
 /**
  * A contiguous, ordered collection whose elements all have type `T`.
@@ -94,29 +95,23 @@ impl Array<T, N: Int> {
 
 // typealias Array<T> = Array<T, *> remove this wildcard from compiler, we will always construct Arrya<Int, 8>, Array wont have .() * 6 ; only list and other containers
 
-test "arrayOf preserves values and order" {
-    fin values: Array<Int> = arrayOf(10, 20, 30)
-    assert values.size == 3 { "arrayOf changed the number of elements" }
-    assert values[0] == 10 && values[1] == 20 && values[2] == 30 {
-        "arrayOf changed element order"
-    }
+test "[] preserves values and order" {
+    fin values: Array<Int> = [10, 20, 30]
+    assert values.size == 3 { "[] changed the number of elements" }
+    assert values[0] == 10 && values[1] == 20 && values[2] == 30 { "[] changed element order" }
 }
 
-test "arrayOf produces the canonical Array type" {
-    fin values: Array<String> = arrayOf("first", "second")
-    assert values.size == 2 { "arrayOf did not create an Array" }
-    assert values[0] == "first" && values[1] == "second" {
-        "arrayOf changed its elements"
-    }
+test "[] produces the canonical Array type" {
+    fin values: Array<String> = ["first", "second"]
+    assert values.size == 2 { "[] did not create an Array" }
+    assert values[0] == "first" && values[1] == "second" { "[] changed its elements" }
 }
 
 test "array exposes size and contiguous data fields" {
-    fin values = arrayOf(5, 8, 13)
+    fin values: Array<Int> = [5, 8, 13]
     assert values.size == 3 { "Array.size must report the element count" }
-    unsafe {
-        assert values.data[0] == 5 && values.data[2] == 13 {
-            "Array.data must point to the first contiguous element"
-        }
+    unsafe assert values.data[0] == 5 && values.data[2] == 13 {
+        "Array.data must point to the first contiguous element"
     }
 }
 

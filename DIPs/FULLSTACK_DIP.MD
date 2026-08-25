@@ -192,7 +192,7 @@ pack HttpMethod {
     fin value: String
 }
 
-impl HttpMethod:: {
+impl HttpMethod {
     inline fin Get = HttpMethod("GET")
     inline fin Head = HttpMethod("HEAD")
     inline fin Post = HttpMethod("POST")

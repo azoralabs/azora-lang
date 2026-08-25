@@ -22,7 +22,7 @@ pack Weak<T> {
 }
 
 @Experimental(since: "0.1")
-oper.* [self: Weak<T>&]: T { // here we need to implement mandatory deref...
+oper.* Weak<T>&.(): T { // here we need to implement mandatory deref...
     assert self._raw != null { "Weak pointer is null" }
     return self._raw.*
 }

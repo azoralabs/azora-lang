@@ -69,9 +69,9 @@ data class FunctionSymbol(
     /**
      * How many leading [params] the call site does not write.
      *
-     * A constructor factory built from `ctor[self: Self&, scope: Scope&]` takes
+     * A contextual callable built from `func (Self&, Scope&).render()` takes
      * that scope ahead of the arguments anyone writes, and it is filled from the
-     * `with` block or receiver lambda the call sits in. Zero for everything else.
+     * `using` block or receiver lambda the call sits in. Zero for everything else.
      */
     val contextualParams: Int = 0,
 )
@@ -250,7 +250,7 @@ class SymbolTable {
      */
     /**
      * A member declared on [owner] as a type-scoped constant or function -
-     * `impl Array:: { bridge fin size }` - whatever scope declares the type.
+     * `impl Array { bridge fin size }` - whatever scope declares the type.
      *
      * The scope is part of the symbol but not of the question being asked, so it
      * is matched on the tail rather than reconstructed.

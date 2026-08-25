@@ -63,59 +63,33 @@ impl PrettyPrint for Tuple<...T> {
     prop &.pretty: String {
         var res = "("
         inline for field in reflect<Self>.fields with index {
-            if index > 0 {
-                res += ", "
-            }
+            if index > 0 { res += ", " }
             res += field.value as String
         }
-        res += ")"
-        return res
+        return res + ")"
     }
 }
 
-/**
- * Creates a tuple from two or more values.
- *
- * The returned tuple preserves the order and static type of every argument.
- * Each value can be read with positional access (`tuple.0`, `tuple.1`, ...).
- *
- * @generic T Variadic type parameter pack inferred from the provided elements.
- * @param elements Values to store in the tuple.
- * @return A Tuple whose element types match the provided values.
- */
-@Experimental(since: "0.1")
-func<...T> tupleOf(...elements: ...T): Tuple<...T>
-where (...T).size >= 2 {
-    return Tuple(elements)
-}
-
-/**
- * Builds a structural [Tuple].
- *
- * @0 `@tup(1, "two", 3.0)` expands to `tupleOf(1, "two", 3.0)`.
- */
-macro @tup [...$items] => tupleOf(...$items)
-
-test "tupleOf preserves heterogeneous values" {
-    fin value = tupleOf(1, "two", 3.0)
+test "() preserves heterogeneous values" {
+    fin value = (1, "two", 3.0)
     assert value.0 == 1 { "tuple first value changed" }
     assert value.1 == "two" { "tuple second value changed" }
     assert value.2 == 3.0 { "tuple third value changed" }
 }
 
-test "tupleOf supports nested tuples" {
-    fin value = tupleOf(tupleOf(1, 2), "end")
+test "() supports nested tuples" {
+    fin value = ((1, 2), "end")
     assert value.0.0 == 1 && value.0.1 == 2 { "nested tuple values changed" }
     assert value.1 == "end" { "outer tuple value changed" }
 }
 
 test "tuple fields are fixed positional members" {
-    fin value: Tuple<Int, String> = tupleOf(7, "seven")
+    fin value: Tuple<Int, String> = (7, "seven")
     assert value.0 == 7 && value.1 == "seven" { "explicit Tuple type changed" }
 }
 
 test "tuple string representation includes type and fields" {
-    fin value = tupleOf("a", "b")
+    fin value = ("a", "b")
     assert value as String == "Tuple<String, String>(\"a\", \"b\")" {
         "tuple diagnostic representation changed"
     }

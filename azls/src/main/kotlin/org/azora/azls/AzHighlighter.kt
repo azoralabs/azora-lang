@@ -30,7 +30,7 @@ import org.azora.lang.frontend.AzoraSyntaxVocabulary
  * `interpolation-punctuation`, `number`, `comment`, `doc`, `docTag`,
  * `docTagValue`, `function`, `variable`, `parameter`, `contextParameter`,
  * `property`, `type`, `generic`, `label`, `scope`, `modulePath`, `annotation`,
- * `macro`, `char`.
+ * `macro`, `associatedType`, `enumMember`, `errorMember`, `char`.
  *
  * `contextParameter` is a receiver a call site must supply (`[self: Self&]`),
  * told apart from the parameters a declaration invents for itself. `property`
@@ -52,9 +52,16 @@ object AzHighlighter {
         source: String,
         visibleFunctions: Set<String> = emptySet(),
         visibleTypes: Set<String> = emptySet(),
+        visibleSpecTypes: Set<String> = emptySet(),
+        visibleProperties: Set<String> = emptySet(),
+        visibleEnumCases: Set<String> = emptySet(),
+        visibleErrorCases: Set<String> = emptySet(),
     ): List<HighlightSpan> {
         val spans = mutableListOf<HighlightSpan>()
-        val semantics = semanticNames(source, visibleFunctions, visibleTypes)
+        val semantics = semanticNames(
+            source, visibleFunctions, visibleTypes, visibleSpecTypes,
+            visibleProperties, visibleEnumCases, visibleErrorCases,
+        )
         var i = 0
         val n = source.length
 
@@ -66,12 +73,8 @@ object AzHighlighter {
                 when {
                     source[cursor].isWhitespace() -> cursor++
                     source[cursor].isDigit() -> {
-                        val tokenStart = cursor++
-                        while (cursor < end &&
-                            (source[cursor].isDigit() || source[cursor] == '_' || source[cursor] == '.')
-                        ) {
-                            cursor++
-                        }
+                        val tokenStart = cursor
+                        cursor = numberEnd(source, cursor, end)
                         spans.add(HighlightSpan(tokenStart, cursor, "number"))
                     }
                     source[cursor].isIdentStart() -> {
@@ -82,17 +85,29 @@ object AzHighlighter {
                         while (next < end && source[next].isWhitespace()) next++
                         val type = when {
                             word in RESERVED_KEYWORDS -> "keyword"
+                            tokenStart in semantics.overrideFunctionDeclarations -> "overrideFunction"
+                            tokenStart in semantics.specFunctionDeclarations -> "specFunction"
+                            tokenStart in semantics.functionDeclarations -> "functionDeclaration"
                             tokenStart in semantics.modulePathOffsets -> "modulePath"
                             tokenStart in semantics.labelOffsets -> "label"
                             tokenStart in semantics.scopeOffsets -> "scope"
                             semantics.isGeneric(word, tokenStart) -> "generic"
-                            tokenStart in semantics.contextParameterOffsets -> "contextParameter"
-                            tokenStart in semantics.propertyDeclarations -> "property"
+                            semantics.isAssociatedType(word) -> "associatedType"
+                            semantics.isContextParameter(word, tokenStart) -> "contextParameter"
+                            tokenStart in semantics.enumCaseDeclarations -> "enumMember"
+                            tokenStart in semantics.errorCaseDeclarations -> "errorMember"
+                            semantics.isEnumCase(word) && isQualifiedMemberAt(source, tokenStart) -> "enumMember"
+                            semantics.isErrorCase(word) && isQualifiedMemberAt(source, tokenStart) -> "errorMember"
+                            tokenStart in semantics.overridePropertyDeclarations -> "overrideProperty"
+                            tokenStart in semantics.specPropertyDeclarations -> "specProperty"
+                            tokenStart in semantics.propertyDeclarations -> "propertyDeclaration"
                             semantics.isProperty(word) && isQualifiedMemberAt(source, tokenStart) -> "property"
                             word == "self" || word == "it" -> "parameter"
                             semantics.isParameter(word, tokenStart) && !isQualifiedMemberAt(source, tokenStart) -> "parameter"
                             next < end && source[next] in setOf('(', '<') &&
                                 semantics.isFunction(source, word, tokenStart) -> "function"
+                            tokenStart in semantics.specTypeDeclarations || semantics.isSpecType(word) -> "specType"
+                            tokenStart in semantics.typeDeclarations -> "typeDeclaration"
                             semantics.isType(source, word, tokenStart) -> "type"
                             else -> "variable"
                         }
@@ -194,21 +209,12 @@ object AzHighlighter {
                     if (i < n && source[i] == '\'') i++
                     spans.add(HighlightSpan(start, i, "char"))
                 }
-                // Number (decimal / hex, with type suffixes)
+                // Number. The tolerant scanner consumes the same base prefixes,
+                // separators, fractions and exponents as the compiler so one
+                // literal always produces one semantic-token span.
                 c.isDigit() -> {
                     val start = i
-                    if (c == '0' && (peek(1) == 'x' || peek(1) == 'X')) {
-                        i += 2
-                        while (i < n && (source[i].isLetterOrDigit())) i++
-                    } else {
-                        while (i < n && source[i].isDigit()) i++
-                        if (i < n && source[i] == '.' && i + 1 < n && source[i + 1].isDigit()) {
-                            i++
-                            while (i < n && source[i].isDigit()) i++
-                        }
-                        // suffix letters (b, ub, s, us, u, L, uL, c, uc, f, D)
-                        while (i < n && source[i].isLetter()) i++
-                    }
+                    i = numberEnd(source, i, n)
                     spans.add(HighlightSpan(start, i, "number"))
                 }
                 // Macro invocation `@name` / `@scope::name` (lowercase final
@@ -239,19 +245,30 @@ object AzHighlighter {
                     while (j < n && source[j] == ' ') j++
                     val type = when {
                         word in RESERVED_KEYWORDS -> "keyword"
-                        start in semantics.functionDeclarations -> "function"
+                        start in semantics.overrideFunctionDeclarations -> "overrideFunction"
+                        start in semantics.specFunctionDeclarations -> "specFunction"
+                        start in semantics.functionDeclarations -> "functionDeclaration"
                         start in semantics.modulePathOffsets -> "modulePath"
                         start in semantics.labelOffsets -> "label"
                         start in semantics.scopeOffsets -> "scope"
                         semantics.isGeneric(word, start) -> "generic"
+                        semantics.isAssociatedType(word) -> "associatedType"
                         // A receiver is named `self`, so it has to answer before
                         // the implicit-parameter branch below claims the word.
-                        start in semantics.contextParameterOffsets -> "contextParameter"
-                        start in semantics.propertyDeclarations -> "property"
+                        semantics.isContextParameter(word, start) -> "contextParameter"
+                        start in semantics.enumCaseDeclarations -> "enumMember"
+                        start in semantics.errorCaseDeclarations -> "errorMember"
+                        semantics.isEnumCase(word) && isQualifiedMemberAt(source, start) -> "enumMember"
+                        semantics.isErrorCase(word) && isQualifiedMemberAt(source, start) -> "errorMember"
+                        start in semantics.overridePropertyDeclarations -> "overrideProperty"
+                        start in semantics.specPropertyDeclarations -> "specProperty"
+                        start in semantics.propertyDeclarations -> "propertyDeclaration"
                         semantics.isProperty(word) && isQualifiedMemberAt(source, start) -> "property"
                         word == "self" || word == "it" -> "parameter"
                         semantics.isParameter(word, start) && !isQualifiedMemberAt(source, start) -> "parameter"
                         j < n && source[j] in setOf('(', '<') && semantics.isFunction(source, word, start) -> "function"
+                        start in semantics.specTypeDeclarations || semantics.isSpecType(word) -> "specType"
+                        start in semantics.typeDeclarations -> "typeDeclaration"
                         semantics.isType(source, word, start) -> "type"
                         else -> "variable"
                     }
@@ -517,21 +534,46 @@ object AzHighlighter {
     private data class SemanticNames(
         val functions: Set<String>,
         val functionDeclarations: Set<Int>,
+        val specFunctionDeclarations: Set<Int>,
+        val overrideFunctionDeclarations: Set<Int>,
         val parameterScopes: List<ParameterScope>,
         val genericScopes: List<GenericScope>,
         val types: Set<String>,
+        val typeDeclarations: Set<Int>,
+        val specTypes: Set<String>,
+        val specTypeDeclarations: Set<Int>,
         val labelOffsets: Set<Int>,
         val scopeOffsets: Set<Int>,
         /** Segments of an `import`/`module` path - the "where", not the "what". */
         val modulePathOffsets: Set<Int>,
         val contextParameterOffsets: Set<Int>,
+        val contextParameterScopes: List<ParameterScope>,
         val properties: Set<String>,
         val propertyDeclarations: Set<Int>,
+        val specPropertyDeclarations: Set<Int>,
+        val overridePropertyDeclarations: Set<Int>,
+        val associatedTypes: Set<String>,
+        val enumCases: Set<String>,
+        val errorCases: Set<String>,
+        val enumCaseDeclarations: Set<Int>,
+        val errorCaseDeclarations: Set<Int>,
     ) {
         fun isParameter(name: String, offset: Int): Boolean =
             parameterScopes.any { offset in it.start..it.end && name in it.names }
 
         fun isProperty(name: String): Boolean = name in properties
+
+        fun isSpecType(name: String): Boolean = name in specTypes
+
+        fun isContextParameter(name: String, offset: Int): Boolean =
+            offset in contextParameterOffsets ||
+                contextParameterScopes.any { offset in it.start..it.end && name in it.names }
+
+        fun isAssociatedType(name: String): Boolean = name in associatedTypes
+
+        fun isEnumCase(name: String): Boolean = name in enumCases
+
+        fun isErrorCase(name: String): Boolean = name in errorCases
 
         fun isFunction(source: String, name: String, offset: Int): Boolean =
             name in functions || qualifiedNameAt(source, name, offset) in functions
@@ -552,15 +594,33 @@ object AzHighlighter {
         source: String,
         visibleFunctions: Set<String>,
         visibleTypes: Set<String>,
+        visibleSpecTypes: Set<String>,
+        visibleProperties: Set<String>,
+        visibleEnumCases: Set<String>,
+        visibleErrorCases: Set<String>,
     ): SemanticNames {
         val declarationsSource = codeOnly(source)
         val functions = visibleFunctions.toMutableSet()
         val declarations = mutableSetOf<Int>()
         val scopes = mutableListOf<ParameterScope>()
+        val contextScopes = mutableListOf<ParameterScope>()
         val genericScopes = mutableListOf<GenericScope>()
         val declaredTypes = visibleTypes.toMutableSet()
+        val typeDeclarationOffsets = linkedSetOf<Int>()
+        val specTypes = visibleSpecTypes.toMutableSet()
+        val specTypeDeclarationOffsets = linkedSetOf<Int>()
+        val associatedTypes = linkedSetOf<String>()
         val callable = Regex(
             """\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<([^>{}\n]*)>)?\s*(?:\[([^\]\n]*)])?\s*\(([^)]*)\)""",
+        )
+        val canonicalCallable = Regex(
+            """\bfunc(?:\s*<([^>{}\n]*)>)?\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)""",
+        )
+        val implicitReceiverCallable = Regex(
+            """\bfunc(?:\s*<([^>{}\n]*)>)?\s+(?:[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}\n]*>)?\s*)?(?:[&!])?\.([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)""",
+        )
+        val explicitReceiverCallable = Regex(
+            """\bfunc(?:\s*<([^>{}\n]*)>)?\s+\(([^)]*)\)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)""",
         )
         val parameter = Regex("""(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)\s*:""")
         // `prop name[receiver]: Type` - a property states its type where a
@@ -568,13 +628,16 @@ object AzHighlighter {
         val property = Regex(
             """\bprop\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<([^>{}\n]*)>)?\s*(?:\[([^\]\n]*)])?\s*:""",
         )
+        val canonicalProperty = Regex(
+            """\bprop(?:\s*<([^>{}\n]*)>)?\s+&\.([A-Za-z_][A-Za-z0-9_]*)\s*:""",
+        )
         val contextParameterOffsets = linkedSetOf<Int>()
-        val properties = linkedSetOf<String>()
+        val properties = visibleProperties.toMutableSet()
         val propertyDeclarations = linkedSetOf<Int>()
         val typeDeclaration = Regex(
             // `annot @Name` carries its sigil into the declaration, so the
             // name a decorator declares sits one character further on.
-            """\b(?:pack|enum|error|spec|annot|union|typealias)\s+@?([A-Za-z_][A-Za-z0-9_]*)(?:\s*<([^>{}\n]*)>)?""",
+            """\b(pack|enum|error|spec|annot|union|typealias)\s+@?([A-Za-z_][A-Za-z0-9_]*)(?:\s*<([^>{}\n]*)>)?""",
         )
 
         for (match in callable.findAll(declarationsSource)) {
@@ -588,20 +651,77 @@ object AzHighlighter {
                 .flatMap { parameter.findAll(it) }
                 .mapNotNull { it.groups[1]?.value }
                 .toSet()
+            val bodyOpen = source.indexOf('{', match.range.last + 1)
+            val bodyEnd = if (bodyOpen >= 0) matchingBrace(source, bodyOpen) else match.range.last
             // A receiver is supplied by the call site, so its declaration is
             // marked apart from the parameters the function invents for itself.
             receiverGroup?.let { group ->
+                val receiverNames = parameter.findAll(group.value).mapNotNull { it.groups[1]?.value }.toSet()
                 parameter.findAll(group.value).mapNotNullTo(contextParameterOffsets) {
                     it.groups[1]?.range?.first?.plus(group.range.first)
                 }
+                if (receiverNames.isNotEmpty()) {
+                    contextScopes += ParameterScope(receiverNames, match.range.first, bodyEnd)
+                }
             }
-
-            val bodyOpen = source.indexOf('{', match.range.last + 1)
-            val bodyEnd = if (bodyOpen >= 0) matchingBrace(source, bodyOpen) else match.range.last
             if (names.isNotEmpty()) scopes += ParameterScope(names, match.range.first, bodyEnd)
             match.groups[2]?.value?.let { genericText ->
                 val generics = genericNames(genericText)
                 if (generics.isNotEmpty()) genericScopes += GenericScope(generics, match.range.first, bodyEnd)
+            }
+        }
+        for (match in canonicalCallable.findAll(declarationsSource)) {
+            val nameGroup = match.groups[2] ?: continue
+            val paramsGroup = match.groups[3] ?: continue
+            functions += nameGroup.value
+            declarations += nameGroup.range.first
+            val names = parameter.findAll(paramsGroup.value).mapNotNull { it.groups[1]?.value }.toSet()
+            val bodyOpen = source.indexOf('{', match.range.last + 1)
+            val bodyEnd = if (bodyOpen >= 0) matchingBrace(source, bodyOpen) else match.range.last
+            if (names.isNotEmpty()) scopes += ParameterScope(names, match.range.first, bodyEnd)
+            match.groups[1]?.value?.let { genericText ->
+                genericNames(genericText).takeIf { it.isNotEmpty() }
+                    ?.let { genericScopes += GenericScope(it, match.range.first, bodyEnd) }
+            }
+        }
+        for (match in implicitReceiverCallable.findAll(declarationsSource)) {
+            val nameGroup = match.groups[2] ?: continue
+            val paramsGroup = match.groups[3] ?: continue
+            functions += nameGroup.value
+            declarations += nameGroup.range.first
+            val bodyOpen = source.indexOf('{', match.range.last + 1)
+            val bodyEnd = if (bodyOpen >= 0) matchingBrace(source, bodyOpen) else match.range.last
+            val names = parameter.findAll(paramsGroup.value).mapNotNull { it.groups[1]?.value }.toMutableSet()
+            names += "self"
+            scopes += ParameterScope(names, match.range.first, bodyEnd)
+            contextScopes += ParameterScope(setOf("self"), match.range.first, bodyEnd)
+            Regex("""\bself\b""").findAll(declarationsSource.substring(match.range.first, bodyEnd.coerceAtMost(declarationsSource.length)))
+                .mapTo(contextParameterOffsets) { match.range.first + it.range.first }
+            match.groups[1]?.value?.let { genericText ->
+                genericNames(genericText).takeIf { it.isNotEmpty() }
+                    ?.let { genericScopes += GenericScope(it, match.range.first, bodyEnd) }
+            }
+        }
+        for (match in explicitReceiverCallable.findAll(declarationsSource)) {
+            val receiverGroup = match.groups[2] ?: continue
+            val nameGroup = match.groups[3] ?: continue
+            val paramsGroup = match.groups[4] ?: continue
+            functions += nameGroup.value
+            declarations += nameGroup.range.first
+            val receiverNames = parameter.findAll(receiverGroup.value).mapNotNull { it.groups[1]?.value }.toSet()
+            val names = receiverNames + parameter.findAll(paramsGroup.value).mapNotNull { it.groups[1]?.value }
+            parameter.findAll(receiverGroup.value).mapNotNullTo(contextParameterOffsets) {
+                it.groups[1]?.range?.first?.plus(receiverGroup.range.first)
+            }
+            val bodyOpen = source.indexOf('{', match.range.last + 1)
+            val bodyEnd = if (bodyOpen >= 0) matchingBrace(source, bodyOpen) else match.range.last
+            if (names.isNotEmpty()) scopes += ParameterScope(names, match.range.first, bodyEnd)
+            if (receiverNames.isNotEmpty()) {
+                contextScopes += ParameterScope(receiverNames, match.range.first, bodyEnd)
+            }
+            match.groups[1]?.value?.let { genericText ->
+                genericNames(genericText).takeIf { it.isNotEmpty() }
+                    ?.let { genericScopes += GenericScope(it, match.range.first, bodyEnd) }
             }
         }
         for (match in property.findAll(declarationsSource)) {
@@ -617,10 +737,30 @@ object AzHighlighter {
             val lineEnd = source.indexOf('\n', match.range.last + 1).takeIf { it >= 0 } ?: source.length
             val end = if (bodyOpen in (match.range.last + 1)..lineEnd) matchingBrace(source, bodyOpen) else lineEnd
             if (names.isNotEmpty()) scopes += ParameterScope(names, match.range.first, end)
+            if (names.isNotEmpty()) contextScopes += ParameterScope(names, match.range.first, end)
+        }
+        for (match in canonicalProperty.findAll(declarationsSource)) {
+            val nameGroup = match.groups[2] ?: continue
+            properties += nameGroup.value
+            propertyDeclarations += nameGroup.range.first
+            val bodyOpen = source.indexOf('{', match.range.last + 1)
+            val lineEnd = source.indexOf('\n', match.range.last + 1).takeIf { it >= 0 } ?: source.length
+            val end = if (bodyOpen in (match.range.last + 1)..lineEnd) matchingBrace(source, bodyOpen) else lineEnd
+            scopes += ParameterScope(setOf("self"), match.range.first, end)
+            contextScopes += ParameterScope(setOf("self"), match.range.first, end)
+            Regex("""\bself\b""").findAll(declarationsSource.substring(match.range.first, end.coerceAtMost(declarationsSource.length)))
+                .mapTo(contextParameterOffsets) { match.range.first + it.range.first }
         }
         for (match in typeDeclaration.findAll(declarationsSource)) {
-            match.groups[1]?.value?.let(declaredTypes::add)
-            val genericText = match.groups[2]?.value ?: continue
+            val kind = match.groups[1]?.value ?: continue
+            val nameGroup = match.groups[2] ?: continue
+            declaredTypes += nameGroup.value
+            typeDeclarationOffsets += nameGroup.range.first
+            if (kind == "spec") {
+                specTypes += nameGroup.value
+                specTypeDeclarationOffsets += nameGroup.range.first
+            }
+            val genericText = match.groups[3]?.value ?: continue
             val generics = genericNames(genericText)
             if (generics.isEmpty()) continue
             val bodyOpen = source.indexOf('{', match.range.last + 1)
@@ -628,6 +768,28 @@ object AzHighlighter {
             val scopeEnd = if (bodyOpen in (match.range.last + 1)..lineEnd) matchingBrace(source, bodyOpen) else lineEnd
             genericScopes += GenericScope(generics, match.range.first, scopeEnd)
         }
+        // `spec Iterator assoc Item` declares `Item` as a type. The same name
+        // in an implementation clause and every use in the declaring source
+        // keeps that semantic role instead of falling back to a value name.
+        Regex("""\bassoc\s+([A-Za-z_][A-Za-z0-9_]*)""")
+            .findAll(declarationsSource)
+            .mapNotNullTo(associatedTypes) { it.groups[1]?.value }
+        declaredTypes += associatedTypes
+
+        val localCases = caseNames(declarationsSource)
+        val cases = CaseNames(
+            enumNames = localCases.enumNames + visibleEnumCases,
+            errorNames = localCases.errorNames + visibleErrorCases,
+            enumDeclarations = localCases.enumDeclarations,
+            errorDeclarations = localCases.errorDeclarations,
+        )
+
+        val specBodies = declarationBodyRanges(declarationsSource, "spec")
+        val overrideBodies = declarationBodyRanges(declarationsSource, "impl", requireFor = true)
+        val specFunctionDeclarations = declarations.filterTo(linkedSetOf()) { offset -> specBodies.any { offset in it } }
+        val overrideFunctionDeclarations = declarations.filterTo(linkedSetOf()) { offset -> overrideBodies.any { offset in it } }
+        val specPropertyDeclarations = propertyDeclarations.filterTo(linkedSetOf()) { offset -> specBodies.any { offset in it } }
+        val overridePropertyDeclarations = propertyDeclarations.filterTo(linkedSetOf()) { offset -> overrideBodies.any { offset in it } }
 
         val labelOffsets = linkedSetOf<Int>()
         Regex("""\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:for|while|loop)\b""")
@@ -653,10 +815,105 @@ object AzHighlighter {
             }
 
         return SemanticNames(
-            functions, declarations, scopes, genericScopes, declaredTypes,
+            functions, declarations, specFunctionDeclarations, overrideFunctionDeclarations,
+            scopes, genericScopes, declaredTypes, typeDeclarationOffsets, specTypes, specTypeDeclarationOffsets,
             labelOffsets, scopeOffsets, modulePathOffsets,
-            contextParameterOffsets, properties, propertyDeclarations,
+            contextParameterOffsets, contextScopes, properties, propertyDeclarations,
+            specPropertyDeclarations, overridePropertyDeclarations,
+            associatedTypes, cases.enumNames, cases.errorNames,
+            cases.enumDeclarations, cases.errorDeclarations,
         )
+    }
+
+    /** Braced bodies of one declaration kind, used only to retain member style. */
+    private fun declarationBodyRanges(source: String, keyword: String, requireFor: Boolean = false): List<IntRange> {
+        val ranges = mutableListOf<IntRange>()
+        for (head in Regex("""\b${Regex.escape(keyword)}\b""").findAll(source)) {
+            val open = source.indexOf('{', head.range.last + 1)
+            if (open < 0) continue
+            val nextDeclaration = Regex(
+                """\b(?:func|prop|pack|enum|error|spec|impl|annot|union|typealias)\b""",
+            ).find(source, head.range.last + 1)?.range?.first
+            if (nextDeclaration != null && nextDeclaration < open) continue
+            val header = source.substring(head.range.last + 1, open)
+            if (requireFor && !Regex("""\bfor\b""").containsMatchIn(header)) continue
+            val close = matchingBrace(source, open)
+            if (close > open + 1) ranges += (open + 1) until (close - 1)
+        }
+        return ranges
+    }
+
+    private data class CaseNames(
+        val enumNames: Set<String>,
+        val errorNames: Set<String>,
+        val enumDeclarations: Set<Int>,
+        val errorDeclarations: Set<Int>,
+    )
+
+    /**
+     * Finds the names declared directly by `enum` and `error` bodies while
+     * tolerating incomplete payloads and decorators. A case begins an entry at
+     * body depth zero; identifiers inside `(payload: Type)` or nested blocks
+     * are never cases.
+     */
+    private fun caseNames(source: String): CaseNames {
+        val enumNames = linkedSetOf<String>()
+        val errorNames = linkedSetOf<String>()
+        val enumDeclarations = linkedSetOf<Int>()
+        val errorDeclarations = linkedSetOf<Int>()
+        val declaration = Regex("""\b(enum|error|fail)\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}\n]*>)?[^\n{]*\{""")
+
+        for (match in declaration.findAll(source)) {
+            val open = source.indexOf('{', match.range.first)
+            if (open < 0) continue
+            val close = matchingBrace(source, open).coerceAtMost(source.length)
+            val isError = match.groups[1]?.value != "enum"
+            var index = open + 1
+            var depth = 0
+            var entryStart = true
+            while (index < close - 1) {
+                val character = source[index]
+                when {
+                    character == '\n' && depth == 0 -> {
+                        entryStart = true
+                        index++
+                    }
+                    character in setOf(',', ';') && depth == 0 -> {
+                        entryStart = true
+                        index++
+                    }
+                    character == '(' || character == '[' || character == '{' -> {
+                        depth++
+                        index++
+                    }
+                    character == ')' || character == ']' || character == '}' -> {
+                        depth = (depth - 1).coerceAtLeast(0)
+                        index++
+                    }
+                    character == '@' && depth == 0 && entryStart -> {
+                        index++
+                        while (index < close && (source[index].isIdentPart() || source[index] == ':')) index++
+                    }
+                    character.isIdentStart() -> {
+                        val start = index++
+                        while (index < close && source[index].isIdentPart()) index++
+                        val name = source.substring(start, index)
+                        if (depth == 0 && entryStart && name !in RESERVED_KEYWORDS) {
+                            if (isError) {
+                                errorNames += name
+                                errorDeclarations += start
+                            } else {
+                                enumNames += name
+                                enumDeclarations += start
+                            }
+                        }
+                        if (depth == 0) entryStart = false
+                    }
+                    else -> index++
+                }
+            }
+        }
+        return CaseNames(enumNames, errorNames, enumDeclarations, errorDeclarations)
     }
 
     /**
@@ -665,9 +922,8 @@ object AzHighlighter {
      * A clause reads left to right in one of two modes. It starts in *path*
      * mode, where each `.` steps down the module tree; the first `::` switches
      * it to *selection* mode, where the names are declarations inside the module
-     * the path reached. A group resets its members to path mode when a `.`
-     * opened it and to selection mode when a `::` did, because that is exactly
-     * what the two spellings mean.
+     * the path reached. A `::{...}` group keeps each member in selection mode;
+     * nested `::` qualifiers are refined separately as scopes.
      */
     private fun importPathOffsets(source: String): Set<Int> {
         val result = linkedSetOf<Int>()
@@ -772,6 +1028,66 @@ object AzHighlighter {
                 .find(part)?.groupValues?.get(1)
         }
         .toSet()
+
+    /**
+     * End of a tolerant numeric literal beginning at [start].
+     *
+     * This mirrors the compiler's lexical boundaries without parsing a value:
+     * malformed, half-written input must still be highlightable. In particular,
+     * `0xFF`, `0o77`, and `0b1010` stay single spans rather than letting their
+     * prefix or digits be recolored independently.
+     */
+    private fun numberEnd(source: String, start: Int, limit: Int): Int {
+        var index = start
+        // A digit immediately after `.` is a positional member (`tuple.0`),
+        // not the start of a real literal. Keep the same boundary as Lexer so
+        // `tuple.0.0` remains two member accesses rather than one `0.0` span.
+        val afterMemberAccess = start > 0 && source[start - 1] == '.'
+        val prefix = source.getOrNull(index + 1)
+        val base = if (source[index] == '0') {
+            when (prefix) {
+                'x', 'X' -> 16
+                'o', 'O' -> 8
+                'b', 'B' -> 2
+                else -> 10
+            }
+        } else {
+            10
+        }
+
+        if (base != 10) index += 2
+        fun digit(character: Char): Boolean = when (base) {
+            16 -> character.isDigit() || character in 'a'..'f' || character in 'A'..'F'
+            8 -> character in '0'..'7'
+            2 -> character == '0' || character == '1'
+            else -> character.isDigit()
+        }
+        while (index < limit && (digit(source[index]) || source[index] == '_')) index++
+
+        if (base == 10 && !afterMemberAccess) {
+            if (index + 1 < limit && source[index] == '.' && source[index + 1].isDigit()) {
+                index++
+                while (index < limit && (source[index].isDigit() || source[index] == '_')) index++
+            } else if (
+                index < limit && source[index] == '.' &&
+                (index + 1 >= limit || (
+                    source[index + 1] != '.' &&
+                        !source[index + 1].isLetter() &&
+                        source[index + 1] != '_'
+                    ))
+            ) {
+                // `2.` is a real literal, while `2..5` is a range and
+                // `2.toString` is integer member access.
+                index++
+            }
+            if (index < limit && (source[index] == 'e' || source[index] == 'E')) {
+                index++
+                if (index < limit && (source[index] == '+' || source[index] == '-')) index++
+                while (index < limit && (source[index].isDigit() || source[index] == '_')) index++
+            }
+        }
+        return index
+    }
 
     /** `Int` at the end of `Int` becomes the compiler's `std__Int` key. */
     private fun qualifiedNameAt(source: String, name: String, offset: Int): String {

@@ -45,7 +45,7 @@ class ComparisonOperatorTest {
             var major: Int
             var minor: Int
         }
-        oper<=> [self: Version&](rhs: Version&): Compare {
+        oper<=> Version&.(rhs: Version&): Compare {
             if self.major < rhs.major { return Compare.Less }
             if self.major > rhs.major { return Compare.Greater }
             if self.minor < rhs.minor { return Compare.Less }
@@ -98,7 +98,7 @@ class ComparisonOperatorTest {
                 var x: Int
                 var y: Int
             }
-            oper== [self: Point&](rhs: Point&): Bool {
+            oper== Point&.(rhs: Point&): Bool {
                 return self.x == rhs.x && self.y == rhs.y
             }
             func main() {
@@ -118,10 +118,10 @@ class ComparisonOperatorTest {
             pack Odd {
                 var v: Int
             }
-            oper<=> [self: Odd&](rhs: Odd&): Compare {
+            oper<=> Odd&.(rhs: Odd&): Compare {
                 return Compare.Equal
             }
-            oper< [self: Odd&](rhs: Odd&): Bool {
+            oper< Odd&.(rhs: Odd&): Bool {
                 return true
             }
             func main() {
@@ -142,7 +142,7 @@ class ComparisonOperatorTest {
                 var v: Int
                 var known: Bool
             }
-            oper<=> [self: Maybe&](rhs: Maybe&): PartialCompare {
+            oper<=> Maybe&.(rhs: Maybe&): PartialCompare {
                 if !self.known || !rhs.known { return PartialCompare.Unordered }
                 if self.v < rhs.v { return PartialCompare.Less }
                 if self.v > rhs.v { return PartialCompare.Greater }
@@ -167,7 +167,7 @@ class ComparisonOperatorTest {
                 var v: Int
                 var known: Bool
             }
-            oper<=> [self: Maybe&](rhs: Maybe&): PartialCompare {
+            oper<=> Maybe&.(rhs: Maybe&): PartialCompare {
                 if !self.known || !rhs.known { return PartialCompare.Unordered }
                 if self.v < rhs.v { return PartialCompare.Less }
                 if self.v > rhs.v { return PartialCompare.Greater }
@@ -195,7 +195,7 @@ class ComparisonOperatorTest {
             pack Counted {
                 var v: Int
             }
-            oper<=> [self: Counted&](rhs: Counted&): PartialCompare {
+            oper<=> Counted&.(rhs: Counted&): PartialCompare {
                 println("cmp")
                 if self.v < rhs.v { return PartialCompare.Less }
                 if self.v > rhs.v { return PartialCompare.Greater }
@@ -282,7 +282,7 @@ class ComparisonOperatorTest {
 
     // -- Phase 6: derivation -----------------------------------------------
 
-    /** A `derive [Equal]` asks the compiler to write `==` field-wise. */
+    /** A `derive (Equal]` asks the compiler to write `==` field-wise. */
     @Test fun equalIsDerivedFieldWise() {
         assertEquals("true\nfalse\nfalse\ntrue", run("""
             import std.io
@@ -300,7 +300,7 @@ class ComparisonOperatorTest {
         """.trimIndent()))
     }
 
-    /** `derive [Order]` gives `<=>`, and the four relational operators follow. */
+    /** `derive (Order]` gives `<=>`, and the four relational operators follow. */
     @Test fun orderIsDerivedLexicographically() {
         assertEquals("Compare.Less\ntrue\nfalse\ntrue", run("""
             import std.io
@@ -309,7 +309,7 @@ class ComparisonOperatorTest {
                 var major: Int
                 var minor: Int
             }
-            derive [Order] for Version
+            derive (Order) for Version
             func main() {
                 println("${'$'}{Version(1, 2) <=> Version(1, 9)}")
                 println(Version(1, 2) < Version(1, 9))
@@ -328,7 +328,7 @@ class ComparisonOperatorTest {
                 var major: Int
                 var minor: Int
             }
-            derive [Order] for Version
+            derive (Order) for Version
             func main() {
                 println("${'$'}{Version(2, 0) <=> Version(1, 99)}")
                 println("${'$'}{Version(1, 1) <=> Version(1, 2)}")
@@ -345,7 +345,7 @@ class ComparisonOperatorTest {
                 var a: Int
                 var b: Int
             }
-            derive [Equal] for Key
+            derive (Equal) for Key
             func main() {
                 println(Key(1, 2).hash == Key(1, 2).hash)
                 println(Key(1, 2).hash == Key(2, 1).hash)
@@ -362,9 +362,9 @@ class ComparisonOperatorTest {
                 var a: Int
                 var b: Int
             }
-            derive [Equal] for Loose
+            derive (Equal) for Loose
             impl Equal for Loose {
-                oper== [self: Self&](rhs: Self&): Bool {
+                oper== &.(rhs: Self&): Bool {
                     return self.a == rhs.a
                 }
             }
@@ -407,7 +407,7 @@ class ComparisonOperatorTest {
                 var x: Int
                 var y: Int
             }
-            derive [Equal] for Vec2
+            derive (Equal) for Vec2
             func main() {
                 println(Vec2(1, 2) == Vec2(1, 2))
             }
@@ -447,10 +447,10 @@ class ComparisonOperatorTest {
             import std.traits
             pack Box { var v: Int = 0 }
             impl Deref<Int> for Box {
-                oper.* [self: Self&]: Int { return self.v }
+                oper.* &.(): Int { return self.v }
             }
             impl DerefMut<Int> for Box {
-                oper.^ [self: Self!]: Int { return self.v }
+                oper.^ !.(): Int { return self.v }
             }
             func main() {
                 var b = Box(7)
@@ -464,7 +464,7 @@ class ComparisonOperatorTest {
             import std.traits
             pack Box { var v: Int = 0 }
             impl DerefMut<Int> for Box {
-                oper.^ [self: Self!]: Int { return self.v }
+                oper.^ !.(): Int { return self.v }
             }
             func main() {}
         """.trimIndent())

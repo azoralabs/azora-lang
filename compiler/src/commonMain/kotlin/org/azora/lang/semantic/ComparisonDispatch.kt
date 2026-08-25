@@ -92,8 +92,8 @@ internal fun comparisonPlan(
  * The member a *unary* operator is declared under.
  *
  * `-x` and `x - y` share a symbol and are told apart by operand count, which
- * the overload suffix already encodes: `oper- [self: Self&]` registers as
- * `oper-` and `oper- [self: Self&](rhs: Vec2&)` as `oper-@Vec2`. So the name is
+ * the overload suffix already encodes: `oper- &.` registers as
+ * `oper-` and `oper- &.(rhs: Vec2&)` as `oper-@Vec2`. So the name is
  * the same and the lookup passes no operand key.
  */
 internal fun unaryOverloadName(op: TokenType): String? = when (op) {

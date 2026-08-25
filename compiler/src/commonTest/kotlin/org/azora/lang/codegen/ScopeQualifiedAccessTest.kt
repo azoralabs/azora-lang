@@ -170,7 +170,7 @@ class ScopeQualifiedAccessTest {
                 import std.io
                 import std.traits
                 scope shapes { pack Square { fin side: Int = 0 } }
-                derive [Equal] for shapes::Square
+                derive (Equal) for shapes::Square
                 func main() {
                     println(if shapes::Square(2) == shapes::Square(2) { "eq" } else { "ne" })
                 }

@@ -4,9 +4,11 @@ plugins {
 
 val generateStdlib = tasks.register("generateAzStdlib") {
     val stdDir = rootProject.file("std")
+    val packageManifest = rootProject.file("package.azon")
     val outputDir = layout.buildDirectory.dir("generated/stdlib")
 
     inputs.dir(stdDir)
+    inputs.file(packageManifest)
     outputs.dir(outputDir)
 
     doLast {
@@ -50,12 +52,10 @@ val generateStdlib = tasks.register("generateAzStdlib") {
             "\"$relPath\" to ${uniqueName(prefix, relPath)}"
         }
 
-        val versionFile = stdDir.resolve("STDLIB_VERSION")
-        check(versionFile.isFile) {
-            "std/STDLIB_VERSION is missing - the bundled standard library must state the " +
-                "language version it was written for, exactly as an installed one does"
+        check(packageManifest.isFile) {
+            "package.azon is missing - the bundled standard library must carry its package metadata"
         }
-        val stdlibVersion = versionFile.readText().trim()
+        val manifestSource = packageManifest.readText().replace("$", "\${'$'}")
 
         // The generated file is *data only*: the same `.az` files an installed
         // compiler reads from disk, carried inside the artifact for targets that
@@ -75,8 +75,15 @@ val generateStdlib = tasks.register("generateAzStdlib") {
             appendLine(" */")
             appendLine("internal object AzStdlibBundle {")
             appendLine()
-            appendLine("    /** The language version this tree was generated for. */")
-            appendLine("    const val VERSION = \"$stdlibVersion\"")
+            appendLine("    /** The package metadata next to the source `std/` tree. */")
+            appendLine("    private val MANIFEST_SOURCE = \"\"\"")
+            appendLine(manifestSource)
+            appendLine("    \"\"\".trimIndent()")
+            appendLine("    private val manifest = requireNotNull(parseStdlibPackageManifest(MANIFEST_SOURCE)) {")
+            appendLine("        \"bundled package.azon must declare package.name and package.version\"")
+            appendLine("    }")
+            appendLine("    val PACKAGE_NAME: String = manifest.name")
+            appendLine("    val VERSION: String = manifest.version")
             appendLine()
             for (entry in entries) {
                 appendLine(entry)

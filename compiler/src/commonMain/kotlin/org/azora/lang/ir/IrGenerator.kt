@@ -484,6 +484,7 @@ class IrGenerator(private val table: SymbolTable) {
             is IrExpr.EnumLiteral,
             is IrExpr.BoolLiteral,
             is IrExpr.CharLiteral,
+            IrExpr.UnitLiteral,
             is IrExpr.SlotPattern -> Unit
         }
     }
@@ -804,7 +805,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
             }
             val callable = callableByName.values.toList()
-            // A spec property (`prop size[self: Self&]: Int`) dispatches exactly
+            // A spec property (`prop size&.: Int`) dispatches exactly
             // like a nullary method - the backend reads `value.size` through the
             // same stub. An implementer that satisfies the property with a plain
             // field has no getter to point at; that one type drops out of the
@@ -1471,7 +1472,9 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.Throw -> IrStmt.Throw(lowerExpr(stmt.value))
             is Stmt.Panic -> {
                 if (stmt.inlinePanic) error("inline panic should have been resolved by CTCE before IR generation")
-                IrStmt.ExprStmt(IrExpr.Call("__panic", listOf(lowerExpr(stmt.message)), IrType.Unit))
+                // Panic has no successful result. Marking it Nothing (rather
+                // than Unit) preserves bottom-type flow through the backends.
+                IrStmt.ExprStmt(IrExpr.Call("__panic", listOf(lowerExpr(stmt.message)), IrType.Nothing))
             }
             is Stmt.Try -> {
                 table.pushScope()
@@ -1605,6 +1608,7 @@ class IrGenerator(private val table: SymbolTable) {
             is IrExpr.Lambda,
             is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral,
             is IrExpr.EnumLiteral, is IrExpr.BoolLiteral, is IrExpr.CharLiteral,
+            IrExpr.UnitLiteral,
             is IrExpr.Var, is IrExpr.SlotPattern -> expr
         }
     }
@@ -1659,6 +1663,7 @@ class IrGenerator(private val table: SymbolTable) {
             is IrExpr.Lambda,
             is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral,
             is IrExpr.EnumLiteral, is IrExpr.BoolLiteral, is IrExpr.CharLiteral,
+            IrExpr.UnitLiteral,
             is IrExpr.SlotPattern -> Unit
         }
     }
@@ -1801,7 +1806,7 @@ class IrGenerator(private val table: SymbolTable) {
             is IrType.Tuple -> "Tuple"
             else -> return null
         }
-        // A type-level constant (`impl Array:: { bridge fin size }`) is bodyless
+        // A type-level constant (`impl Array { bridge fin size }`) is bodyless
         // too: the backend reads it from the value, so it stays a member access.
         if (table.lookupTypeStatic(owner, name) != null) return null
         val mangled = table.lookupMethod(owner, name) ?: return null
@@ -1928,7 +1933,7 @@ class IrGenerator(private val table: SymbolTable) {
                     t == IrType.String || t == IrType.Any || t is IrType.Array || t is IrType.Map || t is IrType.Set ||
                         t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
                 val innerType = inner.type
-                // A user-declared `oper as<U> [self: T&]: U` takes precedence over the
+                // A user-declared `oper as<U> T&.(): U` takes precedence over the
                 // built-in conversions: a type that says how it converts should be
                 // asked, rather than reinterpreted. Each cast form asks its own
                 // member, so `as`, `as?` and `as*` never stand in for one another.
@@ -2036,6 +2041,8 @@ class IrGenerator(private val table: SymbolTable) {
                     IrExpr.Var(resolveName(expr.name), sym.type)
                 } else if (aliasedSym != null) {
                     IrExpr.Var(resolveName(aliased), aliasedSym.type)
+                } else if (expr.name == "Unit") {
+                    IrExpr.UnitLiteral
                 } else {
                     // Implicit self: bare field name in a method reads the
                     // receiver's field.
@@ -2339,7 +2346,7 @@ class IrGenerator(private val table: SymbolTable) {
                                 while (next < slots.size && slots[next] != null) next++
                                 slots[next] = argument
                             }
-                            // `.(1, 2, 3)` into `ctor[self](...args: T)`: the fixed
+                            // `.(1, 2, 3)` into `ctor .(...args: T)`: the fixed
                             // parameters take theirs and the rest become the one
                             // array the variadic slot holds, exactly as a variadic
                             // function call packs its own.
@@ -2723,7 +2730,7 @@ class IrGenerator(private val table: SymbolTable) {
                     val func = table.lookupFunction(mangled)
                     return IrExpr.Call(mangled, listOf(target), func?.returnType ?: IrType.Any)
                 }
-                // A type-scoped constant (`impl Array:: { bridge fin size }`) is
+                // A type-scoped constant (`impl Array { bridge fin size }`) is
                 // typed by its declaration wherever the receiver came from.
                 val typeOwner = (target.type as? IrType.Named)?.name
                     ?: when (target.type) {
@@ -2737,7 +2744,10 @@ class IrGenerator(private val table: SymbolTable) {
                 val memberType = when {
                     typeStatic != null -> typeStatic.returnType
                     expr.name in setOf("length", "size") &&
-                        (target.type is IrType.Map || target.type is IrType.Set || target.type == IrType.String) -> IrType.Int
+                        (
+                            target.type is IrType.Array || target.type is IrType.Map ||
+                                target.type is IrType.Set || target.type == IrType.String
+                            ) -> IrType.Int
                     expr.name == "data" && tt2 is IrType.Array -> IrType.Pointer(tt2.element)
                     // `Hash`'s member answers a ULong whatever it is read on. A
                     // pack with its own `hash` resolves to that member and never
@@ -2927,12 +2937,22 @@ class IrGenerator(private val table: SymbolTable) {
                 val condition = lowerExpr(expr.condition)
                 val thenExpr = lowerExpr(expr.thenExpr)
                 val elseExpr = lowerExpr(expr.elseExpr)
-                IrExpr.IfExpr(condition, thenExpr, elseExpr, thenExpr.type)
+                val type = when {
+                    thenExpr.type == IrType.Nothing -> elseExpr.type
+                    elseExpr.type == IrType.Nothing -> thenExpr.type
+                    else -> thenExpr.type
+                }
+                IrExpr.IfExpr(condition, thenExpr, elseExpr, type)
             }
             is Expr.CatchExpr -> {
                 val e = lowerExpr(expr.expr)
                 val f = lowerExpr(expr.fallback)
-                IrExpr.CatchExpr(e, f, e.type)
+                val type = when {
+                    e.type == IrType.Nothing -> f.type
+                    f.type == IrType.Nothing -> e.type
+                    else -> e.type
+                }
+                IrExpr.CatchExpr(e, f, type)
             }
             // Runtime failure transport already propagates when uncaught.
             is Expr.TryPropagate -> lowerExpr(expr.expr)

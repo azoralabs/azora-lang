@@ -179,6 +179,26 @@ class StdlibInjectionTest {
         assertEquals("std.container", StdlibInjector.moduleOf("Set"))
     }
 
+    @Test fun absoluteWorkspacePathMayEndInTheDeclaredModulePath() {
+        StdlibInjector.checkFileMatchesModule(
+            "/Users/developer/work/azora-lang/std/container/array.az",
+            "std.container.array",
+        )
+        StdlibInjector.checkFileMatchesModule(
+            "/Users/developer/work/azora-lang/std/container/container.az",
+            "std.container",
+        )
+    }
+
+    @Test fun absoluteWorkspacePathStillRejectsTheWrongModule() {
+        assertFailsWith<IllegalArgumentException> {
+            StdlibInjector.checkFileMatchesModule(
+                "/Users/developer/work/azora-lang/std/container/array.az",
+                "std.container.map",
+            )
+        }
+    }
+
     @Test fun serializerImportSelectsDecoratorMarker() {
         val result = Compiler().compile("""
             module serializerMarkerTest
@@ -617,7 +637,7 @@ class StdlibInjectionTest {
 
     @Test fun derivingASpecNeedsItsImport() {
         val result = Compiler().compile("""
-            pack Point derives [Equal] {
+            pack Point derives (Equal) {
                 x: Int
             }
         """.trimIndent())
@@ -633,7 +653,7 @@ class StdlibInjectionTest {
             import std.io
             import std.traits::Equal
 
-            pack Point derives [Equal] {
+            pack Point derives (Equal) {
                 x: Int
             }
 

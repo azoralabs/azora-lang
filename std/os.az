@@ -34,8 +34,6 @@
 @Supress(.Unused)
 module std.os
 
-import std.container.array::*
-
 /**
  * A finished command: what it printed, and how it ended.
  *
@@ -101,10 +99,7 @@ bridge func setEnvVar(name: String, value: String): Bool
  */
 @Experimental(since: "0.1")
 func envOr(name: String, fallback: String): String {
-    if hasEnvVar(name) {
-        return envVar(name)
-    }
-    return fallback
+    return if hasEnvVar(name) { envVar(name) } else { fallback }
 }
 
 // ── Working directory ───────────────────────────────────────────────
@@ -152,17 +147,17 @@ func runCommand(command: String): ProcessResult {
     // Named so it shares no suffix with `runCommand`: symbol lookup matches
     // a scope-qualified name by its tail, so a private twin differing only
     // by a leading underscore resolves back to its own caller.
-    fin raw = _commandParts(command)
-    fin codeEnd = indexOf(raw, "\n")
+    fin raw: String = _commandParts(command)
+    fin codeEnd: Int = indexOf(raw, "\n")
     if codeEnd < 0 {
-        return ProcessResult("std.os could not run the command", -1, false)
+        return .("std.os could not run the command", -1, false)
     }
-    fin rest = substring(raw, codeEnd + 1, stringLength(raw))
-    fin startedEnd = indexOf(rest, "\n")
+    fin rest: String = substring(raw, codeEnd + 1, stringLength(raw))
+    fin startedEnd: Int = indexOf(rest, "\n")
     if startedEnd < 0 {
-        return ProcessResult("std.os could not run the command", -1, false)
+        return .("std.os could not run the command", -1, false)
     }
-    return ProcessResult(
+    return .(
         substring(rest, startedEnd + 1, stringLength(rest)),
         _decimalValue(substring(raw, 0, codeEnd)),
         substring(rest, 0, startedEnd) == "true",
@@ -186,20 +181,14 @@ func _decimalValue(text: String): Int {
     if stringLength(text) == 0 {
         return 0
     }
-    var index = 0
-    var sign = 1
-    if charAt(text, 0) == '-' {
-        sign = 0 - 1
-        index = 1
-    }
-    var value = 0
-    while index < stringLength(text) {
-        fin digit = charAt(text, index)
+    var {sign, index}: Int = if charAt(text, 0) == '-' { {-1, 1} } else { {1, 0} }
+    for value: Int in 0..<stringLength(text) {
+        fin digit: Char = charAt(text, index)
         if !isDigit(digit) {
             return 0
         }
         value = value * 10 + (ord(digit) - ord('0'))
-        index += 1
+        index++
     }
     return value * sign
 }

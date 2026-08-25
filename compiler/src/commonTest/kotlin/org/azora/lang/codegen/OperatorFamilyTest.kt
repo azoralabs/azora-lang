@@ -52,7 +52,7 @@ class OperatorFamilyTest {
                 var total: Int
             }
             impl Arithmetic for Acc {
-                oper+= [self: Self!](rhs: Self&) {
+                oper+= !.(rhs: Self&) {
                     self.total = self.total + rhs.total
                 }
             }
@@ -95,9 +95,9 @@ class OperatorFamilyTest {
                 var v: Int
             }
             impl Arithmetic for N {
-                oper+ [self: Self&](rhs: Self&): N { return N(self.v + rhs.v) }
-                oper- [self: Self&](rhs: Self&): N { return N(self.v - rhs.v) }
-                oper* [self: Self&](rhs: Self&): N { return N(self.v * rhs.v) }
+                oper+ &.(rhs: Self&): N { return N(self.v + rhs.v) }
+                oper- &.(rhs: Self&): N { return N(self.v - rhs.v) }
+                oper* &.(rhs: Self&): N { return N(self.v * rhs.v) }
             }
             func main() {
                 println((N(3) + N(2)).v)
@@ -116,10 +116,10 @@ class OperatorFamilyTest {
                 var v: Int
             }
             impl Neg for N {
-                oper- [self: Self&]: N { return N(0 - self.v) }
+                oper- &.(): N { return N(0 - self.v) }
             }
             impl Arithmetic for N {
-                oper- [self: Self&](rhs: Self&): N { return N(self.v - rhs.v) }
+                oper- &.(rhs: Self&): N { return N(self.v - rhs.v) }
             }
             func main() {
                 println((-N(3)).v)
@@ -137,7 +137,7 @@ class OperatorFamilyTest {
                 var v: Int
             }
             impl Arithmetic for N {
-                oper+ [self: Self&](rhs: Self&): N { return N(self.v + rhs.v) }
+                oper+ &.(rhs: Self&): N { return N(self.v + rhs.v) }
             }
             func<T> total(a: T, b: T): T where T: Arithmetic {
                 return a + b

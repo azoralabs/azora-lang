@@ -51,6 +51,14 @@ class LexerEscapeTest {
         )
     }
 
+    @Test fun multiCharacterOperatorsAdvanceFollowingTokenColumns() {
+        val tokens = Lexer("a == b -> c && d").tokenize().dropLast(1)
+        assertEquals(
+            listOf(1, 3, 6, 8, 11, 13, 16),
+            tokens.map(Token::column),
+        )
+    }
+
     @Test fun everyGrammarKeywordHasADedicatedToken() {
         val words = listOf(
             "module", "union", "async", "where", "escaping",

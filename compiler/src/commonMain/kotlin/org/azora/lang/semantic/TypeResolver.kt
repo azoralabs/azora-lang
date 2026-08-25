@@ -74,18 +74,52 @@ class TypeResolver(private val table: SymbolTable) {
     private var inDecoratorFieldDefault = false
 
     private val errors = mutableListOf<String>()
+    private val unresolved = mutableListOf<SemanticUnresolvedSymbol>()
+    val unresolvedSymbols: List<SemanticUnresolvedSymbol> get() = unresolved.toList()
+    private data class VariantQualifierKey(
+        val line: Int,
+        val column: Int,
+        val length: Int,
+        val variant: String,
+    )
+    private val redundantQualifiers = linkedMapOf<VariantQualifierKey, SemanticRedundantVariantQualifier>()
+    val redundantVariantQualifiers: List<SemanticRedundantVariantQualifier>
+        get() = redundantQualifiers.values.toList()
     private var program: Program? = null
+
+    private fun reportUndefined(
+        internalName: String,
+        namespace: SemanticSymbolNamespace,
+        line: Int,
+        column: Int,
+        length: Int,
+    ) {
+        val sourceName = sourceSymbol(internalName)
+        val kind = if (namespace == SemanticSymbolNamespace.FUNCTION) "function" else "variable"
+        val message = "line $line: undefined $kind '$sourceName'"
+        errors.add(message)
+        unresolved.add(
+            SemanticUnresolvedSymbol(
+                internalName = internalName,
+                sourceName = sourceName,
+                namespace = namespace,
+                line = line,
+                column = column,
+                length = length.takeIf { it > 0 } ?: sourceName.length,
+                renderedMessage = message,
+            ),
+        )
+    }
 
     fun resolve(program: Program): List<String> {
         this.program = program
         typePropertyNames = program.typeFunctions.mapTo(mutableSetOf()) { it.name }
         packModules = program.items.filterIsInstance<TopLevel.Pack>()
             .associate { it.name to it.declaringModule }
-        // A top-level `fin f: (Int) -> Int = { … }` declares a lambda too, and its
-        // declared type is what supplies the lambda's parameter and receiver types.
-        // Only the annotation is read when the symbol is collected, so the
-        // initializer is resolved here - otherwise the lambda records no type and
-        // the lowering has nothing to shape it with.
+        // A typed top-level value supplies the same expected-value context as a
+        // local binding (`fin kind: Kind = .Case`). A lambda additionally needs
+        // its declared parameter and receiver types while its body is resolved;
+        // otherwise lowering has no callable shape to use.
         for (item in program.items) {
             val declaration: Triple<TypeRef?, Expr, Int> = when (item) {
                 is TopLevel.FinDecl -> Triple(item.type, item.initializer, item.line)
@@ -94,12 +128,14 @@ class TypeResolver(private val table: SymbolTable) {
                 else -> continue
             }
             val (annotation, initializer, line) = declaration
+            val declared = annotation?.let { tryResolveType(it, line) } ?: continue
+            seedExpectedValue(initializer, declared)
             if (initializer !is Expr.Lambda) continue
-            val declared = annotation?.let { tryResolveType(it, line) } as? IrType.Function ?: continue
+            val callable = declared as? IrType.Function ?: continue
             val savedParams = expectedLambdaParamTypes
             val savedReceivers = expectedLambdaReceiverTypes
-            expectedLambdaParamTypes = declared.params
-            expectedLambdaReceiverTypes = declared.receivers
+            expectedLambdaParamTypes = callable.params
+            expectedLambdaReceiverTypes = callable.receivers
             resolveExpr(initializer)
             expectedLambdaParamTypes = savedParams
             expectedLambdaReceiverTypes = savedReceivers
@@ -107,6 +143,7 @@ class TypeResolver(private val table: SymbolTable) {
         for (bridge in program.items.filterIsInstance<TopLevel.Bridge>()) {
             for (value in bridge.values) {
                 val declared = tryResolveType(value.type, value.line) ?: continue
+                seedExpectedValue(value.initializer, declared)
                 val actual = resolveExpr(value.initializer) ?: continue
                 if (!isCompatible(declared, actual)) {
                     errors.add(
@@ -902,6 +939,7 @@ class TypeResolver(private val table: SymbolTable) {
      */
     private fun seedExpectedValue(expr: Expr, expected: IrType?) {
         if (expected == null) return
+        recordRedundantVariantQualifier(expr, expected)
         when (expr) {
             is Expr.Grouping -> seedExpectedValue(expr.expr, expected)
             is Expr.IfExpr -> {
@@ -934,8 +972,104 @@ class TypeResolver(private val table: SymbolTable) {
                 if (repeated != null) seedExpectedValue(repeated.first, expected)
                 else seedInferredReceiver(expr, expected)
             }
+            is Expr.NamedArg -> seedExpectedValue(expr.value, expected)
+            is Expr.ArrayLiteral -> {
+                val element = (expected as? IrType.Array)?.element
+                if (element != null) expr.elements.forEach { seedExpectedValue(it, element) }
+            }
+            is Expr.SetLiteral -> {
+                val element = (expected as? IrType.Set)?.element
+                if (element != null) expr.elements.forEach { seedExpectedValue(it, element) }
+            }
+            is Expr.MapLit -> {
+                val map = expected as? IrType.Map
+                if (map != null) {
+                    expr.entries.forEach { (key, value) ->
+                        seedExpectedValue(key, map.key)
+                        seedExpectedValue(value, map.value)
+                    }
+                }
+            }
+            is Expr.TupleLit -> {
+                val tuple = expected as? IrType.Tuple
+                if (tuple != null && tuple.elements.size == expr.elements.size) {
+                    expr.elements.zip(tuple.elements).forEach { (element, type) ->
+                        seedExpectedValue(element, type)
+                    }
+                }
+            }
             else -> seedInferredReceiver(expr, expected)
         }
+    }
+
+    /** Whether [expr] gets its type solely by spelling an enum/slot owner. */
+    private fun isExplicitVariantReference(expr: Expr): Boolean = when (expr) {
+        is Expr.Member -> {
+            val target = expr.target as? Expr.Identifier
+            target != null && (
+                expr.name in table.lookupEnum(target.name).orEmpty() ||
+                    table.lookupSlot(target.name)?.any { (name, payload) ->
+                        name == expr.name && payload.isEmpty()
+                    } == true
+                )
+        }
+        is Expr.MethodCall -> {
+            val target = expr.target as? Expr.Identifier
+            target != null && table.lookupSlot(target.name)?.any { (name, _) -> name == expr.name } == true
+        }
+        else -> false
+    }
+
+    /**
+     * Records an explicit enum/slot owner only when the same compiler context
+     * that resolves `.Case` has already supplied its exact expected type.
+     *
+     * This is intentionally beside [seedExpectedValue]: arguments, returns,
+     * typed bindings, field assignments, constructor fields, `when` patterns,
+     * equality operands and every branch of an expected-value expression all
+     * pass through that function. The editor therefore receives the compiler's
+     * answer instead of recreating these contexts from source text.
+     */
+    private fun recordRedundantVariantQualifier(expr: Expr, expected: IrType) {
+        val expectedOwner = when (expected) {
+            is IrType.Named -> expected.name
+            is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
+            else -> null
+        } ?: return
+        val explicit = when (expr) {
+            is Expr.Member -> (expr.target as? Expr.Identifier)?.let { Triple(it, expr.name, false) }
+            is Expr.MethodCall -> (expr.target as? Expr.Identifier)?.let { Triple(it, expr.name, true) }
+            else -> null
+        } ?: return
+        val (target, variant, called) = explicit
+        val owner = table.canonicalTypeName(target.name)
+        if (table.canonicalTypeName(expectedOwner) != owner) return
+
+        val valid = if (called) {
+            table.lookupSlot(target.name)?.any { (name, _) -> name == variant } == true
+        } else {
+            variant in table.lookupEnum(target.name).orEmpty() ||
+                table.lookupSlot(target.name)?.any { (name, payload) -> name == variant && payload.isEmpty() } == true
+        }
+        if (!valid) return
+
+        val qualifier = sourceSymbol(target.name)
+        val occurrence = SemanticRedundantVariantQualifier(
+            qualifier = qualifier,
+            variant = variant,
+            line = target.line,
+            column = target.column,
+            length = target.length + 1, // include the member dot; the fix replaces `Type.` with `.`.
+        )
+        redundantQualifiers.putIfAbsent(
+            VariantQualifierKey(
+                occurrence.line,
+                occurrence.column,
+                occurrence.length,
+                occurrence.variant,
+            ),
+            occurrence,
+        )
     }
 
     /** The name of the type a slot holds, declared or primitive. */
@@ -1427,7 +1561,13 @@ class TypeResolver(private val table: SymbolTable) {
                 checkCapture(stmt.name, stmt.line)
                 val varSym = table.lookupVariable(stmt.name)
                 if (varSym == null) {
-                    errors.add("line ${stmt.line}: undefined variable '${sourceSymbol(stmt.name)}'")
+                    reportUndefined(
+                        stmt.name,
+                        SemanticSymbolNamespace.VALUE,
+                        stmt.line,
+                        stmt.column,
+                        stmt.name.length,
+                    )
                     return
                 }
                 if (!varSym.mutable) {
@@ -1445,6 +1585,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // an `oper+` the type is entitled not to have. The lowerer makes
                 // the same decision from the same table.
                 if (resolvesInPlace(stmt.compoundOp, stmt.value, varSym.type)) return
+                if (stmt.compoundOp == null) seedExpectedValue(stmt.value, varSym.type)
                 val valueType = resolveExpr(stmt.value) ?: return
                 if (!isCompatible(varSym.type, adoptLiteralType(stmt.value, valueType, varSym.type))) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to '${stmt.name}' of type ${varSym.type}")
@@ -1644,6 +1785,9 @@ class TypeResolver(private val table: SymbolTable) {
                 if (targetType is IrType.Named) {
                     val mangled = table.lookupMethod(targetType.name, "indexSet")
                     if (mangled != null) {
+                        val params = table.lookupFunction(mangled)?.params.orEmpty()
+                        seedExpectedValue(stmt.index, params.getOrNull(params.lastIndex - 1)?.second)
+                        seedExpectedValue(stmt.value, params.lastOrNull()?.second)
                         resolveExpr(stmt.index) ?: return
                         resolveExpr(stmt.value) ?: return
                         return
@@ -1651,18 +1795,22 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 // Map index-assign: `map[key] = value`.
                 if (targetType is IrType.Map) {
+                    seedExpectedValue(stmt.index, targetType.key)
+                    seedExpectedValue(stmt.value, targetType.value)
                     resolveExpr(stmt.index) ?: return
                     resolveExpr(stmt.value) ?: return
                     return
                 }
                 // Pointer index-assign: `ptr[i] = value` (C++-style *(ptr+i) = value).
                 if (targetType is IrType.Pointer) {
+                    seedExpectedValue(stmt.value, targetType.inner)
                     resolveExpr(stmt.index) ?: return
                     resolveExpr(stmt.value) ?: return
                     return
                 }
                 // Primitive set index-assign: `s[i] = value` (list-backed, by position).
                 if (targetType is IrType.Set) {
+                    seedExpectedValue(stmt.value, targetType.element)
                     resolveExpr(stmt.index) ?: return
                     resolveExpr(stmt.value) ?: return
                     return
@@ -1676,6 +1824,7 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: array index must be Int, got $indexType")
                     return
                 }
+                seedExpectedValue(stmt.value, targetType.element)
                 val valueType = resolveExpr(stmt.value) ?: return
                 if (valueType != targetType.element) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to array of ${targetType.element}")
@@ -1683,6 +1832,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Stmt.DerefAssign -> {
                 val target = resolveExpr(stmt.target) ?: return
+                if (target is IrType.Pointer) seedExpectedValue(stmt.value, target.inner)
                 resolveExpr(stmt.value) ?: return
                 // `p.^ = v` writes through the pointer, which a `T*` does not permit.
                 // The sigil at the write site already says which one this is.
@@ -2028,6 +2178,10 @@ class TypeResolver(private val table: SymbolTable) {
                     val receiverField = currentReceiverType?.let { table.lookupStruct(it)?.field(expr.name) }
                     when {
                         opened != null -> opened.type
+                        // Kotlin-compatible Unit is both a type and the single
+                        // value inhabiting it.  It needs no declaration in the
+                        // value table: the compiler supplies the singleton.
+                        expr.name == "Unit" -> IrType.Unit
                         receiverField != null -> {
                             errors.add(
                                 "line ${expr.line}: '${sourceSymbol(expr.name)}' is a field of " +
@@ -2036,7 +2190,13 @@ class TypeResolver(private val table: SymbolTable) {
                             null
                         }
                         else -> {
-                            errors.add("line ${expr.line}: undefined variable '${sourceSymbol(expr.name)}'")
+                            reportUndefined(
+                                expr.name,
+                                SemanticSymbolNamespace.VALUE,
+                                expr.line,
+                                expr.column,
+                                expr.length,
+                            )
                             null
                         }
                     }
@@ -2121,6 +2281,16 @@ class TypeResolver(private val table: SymbolTable) {
                     leftType = resolveExpr(expr.left) ?: return null
                     if (equality) seedExpectedValue(expr.right, leftType)
                     rightType = resolveExpr(expr.right) ?: return null
+                }
+                if (equality && inferredHead(expr.right) == null && !isExplicitVariantReference(expr.right)) {
+                    // Either operand can supply the other's enum type. The
+                    // pre-resolution seed above handles the right side. A
+                    // separately typed right operand can also make a qualifier
+                    // on the left redundant (`FileKind.File == kind`). An
+                    // explicit or inferred variant is deliberately not such an
+                    // anchor: suggesting both sides of `Kind.A == Kind.B` would
+                    // let fix-all create the ambiguous `.A == .B`.
+                    seedExpectedValue(expr.left, rightType)
                 }
                 resolveBinaryType(
                     expr.op,
@@ -2225,7 +2395,7 @@ class TypeResolver(private val table: SymbolTable) {
                         table.lookupFunction("__ctor_${calleeName}_$it")
                     // A variadic ctor's last parameter takes however many arguments
                     // are left, so it answers a call *wider* than its own arity -
-                    // `.(1, 2, 3)` reaches `ctor[self](...args: T)`, which has one.
+                    // `.(1, 2, 3)` reaches `ctor .(...args: T)`, which has one.
                     } ?: (expr.args.size downTo 1).firstNotNullOfOrNull { arity ->
                         table.lookupFunction("__ctor_${calleeName}_$arity")?.takeIf { it.isVariadic }
                     }
@@ -2407,7 +2577,13 @@ class TypeResolver(private val table: SymbolTable) {
                             return resolveExpr(Expr.MethodCall(ctxExpr, contextualName, expr.args, expr.line, expr.column))
                         }
                     }
-                    errors.add("line ${expr.line}: undefined function '${sourceSymbol(expr.callee)}'")
+                    reportUndefined(
+                        expr.callee,
+                        SemanticSymbolNamespace.FUNCTION,
+                        expr.line,
+                        expr.column,
+                        expr.length,
+                    )
                     return null
                 }
                 if (func.isUnsafe && !unsafeContext) {
@@ -3193,8 +3369,9 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.CatchExpr -> {
                 val t1 = resolveExpr(expr.expr) ?: return null
-                resolveExpr(expr.fallback) ?: return null
-                t1
+                if (t1 != IrType.Nothing) seedExpectedValue(expr.fallback, t1)
+                val t2 = resolveExpr(expr.fallback) ?: return null
+                joinExpressionTypes(t1, t2, expr.line, "catch")
             }
             is Expr.TryPropagate -> resolveExpr(expr.expr)
             is Expr.Seal -> {
@@ -3213,8 +3390,8 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.IfExpr -> {
                 resolveExpr(expr.condition) ?: return null
                 val t1 = resolveExpr(expr.thenExpr) ?: return null
-                resolveExpr(expr.elseExpr) ?: return null
-                t1
+                val t2 = resolveExpr(expr.elseExpr) ?: return null
+                joinExpressionTypes(t1, t2, expr.line, "if")
             }
             is Expr.NamedArg -> resolveExpr(expr.value)
             is Expr.MapLit -> {
@@ -3278,6 +3455,10 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.NullCoalesce -> {
                 val leftType = resolveExpr(expr.left) ?: return null
+                seedExpectedValue(
+                    expr.right,
+                    if (leftType is IrType.Nullable) leftType.inner else leftType,
+                )
                 resolveExpr(expr.right) ?: return null
                 // Result type is the non-nullable version of left, or right's type
                 if (leftType is IrType.Nullable) leftType.inner else leftType
@@ -3740,6 +3921,16 @@ class TypeResolver(private val table: SymbolTable) {
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
     private fun isCompatible(declared: IrType, actual: IrType): Boolean {
         if (declared == actual) return true
+        // `Nothing` is the uninhabited bottom type. An expression with this
+        // type never produces a value, so it is valid in every value position
+        // without converting into or pretending to contain the destination.
+        // The direction is intentional: no ordinary value is assignable *to*
+        // Nothing.
+        if (actual == IrType.Nothing) return true
+        // In particular, the erased `Any` used internally for a null literal
+        // must not leak through the general Any compatibility rule below.
+        // Kotlin-compatible `Nothing` is non-null; only `Nothing?` contains null.
+        if (declared == IrType.Nothing) return false
         // `Array<T>` against `Array<Int>`, where `T` is a type parameter nothing
         // bound. A generic function with no arguments has nothing to infer from
         // - `emptyArray<T>()` is the whole point of being empty - so the
@@ -3824,6 +4015,24 @@ class TypeResolver(private val table: SymbolTable) {
         // A value of type T is assignable to a `Var<…>` (Variant) when T is one of its alternatives.
         if (declared is IrType.Variant && actual in declared.elements) return true
         return false
+    }
+
+    /**
+     * Finds the value type of two expression branches.
+     *
+     * A `Nothing` arm never reaches the join, so the other arm alone determines
+     * the result. This is the same rule that lets Kotlin infer `T` for an
+     * expression whose other branch throws. For ordinary arms we preserve the
+     * compatible wider side. Unrelated ordinary arms retain Azora's existing
+     * first-arm inference; changing that broader least-upper-bound policy is
+     * separate from making Nothing a bottom type.
+     */
+    private fun joinExpressionTypes(first: IrType, second: IrType, line: Int, construct: String): IrType? = when {
+        first == IrType.Nothing -> second
+        second == IrType.Nothing -> first
+        isCompatible(first, second) -> first
+        isCompatible(second, first) -> second
+        else -> first
     }
 
     /** If [t] is a nullable wrapper around a numeric type, return its inner type; else [t]. */
@@ -4054,7 +4263,7 @@ class TypeResolver(private val table: SymbolTable) {
                         "line $line: cannot compare two '${bareNamed.name}' values - " +
                             "${bareNamed.name} does not implement PartialEqual; add " +
                             "'derive Equal for ${bareNamed.name}' to compare it field by field, " +
-                            "or declare 'oper== [self: ${bareNamed.name}&](rhs: ${bareNamed.name}&): Bool'",
+                            "or declare 'oper== ${bareNamed.name}&.(rhs: ${bareNamed.name}&): Bool'",
                     )
                     return null
                 }
@@ -4677,7 +4886,7 @@ class TypeResolver(private val table: SymbolTable) {
         // member as much as an `impl` prop is; the receiver just happens to lower
         // to a builtin type rather than a Named one.
         table.lookupStruct(owner)?.field(name)?.let { return it.type }
-        // A constant declared on the *type* - `impl Array:: { bridge fin size }` -
+        // A receiver-free constant declared on the type - `impl Array { bridge fin size }` -
         // answers for every value of it, so a value reaches it too. The member is
         // scope-mangled with the type that owns it, so the scope is asked for.
         table.lookupTypeStatic(owner, name)?.let { return it.returnType }

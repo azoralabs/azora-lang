@@ -230,7 +230,7 @@ class ReturnTypeDeclarationTest {
         import std.io
         pack Box { var value: Int }
         impl Box {
-            oper.* [self: Self&] {
+            oper.* &.() {
                 return self.value
             }
         }

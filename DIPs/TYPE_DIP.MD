@@ -140,9 +140,9 @@ oper as*    // bit reinterpretation
 
 ```azora
 impl Celsius {
-    oper as<U> [self: Self&] = Fahrenheit(self.degrees * 1.8 + 32.0)
-    oper as?<U> [self: Self&] = if self.valid { Fahrenheit(…) } else { null }
-    oper as*<U> [self: Self&] = Fahrenheit(self.degrees)
+    oper as<U> &. = Fahrenheit(self.degrees * 1.8 + 32.0)
+    oper as?<U> &. = if self.valid { Fahrenheit(…) } else { null }
+    oper as*<U> &. = Fahrenheit(self.degrees)
 }
 ```
 

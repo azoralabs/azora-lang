@@ -38,11 +38,6 @@
 @Supress(.Unused)
 module std.decimal
 
-import std::{
-    char::*
-    string::*
-}
-
 /** What exact arithmetic refuses to do rather than answer approximately. */
 @Experimental(since: "0.1")
 error DecimalError {
@@ -373,19 +368,19 @@ impl Decimal {
 
 /** The sum. See [Decimal.plus]. */
 @Experimental(since: "0.1")
-oper+ [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+oper+ Decimal&.(rhs: Decimal&): Decimal ?! DecimalError {
     return try self.plus(rhs)
 }
 
 /** The difference. See [Decimal.minus]. */
 @Experimental(since: "0.1")
-oper- [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+oper- Decimal&.(rhs: Decimal&): Decimal ?! DecimalError {
     return try self.minus(rhs)
 }
 
 /** The product. See [Decimal.times]. */
 @Experimental(since: "0.1")
-oper* [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+oper* Decimal&.(rhs: Decimal&): Decimal ?! DecimalError {
     return try self.times(rhs)
 }
 
@@ -397,7 +392,7 @@ oper* [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
  * A division that needs to say where to stop uses [Decimal.dividedBy].
  */
 @Experimental(since: "0.1")
-oper/ [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+oper/ Decimal&.(rhs: Decimal&): Decimal ?! DecimalError {
     var scale = Decimal.divisionScale
     if self.scale > scale {
         scale = self.scale
@@ -410,13 +405,13 @@ oper/ [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
 
 /** The remainder. See [Decimal.remainder]. */
 @Experimental(since: "0.1")
-oper% [self: Decimal&](rhs: Decimal&): Decimal ?! DecimalError {
+oper% Decimal&.(rhs: Decimal&): Decimal ?! DecimalError {
     return try self.remainder(rhs)
 }
 
 /** The same magnitude with the other sign. */
 @Experimental(since: "0.1")
-oper- [self: Decimal&]: Decimal {
+oper- Decimal&.(): Decimal {
     return self.negated()
 }
 

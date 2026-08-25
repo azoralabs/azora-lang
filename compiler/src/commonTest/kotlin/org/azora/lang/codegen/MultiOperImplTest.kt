@@ -20,7 +20,7 @@ class MultiOperImplTest {
     fun aBodylessOperatorMustSayBridge() {
         // "The compiler implements this" is stated, not inferred from an omission.
         val failure = assertFailsWith<IllegalStateException> {
-            Parser(Lexer("oper.. [self: Int&](rhs: Int&) by 1\n").tokenize()).parse()
+            Parser(Lexer("oper.. Int&.(rhs: Int&) by 1\n").tokenize()).parse()
         }
         assertTrue("declare it 'bridge oper..'" in failure.message.orEmpty(), failure.message.orEmpty())
     }
@@ -30,8 +30,8 @@ class MultiOperImplTest {
         // Each direction is its own declaration, naming its receiver and trailing
         // its default step. A compiler-provided one says `bridge` rather than
         // leaving it to be inferred from the missing body.
-        val src = "bridge oper.. [self: Int&](rhs: Int&) by 1\n" +
-            "bridge oper reverse.. [self: Int&](rhs: Int&) by 1\n"
+        val src = "bridge oper.. Int&.(rhs: Int&) by 1\n" +
+            "bridge oper reverse.. Int&.(rhs: Int&) by 1\n"
         val program = Parser(Lexer(src).tokenize()).parse()
         val operImpls = program.items.filterIsInstance<TopLevel.Impl>()
         assertEquals(2, operImpls.size, "expected one impl per oper declaration")

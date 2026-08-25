@@ -169,9 +169,9 @@ class RepeatedConstructionTest {
                     var v: Int
                 }
                 impl Arithmetic for N {
-                    oper+ [self: Self&](rhs: Self&): N { return N(self.v + rhs.v) }
-                    oper- [self: Self&](rhs: Self&): N { return N(self.v - rhs.v) }
-                    oper* [self: Self&](rhs: Self&): N { return N(self.v * rhs.v) }
+                    oper+ &.(rhs: Self&): N { return N(self.v + rhs.v) }
+                    oper- &.(rhs: Self&): N { return N(self.v - rhs.v) }
+                    oper* &.(rhs: Self&): N { return N(self.v * rhs.v) }
                 }
                 func main() {
                     println((N(3) * N(2)).v)
@@ -194,9 +194,9 @@ class RepeatedConstructionTest {
                     var v: Int
                 }
                 impl Arithmetic for Scaled {
-                    oper+ [self: Self&](rhs: Int): Scaled { return Scaled(self.v + rhs) }
-                    oper- [self: Self&](rhs: Int): Scaled { return Scaled(self.v - rhs) }
-                    oper* [self: Self&](rhs: Int): Scaled { return Scaled(self.v * rhs) }
+                    oper+ &.(rhs: Int): Scaled { return Scaled(self.v + rhs) }
+                    oper- &.(rhs: Int): Scaled { return Scaled(self.v - rhs) }
+                    oper* &.(rhs: Int): Scaled { return Scaled(self.v * rhs) }
                 }
                 func main() {
                     println((Scaled(2) * 3).v)

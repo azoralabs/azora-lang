@@ -50,7 +50,7 @@ class ConvertSpecTest {
             pack Username {
                 value: String
             }
-            impl From<String> for Username:: {
+            impl From<String> for Username {
                 func from(value: String): Self {
                     return Username(value: value)
                 }

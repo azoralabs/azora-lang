@@ -1,6 +1,6 @@
 # AZLS and Structured Compiler Diagnostics DIP
 
-> Status: **Proposed**
+> Status: **Accepted; core compiler/AZLS/plugin architecture implemented, pass-by-pass diagnostic migration continuing**
 > Scope: compiler diagnostics, source locations, fixes, the `azls` process,
 > Language Server Protocol integration, and the Azora IntelliJ IDEA plugin
 > Supersedes: the previous AZLS implementation profile in this file
@@ -55,6 +55,88 @@ IntelliJ IDEA LSP client and editor UI
 No component may recover a diagnostic's line, severity, symbol, import, or fix
 by parsing its rendered message.
 
+### 0.1 Editor feature-parity invariant
+
+Moving semantic authority into AZLS is an architectural migration, not
+permission to remove mature editor behavior. Every previously shipped feature
+must remain available while its implementation crosses the process boundary.
+The acceptance matrix is:
+
+| Capability | Authority | LSP/editor delivery |
+|---|---|---|
+| compiler errors and warnings | compiler sealed diagnostics | `publishDiagnostics` |
+| precise and multi-file fixes | compiler/AZLS snapshot edits | `codeAction`, version checked |
+| unresolved-name provider choice | AZLS workspace index | quick fix and completion `additionalTextEdits` |
+| automatic import placement | shared source edit planner | completion acceptance and Alt-Enter |
+| completion, including members, constructors, annotations, macros, and unimported names | AZLS | `textDocument/completion` |
+| hover and cross-file navigation | AZLS workspace snapshot | `hover`, `definition` |
+| resolved colors, including associated types | AZLS semantic roles | semantic tokens layered over lexical colors |
+| Optimize Imports, Find Usages UI, type-hint rendering, live templates, formatting, folding, and brace matching | native editor adapters | IntelliJ extension points, with semantic queries delegated to AZLS |
+| conservative file-local style/unused inspections not used by the build | editor inspection adapter during migration | native warning and intention UI |
+
+The plugin must not reimplement type resolution, overload resolution, module
+visibility, ownership, borrowing, or compiler error classification. A native
+adapter may retain a source-only editor inspection while no server endpoint
+exists, but that inspection cannot affect compilation and must not contradict a
+compiler diagnostic. It is migration debt with a named AZLS replacement, not a
+second language authority.
+
+Workspace paths carried by LSP are URIs or absolute paths. Module/file
+validation must therefore operate on the path relative to its source root, or
+equivalently on the suffix that spells the declared module. For example,
+`/workspace/std/container/array.az` is valid for
+`module std.container.array`; directories before `std` are not module
+segments. AZLS should still store a source-root-relative display path where a
+workspace root is known.
+
+Package manifests are the authority for that source root. AZLS must discover
+`package.azon`, `workspace.azon`, and compatibility project manifests before it
+indexes source files. A manifest such as:
+
+```azon
+package: {
+    name: "std"
+    version: "0.1.0-dev.1"
+}
+```
+
+located beside a `std/` directory makes that local directory the source tree of
+package/module `std`. AZLS must:
+
+- scope semantic analysis to the package containing the edited file;
+- honor explicit `module`, `src`, test-source, dependency-path, workspace-member,
+  target, define, and future source-set keys rather than guessing from the
+  process working directory;
+- treat nested manifests as separate package boundaries;
+- exclude generated/cache trees such as `build`, `out`, `target`, `dist`,
+  `node_modules`, `.gradle`, `.idea`, and `.git` from source discovery;
+- retain whole-workspace behavior when no manifest exists, so a small
+  manifest-free project continues to work;
+- use the checked-out local package before any installed or bundled copy with
+  the same package identity; and
+- carry both symbol name and declaring module through `definition`, so a
+  same-named declaration in another module cannot win by scan order.
+
+Build-time file/module validation remains strict because the build graph knows
+the resolved source root. IDE snapshots do not repeat that validation against
+an absolute or workspace-relative path after the manifest resolver has selected
+the package. This distinction prevents false errors for custom source layouts
+such as `azls/src/main/azora/AzoraLanguageServer.az` while preserving strict CLI
+validation when authoritative build metadata is available.
+
+An unreadable source in an unreferenced package is not a diagnostic for the
+current document. If the current package imports that exact module, its parse or
+module error becomes relevant and is published; otherwise AZLS keeps it in the
+package-index status rather than flooding every editor tab with unrelated
+library warnings.
+
+Lexical syntax highlighting remains active even before AZLS answers. Semantic
+tokens refine identifier roles only; they must not repaint strings, comments,
+numbers, or keywords and must be applied by source-range intersection rather
+than assuming IntelliJ PSI leaves begin at exactly the same offset. This keeps
+half-written code stable and prevents stale semantic responses from corrupting
+the base colors.
+
 ---
 
 ## 1. Motivation and current-state audit
@@ -63,26 +145,30 @@ The current compiler and language server already have the right high-level
 relationship: AZLS calls the real compiler. The boundary between them is the
 problem.
 
-At the time of this proposal:
+The core architecture described here is now present:
 
-- `CompilationResult.Success` carries `warnings: List<String>`;
-- `CompilationResult.Failure` carries `errors: List<String>`;
-- `SemanticResult` and many individual passes carry `errors: List<String>`;
-- warning severity is inferred from a `"warning:"` message prefix;
-- frontend failures are commonly raised as `IllegalStateException` or
-  `IllegalArgumentException`;
-- `Compiler.withLibraryHint` regex-parses undefined-symbol text and appends an
-  import suggestion;
-- AZLS regex-parses `line N` from messages;
-- the current AZLS `Diagnostic` has only `line`, `message`, and string severity;
-- a diagnostic has no end position, source identity, document version, related
-  location, stable code, or applicable edit;
-- other files are concatenated into a textual `prelude`, after which line
-  numbers are subtracted and prelude diagnostics are dropped;
-- `AzlsStdio` uses LSP framing but implements a bespoke protocol, not JSON-RPC
-  2.0 and LSP;
-- the product integration is documented as reflective in-process loading,
-  coupling host and server while still forcing a string boundary.
+- `CompilationResult` carries compiler-owned `AzoraDiagnostic` values alongside
+  its compatibility strings;
+- immutable, versioned `SourceUnit` snapshots and exact `SourceSpan` values flow
+  from compiler analysis into AZLS;
+- missing contracts, functions, and values are resolver records with namespace,
+  source occurrence, provider module, and structured import edits; no component
+  recovers those facts by parsing rendered text;
+- AZLS is a long-lived JSON-RPC 2.0/LSP stdio process with versioned diagnostics,
+  semantic tokens, completion, hover, definitions, symbols, and code actions;
+- AZLS discovers workspace/package manifests and sends separate source units to
+  compiler analysis instead of concatenating workspace text;
+- the IDEA plugin launches AZLS and renders LSP responses; semantic roles are
+  mapped exhaustively to the established editor palette; and
+- edit application is guarded by document version and expected source text.
+
+Some older compiler passes still return compatibility strings internally. They
+enter the typed boundary through `LegacyDiagnosticAdapter` while those passes
+are migrated one at a time. That adapter may assign only a conservative range;
+it is not allowed to invent provider modules, imports, ownership facts, or any
+other semantic field. AZLS and the plugin never parse those messages. The
+remaining migration inventory is therefore compiler-local debt, not a second
+language-server architecture.
 
 This works for a basic red marker on a line. It is too fragile for precise
 diagnostics, ownership explanations, multi-file projects, reliable quick fixes,
@@ -443,6 +529,19 @@ data class UndefinedSymbol(
     override val severity = DiagnosticSeverity.ERROR
 }
 
+data class RedundantVariantQualifier(
+    val qualifier: String,
+    val variant: String,
+    override val primary: LabeledSpan,
+    override val fixes: List<DiagnosticFix>,
+) : SemanticDiagnostic {
+    override val code = DiagnosticCode("AZ-SEM-0002")
+    override val stage = DiagnosticStage.SEMANTIC
+    override val severity = DiagnosticSeverity.HINT
+    override val tags = setOf(DiagnosticTag.UNNECESSARY)
+    override val suppression = SuppressionKey("RedundantQualifier")
+}
+
 data class UseAfterTake(
     val place: PlaceId,
     override val primary: LabeledSpan,
@@ -581,8 +680,8 @@ restart it.
 - `AZ-MOD-0006`: module path/declaration mismatch;
 - `AZ-MOD-0007`: source could not be read or decoded.
 
-Import fixes use structured provider data. This replaces
-`Compiler.withLibraryHint`, which currently regex-parses undefined-symbol text.
+Import fixes use structured provider data. The former
+`Compiler.withLibraryHint` message-regex path has been removed.
 
 ### 7.2 Lexer
 
@@ -1369,6 +1468,41 @@ visibility; it does not append text derived from an error sentence.
 For a missing `)`, the parser supplies an insertion span and expected token.
 The edit is exposed only while that snapshot remains valid.
 
+### Contextual variant shorthand
+
+The compiler, not AZLS or an editor plugin, detects a repeated enum/slot owner
+when the value's type is already fixed by semantic context:
+
+```azora
+self.kind == FileKind.File       // hint: self.kind == .File
+fin kind: FileKind = FileKind.File // hint: fin kind: FileKind = .File
+```
+
+`AZ-SEM-0002` carries `qualifier`, `variant`, the exact span of `FileKind.`,
+the `UNNECESSARY` tag, and a machine-applicable edit replacing that span with
+`.`. The edit also carries the source version and the expected old text, so it
+cannot be applied to a changed document. AZLS translates this typed diagnostic
+and edit directly to LSP. IntelliJ merely paints the hint and invokes the
+provided action; it does not search source text, infer enum ownership, or build
+its own replacement.
+
+The resolver may report the hint wherever an expected type remains after the
+rewrite: typed local or top-level bindings, ordinary assignment, return values,
+arguments and constructor fields, member/index/pointer writes, collection/map/
+tuple elements, `when` patterns, equality against an independently typed value,
+and branches reached through an outer expected-value expression. The same
+expected-type path is used to compile the shorthand itself, preventing the
+diagnostic and language semantics from drifting apart.
+
+The rule does not fire in an untyped binding such as
+`fin kind = FileKind.File`, because replacing the qualifier would remove the
+only type evidence. Symmetric expressions retain at least one anchor too:
+`FileKind.File == FileKind.Directory` offers only the safe right-side rewrite,
+not two edits that a fix-all could combine into the ambiguous
+`.File == .Directory`. Slot payload patterns are likewise withheld until their
+binding form can be resolved from an inferred owner. These are compiler
+decisions based on resolved declarations, never regex heuristics in AZLS.
+
 ---
 
 ## 17. Other language features
@@ -1691,7 +1825,7 @@ Remove after callers migrate:
 - semantic `errors: List<String>`;
 - warning-prefix classification;
 - AZLS `lineOf`/`cleanMessage`;
-- regex `withLibraryHint`;
+- ~~regex `withLibraryHint`~~ (removed; resolver records now carry provider data);
 - line-only AZLS diagnostic DTO;
 - prelude concatenation/line subtraction;
 - reflective string APIs;

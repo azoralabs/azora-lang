@@ -50,18 +50,16 @@ pack Formatter {
 impl Formatter {
     /** Appends [text] as it stands. */
     func !.write(text: String) {
-        self.buffer = self.buffer + text
+        self.buffer += text
     }
 
     /** Appends [text] followed by a newline. */
     func !.writeLine(text: String) {
-        self.buffer = self.buffer + text + "\n"
+        self.buffer += text + "\n"
     }
 
     /** Everything written so far. */
-    prop &.rendered: String {
-        return self.buffer
-    }
+    prop &.rendered: String = self.buffer
 }
 
 /**
@@ -85,7 +83,7 @@ bridge spec Display {
  */
 @Since("0.1")
 func<T> format(value: T&): String {
-    var formatter = Formatter()
+    var formatter: Formatter = .()
     value.display(formatter)
     return formatter.rendered
 }

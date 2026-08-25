@@ -25,19 +25,18 @@ kotlin {
 }
 
 /**
- * Self-contained language-server jar: azls + the compiler + runtime deps.
- * Azora Studio loads this from `~/.azora/azls/azls.jar` via a URLClassLoader
- * and talks to [org.azora.azls.AzoraLanguageServer] reflectively (JSON in/out),
- * so no compile-time coupling exists between the two builds.
+ * Self-contained language-server process: AZLS + compiler + runtime deps.
+ * Editors launch this jar with `--stdio` and communicate through standard
+ * JSON-RPC 2.0 / Language Server Protocol framing.
  */
 val fatJar = tasks.register<Jar>("fatJar") {
     group = "distribution"
     archiveBaseName.set("azls")
+    archiveClassifier.set("all")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes["Implementation-Title"] = "Azora Language Server"
-        // Runnable as a process, so the server is reachable from editors that
-        // cannot load it into their own JVM. Studio still loads it reflectively.
+        // The process entry point owns stdout exclusively for LSP framing.
         attributes["Main-Class"] = "org.azora.azls.AzlsStdio"
     }
     from(sourceSets.main.get().output)

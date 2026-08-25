@@ -29,8 +29,8 @@ import kotlin.test.assertTrue
  * import std.math                          a module
  * import std.format::Display               one symbol out of a module
  * import std.io::*                         every symbol a module declares
- * import std.container.[list, map]        several
- * import std.x::[A, f::*, u.P]             a group of mixed selectors
+ * import std.container::{list, map}         several
+ * import std.x::{A, f::*, u.P}              a group of mixed selectors
  * ```
  *
  * Two separators, two jobs. A `.` walks down the module tree, so `std.container`
@@ -60,11 +60,11 @@ class ImportGrammarTest {
     private fun members(spec: ImportSpec): List<ImportSpec> =
         assertIs<ImportSpec.Selector.Group>(spec.selector).members
 
-    // -- bracketed groups ---------------------------------------------------
+    // -- grouped selectors -------------------------------------------------
 
-    @Test fun aBracketGroupCarriesItsMembers() {
+    @Test fun aBraceGroupCarriesItsMembers() {
         // `std/container/map.az:44` is written this way.
-        val spec = specs("import std.container.[array::*, list::*]").single()
+        val spec = specs("import std.container::{array::*, list::*}").single()
         assertEquals("std.container", spec.path)
         assertEquals(
             listOf("std.container.array", "std.container.list"),
@@ -74,22 +74,22 @@ class ImportGrammarTest {
     }
 
     @Test fun aGroupMayCarryOneSelectedSymbol() {
-        val spec = specs("import std.serializer::[Serializable]").single()
+        val spec = specs("import std.serializer::{Serializable}").single()
         assertEquals(listOf("std.serializer.Serializable"), members(spec).map { it.path })
         assertEquals(ImportSpec.Selector.Path, members(spec).single().selector)
     }
 
     @Test fun aOneMemberGroupSelectsWhatTheDottedPathSelects() {
-        // `import a.b.[c]` and `import a.b.c` reach the same symbol; the group only
+        // `import a.b::{c}` and `import a.b.c` reach the same symbol; the group only
         // says it with room for a second name later.
         assertEquals(
             imports("import std.serializer.Serializable"),
-            imports("import std.serializer::[Serializable]"),
+            imports("import std.serializer::{Serializable}"),
         )
     }
 
     @Test fun aGroupMayMixSelectors() {
-        val spec = specs("import std.x::[A, f::*, u.P]").single()
+        val spec = specs("import std.x::{A, f::*, u.P}").single()
         assertEquals(
             listOf(
                 "std.x.A" to null,
@@ -139,7 +139,7 @@ class ImportGrammarTest {
 
     @Test fun groupsNest() {
         // A member is a clause, so a member may itself be a group.
-        val spec = specs("import a.[b::[c, d::*], e::*]").single()
+        val spec = specs("import a::{b::{c, d::*}, e::*}").single()
         assertEquals(
             listOf("a.b.c" to null, "a.b.d" to "*", "a.e" to "*"),
             spec.flatten(),
@@ -147,13 +147,13 @@ class ImportGrammarTest {
     }
 
     @Test fun aNestedGroupKeepsItsOwnBasePath() {
-        val inner = members(specs("import a.[b::[c, d]]").single()).single()
+        val inner = members(specs("import a::{b::{c, d}}").single()).single()
         assertEquals("a.b", inner.path)
         assertEquals(listOf("a.b.c", "a.b.d"), members(inner).map { it.path })
     }
 
     @Test fun aGroupMemberMayBeADeepPath() {
-        val spec = specs("import std.[container.list.List, math.abs]").single()
+        val spec = specs("import std::{container.list.List, math.abs}").single()
         assertEquals(
             listOf("std.container.list.List" to null, "std.math.abs" to null),
             spec.flatten(),
@@ -165,11 +165,11 @@ class ImportGrammarTest {
     @Test fun membersMayBeSeparatedByNewlinesAlone() {
         val spec = specs(
             """
-            import std.container.[
+            import std.container::{
                 array::*
                 list::*
                 map::*
-            ]
+            }
             """.trimIndent(),
         ).single()
         assertEquals(3, members(spec).size)
@@ -185,34 +185,33 @@ class ImportGrammarTest {
     @Test fun aClauseAfterAGroupStillParses() {
         assertEquals(
             listOf("a.b" to null, "a.c" to null, "d" to "*"),
-            imports("import a.[b, c], d::*"),
+            imports("import a::{b, c}, d::*"),
         )
     }
 
-    // -- the brace spelling still reads -------------------------------------
+    // -- the brace spelling is canonical -----------------------------------
 
-    @Test fun theBraceSpellingIsStillAccepted() {
+    @Test fun braceGroupsFlattenLikeTheirUngroupedMembers() {
         assertEquals(
-            imports("import std.container.[list, map]"),
-            imports("import std.container.{list, map}"),
+            imports("import std.container.list\nimport std.container.map"),
+            imports("import std.container::{list, map}"),
         )
     }
 
-    @Test fun theBraceSpellingAlsoNestsNow() {
-        // It goes through the same parser, so it gained what the bracket form has.
-        assertEquals(listOf("a.b.c" to null, "a.d" to "*"), imports("import a.{b::{c}, d::*}"))
+    @Test fun braceGroupsNest() {
+        assertEquals(listOf("a.b.c" to null, "a.d" to "*"), imports("import a::{b::{c}, d::*}"))
     }
 
     // -- what is rejected ---------------------------------------------------
 
     @Test fun anEmptyGroupIsRejected() {
-        val e = assertFailsWith<IllegalStateException> { specs("import std.container::[]") }
+        val e = assertFailsWith<IllegalStateException> { specs("import std.container::{}") }
         assertTrue("at least one name" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun anUnclosedGroupIsRejected() {
-        val e = assertFailsWith<IllegalStateException> { specs("import std.container.[list, map") }
-        assertTrue("Expected ']'" in e.message.orEmpty(), e.message.orEmpty())
+        val e = assertFailsWith<IllegalStateException> { specs("import std.container::{list, map") }
+        assertTrue("Expected '}'" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun withoutRequiresALeadingWildcard() {
@@ -243,17 +242,16 @@ class ImportGrammarTest {
         assertTrue("import std.container::*" in e.message.orEmpty(), e.message.orEmpty())
     }
 
-    @Test fun aDottedGroupIsAGroupOfModules() {
-        // Both separators open a group, and which one is written says what the
-        // members are: `std.container.[list, map]` groups modules under a path,
-        // `std.format::[Display, Debug]` groups symbols inside one.
+    @Test fun aGroupMayContainModulesOrSymbols() {
+        // Resolution decides what each selected path names; grouping has one
+        // spelling regardless of whether the members are modules or symbols.
         assertEquals(
             listOf("std.container.list" to null, "std.container.map" to null),
-            imports("import std.container.[list, map]"),
+            imports("import std.container::{list, map}"),
         )
         assertEquals(
             listOf("std.format.Display" to null, "std.format.Debug" to null),
-            imports("import std.format::[Display, Debug]"),
+            imports("import std.format::{Display, Debug}"),
         )
     }
 

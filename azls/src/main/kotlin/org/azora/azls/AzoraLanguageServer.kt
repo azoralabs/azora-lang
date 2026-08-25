@@ -19,10 +19,20 @@ package org.azora.azls
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
-import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
+import org.azora.lang.diagnostics.AnalysisMode
+import org.azora.lang.diagnostics.AnalysisRequest
+import org.azora.lang.diagnostics.DiagnosticRenderer
+import org.azora.lang.diagnostics.DocumentVersion
+import org.azora.lang.diagnostics.ImmutableSourceManager
+import org.azora.lang.diagnostics.PositionEncoding
+import org.azora.lang.diagnostics.SourceId
+import org.azora.lang.diagnostics.SourceKind
+import org.azora.lang.diagnostics.SourceUnit
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.ImportSpec
 import org.azora.lang.frontend.Lexer
+import org.azora.lang.frontend.ModuleVisibility
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -34,9 +44,9 @@ import org.azora.lang.stdlib.AzStdlib
 /**
  * The Azora Language Server - full language intelligence for `.az` sources.
  *
- * Packaged as a self-contained jar (`azls.jar`) that Azora Studio loads via a
- * `URLClassLoader` and calls **reflectively**; every method therefore takes and
- * returns plain [String]s (JSON), so no types cross the classloader boundary.
+ * The reusable language-intelligence facade behind the standard LSP process.
+ * [AzlsStdio] owns the JSON-RPC boundary; this class contains transitional
+ * compiler-backed feature implementations that are also convenient to test.
  *
  * Capabilities:
  * - [highlight] - error-tolerant syntax colorizer spans.
@@ -46,9 +56,10 @@ import org.azora.lang.stdlib.AzStdlib
  * - [hover] - signatures for functions / packs / enums under the caret.
  * - [symbols] - document outline of top-level declarations.
  *
- * The optional `prelude` parameter carries the rest of the compilation unit
- * (other project files, installed engine libraries) so cross-file symbols
- * resolve; diagnostics are mapped back to the edited document's line numbers.
+ * Project files are distinct immutable source units in the LSP path. The
+ * optional strings retained on a few facade methods are compatibility inputs
+ * for callers of this Kotlin API only; diagnostics never concatenate them or
+ * recover locations by parsing rendered compiler text.
  */
 class AzoraLanguageServer {
 
@@ -129,17 +140,51 @@ class AzoraLanguageServer {
     // Highlighting
     // -----------------------------------------------------------------
 
-    fun highlight(source: String): String {
+    fun highlight(source: String, prelude: String = ""): String {
         val imports = importsOf(source)
         val visibleFunctions = stdlibIndex.functions.keys.filterTo(mutableSetOf()) { name ->
-            moduleVisible(stdlibIndex.origins[name], imports)
+            originVisible(stdlibIndex, stdlibIndex.origins[name], name, imports)
         }
         val visibleTypes = stdlibIndex.qualifiedTypes.filterTo(mutableSetOf()) { name ->
-            moduleVisible(stdlibIndex.qualifiedTypeOrigins[name], imports)
+            originVisible(stdlibIndex, stdlibIndex.qualifiedTypeOrigins[name], name, imports)
+        }
+        val workspace = preludeIndex(prelude)
+        visibleFunctions += workspace.functions.keys.filter { name ->
+            originVisible(workspace, workspace.origins[name], name, imports)
+        }
+        visibleTypes += workspace.qualifiedTypes.filter { name ->
+            originVisible(workspace, workspace.qualifiedTypeOrigins[name], name, imports)
+        }
+        val visibleSpecTypes = stdlibIndex.specs.keys.filterTo(mutableSetOf()) { name ->
+            originVisible(stdlibIndex, stdlibIndex.origins[name], name, imports)
+        }
+        visibleSpecTypes += workspace.specs.keys.filter { name ->
+            originVisible(workspace, workspace.origins[name], name, imports)
+        }
+        val visibleProperties = stdlibIndex.properties.filterTo(mutableSetOf()) { name ->
+            originVisible(stdlibIndex, stdlibIndex.propertyOrigins[name], name, imports)
+        }
+        visibleProperties += workspace.properties.filter { name ->
+            originVisible(workspace, workspace.propertyOrigins[name], name, imports)
+        }
+        val visibleEnumCases = stdlibIndex.enumCases.filterTo(mutableSetOf()) { name ->
+            originVisible(stdlibIndex, stdlibIndex.enumCaseOrigins[name], name, imports)
+        }
+        visibleEnumCases += workspace.enumCases.filter { name ->
+            originVisible(workspace, workspace.enumCaseOrigins[name], name, imports)
+        }
+        val visibleErrorCases = stdlibIndex.errorCases.filterTo(mutableSetOf()) { name ->
+            originVisible(stdlibIndex, stdlibIndex.errorCaseOrigins[name], name, imports)
+        }
+        visibleErrorCases += workspace.errorCases.filter { name ->
+            originVisible(workspace, workspace.errorCaseOrigins[name], name, imports)
         }
         return json.encodeToString(
             ListSerializer(HighlightSpan.serializer()),
-            AzHighlighter.highlight(source, visibleFunctions, visibleTypes),
+            AzHighlighter.highlight(
+                source, visibleFunctions, visibleTypes, visibleSpecTypes,
+                visibleProperties, visibleEnumCases, visibleErrorCases,
+            ),
         )
     }
 
@@ -147,43 +192,76 @@ class AzoraLanguageServer {
     // Diagnostics
     // -----------------------------------------------------------------
 
-    fun diagnostics(source: String, prelude: String = ""): String {
-        val preludeLines = if (prelude.isBlank()) 0 else prelude.lines().size
-        val full = if (prelude.isBlank()) source else prelude + "\n" + source
-        val docLines = source.lines().size
-
-        val raw: List<Pair<Int, String>> = try {
-            when (val result = Compiler().compile(full)) {
-                is CompilationResult.Success -> result.warnings.map { lineOf(it) to it }
-                is CompilationResult.Failure -> result.errors.map { lineOf(it) to it }
+    fun diagnostics(source: String, workspaceSource: String = ""): String {
+        val document = SourceUnit(
+            id = SourceId("azora-memory:/document.az"),
+            uri = "azora-memory:/document.az",
+            displayPath = "<document>",
+            text = source,
+            version = DocumentVersion(1),
+            kind = SourceKind.USER,
+        )
+        val sources = buildList {
+            add(document)
+            if (workspaceSource.isNotBlank()) {
+                add(
+                    SourceUnit(
+                        id = SourceId("azora-memory:/workspace.az"),
+                        uri = "azora-memory:/workspace.az",
+                        displayPath = "azls/workspace.az",
+                        // Compatibility callers historically passed an unnamed
+                        // same-unit fragment. Publish it as an exposed virtual
+                        // module instead of concatenating it into the document.
+                        text = "exposed module azls.workspace\n$workspaceSource",
+                        kind = SourceKind.WORKSPACE_LIBRARY,
+                    ),
+                )
             }
-        } catch (e: Exception) {
-            // Lexer/Parser throw on syntax errors ("... at line N").
-            listOf(lineOf(e.message ?: "") to (e.message ?: "Syntax error"))
         }
-
-        val mapped = raw.mapNotNull { (line, message) ->
-            val docLine = (if (line > 0) line - preludeLines else line).coerceAtMost(docLines)
-            if (docLine < 1) return@mapNotNull null // error inside the prelude, not this document
-            val severity = if (message.startsWith("warning:")) "warning" else "error"
-            Diagnostic(docLine, cleanMessage(message), severity)
+        val snapshot = Compiler().analyze(
+            AnalysisRequest(
+                sources = sources,
+                roots = setOf(document.id),
+                mode = AnalysisMode.IDE,
+            ),
+        )
+        val manager = ImmutableSourceManager(sources)
+        val mapped = snapshot.diagnostics.mapNotNull { diagnostic ->
+            val span = manager.resolveToUserSource(diagnostic.primary.span)
+            if (span.source != document.id) return@mapNotNull null
+            val range = manager.range(span, PositionEncoding.UTF16) ?: return@mapNotNull null
+            Diagnostic(
+                line = range.start.line + 1,
+                message = DiagnosticRenderer.summary(diagnostic),
+                severity = diagnostic.severity.name.lowercase(),
+                column = range.start.character + 1,
+                endLine = range.end.line + 1,
+                endColumn = range.end.character + 1,
+                code = diagnostic.code.value,
+                stage = diagnostic.stage.name.lowercase(),
+            )
         }
         return json.encodeToString(ListSerializer(Diagnostic.serializer()), mapped)
     }
 
-    /** Extracts `line N` from compiler messages ("line 3: ..." / "... at line 3"). */
-    private fun lineOf(message: String): Int {
-        val match = Regex("line (\\d+)").find(message) ?: return 0
-        return match.groupValues[1].toIntOrNull() ?: 0
-    }
-
-    private fun cleanMessage(message: String): String =
-        message.removePrefix("warning:").trim()
-            .replace(Regex("^line \\d+:\\s*"), "")
-
     // -----------------------------------------------------------------
     // Completion
     // -----------------------------------------------------------------
+
+    /** Modules that can make an unresolved bare [name] visible in [source]. */
+    internal fun importModules(source: String, name: String, prelude: String = ""): List<String> {
+        val imports = importsOf(source)
+        return buildList {
+            for (index in listOf(preludeIndex(prelude), stdlibIndex)) {
+                val origin = index.origins[name] ?: index.qualifiedTypeOrigins[name]
+                if (origin != null && !originVisible(index, origin, name, imports) &&
+                    index.hasSymbol(name, ReferenceRole.ANY)
+                ) {
+                    add(origin)
+                }
+            }
+        }.distinct().sortedWith(compareBy({ it.count { ch -> ch == '.' } }, { it }))
+    }
 
     fun complete(source: String, offset: Int, prelude: String = ""): String {
         val safeOffset = offset.coerceIn(0, source.length)
@@ -203,6 +281,39 @@ class AzoraLanguageServer {
         val userIndex = SymbolIndex().apply { program?.let(::addProgram) }
 
         val out = mutableListOf<Completion>()
+        val imports = importsOf(source)
+
+        // `@` is its own completion namespace. Mixing ordinary values into
+        // this list made annotations and macros effectively disappear in a
+        // large workspace after the LSP migration.
+        if (wordStart > 0 && source[wordStart - 1] == '@') {
+            for (index in listOf(userIndex, preludeIndex, stdlibIndex)) {
+                fun autoImport(name: String): String? = index.origins[name]
+                    ?.takeUnless { index === userIndex || originVisible(index, it, name, imports) }
+                index.decorators.values.forEach { decorator ->
+                    out += Completion(
+                        decorator.name,
+                        "annotation",
+                        "annotation @${decorator.name}",
+                        decorator.name,
+                        autoImport(decorator.name),
+                    )
+                }
+                index.macros.values.forEach { macro ->
+                    out += Completion(
+                        macro.name,
+                        "macro",
+                        "macro @${macro.name}",
+                        macro.name,
+                        autoImport(macro.name),
+                    )
+                }
+            }
+            val filtered = out.filter { prefix.isEmpty() || it.label.startsWith(prefix) }
+                .distinctBy { it.label + "/" + it.kind + "/" + it.importModule.orEmpty() }
+                .sortedBy { it.label }
+            return json.encodeToString(ListSerializer(Completion.serializer()), filtered)
+        }
 
         // On an `import` line the dotted path names modules and the symbols one
         // declares - not a value and its members, which is what a `.` means
@@ -223,33 +334,68 @@ class AzoraLanguageServer {
             BUILTIN_FUNCTIONS.forEach { (name, detail) ->
                 out.add(Completion(name, "function", detail, "$name("))
             }
-            val imports = importsOf(source)
             for (index in listOf(userIndex, preludeIndex, stdlibIndex)) {
-                // Symbols from a packaged module (std.*, engine, …) are only
-                // offered when the document imports that module via `use`; the
-                // document's own symbols (userIndex) are never gated.
+                // Packaged symbols remain completable before they are visible;
+                // [importModule] makes acceptance add the precise import. The
+                // document's own symbols never need that edit.
                 fun visible(name: String): Boolean =
-                    index === userIndex || moduleVisible(index.origins[name], imports)
+                    index === userIndex || originVisible(index, index.origins[name], name, imports)
                 fun withOrigin(name: String, detail: String): String =
                     index.origins[name]?.let { "$detail - $it" } ?: detail
+                fun autoImport(name: String): String? =
+                    index.origins[name]?.takeUnless { visible(name) }
                 index.functions.values.forEach {
-                    if ("__" !in it.name && visible(it.name)) {
-                        out.add(functionCompletion(it).let { c -> c.copy(detail = withOrigin(c.label, c.detail)) })
+                    if ("__" !in it.name) {
+                        out.add(functionCompletion(it).let { c ->
+                            c.copy(
+                                detail = withOrigin(c.label, c.detail),
+                                importModule = autoImport(c.label),
+                            )
+                        })
                     }
                 }
                 index.packs.values.forEach {
-                    if (!index.isScopeType(it.name) && visible(it.name)) {
-                        out.add(Completion(it.name, "pack", withOrigin(it.name, packDetail(it)), it.name))
+                    if (!index.isScopeType(it.name)) {
+                        out.add(Completion(
+                            it.name, "pack", withOrigin(it.name, packDetail(it)), it.name, autoImport(it.name),
+                        ))
                     }
                 }
                 index.enums.values.forEach {
-                    if (!index.isScopeType(it.name) && visible(it.name)) {
-                        out.add(Completion(it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name))
+                    if (!index.isScopeType(it.name)) {
+                        out.add(Completion(
+                            it.name, "enum", withOrigin(it.name, "enum ${it.name}"), it.name, autoImport(it.name),
+                        ))
                     }
                 }
+                index.specs.values.forEach {
+                    out.add(Completion(
+                        it.name, "spec", withOrigin(it.name, "spec ${it.name}"), it.name, autoImport(it.name),
+                    ))
+                }
+                index.aliases.values.forEach {
+                    out.add(Completion(
+                        it.name, "type", withOrigin(it.name, "typealias ${it.name} = ${it.type.displayName()}"),
+                        it.name, autoImport(it.name),
+                    ))
+                }
+                index.slots.values.forEach {
+                    out.add(Completion(
+                        it.name, if (it.isError) "error" else "enum",
+                        withOrigin(it.name, if (it.isError) "variant error ${it.name}" else "variant enum ${it.name}"),
+                        it.name, autoImport(it.name),
+                    ))
+                }
                 index.topLevelVars.forEach { (name, detail) ->
-                    if ("__" !in name && visible(name)) {
-                        out.add(Completion(name, "variable", withOrigin(name, detail), name))
+                    if ("__" !in name) {
+                        out.add(Completion(name, "variable", withOrigin(name, detail), name, autoImport(name)))
+                    }
+                }
+            }
+            constructorBefore(source, safeOffset)?.let { typeName ->
+                for (index in listOf(userIndex, preludeIndex, stdlibIndex)) {
+                    index.packs[typeName]?.fields?.forEach { field ->
+                        out += Completion(field.name, "field", "${field.name}: ${field.type.displayName()}", "${field.name}: ")
                     }
                 }
             }
@@ -258,7 +404,7 @@ class AzoraLanguageServer {
 
         val filtered = out
             .filter { prefix.isEmpty() || it.label.startsWith(prefix) }
-            .distinctBy { it.label + "/" + it.kind }
+            .distinctBy { it.label + "/" + it.kind + "/" + it.importModule.orEmpty() }
             .sortedWith(compareBy({ kindRank(it.kind) }, { it.label }))
             .take(200)
         return json.encodeToString(ListSerializer(Completion.serializer()), filtered)
@@ -269,7 +415,7 @@ class AzoraLanguageServer {
         userIndex: SymbolIndex,
         preludeIndex: SymbolIndex,
         cursorLine: Int,
-        imports: Set<String>,
+        imports: ImportVisibility,
         out: MutableList<Completion>,
     ) {
         val indices = listOf(userIndex, preludeIndex, stdlibIndex)
@@ -282,6 +428,10 @@ class AzoraLanguageServer {
         for (index in indices) {
             index.enums[receiver.text]?.let { enum ->
                 enum.variants.forEach { out.add(Completion(it, "enumMember", "${enum.name}.$it", it)) }
+                return
+            }
+            index.slots[receiver.text]?.let { slot ->
+                slot.variants.forEach { out.add(Completion(it.name, "enumMember", "${slot.name}.${it.name}", it.name)) }
                 return
             }
         }
@@ -306,13 +456,13 @@ class AzoraLanguageServer {
     private fun completeScopeMembers(
         scope: String,
         indices: List<SymbolIndex>,
-        imports: Set<String>,
+        imports: ImportVisibility,
         out: MutableList<Completion>,
     ) {
         val canonicalScope = scope.replace("::", "__")
         val prefix = "${canonicalScope}__"
         for (index in indices) {
-            fun visible(name: String): Boolean = moduleVisible(index.origins[name], imports)
+            fun visible(name: String): Boolean = originVisible(index, index.origins[name], name, imports)
             fun directSegment(name: String): String? = name.takeIf { it.startsWith(prefix) }
                 ?.removePrefix(prefix)?.substringBefore("__")?.takeIf { it.isNotEmpty() }
             fun scopeChild(name: String): Boolean = "__" in name.removePrefix(prefix)
@@ -342,7 +492,7 @@ class AzoraLanguageServer {
             for (canonical in index.qualifiedTypes) {
                 val label = directSegment(canonical) ?: continue
                 val origin = index.qualifiedTypeOrigins[canonical]
-                if (!moduleVisible(origin, imports)) continue
+                if (!originVisible(index, origin, canonical, imports)) continue
                 if (scopeChild(canonical)) {
                     out += Completion(label, "scope", "scope $scope::$label", label)
                     continue
@@ -366,9 +516,18 @@ class AzoraLanguageServer {
         "param", "variable" -> 0
         "field", "enumMember", "method" -> 1
         "function" -> 2
-        "pack", "enum" -> 3
+        "pack", "enum", "error", "spec", "type", "annotation", "macro" -> 3
         "keyword" -> 4
         else -> 5
+    }
+
+    /** Nearest still-open simple constructor call (`Point(` / `Point(x, `). */
+    private fun constructorBefore(source: String, offset: Int): String? {
+        val before = source.substring(0, offset.coerceIn(0, source.length))
+        val open = before.lastIndexOf('(')
+        if (open < 0 || before.lastIndexOf(')') > open) return null
+        return Regex("([A-Za-z_][A-Za-z0-9_]*)\\s*$")
+            .find(before.substring(0, open))?.groupValues?.getOrNull(1)
     }
 
     // -----------------------------------------------------------------
@@ -381,6 +540,7 @@ class AzoraLanguageServer {
             return json.encodeToString(Hover.serializer(), Hover(local.detail))
         }
         val role = referenceRole(source, offset)
+        val imports = importsOf(source)
         val keys = listOf(qualifiedNameAt(source, word, offset), word).distinct()
         val userIndex = SymbolIndex().apply { parseTolerant(source)?.let(::addProgram) }
         // Doc comments are only extracted for the edited document: prelude
@@ -407,9 +567,35 @@ class AzoraLanguageServer {
                     else index.documentation[key].orEmpty().ifEmpty { index.documentation[name].orEmpty() }
                     return json.encodeToString(Hover.serializer(), Hover("enum ${it.name} { ${it.variants.joinToString(", ")} }", doc = doc))
                 }
+                index.slots[name]?.let {
+                    val doc = if (fromUser) docCommentAbove(source, it.line)
+                    else index.documentation[key].orEmpty().ifEmpty { index.documentation[name].orEmpty() }
+                    val kind = if (it.isError) "variant error" else "variant enum"
+                    return json.encodeToString(
+                        Hover.serializer(),
+                        Hover("$kind ${it.name} { ${it.variants.joinToString(", ") { variant -> variant.name }} }", doc = doc),
+                    )
+                }
+                index.specs[name]?.let {
+                    val doc = if (fromUser) docCommentAbove(source, it.line)
+                    else index.documentation[key].orEmpty().ifEmpty { index.documentation[name].orEmpty() }
+                    return json.encodeToString(Hover.serializer(), Hover("spec ${it.name}", doc = doc))
+                }
+                index.aliases[name]?.let {
+                    val doc = if (fromUser) docCommentAbove(source, it.line)
+                    else index.documentation[key].orEmpty().ifEmpty { index.documentation[name].orEmpty() }
+                    return json.encodeToString(
+                        Hover.serializer(), Hover("typealias ${it.name} = ${it.type.displayName()}", doc = doc),
+                    )
+                }
                 return null
             }
             for (key in keys) {
+                // Workspace indexing answers where a symbol *could* come from;
+                // it does not place that symbol in this file's lexical scope.
+                // Only the edited file, an explicit import, or an exposed
+                // auto-imported module may contribute hover information.
+                if (!fromUser && !symbolVisible(index, key, role, imports)) continue
                 val resolved = when (role) {
                     ReferenceRole.CALLABLE -> callable(key) ?: type(key)
                     ReferenceRole.TYPE -> type(key)
@@ -456,6 +642,7 @@ class AzoraLanguageServer {
         val cursorLine = source.take(safeOffset).count { it == '\n' } + 1
         val userIndex = SymbolIndex().apply { parseTolerant(source)?.let(::addProgram) }
         val role = referenceRole(source, safeOffset)
+        val imports = importsOf(source)
         val keys = listOf(qualifiedNameAt(source, word, safeOffset), word).distinct()
 
         // Resolve an actual lexical declaration, not merely the nearest same-
@@ -473,11 +660,24 @@ class AzoraLanguageServer {
             }
         }
         // Known elsewhere (prelude/stdlib): report the name so the client can
-        // locate the source file.
+        // locate the source file, but only when that declaration is visible in
+        // the compiler import scope. Workspace discoverability alone is what
+        // powers auto-import suggestions; it must never make a reference bind.
         val preludeIndex = preludeIndex(prelude)
-        val known = keys.any { key -> preludeIndex.hasSymbol(key, role) || stdlibIndex.hasSymbol(key, role) }
-        if (known) {
-            return json.encodeToString(Definition.serializer(), Definition(line = 0, name = word, inCurrentFile = false))
+        val external = keys.firstNotNullOfOrNull { key ->
+            when {
+                preludeIndex.hasSymbol(key, role) && symbolVisible(preludeIndex, key, role, imports) ->
+                    preludeIndex.originOf(key, role)
+                stdlibIndex.hasSymbol(key, role) && symbolVisible(stdlibIndex, key, role, imports) ->
+                    stdlibIndex.originOf(key, role)
+                else -> null
+            }
+        }
+        if (external != null) {
+            return json.encodeToString(
+                Definition.serializer(),
+                Definition(line = 0, name = word, module = external, inCurrentFile = false),
+            )
         }
         return "null"
     }
@@ -505,6 +705,11 @@ class AzoraLanguageServer {
                 is TopLevel.Func -> out.add(DocumentSymbol(item.decl.name, "function", item.decl.line, signatureOf(item.decl)))
                 is TopLevel.Pack -> out.add(DocumentSymbol(item.name, "pack", item.line, packDetail(item)))
                 is TopLevel.Enum -> out.add(DocumentSymbol(item.name, "enum", item.line, "enum ${item.name}"))
+                is TopLevel.Slot -> out.add(DocumentSymbol(item.name, if (item.isError) "error" else "enum", item.line))
+                is TopLevel.Spec -> out.add(DocumentSymbol(item.name, "spec", item.line))
+                is TopLevel.TypeAlias -> out.add(DocumentSymbol(item.name, "type", item.line))
+                is TopLevel.Deco -> out.add(DocumentSymbol(item.name, "annotation", item.line))
+                is TopLevel.Meta -> out.add(DocumentSymbol(item.name, "macro", item.line))
                 is TopLevel.Solo -> out.add(DocumentSymbol(item.name, "solo", item.line))
                 is TopLevel.Test -> out.add(DocumentSymbol(item.name, "test", item.line))
                 is TopLevel.VarDecl -> out.add(DocumentSymbol(item.name, "variable", item.line))
@@ -522,34 +727,9 @@ class AzoraLanguageServer {
     // Parsing / indexing internals
     // -----------------------------------------------------------------
 
-    /**
-     * Parses [source], tolerating the in-progress edit: when parsing fails at
-     * line N, that line (and, if needed, its neighbours) is blanked and the
-     * parse retried, so completions keep working while a line is half-typed.
-     */
-    private fun parseTolerant(source: String): Program? {
-        var lines = source.lines()
-        repeat(4) {
-            try {
-                return Parser(Lexer(lines.joinToString("\n")).tokenize()).parse()
-            } catch (e: Exception) {
-                val errorLine = lineOf(e.message ?: "")
-                if (errorLine !in 1..lines.size) return null
-                // Blank the offending line; the reported line is often the one
-                // AFTER the half-typed statement, so wipe the previous one too
-                // when it is already blank.
-                val mutable = lines.toMutableList()
-                if (mutable[errorLine - 1].isBlank() && errorLine >= 2) {
-                    mutable[errorLine - 2] = ""
-                } else {
-                    mutable[errorLine - 1] = ""
-                }
-                if (mutable == lines) return null
-                lines = mutable
-            }
-        }
-        return null
-    }
+    /** Best-effort indexing parse; locations are never reconstructed from errors. */
+    private fun parseTolerant(source: String): Program? =
+        runCatching { Parser(Lexer(source).tokenize()).parse() }.getOrNull()
 
     private fun preludeIndex(prelude: String): SymbolIndex {
         if (prelude.isBlank()) return EMPTY_INDEX
@@ -656,79 +836,66 @@ class AzoraLanguageServer {
         }
     }
 
-    private fun importsOf(source: String): Set<String> {
-        val out = mutableSetOf<String>()
-        for (line in source.lines()) {
-            val trimmed = line.trim()
-            if (!trimmed.startsWith("import ")) continue
-            val rest = trimmed.removePrefix("import ").trim()
-            for (part in splitUseParts(rest)) addImportPath(part.trim(), out)
-        }
-        return out
-    }
+    /**
+     * The compiler-parsed import clauses of one document.
+     *
+     * This deliberately retains every selector. Collapsing
+     * `import std.traits::{Order, Hash}` to just `std.traits` makes unrelated
+     * declarations in that module appear imported to highlighting, hover and
+     * navigation even though compiler resolution correctly rejects them.
+     */
+    private data class ImportVisibility(val specs: List<ImportSpec>) {
+        fun exposes(origin: String, symbol: String): Boolean = specs.any { spec ->
+            when (spec.selector) {
+                is ImportSpec.Selector.All -> {
+                    val moduleSelected = origin == spec.path || origin.startsWith("${spec.path}.")
+                    val shortName = symbol.substringAfterLast("__")
+                    moduleSelected && symbol !in spec.without && shortName !in spec.without
+                }
+                is ImportSpec.Selector.Path -> when {
+                    // A plain import of an actual module exposes that module's
+                    // declarations, exactly as compiler import injection does.
+                    spec.path == origin -> true
 
-    private fun splitUseParts(text: String): List<String> {
-        val parts = mutableListOf<String>()
-        val current = StringBuilder()
-        var depth = 0
-        for (ch in text) {
-            when {
-                ch == '{' -> {
-                    depth++
-                    current.append(ch)
+                    // A `module::name` selector is stored by the parser as the
+                    // fully joined dotted path. Scoped declaration names use
+                    // `__` internally, so preserve every remaining segment.
+                    spec.path.startsWith("$origin.") ->
+                        spec.path.removePrefix("$origin.").replace(".", "__") == symbol
+
+                    else -> false
                 }
-                ch == '}' -> {
-                    if (depth > 0) depth--
-                    current.append(ch)
-                }
-                ch == ',' && depth == 0 -> {
-                    parts.add(current.toString())
-                    current.setLength(0)
-                }
-                else -> current.append(ch)
+                is ImportSpec.Selector.Group -> false // importsOf flattens groups to leaves.
             }
         }
-        parts.add(current.toString())
-        return parts
     }
 
-    private fun addImportPath(rawPart: String, out: MutableSet<String>) {
-        val part = rawPart.substringBefore("//").trim()
-        if (part.isEmpty() || "::" in part) return
-
-        if (part.endsWith(".*")) {
-            addValidImport(part.removeSuffix(".*"), out)
-            return
-        }
-
-        val groupStart = part.indexOf(".{")
-        if (groupStart >= 0 && part.endsWith("}")) {
-            val base = part.substring(0, groupStart)
-            val inner = part.substring(groupStart + 2, part.length - 1)
-            if (!isValidImportPath(base)) return
-            splitUseParts(inner).map { it.trim() }.filter(::isValidImportName).forEach { out.add("$base.$it") }
-            return
-        }
-
-        addValidImport(part, out)
+    /** Use the language parser as the sole authority for import syntax. */
+    private fun importsOf(source: String): ImportVisibility {
+        val specs = parseTolerant(source)?.items
+            ?.filterIsInstance<TopLevel.UseImport>()
+            ?.filterNot { it.exported }
+            ?.flatMap { it.importSpecs }
+            .orEmpty()
+        return ImportVisibility(specs)
     }
 
-    private fun addValidImport(path: String, out: MutableSet<String>) {
-        if (isValidImportPath(path)) out.add(path)
-    }
+    private fun originVisible(
+        index: SymbolIndex,
+        origin: String?,
+        symbol: String,
+        imports: ImportVisibility,
+    ): Boolean = origin == null || origin in index.implicitModules || imports.exposes(origin, symbol)
 
-    private fun isValidImportPath(path: String): Boolean =
-        path.isNotEmpty() && path.split('.').all(::isValidImportName)
-
-    private fun isValidImportName(name: String): Boolean =
-        name.isNotEmpty() && name[0].isIdentStart() && name.all { it.isIdentPart() }
-
-    /** A packaged symbol is visible when its module (or a parent) is imported. */
-    private fun moduleVisible(origin: String?, imports: Set<String>): Boolean {
-        if (origin == null) return true
-        return imports.any { imported ->
-            origin == imported || origin.startsWith("$imported.") || imported.startsWith("$origin.")
-        }
+    /** Import-aware visibility for a symbol already discovered in an index. */
+    private fun symbolVisible(
+        index: SymbolIndex,
+        name: String,
+        role: ReferenceRole,
+        imports: ImportVisibility,
+    ): Boolean {
+        val origin = index.originOf(name, role) ?: return true
+        return originVisible(index, origin, name, imports)
     }
 
     // ----- text helpers -----
@@ -815,7 +982,7 @@ class AzoraLanguageServer {
             val bodyOpen = code.indexOf('{', callable.range.last + 1)
             val scope = blocks.firstOrNull { it.open == bodyOpen } ?: return@forEach
             if (useOffset !in (scope.open + 1)..scope.close) return@forEach
-            for (groupIndex in listOf(1, 2)) {
+            for (groupIndex in listOf(1, 2, 3)) {
                 val parameters = callable.groups[groupIndex] ?: continue
                 PARAMETER_DECLARATION.findAll(parameters.value).forEach { parameter ->
                     val declared = parameter.groups[1] ?: return@forEach
@@ -980,7 +1147,7 @@ class AzoraLanguageServer {
         )
         val FOR_BINDING = Regex("""\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\b""")
         val CALLABLE_SIGNATURE = Regex(
-            """(?m)^\s*(?:(?:exposed|protected|confined|inline|deepinline|noinline|unsafe|react|async|bridge|lazy)\s+)*(?:func\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*<[^>{}\n]*>)?|ctor|dtor|oper[^\s\[(]*)\s*(?:\[([^]\n]*)])?\s*\(([^)]*)\)""",
+            """(?m)^\s*(?:(?:exposed|protected|confined|inline|deepinline|noinline|unsafe|react|async|bridge|lazy)\s+)*(?:func(?:\s*<[^>{}\n]*>)?\s+(?:\(([^)]*)\)\s*\.\s*[A-Za-z_][A-Za-z0-9_]*|(?:[A-Za-z_][A-Za-z0-9_]*(?:<[^>{}\n]*>)?[&!]?|[&!])\s*\.\s*[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)|(?:ctor|dtor)\s*\.?\s*\(([^)]*)\))""",
         )
         val PARAMETER_DECLARATION = Regex(
             """(?:\.\.\.)?([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,\n]+)""",
@@ -1047,6 +1214,20 @@ internal class SymbolIndex {
     val functions = linkedMapOf<String, FuncDecl>()
     val packs = linkedMapOf<String, TopLevel.Pack>()
     val enums = linkedMapOf<String, TopLevel.Enum>()
+    val slots = linkedMapOf<String, TopLevel.Slot>()
+    val specs = linkedMapOf<String, TopLevel.Spec>()
+    val aliases = linkedMapOf<String, TopLevel.TypeAlias>()
+    val decorators = linkedMapOf<String, TopLevel.Deco>()
+    val macros = linkedMapOf<String, TopLevel.Meta>()
+    val properties = linkedSetOf<String>()
+    val propertyOrigins = linkedMapOf<String, String?>()
+    val enumCases = linkedSetOf<String>()
+    val enumCaseOrigins = linkedMapOf<String, String?>()
+    val errorCases = linkedSetOf<String>()
+    val errorCaseOrigins = linkedMapOf<String, String?>()
+
+    /** Modules declared `exposed module`, whose declarations need no import. */
+    val implicitModules = linkedSetOf<String>()
 
     /** Canonical scope-qualified type names (`std__Int`, `shapes__Point`). */
     val qualifiedTypes = linkedSetOf<String>()
@@ -1069,12 +1250,30 @@ internal class SymbolIndex {
 
     fun addProgram(program: Program, moduleOverride: String? = null, sourceText: String? = null) {
         val module = moduleOverride ?: program.moduleName
+        if (module != null && program.isExported && program.moduleVisibility == ModuleVisibility.PUBLIC) {
+            implicitModules += module
+        }
         fun origin(name: String) {
             if (module != null) origins.putIfAbsent(name, module)
         }
         fun document(name: String, line: Int) {
             val doc = sourceText?.let { documentationAbove(it, line) }.orEmpty()
             if (doc.isNotEmpty()) documentation.putIfAbsent(name, doc)
+        }
+        fun property(decl: FuncDecl) {
+            if (decl.memberCallStyle != org.azora.lang.frontend.MemberCallStyle.PROPERTY &&
+                decl.memberCallStyle != org.azora.lang.frontend.MemberCallStyle.STATIC_PROPERTY
+            ) return
+            properties += decl.name
+            propertyOrigins.putIfAbsent(decl.name, module)
+        }
+        fun enumCase(name: String) {
+            enumCases += name
+            enumCaseOrigins.putIfAbsent(name, module)
+        }
+        fun errorCase(name: String) {
+            errorCases += name
+            errorCaseOrigins.putIfAbsent(name, module)
         }
         fun typeOrigin(name: String): String {
             val namespace = program.scopeTypeNamespaces[name]
@@ -1116,12 +1315,52 @@ internal class SymbolIndex {
                     val canonical = typeOrigin(item.name)
                     document(item.name, item.line)
                     documentation[item.name]?.let { documentation.putIfAbsent(canonical, it) }
+                    item.variants.forEach(::enumCase)
                 }
-                is TopLevel.Solo -> item.methods.forEach {
-                    functions[it.name] = it
-                    origin(it.name)
-                    document(it.name, it.line)
+                is TopLevel.Slot -> {
+                    slots[item.name] = item
+                    origin(item.name)
+                    val canonical = typeOrigin(item.name)
+                    document(item.name, item.line)
+                    documentation[item.name]?.let { documentation.putIfAbsent(canonical, it) }
+                    if (item.isError) item.variants.map { it.name }.forEach(::errorCase)
+                    else item.variants.map { it.name }.forEach(::enumCase)
                 }
+                is TopLevel.Spec -> {
+                    specs[item.name] = item
+                    origin(item.name)
+                    val canonical = typeOrigin(item.name)
+                    document(item.name, item.line)
+                    documentation[item.name]?.let { documentation.putIfAbsent(canonical, it) }
+                    item.methods.forEach(::property)
+                }
+                is TopLevel.TypeAlias -> {
+                    aliases[item.name] = item
+                    origin(item.name)
+                    val canonical = typeOrigin(item.name)
+                    document(item.name, item.line)
+                    documentation[item.name]?.let { documentation.putIfAbsent(canonical, it) }
+                }
+                is TopLevel.Deco -> {
+                    decorators[item.name] = item
+                    origin(item.name)
+                    document(item.name, item.line)
+                }
+                is TopLevel.Meta -> {
+                    macros[item.name] = item
+                    origin(item.name)
+                    document(item.name, item.line)
+                }
+                is TopLevel.Solo -> {
+                    item.methods.forEach {
+                        functions[it.name] = it
+                        origin(it.name)
+                        property(it)
+                        document(it.name, it.line)
+                    }
+                }
+                is TopLevel.Impl -> item.methods.forEach(::property)
+                is TopLevel.Fail -> item.variants.forEach(::errorCase)
                 is TopLevel.VarDecl -> {
                     registerTopVar(item.name, "var", item.type, item.initializer, item.line)
                     origin(item.name)
@@ -1159,15 +1398,17 @@ internal class SymbolIndex {
     fun isScopeType(name: String): Boolean = qualifiedTypes.any { it != name && it.endsWith("__$name") }
 
     private fun typeNameForKey(name: String): String? = when {
-        name in packs || name in enums -> name
+        name in packs || name in enums || name in slots || name in specs || name in aliases -> name
         name in qualifiedTypes -> name.substringAfterLast("__")
         else -> null
     }
 
-    private fun hasType(name: String): Boolean = typeNameForKey(name)?.let { it in packs || it in enums } == true
+    private fun hasType(name: String): Boolean = typeNameForKey(name)?.let {
+        it in packs || it in enums || it in slots || it in specs || it in aliases
+    } == true
 
     private fun typeDeclarationLine(name: String): Int? = typeNameForKey(name)?.let { key ->
-        packs[key]?.line ?: enums[key]?.line
+        packs[key]?.line ?: enums[key]?.line ?: slots[key]?.line ?: specs[key]?.line ?: aliases[key]?.line
     }
 
     /** Whether [name] has a declaration matching the use-site [role]. */
@@ -1175,7 +1416,15 @@ internal class SymbolIndex {
         ReferenceRole.CALLABLE -> name in functions || hasType(name)
         ReferenceRole.TYPE -> hasType(name)
         ReferenceRole.VALUE -> name in topLevelVars || name in functions || hasType(name)
-        ReferenceRole.ANY -> name in functions || hasType(name) || name in topLevelVars
+        ReferenceRole.ANY -> name in functions || hasType(name) || name in topLevelVars ||
+            name in decorators || name in macros
+    }
+
+    /** The declaring module for [name] in the requested reference namespace. */
+    fun originOf(name: String, role: ReferenceRole = ReferenceRole.ANY): String? = when (role) {
+        ReferenceRole.TYPE -> qualifiedTypeOrigins[name] ?: origins[name]
+        ReferenceRole.CALLABLE, ReferenceRole.VALUE -> origins[name] ?: qualifiedTypeOrigins[name]
+        ReferenceRole.ANY -> origins[name] ?: qualifiedTypeOrigins[name]
     }
 
     /** Declaration line selected by symbol role rather than spelling alone. */

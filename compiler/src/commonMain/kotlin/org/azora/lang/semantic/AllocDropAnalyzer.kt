@@ -96,14 +96,14 @@ class AllocDropAnalyzer {
         }
 
         // Warn about unused variables (not params - those may be part of API contract)
-        val declaredLocals = mutableSetOf<String>()
+        val declaredLocals = linkedMapOf<String, Int>()
         for (stmt in func.body) {
-            if (stmt is Stmt.VarDecl) declaredLocals.add(stmt.name)
-            if (stmt is Stmt.FinDecl) declaredLocals.add(stmt.name)
+            if (stmt is Stmt.VarDecl) declaredLocals[stmt.name] = stmt.line
+            if (stmt is Stmt.FinDecl) declaredLocals[stmt.name] = stmt.line
         }
-        for (local in declaredLocals) {
+        for ((local, line) in declaredLocals) {
             if (local !in used && reportsUnused(func)) {
-                errors.add("warning: variable '$local' in function '${func.name}' is never used")
+                errors.add("warning: line $line: variable '$local' in function '${func.name}' is never used")
             }
         }
     }

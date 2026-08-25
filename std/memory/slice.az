@@ -22,13 +22,13 @@ pack Slice<T> {
 }
 
 @Experimental(since: "0.1")
-oper[] [self: Slice<T>&](index: Int): T {
+oper[] Slice<T>&.(index: Int): T {
     assert index >= 0 && index < self.count { "Slice index out of bounds" }
     return self._raw[index]
 }
 
 @Experimental(since: "0.1")
-oper[]= [self: Slice<T>!](index: Int, value: T) {
+oper[]= Slice<T>!.(index: Int, value: T) {
     assert index >= 0 && index < self.count { "Slice index out of bounds" }
     self._raw[index] = value
 }

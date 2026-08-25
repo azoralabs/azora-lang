@@ -509,6 +509,56 @@ func skipComment(source: String, documentEnd: Int, start: Int): Int {
     return start
 }
 
+/** End of one decimal, hexadecimal, octal, or binary numeric literal. */
+func numberEnd(source: String, documentEnd: Int, start: Int): Int {
+    var index = start
+    var base = 10
+    // A digit immediately after `.` is a positional member (`tuple.0`), not
+    // the beginning of a floating-point literal.
+    fin afterMemberAccess = start > 0 && charAt(source, start - 1) == '.'
+    if start + 1 < documentEnd && charAt(source, start) == '0' {
+        fin prefix = charAt(source, start + 1)
+        if prefix == 'x' || prefix == 'X' { base = 16 }
+        else if prefix == 'o' || prefix == 'O' { base = 8 }
+        else if prefix == 'b' || prefix == 'B' { base = 2 }
+    }
+    if base != 10 { index += 2 }
+    while index < documentEnd {
+        fin digit = charAt(source, index)
+        fin accepted = if base == 16 {
+            isDigit(digit) || (digit >= 'a' && digit <= 'f') || (digit >= 'A' && digit <= 'F')
+        }
+        else if base == 8 { digit >= '0' && digit <= '7' }
+        else if base == 2 { digit == '0' || digit == '1' }
+        else { isDigit(digit) }
+        if accepted || digit == '_' { index += 1 } else { break }
+    }
+    if base == 10 && !afterMemberAccess && index + 1 < documentEnd && charAt(source, index) == '.' &&
+        isDigit(charAt(source, index + 1)) {
+        index += 1
+        while index < documentEnd && (isDigit(charAt(source, index)) || charAt(source, index) == '_') {
+            index += 1
+        }
+    }
+    else if base == 10 && !afterMemberAccess && index < documentEnd && charAt(source, index) == '.' &&
+        (index + 1 >= documentEnd ||
+            (charAt(source, index + 1) != '.' && !isIdentifierStart(charAt(source, index + 1)))) {
+        // `2.` is a real literal; `2..5` is a range and `2.toString` is member access.
+        index += 1
+    }
+    if base == 10 && !afterMemberAccess && index < documentEnd &&
+        (charAt(source, index) == 'e' || charAt(source, index) == 'E') {
+        index += 1
+        if index < documentEnd && (charAt(source, index) == '+' || charAt(source, index) == '-') {
+            index += 1
+        }
+        while index < documentEnd && (isDigit(charAt(source, index)) || charAt(source, index) == '_') {
+            index += 1
+        }
+    }
+    return index
+}
+
 func addHighlight(result: String, start: Int, end: Int, kind: String): String {
     fin comma = if result == "[" { "" } else { "," }
     return result + comma + "{\"start\":" + "${start}" + ",\"end\":" + "${end}" +
@@ -732,11 +782,7 @@ func addInterpolationHighlights(
         }
         else if isDigit(c) {
             fin numberStart = index
-            index += 1
-            while index < end {
-                fin n = charAt(source, index)
-                if isDigit(n) || n == '_' || n == '.' { index += 1 } else { break }
-            }
+            index = numberEnd(source, end, index)
             result = addHighlight(result, numberStart, index, "number")
         }
         else if isIdentifierStart(c) {
@@ -881,11 +927,7 @@ func azlsHighlightRange(
         }
         else if isDigit(c) {
             fin start = index
-            index += 1
-            while index < stringLength(source) {
-                fin n = charAt(source, index)
-                if isDigit(n) || n == '_' || n == '.' { index += 1 } else { break }
-            }
+            index = numberEnd(source, stringLength(source), index)
             if start >= rangeStart {
                 result = addHighlight(result, start, index, "number")
             }

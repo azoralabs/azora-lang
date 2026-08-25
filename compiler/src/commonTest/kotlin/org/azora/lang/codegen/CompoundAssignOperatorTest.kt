@@ -46,7 +46,7 @@ class CompoundAssignOperatorTest {
             pack Money {
                 var cents: Int
             }
-            oper+ [self: Money&](rhs: Money&): Money {
+            oper+ Money&.(rhs: Money&): Money {
                 return Money(self.cents + rhs.cents)
             }
             func main() {
@@ -67,7 +67,7 @@ class CompoundAssignOperatorTest {
             pack Acc {
                 var total: Int
             }
-            oper+= [self: Acc!](rhs: Acc&) {
+            oper+= Acc!.(rhs: Acc&) {
                 println("in place")
                 self.total = self.total + rhs.total
             }
@@ -86,11 +86,11 @@ class CompoundAssignOperatorTest {
             pack Acc {
                 var total: Int
             }
-            oper+ [self: Acc&](rhs: Acc&): Acc {
+            oper+ Acc&.(rhs: Acc&): Acc {
                 println("built a new one")
                 return Acc(self.total + rhs.total)
             }
-            oper+= [self: Acc!](rhs: Acc&) {
+            oper+= Acc!.(rhs: Acc&) {
                 println("in place")
                 self.total = self.total + rhs.total
             }
@@ -109,7 +109,7 @@ class CompoundAssignOperatorTest {
             pack Acc {
                 var total: Int
             }
-            oper-= [self: Acc!](rhs: Acc&) {
+            oper-= Acc!.(rhs: Acc&) {
                 self.total = self.total - rhs.total
             }
             func main() {

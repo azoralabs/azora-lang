@@ -227,9 +227,9 @@ fin middle = values[start: stop]
 The index operators retain their spellings:
 
 ```azora
-oper[]  [self: Vector<T>&](index: Int): T
-oper[]= [self: Vector<T>!](index: Int, value: T)
-oper[:] [self: Vector<T>&](range: Range): Vector<T>
+oper[]  Vector<T>&.(index: Int): T
+oper[]= Vector<T>!.(index: Int, value: T)
+oper[:] Vector<T>&.(range: Range): Vector<T>
 ```
 
 The operator receiver syntax shown above is outside this proposal. Its brackets
@@ -1357,7 +1357,7 @@ pack SmallVec<T> {
     // storage...
 }
 
-impl SmallVec<T>:: {
+impl SmallVec<T> {
     literal [...elements: T]: SmallVec<T> {
         return SmallVec<T>(...elements)
     }

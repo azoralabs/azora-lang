@@ -40,6 +40,30 @@ import std.traits::{PartialEqual, Equal, Order, Hash}
 @Since("0.1")
 bridge pack Char derives (PartialEqual, Equal, Order, Hash)
 
+/*impl Into<Int> for Char {
+    prop<Int> &.into: Int {
+        // todo. implement
+    }
+}
+
+impl From<Int> for Char {
+    func from(value: Int): Self {
+        // todo. implement
+    }
+}
+
+impl Into<String> for Char {
+    prop<String> &.into: String {
+        // todo. implement
+    }
+}
+
+impl From<String> for Char {
+    func from(value: String): Self {
+        // todo. implement
+    }
+}*/
+
 /**
  * Returns the Unicode code point of a character.
  *
@@ -48,7 +72,7 @@ bridge pack Char derives (PartialEqual, Equal, Order, Hash)
  */
 @Experimental(since: "0.1")
 func charToCode(c: Char): Int {
-    return ord(c)
+    return ord(take c)
 }
 
 /**
@@ -73,7 +97,7 @@ in {
  */
 @Experimental(since: "0.1")
 func charIsDigit(c: Char): Bool {
-    return isDigit(c)
+    return isDigit(take c)
 }
 
 /**
@@ -84,73 +108,7 @@ func charIsDigit(c: Char): Bool {
  */
 @Experimental(since: "0.1")
 func charIsAlpha(c: Char): Bool {
-    return isAlpha(c)
-}
-
-/**
- * Checks if a character is alphanumeric.
- *
- * @param c The character to check.
- * @return true if c is a letter or digit.
- */
-@Experimental(since: "0.1")
-func charIsAlphanumeric(c: Char): Bool {
-    return isAlphanumeric(c)
-}
-
-/**
- * Checks if a character is uppercase.
- *
- * @param c The character to check.
- * @return true if c is an uppercase letter.
- */
-@Experimental(since: "0.1")
-func charIsUpper(c: Char): Bool {
-    return isUpper(c)
-}
-
-/**
- * Checks if a character is lowercase.
- *
- * @param c The character to check.
- * @return true if c is a lowercase letter.
- */
-@Experimental(since: "0.1")
-func charIsLower(c: Char): Bool {
-    return isLower(c)
-}
-
-/**
- * Checks if a character is whitespace.
- *
- * @param c The character to check.
- * @return true if c is a whitespace character.
- */
-@Experimental(since: "0.1")
-func charIsWhitespace(c: Char): Bool {
-    return isWhitespace(c)
-}
-
-/**
- * Converts a character to uppercase.
- *
- * @param c The character to convert.
- * @return The uppercase version of c.
- */
-@Experimental(since: "0.1")
-func charToUpper(c: Char): Char {
-    return toUpper(c)
-}
-
-/**
- * Converts a character to lowercase.
- *
- * @param c The character to convert.
- * @return The lowercase version of c.
- */
-@Experimental(since: "0.1")
-func charToLower(c: Char): Char {
-    return toLower(c)
+    return isAlpha(take c)
 }
 
 /**
@@ -160,8 +118,8 @@ func charToLower(c: Char): Char {
  * @return true if c is in the ASCII range.
  */
 @Experimental(since: "0.1")
-func charIsAscii(c: Char): Bool {
-    fin code = ord(c)
+func charIsAscii(c: Char&): Bool {
+    fin code: Int = ord(c.&)
     return code >= 0 && code <= 127
 }
 
@@ -173,7 +131,7 @@ func charIsAscii(c: Char): Bool {
  */
 @Experimental(since: "0.1")
 func charIsPrintable(c: Char): Bool {
-    fin code = ord(c)
+    fin code: Int = ord(take c)
     return code >= 32 && code <= 126
 }
 
@@ -184,8 +142,8 @@ func charIsPrintable(c: Char): Bool {
  * @return true if c is a hex digit.
  */
 @Experimental(since: "0.1")
-func charIsHexDigit(c: Char): Bool {
-    fin code = ord(c)
+func charIsHexDigit(c: Char&): Bool {
+    fin code: Int = ord(c.&)
     return (code >= 48 && code <= 57) ||
            (code >= 65 && code <= 70) ||
            (code >= 97 && code <= 102)
@@ -198,17 +156,13 @@ func charIsHexDigit(c: Char): Bool {
  * @return The integer value (0-15).
  */
 @Experimental(since: "0.1")
-func hexDigitToInt(c: Char): Int
+func hexDigitToInt(c: Char&): Int
 in {
     assert charIsHexDigit(c) { "Character must be a hex digit" }
 } scope {
-    fin code = ord(c)
-    if code >= 48 && code <= 57 {
-        return code - 48
-    }
-    if code >= 65 && code <= 70 {
-        return code - 55
-    }
+    fin code: Int = ord(c.&)
+    if code >= 48 && code <= 57 { return code - 48 }
+    if code >= 65 && code <= 70 { return code - 55 }
     return code - 87
 }
 
@@ -219,11 +173,11 @@ in {
  * @return The integer value (0-9).
  */
 @Experimental(since: "0.1")
-func digitToInt(c: Char): Int
+func digitToInt(c: Char&): Int
 in {
-    assert isDigit(c) { "Character must be a digit" }
+    assert isDigit(c.&) { "Character must be a digit" }
 } scope {
-    return ord(c) - 48
+    return ord(c.&) - 48
 }
 
 /**

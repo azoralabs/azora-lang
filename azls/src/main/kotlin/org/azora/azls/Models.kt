@@ -31,14 +31,20 @@ import kotlinx.serialization.Serializable
 data class HighlightSpan(val start: Int, val end: Int, val type: String)
 
 /**
- * A compiler diagnostic mapped to the edited document.
- *
- * @property line 1-based line in the document
- * @property message human-readable description
- * @property severity `error` or `warning`
+ * Compatibility JSON view of a structured compiler diagnostic.
+ * New editor integrations consume the richer LSP diagnostic directly.
  */
 @Serializable
-data class Diagnostic(val line: Int, val message: String, val severity: String)
+data class Diagnostic(
+    val line: Int,
+    val message: String,
+    val severity: String,
+    val column: Int = 1,
+    val endLine: Int = line,
+    val endColumn: Int = column,
+    val code: String = "AZ-CMP-9000",
+    val stage: String = "compiler",
+)
 
 /**
  * A completion proposal.
@@ -48,9 +54,17 @@ data class Diagnostic(val line: Int, val message: String, val severity: String)
  *   `variable`, `field`, `method` or `param`
  * @property detail signature / type information shown next to the label
  * @property insert text inserted into the document when accepted
+ * @property importModule module AZLS must import when this otherwise-invisible
+ *   workspace symbol is accepted
  */
 @Serializable
-data class Completion(val label: String, val kind: String, val detail: String = "", val insert: String = "")
+data class Completion(
+    val label: String,
+    val kind: String,
+    val detail: String = "",
+    val insert: String = "",
+    val importModule: String? = null,
+)
 
 /**
  * Hover information for the symbol under the caret.
@@ -69,6 +83,8 @@ data class Hover(val signature: String, val detail: String = "", val doc: String
  *   0 and [name] carries the symbol so the client can search other files
  * @property column 1-based column, when known
  * @property name the symbol name (used to locate cross-file declarations)
+ * @property module source module for a cross-file declaration; clients use it
+ *   to avoid jumping to an unrelated same-named symbol
  * @property inCurrentFile whether the declaration is in the edited document
  */
 @Serializable
@@ -76,6 +92,7 @@ data class Definition(
     val line: Int,
     val column: Int = 0,
     val name: String = "",
+    val module: String? = null,
     val inCurrentFile: Boolean = true,
 )
 

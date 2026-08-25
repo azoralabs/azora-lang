@@ -45,7 +45,7 @@ pack Shared<T> {
 }
 
 @Experimental(since: "0.1") // mandatory spec deref
-oper.* [self: Shared<T>&]: T {
+oper.* Shared<T>&.(): T {
     return self.raw.*
 }
 

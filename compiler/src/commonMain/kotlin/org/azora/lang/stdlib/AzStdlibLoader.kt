@@ -16,7 +16,6 @@
 
 package org.azora.lang.stdlib
 
-import dev.azora.lang.BuildConfig
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.Program
@@ -50,10 +49,10 @@ import org.azora.lang.frontend.Program
  *
  * ## Version handshake
  *
- * A disk root must contain a [STDLIB_VERSION_FILE] naming the language version
- * it was written for. A mismatch is reported as a mismatch; without it, a
- * standard library from another release fails later as a puzzling type error in
- * code the user did not write.
+ * A disk root belongs to the package declared by `package.azon` beside it. The
+ * manifest's `package.version` is checked against the standard library bundled
+ * with this compiler. Package metadata therefore has one source of truth rather
+ * than a second version-only marker hidden inside `std/`.
  */
 object AzStdlib {
 
@@ -130,8 +129,9 @@ object AzStdlib {
         for (candidate in candidates) {
             val files = readStdlibTree(candidate.path) ?: continue
             if (files.isEmpty()) continue
-            val version = readStdlibFile(candidate.path, STDLIB_VERSION_FILE)?.trim()
-            if (version == null) {
+            val manifest = readStdlibPackageManifest(candidate.path)
+                ?.let(::parseStdlibPackageManifest)
+            if (manifest == null) {
                 // A directory that merely happens to be called `std` is not one:
                 // searched locations are inferred, and inferring wrongly must not
                 // break a working install. A root the user *named* is different -
@@ -140,12 +140,20 @@ object AzStdlib {
                 if (!candidate.explicit) continue
                 error(
                     "the standard library at '${candidate.path}' (${candidate.origin}) has no " +
-                        "$STDLIB_VERSION_FILE, so its version cannot be checked - point it at a " +
-                        "directory containing one, or unset it to use the bundled standard library",
+                        "valid $STDLIB_PACKAGE_MANIFEST beside it; package.name and package.version " +
+                        "are required - point AZORA_STDLIB at that package's std/ directory, or " +
+                        "unset it to use the bundled standard library",
                 )
             }
-            checkVersion(version, "${candidate.origin} ('${candidate.path}')")
-            return StdlibTree(candidate.origin, version, files)
+            if (manifest.name != AzStdlibBundle.PACKAGE_NAME) {
+                if (!candidate.explicit) continue
+                error(
+                    "the standard library at '${candidate.path}' (${candidate.origin}) belongs to " +
+                        "package '${manifest.name}', expected '${AzStdlibBundle.PACKAGE_NAME}'",
+                )
+            }
+            checkVersion(manifest.version, "${candidate.origin} ('${candidate.path}')")
+            return StdlibTree(candidate.origin, manifest.version, files)
         }
         return StdlibTree(
             origin = "bundled with the compiler",
@@ -159,10 +167,11 @@ object AzStdlib {
      * left to fail as an inexplicable error inside `std` later.
      */
     private fun checkVersion(found: String, where: String) {
-        if (found == BuildConfig.VERSION) return
+        if (found == AzStdlibBundle.VERSION) return
         error(
-            "standard library version mismatch: the compiler is ${BuildConfig.VERSION} but the " +
-                "standard library from $where is $found",
+            "standard library package version mismatch: this compiler bundles " +
+                "${AzStdlibBundle.PACKAGE_NAME} ${AzStdlibBundle.VERSION}, but the standard " +
+                "library from $where is $found",
         )
     }
 

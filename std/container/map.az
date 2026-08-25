@@ -1283,38 +1283,38 @@ func<K, V> mutableMapOf(...entries: MapEntry<K, V>): MutableMap<K, V> {
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-oper[] [self: HashMap<K, V>&](key: K): V {
+oper[] HashMap<K, V>&.(key: K): V {
     return self.get(key)
 }
 
 @Experimental(since: "0.1")
-oper[]= [self: HashMap<K, V>!](key: K, value: V) {
+oper[]= HashMap<K, V>!.(key: K, value: V) {
     self.put(key, value)
 }
 
 @Experimental(since: "0.1")
-oper[] [self: LinkedHashMap<K, V>&](key: K): V {
+oper[] LinkedHashMap<K, V>&.(key: K): V {
     return self.get(key)
 }
 
 @Experimental(since: "0.1")
-oper[]= [self: LinkedHashMap<K, V>!](key: K, value: V) {
+oper[]= LinkedHashMap<K, V>!.(key: K, value: V) {
     self.put(key, value)
 }
 
 @Experimental(since: "0.1")
-oper[] [self: TreeMap<K, V>&](key: K): V {
+oper[] TreeMap<K, V>&.(key: K): V {
     return self.get(key)
 }
 
 @Experimental(since: "0.1")
-oper[]= [self: TreeMap<K, V>!](key: K, value: V) {
+oper[]= TreeMap<K, V>!.(key: K, value: V) {
     self.put(key, value)
 }
 
 /** Slicing is over current iteration order and returns an ordered snapshot. */
 @Experimental(since: "0.1")
-oper[:] [self: HashMap<K, V>&](slice: MapSlice): Map<K, V> {
+oper[:] HashMap<K, V>&.(slice: MapSlice): Map<K, V> {
     assert slice.step != 0 { "Map slice step cannot be zero" }
     fin all = self.entries()
     var result: LinkedHashMap<K, V> = .()
@@ -1329,7 +1329,7 @@ oper[:] [self: HashMap<K, V>&](slice: MapSlice): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper[:] [self: LinkedHashMap<K, V>&](slice: MapSlice): Map<K, V> {
+oper[:] LinkedHashMap<K, V>&.(slice: MapSlice): Map<K, V> {
     assert slice.step != 0 { "Map slice step cannot be zero" }
     var result: LinkedHashMap<K, V> = .()
     var i = slice.start
@@ -1343,7 +1343,7 @@ oper[:] [self: LinkedHashMap<K, V>&](slice: MapSlice): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper[:] [self: TreeMap<K, V>&](slice: MapSlice): Map<K, V> {
+oper[:] TreeMap<K, V>&.(slice: MapSlice): Map<K, V> {
     assert slice.step != 0 { "Map slice step cannot be zero" }
     fin all = self.entries()
     var result: LinkedHashMap<K, V> = .()
@@ -1358,7 +1358,7 @@ oper[:] [self: TreeMap<K, V>&](slice: MapSlice): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper+ [self: HashMap<K, V>&](entry: MapEntry<K, V>): Map<K, V> {
+oper+ HashMap<K, V>&.(entry: MapEntry<K, V>): Map<K, V> {
     var result = hashMapOf<K, V>()
     result.putAll(self)
     result.put(entry.key, entry.value)
@@ -1366,7 +1366,7 @@ oper+ [self: HashMap<K, V>&](entry: MapEntry<K, V>): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper- [self: HashMap<K, V>&](key: K): Map<K, V> {
+oper- HashMap<K, V>&.(key: K): Map<K, V> {
     var result = hashMapOf<K, V>()
     result.putAll(self)
     result.remove(key)
@@ -1374,7 +1374,7 @@ oper- [self: HashMap<K, V>&](key: K): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper+ [self: LinkedHashMap<K, V>&](entry: MapEntry<K, V>): Map<K, V> {
+oper+ LinkedHashMap<K, V>&.(entry: MapEntry<K, V>): Map<K, V> {
     var result = linkedHashMapOf<K, V>()
     result.putAll(self)
     result.put(entry.key, entry.value)
@@ -1382,7 +1382,7 @@ oper+ [self: LinkedHashMap<K, V>&](entry: MapEntry<K, V>): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper- [self: LinkedHashMap<K, V>&](key: K): Map<K, V> {
+oper- LinkedHashMap<K, V>&.(key: K): Map<K, V> {
     var result = linkedHashMapOf<K, V>()
     result.putAll(self)
     result.remove(key)
@@ -1390,7 +1390,7 @@ oper- [self: LinkedHashMap<K, V>&](key: K): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper+ [self: TreeMap<K, V>&](entry: MapEntry<K, V>): Map<K, V> {
+oper+ TreeMap<K, V>&.(entry: MapEntry<K, V>): Map<K, V> {
     var result = treeMapOf<K, V>()
     result.putAll(self)
     result.put(entry.key, entry.value)
@@ -1398,7 +1398,7 @@ oper+ [self: TreeMap<K, V>&](entry: MapEntry<K, V>): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper- [self: TreeMap<K, V>&](key: K): Map<K, V> {
+oper- TreeMap<K, V>&.(key: K): Map<K, V> {
     var result = treeMapOf<K, V>()
     result.putAll(self)
     result.remove(key)
@@ -1406,7 +1406,7 @@ oper- [self: TreeMap<K, V>&](key: K): Map<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper== [self: HashMap<K, V>&](rhs: Map<K, V>): Bool {
+oper== HashMap<K, V>&.(rhs: Map<K, V>): Bool {
     if self._size != rhs.size {
         return false
     }
@@ -1420,7 +1420,7 @@ oper== [self: HashMap<K, V>&](rhs: Map<K, V>): Bool {
 }
 
 @Experimental(since: "0.1")
-oper!= [self: HashMap<K, V>&](rhs: Map<K, V>): Bool {
+oper!= HashMap<K, V>&.(rhs: Map<K, V>): Bool {
     return !(self == rhs)
 }
 
@@ -1437,7 +1437,7 @@ impl HashMap<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper== [self: LinkedHashMap<K, V>&](rhs: Map<K, V>): Bool {
+oper== LinkedHashMap<K, V>&.(rhs: Map<K, V>): Bool {
     if self._size != rhs.size {
         return false
     }
@@ -1450,7 +1450,7 @@ oper== [self: LinkedHashMap<K, V>&](rhs: Map<K, V>): Bool {
 }
 
 @Experimental(since: "0.1")
-oper!= [self: LinkedHashMap<K, V>&](rhs: Map<K, V>): Bool {
+oper!= LinkedHashMap<K, V>&.(rhs: Map<K, V>): Bool {
     return !(self == rhs)
 }
 
@@ -1466,7 +1466,7 @@ impl LinkedHashMap<K, V> {
 }
 
 @Experimental(since: "0.1")
-oper== [self: TreeMap<K, V>&](rhs: Map<K, V>): Bool {
+oper== TreeMap<K, V>&.(rhs: Map<K, V>): Bool {
     if self._size != rhs.size {
         return false
     }
@@ -1480,7 +1480,7 @@ oper== [self: TreeMap<K, V>&](rhs: Map<K, V>): Bool {
 }
 
 @Experimental(since: "0.1")
-oper!= [self: TreeMap<K, V>&](rhs: Map<K, V>): Bool {
+oper!= TreeMap<K, V>&.(rhs: Map<K, V>): Bool {
     return !(self == rhs)
 }
 

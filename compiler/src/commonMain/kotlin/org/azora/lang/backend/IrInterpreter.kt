@@ -549,7 +549,11 @@ class IrInterpreter {
                 }
             }
             if (toRethrow != null && !suppressed) throw toRethrow
-            return retValue
+            return when (func.returnType) {
+                IrType.Unit -> kotlin.Unit
+                IrType.Nothing -> error("Nothing-returning function '${func.name}' returned normally")
+                else -> retValue
+            }
         } finally {
             popScope()
         }
@@ -981,6 +985,7 @@ class IrInterpreter {
 
     private suspend fun evalExpr(expr: IrExpr): Any? {
         return when (expr) {
+            IrExpr.UnitLiteral -> kotlin.Unit
             is IrExpr.IntLiteral -> expr.text?.let {
                 // The interpreter's integers are `Long`s. A 128-bit literal is
                 // not one, and quietly handing back its low 64 bits would be a
@@ -1009,7 +1014,7 @@ class IrInterpreter {
                 }
             }
             is IrExpr.Binary -> evalBinary(expr)
-            is IrExpr.Call -> evalCall(expr)
+            is IrExpr.Call -> evalCall(expr).let { if (expr.type == IrType.Unit) kotlin.Unit else it }
             is IrExpr.ArrayLiteral -> expr.elements.map { evalExpr(it) }.toMutableList()
             is IrExpr.SetLit -> expr.elements.map { evalExpr(it) }.distinct().toMutableList()
             is IrExpr.MapLit -> {

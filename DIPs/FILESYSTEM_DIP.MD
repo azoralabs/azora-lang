@@ -272,7 +272,7 @@ site is **inside** the same scope, and does not when it is outside:
 scope demo {
     pack Money { var cents: Int = 0 }
     impl Money {
-        oper + [self: Self&](rhs: Self&): Self { return Money(self.cents + rhs.cents) }
+        oper + &.(rhs: Self&): Self { return Money(self.cents + rhs.cents) }
     }
     func addInside(): Int { return (Money(500) + Money(250)).cents }   // 750
 }

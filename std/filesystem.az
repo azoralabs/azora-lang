@@ -87,10 +87,10 @@ pack FileInfo {
 
 impl FileInfo {
     /** True when this entry is an ordinary file. */
-    prop &.isFile: Bool = self.kind == FileKind.File
+    prop &.isFile: Bool = self.kind == .File
 
     /** True when this entry is a directory. */
-    prop &.isDirectory: Bool = self.kind == FileKind.Directory
+    prop &.isDirectory: Bool = self.kind == .Directory
 }
 
 // ── Paths ───────────────────────────────────────────────────────────
@@ -109,12 +109,9 @@ pack Path {
 
 /** The path [text] names. */
 @Experimental(since: "0.1")
-func path(text: String): Path {
-    return Path(text)
-}
+func path(text: String): Path { return .(text) }
 
 impl Path {
-
     /**
      * [segment] appended below this path, with exactly one separator.
      *
@@ -124,42 +121,27 @@ impl Path {
      */
     @Experimental(since: "0.1")
     func &.join(segment: String): Path {
-        if stringLength(segment) == 0 {
-            return Path(self.text)
-        }
-        if stringLength(self.text) == 0 {
-            return Path(segment)
-        }
-        if _isSeparator(charAt(segment, 0)) {
-            return Path(segment)
-        }
-        if _isSeparator(charAt(self.text, stringLength(self.text) - 1)) {
-            return Path(self.text + segment)
-        }
-        return Path(self.text + pathSeparator + segment)
+        if stringLength(segment) == 0 { return .(self.text) }
+        if stringLength(self.text) == 0 { return .(segment) }
+        if _isSeparator(charAt(segment, 0)) { return .(segment) }
+        return if _isSeparator(charAt(self.text, stringLength(self.text) - 1)) {
+            return .(self.text + segment)
+        } else { .(self.text + pathSeparator + segment) }
     }
 
     /** The directory holding this path; `"."` when there is no separator. */
     @Experimental(since: "0.1")
     prop &.parent: Path {
         fin cut = _lastSeparator(self.text)
-        if cut < 0 {
-            return Path(".")
-        }
-        if cut == 0 {
-            // "/x" - the parent is the root, not the empty string.
-            return Path(pathSeparator)
-        }
-        return Path(substring(self.text, 0, cut))
+        if cut < 0 { return .(".") }
+        return if cut == 0 { .(pathSeparator) } else { .(substring(self.text, 0, cut)) }
     }
 
     /** The final segment: `a/b/c.az` → `c.az`. */
     @Experimental(since: "0.1")
     prop &.fileName: String {
         fin cut = _lastSeparator(self.text)
-        if cut < 0 {
-            return self.text
-        }
+        if cut < 0 { return self.text }
         return substring(self.text, cut + 1, stringLength(self.text))
     }
 
@@ -168,9 +150,7 @@ impl Path {
     prop &.stem: String {
         fin name = self.fileName
         fin dot = _lastDot(name)
-        if dot <= 0 {
-            return name
-        }
+        if dot <= 0 { return name }
         return substring(name, 0, dot)
     }
 
@@ -184,9 +164,7 @@ impl Path {
     prop &.extension: String {
         fin name = self.fileName
         fin dot = _lastDot(name)
-        if dot <= 0 {
-            return ""
-        }
+        if dot <= 0 { return "" }
         return substring(name, dot + 1, stringLength(name))
     }
 
@@ -196,26 +174,19 @@ impl Path {
         fin base = self.parent
         fin name = self.stem
         fin renamed = if stringLength(extension) == 0 { name } else { name + "." + extension }
-        if self.parent.text == "." && _lastSeparator(self.text) < 0 {
-            return Path(renamed)
-        }
+        if self.parent.text == "." && _lastSeparator(self.text) < 0 { return .(renamed) }
         return base.join(renamed)
     }
 
     /** True when this path starts at a filesystem root. */
     @Experimental(since: "0.1")
     prop &.isAbsolute: Bool {
-        if stringLength(self.text) == 0 {
-            return false
-        }
-        if _isSeparator(charAt(self.text, 0)) {
-            return true
-        }
+        if stringLength(self.text) == 0 { return false }
+        if _isSeparator(charAt(self.text, 0)) { return true }
         // A Windows drive letter: "C:\…" or "C:/…".
-        if stringLength(self.text) >= 3 && charAt(self.text, 1) == ':' {
-            return _isSeparator(charAt(self.text, 2))
-        }
-        return false
+        return if stringLength(self.text) >= 3 && charAt(self.text, 1) == ':' {
+            _isSeparator(charAt(self.text, 2))
+        } else { false }
     }
 
     /**
@@ -227,38 +198,25 @@ impl Path {
      */
     @Experimental(since: "0.1")
     prop &.normalized: Path {
-        fin rooted = self.isAbsolute
+        fin rooted: Bool = self.isAbsolute
         var kept: MutableList<String> = mutableListOf<String>()
-        fin total = stringLength(self.text)
-        // Segments are cut by index rather than accumulated character by
-        // character: the text is already there, and slicing it avoids
-        // building one string per character of the path.
-        var start = 0
-        var index = 0
-        while index <= total {
+        fin total: Int = stringLength(self.text)
+        var start: Int = 0
+        for index: Int in 0..total {
             if index == total || _isSeparator(charAt(self.text, index)) {
                 _pushSegment(kept, substring(self.text, start, index), rooted)
                 start = index + 1
             }
-            index += 1
+            index++
         }
-
-        var joined = ""
-        var i = 0
-        while i < kept.size {
-            if i > 0 {
-                joined = joined + pathSeparator
-            }
-            joined = joined + kept.get(i)
-            i += 1
+        var joined: String = ""
+        for i: Int in 0..<kept.size {
+            if i > 0 { joined += pathSeparator }
+            joined += kept.get(i)
         }
-        if rooted {
-            return Path(pathSeparator + joined)
-        }
-        if stringLength(joined) == 0 {
-            return Path(".")
-        }
-        return Path(joined)
+        if rooted { return .(pathSeparator + joined) }
+        if stringLength(joined) == 0 { return .(".") }
+        return .(joined)
     }
 }
 
@@ -272,9 +230,7 @@ impl Path {
  */
 @Experimental(since: "0.1")
 func _pushSegment(kept: MutableList<String>!, segment: String, rooted: Bool) {
-    if stringLength(segment) == 0 || segment == "." {
-        return
-    }
+    if stringLength(segment) == 0 || segment == "." { return }
     if segment != ".." {
         kept.add(segment)
         return
@@ -283,9 +239,7 @@ func _pushSegment(kept: MutableList<String>!, segment: String, rooted: Bool) {
         kept.removeAt(kept.size - 1)
         return
     }
-    if !rooted {
-        kept.add(segment)
-    }
+    if !rooted { kept.add(segment) }
 }
 
 /** True for either separator, so a Windows path reads correctly too. */
@@ -297,13 +251,9 @@ func _isSeparator(value: Char): Bool {
 /** The index of the last separator in [text], or -1. */
 @Experimental(since: "0.1")
 func _lastSeparator(text: String): Int {
-    var found = 0 - 1
-    var index = 0
-    while index < stringLength(text) {
-        if _isSeparator(charAt(text, index)) {
-            found = index
-        }
-        index += 1
+    var found = -1
+    for index: Int in 0..<stringLength(text) {
+        if _isSeparator(charAt(text, index)) { found = index }
     }
     return found
 }
@@ -311,13 +261,9 @@ func _lastSeparator(text: String): Int {
 /** The index of the last `.` in [text], or -1. */
 @Experimental(since: "0.1")
 func _lastDot(text: String): Int {
-    var found = 0 - 1
-    var index = 0
-    while index < stringLength(text) {
-        if charAt(text, index) == '.' {
-            found = index
-        }
-        index += 1
+    var found = -1
+    for index: Int in 0..<stringLength(text) {
+        if charAt(text, index) == '.' { found = index }
     }
     return found
 }
@@ -380,19 +326,18 @@ bridge func _fsPathQuery(op: String, argument: String): Array<String>
  */
 @Experimental(since: "0.1")
 func _fail(name: String): Unit ?! FileError {
-    when name {
-        "NotFound" -> { return .NotFound }
-        "PermissionDenied" -> { return .PermissionDenied }
-        "AlreadyExists" -> { return .AlreadyExists }
-        "NotADirectory" -> { return .NotADirectory }
-        "IsADirectory" -> { return .IsADirectory }
-        "DirectoryNotEmpty" -> { return .DirectoryNotEmpty }
-        "InvalidPath" -> { return .InvalidPath }
-        "WriteFailed" -> { return .WriteFailed }
-        "Unsupported" -> { return .Unsupported }
-        else -> { return .ReadFailed }
+    return when name {
+        "NotFound" -> .NotFound
+        "PermissionDenied" -> .PermissionDenied
+        "AlreadyExists" -> .AlreadyExists
+        "NotADirectory" -> .NotADirectory
+        "IsADirectory" -> .IsADirectory
+        "DirectoryNotEmpty" -> .DirectoryNotEmpty
+        "InvalidPath" -> .InvalidPath
+        "WriteFailed" -> .WriteFailed
+        "Unsupported" -> .Unsupported
+        else -> .ReadFailed
     }
-    return .ReadFailed
 }
 
 // ── Reading ─────────────────────────────────────────────────────────
@@ -402,13 +347,9 @@ func _fail(name: String): Unit ?! FileError {
 func readText(target: Path): String ?! FileError {
     fin raw = _fsRead(target.text)
     fin cut = indexOf(raw, "\n")
-    if cut < 0 {
-        return .ReadFailed
-    }
+    if cut < 0 { return .ReadFailed }
     fin failure = substring(raw, 0, cut)
-    if stringLength(failure) > 0 {
-        try _fail(failure)
-    }
+    if stringLength(failure) > 0 { try _fail(failure) }
     return substring(raw, cut + 1, stringLength(raw))
 }
 
@@ -416,18 +357,10 @@ func readText(target: Path): String ?! FileError {
 @Experimental(since: "0.1")
 func readBytes(target: Path): Array<Byte> ?! FileError {
     fin raw: Array<Int> = _fsReadBytes(target.text)
-    if raw.size < 1 {
-        return .ReadFailed
-    }
-    if raw[0] != 0 {
-        return .ReadFailed
-    }
+    if raw.size < 1 { return .ReadFailed }
+    if raw[0] != 0 { return .ReadFailed }
     var bytes: Array<Byte> = .() * raw.size - 1
-    var index = 1
-    while index < raw.size {
-        bytes[index - 1] = raw[index] as Byte
-        index += 1
-    }
+    for index: Int in 1..<raw.size { bytes[index - 1] = raw[index] as Byte }
     return bytes
 }
 
@@ -442,9 +375,7 @@ func readBytes(target: Path): Array<Byte> ?! FileError {
 @Experimental(since: "0.1")
 func writeText(target: Path, content: String): Unit ?! FileError {
     fin failure = _fsWrite(target.text, content, false)
-    if stringLength(failure) > 0 {
-        try _fail(failure)
-    }
+    if stringLength(failure) > 0 { try _fail(failure) }
 }
 
 /**
@@ -457,9 +388,7 @@ func writeText(target: Path, content: String): Unit ?! FileError {
 @Experimental(since: "0.1")
 func appendText(target: Path, content: String): Unit ?! FileError {
     fin failure = _fsWrite(target.text, content, true)
-    if stringLength(failure) > 0 {
-        try _fail(failure)
-    }
+    if stringLength(failure) > 0 { try _fail(failure) }
 }
 
 // ── Directories ─────────────────────────────────────────────────────
@@ -468,18 +397,10 @@ func appendText(target: Path, content: String): Unit ?! FileError {
 @Experimental(since: "0.1")
 func listDirectory(target: Path): Array<Path> ?! FileError {
     fin parts: Array<String> = _fsList(target.text)
-    if parts.size < 1 {
-        return .ReadFailed
-    }
-    if stringLength(parts[0]) > 0 {
-        try _fail(parts[0])
-    }
+    if parts.size < 1 { return .ReadFailed }
+    if stringLength(parts[0]) > 0 { try _fail(parts[0]) }
     var entries: Array<Path> = .() * parts.size - 1
-    var index = 1
-    while index < parts.size {
-        entries[index - 1] = Path(parts[index])
-        index += 1
-    }
+    for index: Int in 1..<parts.size { entries[index - 1] = .(parts[index]) }
     return entries
 }
 
@@ -523,9 +444,7 @@ func rename(from: Path, to: Path): Unit ?! FileError {
 @Experimental(since: "0.1")
 func _mutate(op: String, from: Path, to: Path): Unit ?! FileError {
     fin failure = _fsMutate(op, from.text, to.text)
-    if stringLength(failure) > 0 {
-        try _fail(failure)
-    }
+    if stringLength(failure) > 0 { try _fail(failure) }
 }
 
 // ── Metadata ────────────────────────────────────────────────────────
@@ -534,19 +453,15 @@ func _mutate(op: String, from: Path, to: Path): Unit ?! FileError {
 @Experimental(since: "0.1")
 func fileInfo(target: Path): FileInfo ?! FileError {
     fin parts: Array<String> = _fsStat(target.text)
-    if parts.size < 5 {
-        return .ReadFailed
-    }
-    if stringLength(parts[0]) > 0 {
-        try _fail(parts[0])
-    }
+    if parts.size < 5 { return .ReadFailed }
+    if stringLength(parts[0]) > 0 { try _fail(parts[0]) }
     fin kind = when parts[1] {
-        "File" -> FileKind.File
-        "Directory" -> FileKind.Directory
-        "Symlink" -> FileKind.Symlink
-        else -> FileKind.Other
+        "File" -> .File
+        "Directory" -> .Directory
+        "Symlink" -> .Symlink
+        else -> .Other
     }
-    return FileInfo(kind, _digits(parts[2]), Instant(_digits(parts[3]), _digits(parts[4]) as Int))
+    return .(kind, _digits(parts[2]), Instant(_digits(parts[3]), _digits(parts[4]) as Int))
 }
 
 /**
@@ -565,21 +480,21 @@ func exists(target: Path): Bool {
 /** Whether [target] is an ordinary file. */
 @Experimental(since: "0.1")
 func isFile(target: Path): Bool {
-    fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0, Instant(0, 0))
-    return info.kind == FileKind.File
+    fin info = fileInfo(target) catch FileInfo(.Other, 0, Instant(0, 0))
+    return info.kind == .File
 }
 
 /** Whether [target] is a directory. */
 @Experimental(since: "0.1")
 func isDirectory(target: Path): Bool {
-    fin info = fileInfo(target) catch FileInfo(FileKind.Other, 0, Instant(0, 0))
-    return info.kind == FileKind.Directory
+    fin info = fileInfo(target) catch FileInfo(.Other, 0, Instant(0, 0))
+    return info.kind == .Directory
 }
 
 /** [target] with symlinks resolved. Needs the disk, unlike `normalized`. */
 @Experimental(since: "0.1")
 func canonical(target: Path): Path ?! FileError {
-    return Path(try _pathQuery("canonical", target.text))
+    return .(try _pathQuery("canonical", target.text))
 }
 
 // ── Temporary files ─────────────────────────────────────────────────
@@ -587,7 +502,7 @@ func canonical(target: Path): Path ?! FileError {
 /** The system temporary directory. */
 @Experimental(since: "0.1")
 func temporaryDirectory(): Path ?! FileError {
-    return Path(try _pathQuery("temporaryDirectory", ""))
+    return .(try _pathQuery("temporaryDirectory", ""))
 }
 
 /**
@@ -598,19 +513,15 @@ func temporaryDirectory(): Path ?! FileError {
  */
 @Experimental(since: "0.1")
 func createTemporaryDirectory(prefix: String): Path ?! FileError {
-    return Path(try _pathQuery("createTemporaryDirectory", prefix))
+    return .(try _pathQuery("createTemporaryDirectory", prefix))
 }
 
 /** Shared tail of the path-producing queries. */
 @Experimental(since: "0.1")
 func _pathQuery(op: String, argument: String): String ?! FileError {
     fin parts: Array<String> = _fsPathQuery(op, argument)
-    if parts.size < 2 {
-        return .ReadFailed
-    }
-    if stringLength(parts[0]) > 0 {
-        try _fail(parts[0])
-    }
+    if parts.size < 2 { return .ReadFailed }
+    if stringLength(parts[0]) > 0 { try _fail(parts[0]) }
     return parts[1]
 }
 
@@ -618,14 +529,10 @@ func _pathQuery(op: String, argument: String): String ?! FileError {
 @Experimental(since: "0.1")
 func _digits(text: String): Long {
     var value: Long = 0
-    var index = 0
-    while index < stringLength(text) {
+    for index: Int in 0..<stringLength(text) {
         fin digit = charAt(text, index)
-        if !isDigit(digit) {
-            return value
-        }
+        if !isDigit(digit) { return value }
         value = value * 10 + ((ord(digit) - ord('0')) as Long)
-        index += 1
     }
     return value
 }

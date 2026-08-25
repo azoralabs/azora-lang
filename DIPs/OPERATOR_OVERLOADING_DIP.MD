@@ -90,7 +90,7 @@ Stating this plainly, because two of these are bugs rather than gaps.
 `:1466`). Overloads are keyed by operand type and, for non-mutating operators,
 by receiver exclusivity (`Parser.kt:2151`).
 
-So a type *can* say `oper< [self: Version&](rhs: Version&): Bool` today. It just
+So a type *can* say `oper< Version&.(rhs: Version&): Bool` today. It just
 has to say all six.
 
 ### 2.2 The standard library shows the cost
@@ -99,7 +99,7 @@ Seven times in `std/container`, a type writes an `oper!=` whose entire body is
 the negation of its `oper==`:
 
 ```azora
-oper!= [self: HashSet<T>&](rhs: Set<T>): Bool {
+oper!= HashSet<T>&.(rhs: Set<T>): Bool {
     return !(self == rhs)
 }
 ```
@@ -177,7 +177,7 @@ line, and nothing else - `consume(TokenType.FUNC, "Expected 'func' or 'prop' in 
 (`Parser.kt:3961`). A capability that means "this type has `oper<=>`" cannot be
 written today.
 
-**Already there.** `impl Spec for Type { oper<SYM> [self: Self&](…) { … } }`
+**Already there.** `impl Spec for Type { oper<SYM> &.(…) { … } }`
 parses now (`Parser.kt:2948`), with receiver, operands, return type, `where`
 clause, overload suffix, expression body and bodyless form. Trait generic
 arguments (`impl PartialEqual<Vec2I> for Vec2`) are read at `Parser.kt:2739`.
@@ -191,7 +191,7 @@ spec side Phase 1.
 
 What *was* deliberately removed is a third thing: `impl oper<SYM> for Type`,
 rejected at `Parser.kt:2718` with a message directing to the free
-`oper<SYM> [self: Type&]` form. That form made the *operator* the impl head,
+`oper<SYM> Type&.` form. That form made the *operator* the impl head,
 which leaves nowhere to name a capability. §5.3 puts the **spec** in the head
 instead, which is the piece it was missing.
 
@@ -264,7 +264,7 @@ not resolve, which is where most of the operator-lookup complexity in C++20
 lives. Azora already has a narrower, explicit answer for the mixed-operand case:
 an overload declared *on the left operand's type* naming the right operand
 (`TypeResolver.kt:2473` handles exactly this for primitives). `1 < meters` is
-`oper<=> [self: Int&](rhs: Meters&)`. Written where it happens, resolved where
+`oper<=> Int&.(rhs: Meters&)`. Written where it happens, resolved where
 it is written.
 
 ---
@@ -384,7 +384,7 @@ expression:
 
 ```azora
 impl Order for Person {
-    oper<=> [self: Self&](rhs: Self&) {
+    oper<=> &.(rhs: Self&) {
         return (self.last <=> rhs.last)
             .thenBy { self.first <=> rhs.first }
             .thenBy { self.born <=> rhs.born }
@@ -434,7 +434,7 @@ governs it. Never a free declaration:
 ```azora
 @Since("0.1")
 impl Order for Version {
-    oper<=> [self: Self&](rhs: Self&) {
+    oper<=> &.(rhs: Self&) {
         return (self.major <=> rhs.major)
             .thenBy { self.minor <=> rhs.minor }
             .thenBy { self.patch <=> rhs.patch }
@@ -457,7 +457,7 @@ operator names (`Mangling.kt:22`).
 
 > **This is not the form that was removed.** `Parser.kt:2718` rejects
 > `impl oper<SYM> for Type` - the operator as the *impl head* - and directs to
-> the free `oper<SYM> [self: Type&]` spelling. That form put the operator where
+> the free `oper<SYM> Type&.` spelling. That form put the operator where
 > the spec belongs and had nowhere to name a capability. Here the impl head is
 > the **spec**, and the operator is an ordinary member of it, which is what the
 > removed form was missing.
@@ -574,7 +574,7 @@ the same way. Otherwise the bound can describe half the operators a type has.
  */
 @Since("0.1")
 bridge spec PartialEqual<Rhs = Self> {
-    oper== [self: Self&](rhs: Rhs&): Bool
+    oper== &.(rhs: Rhs&): Bool
 }
 
 /**
@@ -587,7 +587,7 @@ bridge spec PartialEqual<Rhs = Self> {
  */
 @Since("0.1")
 bridge spec PartialOrder<Rhs = Self> requires PartialEqual<Rhs> {
-    oper<=> [self: Self&](rhs: Rhs&): PartialCompare
+    oper<=> &.(rhs: Rhs&): PartialCompare
 }
 ```
 
@@ -623,7 +623,7 @@ bridge spec Equal requires PartialEqual<Self>
  */
 @Since("0.1")
 bridge spec Order requires Equal {
-    oper<=> [self: Self&](rhs: Self&): Compare
+    oper<=> &.(rhs: Self&): Compare
 }
 ```
 
@@ -697,7 +697,7 @@ braces.
 
 ```
 line 12: 'oper==' must be declared inside the impl of the spec that governs it
-  write:  impl PartialEqual for Vec2 { oper== [self: Self&](rhs: Self&) { … } }
+  write:  impl PartialEqual for Vec2 { oper== &.(rhs: Self&) { … } }
 ```
 
 The six comparison operators and `<=>` are covered by
@@ -810,7 +810,7 @@ pack Vec2 {
 ```azora
 @Since("0.1")
 impl PartialEqual for Vec2 {
-    oper== [self: Self&](rhs: Self&) {
+    oper== &.(rhs: Self&) {
         return self.x == rhs.x && self.y == rhs.y
     }
 }
@@ -837,7 +837,7 @@ choices and the DIP does not pick for you.
 ```azora
 @Since("0.1")
 impl PartialOrder for Vec2 {
-    oper<=> [self: Self&](rhs: Self&) {
+    oper<=> &.(rhs: Self&) {
         return (self.x <=> rhs.x).thenBy { self.y <=> rhs.y }
     }
 }
@@ -858,7 +858,7 @@ from that one member, each calling it once.
 ```azora
 @Since("0.1")
 impl PartialOrder for Vec2 {
-    oper<=> [self: Self&](rhs: Self&) {
+    oper<=> &.(rhs: Self&) {
         return self.lengthSquared <=> rhs.lengthSquared
     }
 }
@@ -893,14 +893,14 @@ naming a foreign `Rhs`:
 ```azora
 @Since("0.1")
 impl PartialEqual<Vec2I> for Vec2 {
-    oper== [self: Self&](rhs: Vec2I&) {
+    oper== &.(rhs: Vec2I&) {
         return self.x == (rhs.x as Double) && self.y == (rhs.y as Double)
     }
 }
 
 @Since("0.1")
 impl PartialOrder<Vec2I> for Vec2 {
-    oper<=> [self: Self&](rhs: Vec2I&) {
+    oper<=> &.(rhs: Vec2I&) {
         return (self.x <=> (rhs.x as Double))
             .thenBy { self.y <=> (rhs.y as Double) }
     }
@@ -918,7 +918,7 @@ The operand type may also be spelled `Rhs`, which the header binds:
 
 ```azora
 impl PartialEqual<Vec2I> for Vec2 {
-    oper== [self: Self&](rhs: Rhs&) { … }     // Rhs = Vec2I
+    oper== &.(rhs: Rhs&) { … }     // Rhs = Vec2I
 }
 ```
 
@@ -935,7 +935,7 @@ The §2.4 defect, fixed:
 ```
 line 42: cannot compare two 'Vec2' values - Vec2 does not implement PartialEqual
   add 'impl [Equal] for Vec2' to compare it field by field, or write it out:
-    impl PartialEqual for Vec2 { oper== [self: Self&](rhs: Self&) { … } }
+    impl PartialEqual for Vec2 { oper== &.(rhs: Self&) { … } }
 ```
 
 `resolveBinaryType`'s `EQUAL_EQUAL` branch stops returning `Bool` for two
@@ -970,14 +970,14 @@ The consequence is the one Rust is famously criticised for: `sort` requires
 `Order`, so **`sort(arrayOfDoubles)` does not compile**. This DIP does not
 pretend otherwise; it makes the fix a one-liner instead of a lookup.
 
-`Float::` and `Double::` already exist as type-scoped blocks holding the limits
+`impl Float` and `impl Double` already hold the type-level limits
 and special values (`primitive.az:341`, `:363`). Each gains one static, in the
 form `Array::fill` uses (`array.az:87`) - a `bridge func`, because the ordering
 is a bit-pattern operation the backend emits:
 
 ```azora
 @Since("0.1")
-impl Double:: {
+impl Double {
     /**
      * The IEEE 754 totalOrder predicate: a genuine total order over every
      * `Double`, NaNs included, obtained by ordering the sign-magnitude form
@@ -1079,7 +1079,7 @@ cannot express a key of a different type) becomes `sortByKey`.
   ```azora
   @Since("0.1")
   impl PartialEqual<Set<T>> for HashSet<T> {
-      oper== [self: Self&](rhs: Rhs&) {
+      oper== &.(rhs: Rhs&) {
           if self.size != rhs.size { return false }
           for i in 0..<self.size {
               if !rhs.contains(self.data[i]) { return false }
@@ -1278,6 +1278,26 @@ section names the rest. After this DIP there is no free operator declaration in
 the language: `oper<SYM>` appears in a `spec` body (the requirement) or in an
 `impl <Spec> for <Type>` body (the implementation), and nowhere else.
 
+Every operator signature has an explicit parenthesized operand list immediately
+after its receiver. Parentheses are mandatory even when the list is empty:
+
+```azora
+bridge oper- Int&.(): Int
+spec Logical { oper! &.(): Bool }
+
+impl Logical for Flag {
+    oper! &.(): Bool { return !self.enabled }
+}
+```
+
+The receiver dot is not the end of an operator head. `oper! &.: Bool`,
+`oper- Number&.: Number`, and `oper.* &. { ... }` are invalid; each must write
+`()` before the return type, body, constraint, or `by` metadata. This keeps the
+signature boundary uniform across unary, binary, indexing, range, cast, and
+dereference operators, and lets an empty operand list remain visibly different
+from accidentally omitted syntax. A body never substitutes for the parameter
+list.
+
 ### 12.1 One spec per operator family
 
 Not one spec per operator. `Add`, `Sub`, `Mul`, `Div`, `Rem` and their five
@@ -1312,7 +1332,7 @@ which looks inconsistent until the next paragraph gives the rule. `FullCast<To>`
 
 `Bitwise` carries a separate `Shift` parameter because a shift count is not a
 value of the shifted type - `primitive.az:547` already declares
-`bridge oper$op [self: Ty&](rhs: UInt): Ty` for exactly that reason, while `&`
+`bridge oper$op Ty&.(rhs: UInt): Ty` for exactly that reason, while `&`
 takes a `Self`. One `Rhs` could not express both.
 
 **The rule that decides how coarse a family is:**
@@ -1341,7 +1361,7 @@ subset; the compiler records exactly which:
 
 ```azora
 impl Arithmetic for Matrix {
-    oper+= [self: Self!](rhs: Self&) {
+    oper+= !.(rhs: Self&) {
         for i in 0..<self.data.length { self.data[i] += rhs.data[i] }
     }
 }
@@ -1438,8 +1458,8 @@ Three things do not exist:
 
 Unary and binary declarations of the same symbol are told apart by operand
 count, which the existing overload suffix already handles
-(`operatorOverloadSuffix`, `Parser.kt:2151`): `oper- [self: Self&]` registers as
-`oper-`, `oper- [self: Self&](rhs: Vec2&)` as `oper-@Vec2`. Nothing new is
+(`operatorOverloadSuffix`, `Parser.kt:2151`): `oper- &.()` registers as
+`oper-`, `oper- &.(rhs: Vec2&)` as `oper-@Vec2`. Nothing new is
 needed for the naming; only the lookup.
 
 ### 12.6 `Hash`
@@ -1539,8 +1559,8 @@ Four spellings, four results, no rule for which one `"${v}"` picks. Proposed:
  */
 @Since("0.1")
 bridge spec Iterator<Rhs = Self, Out = Range<Self>> {
-    oper..         [self: Self&](rhs: Rhs&): Out
-    oper reverse.. [self: Self&](rhs: Rhs&): Out
+    oper..         &.(rhs: Rhs&): Out
+    oper reverse.. &.(rhs: Rhs&): Out
 }
 ```
 
@@ -1552,7 +1572,7 @@ Three notes, each from something the parser already does:
   `SYNTAX.MD:90`'s four-element `Iterable` alias would have been wrong.
 - **`reverse..` is genuinely separate**, because descending is not the ascending
   range read backwards for every type.
-- **The `by` step survives as metadata.** `bridge oper.. [self: Ty&](rhs: Ty&) by 1`
+- **The `by` step survives as metadata.** `bridge oper.. Ty&.(rhs: Ty&) by 1`
   (`traits/core.az:22`) parses its step and discards it (`Parser.kt:567`). This
   DIP does not change that; it just gives the declaration a spec to live in.
 
@@ -1574,15 +1594,15 @@ which symbol they spell.
 ```azora
 /** Converts to `To`. Total: it cannot fail. */
 @Since("0.1")
-spec Cast<To>        { oper as  [self: Self&]: To  }
+spec Cast<To>        { oper as  &.(): To  }
 
 /** Converts to `To` when the value permits it, and answers null when not. */
 @Since("0.1")
-spec CheckedCast<To> { oper as? [self: Self&]: To? }
+spec CheckedCast<To> { oper as? &.(): To? }
 
 /** Reinterprets the bits as a `To`. Requires equal sizes; checked at lowering. */
 @Since("0.1")
-spec BitCast<To>     { oper as* [self: Self&]: To  }
+spec BitCast<To>     { oper as* &.(): To  }
 ```
 
 `CheckedCast` does **not** `require Cast`: a conversion that can fail is
@@ -1592,7 +1612,7 @@ states the three "independently".
 
 ```azora
 impl Cast<Fahrenheit> for Celsius {
-    oper as [self: Self&] { return Fahrenheit(self.degrees * 1.8 + 32.0) }
+    oper as &.() { return Fahrenheit(self.degrees * 1.8 + 32.0) }
 }
 ```
 
@@ -1610,7 +1630,7 @@ func<T> reinterpretable(v: T) where T: FullCast<ULong> { … }
 a parameter of the operator, so one declaration serves every target:
 
 ```azora
-oper as<U> [self: Self&] = Fahrenheit(self.degrees * 1.8 + 32.0)   // today
+oper as<U> &. = Fahrenheit(self.degrees * 1.8 + 32.0)   // today
 ```
 
 That body has to be correct for every `U` while naming exactly one of them,
@@ -1695,7 +1715,7 @@ The messages are most of the value of this proposal, so they are specified.
 ```
 line 42: cannot compare two 'Vec2' values - Vec2 does not implement PartialEqual
   add 'impl [Equal] for Vec2' to compare it field by field, or write it out:
-    impl PartialEqual for Vec2 { oper== [self: Self&](rhs: Self&) { … } }
+    impl PartialEqual for Vec2 { oper== &.(rhs: Self&) { … } }
 
 line 61: 'Vec2' implements PartialOrder but not PartialEqual
   '<' '<=' '>' '>=' come from '<=>'; '==' does not, because a type may
@@ -1714,7 +1734,7 @@ line 130: 'a <=> b <=> c' - '<=>' does not chain
   use '(a <=> b).thenBy { b <=> c }'
 
 line 152: 'oper==' must be declared inside the impl of the spec that governs it
-  write:  impl PartialEqual for Vec2 { oper== [self: Self&](rhs: Self&) { … } }
+  write:  impl PartialEqual for Vec2 { oper== &.(rhs: Self&) { … } }
 
 line 158: 'oper!=' cannot be declared - no spec has it
   '!=' is '!(a == b)'; declare 'oper==' in 'impl PartialEqual for Vec2'
@@ -1753,7 +1773,7 @@ line 190: 'Order' requires 'Equal', which 'Version' does not state
 ## 14. Implementation plan
 
 **Phase 1 - specs can require operators.** `parseSpec` (`Parser.kt:3961`)
-accepts `oper<SYM> [self: Self&](operands): Ret` requirement lines beside `func`
+accepts `oper<SYM> &.(operands): Ret` requirement lines beside `func`
 and `prop`, and `checkSpecRequirements` (`SymbolCollector.kt:652`) matches them
 against a type's registered `oper` members. Nothing else in this DIP can be
 written until this exists.
@@ -1909,7 +1929,7 @@ Worth doing whether or not the rest lands:
    field-wise `==` instead. Erring toward the error, because a type that wrote
    its own ordering usually has a reason equality differs.
 3. **Does `<=>` need an operand-keyed form in the first release?**
-   `oper<=> [self: Version&](rhs: String&)` follows from the existing overload
+   `oper<=> Version&.(rhs: String&)` follows from the existing overload
    suffix mechanism (`Parser.kt:2151`) and costs nothing, but mixed-type
    ordering is where C++'s complexity came from. Shipping it is easy; shipping
    it and then constraining it is not.

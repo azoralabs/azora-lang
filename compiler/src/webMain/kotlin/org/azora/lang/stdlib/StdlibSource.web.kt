@@ -28,4 +28,4 @@ internal actual fun stdlibDiskRoots(): List<StdlibRoot> = emptyList()
 
 internal actual fun readStdlibTree(root: String): List<StdlibFile>? = null
 
-internal actual fun readStdlibFile(root: String, relativePath: String): String? = null
+internal actual fun readStdlibPackageManifest(root: String): String? = null

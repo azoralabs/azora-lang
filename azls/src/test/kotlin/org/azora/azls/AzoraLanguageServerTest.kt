@@ -69,7 +69,10 @@ class AzoraLanguageServerTest {
         assertTrue(all.any { it.type == "keyword" && textOf(it) == "var" })
         assertTrue(all.any { it.type == "number" && textOf(it) == "42" })
         assertTrue(all.any { it.type == "string" && textOf(it) == "\"hi\"" })
-        assertEquals(2, all.count { it.type == "function" && textOf(it) == "greet" })
+        assertEquals(
+            listOf("functionDeclaration", "function"),
+            all.filter { textOf(it) == "greet" }.map { it.type },
+        )
         assertTrue(all.any { it.type == "parameter" && textOf(it) == "name" })
         assertTrue(all.any { it.type == "variable" && textOf(it) == "count" })
         assertTrue(all.none { it.type == "function" && textOf(it) == "missing" })
@@ -126,7 +129,7 @@ class AzoraLanguageServerTest {
     @Test
     fun derivesIsAReservedPackKeyword() {
         val source = """
-            pack Player<T> derives [Copy, Hash] where T: Copy
+            pack Player<T> derives (Copy, Hash) where T: Copy
             func derives(): Unit {}
         """.trimIndent()
         val all = spans(source)
@@ -163,8 +166,8 @@ class AzoraLanguageServerTest {
         // on the same line.
         val source = """
             bridge pack Int<N: __uint = 32>(__int)
-            derives [Integer, SignedInteger]
-            bridge pack Bool derives [Equal]
+            derives (Integer, SignedInteger)
+            bridge pack Bool derives (Equal)
         """.trimIndent()
         val kinds = spans(source)
             .filter { source.substring(it.start, it.end) == "derives" }
@@ -177,7 +180,7 @@ class AzoraLanguageServerTest {
     fun genericParametersLoopLabelsAndScopePathsHaveDistinctSemanticRoles() {
         val source = """
             scope ide::editor {
-                func<T> transform[self: Box<T>&](value: T): T {
+                func<T> (self: Box<T>&).transform(value: T): T {
                     outer: loop {
                         continue:outer
                     }
@@ -245,11 +248,14 @@ class AzoraLanguageServerTest {
         val all = spans(source)
         fun textOf(span: HighlightSpan) = source.substring(span.start, span.end)
 
-        assertEquals(2, all.count { it.type == "function" && textOf(it) == "greeting" })
-        // The receiver's declaration is a context parameter; reading it in the
-        // body is an ordinary parameter reference.
         assertEquals(
-            listOf("contextParameter", "parameter"),
+            listOf("functionDeclaration", "function"),
+            all.filter { textOf(it) == "greeting" }.map { it.type },
+        )
+        // The shorthand declares no written `self`; the implicit receiver read
+        // keeps the context-parameter role supplied by the call site.
+        assertEquals(
+            listOf("contextParameter"),
             all.filter { textOf(it) == "self" }.map { it.type },
         )
     }
@@ -348,9 +354,13 @@ fin array = @collect_all(tuple)"""
             .map { it.type }
 
         assertTrue("contextParameter" in roles("self"), "the receiver: ${roles("self")}")
-        assertTrue(roles("magnitude").all { it == "property" }, "prop decl and read: ${roles("magnitude")}")
+        assertEquals(
+            listOf("propertyDeclaration", "property"),
+            roles("magnitude"),
+            "prop decl and read: ${roles("magnitude")}",
+        )
         assertTrue("parameter" in roles("factor"), "an ordinary parameter: ${roles("factor")}")
-        assertTrue("function" in roles("scaled"), "a function declaration: ${roles("scaled")}")
+        assertTrue("functionDeclaration" in roles("scaled"), "a function declaration: ${roles("scaled")}")
     }
 
     @Test
@@ -497,27 +507,27 @@ fin array = @collect_all(tuple)"""
     }
 
     @Test
-    fun stdlibCompletionsAreImportGated() {
+    fun unimportedStdlibCompletionsCarryTheirAutoImport() {
         val source = "func main() {\n    ab\n}"
         val offset = source.indexOf("    ab") + 6
         val list = completions(source, offset)
-        assertTrue(list.none { it.label == "abs" && it.kind == "function" },
-            "abs must not complete without 'use std.math': $list")
+        assertTrue(list.any { it.label == "abs" && it.kind == "function" && it.importModule == "std.math" },
+            "abs should complete with its std.math auto-import: $list")
     }
 
     @Test
-    fun libraryModuleSectionsAreImportGated() {
+    fun libraryModuleSectionsCarryAutoImportsUntilVisible() {
         val prelude = "//@azora-module engine\nfunc appInit(w: Int): Int {\n    return w\n}\n\n//@azora-module\nfunc projectHelper(): Int {\n    return 1\n}"
         val bare = "func main() {\n    ap\n}"
         val bareOffset = bare.indexOf("    ap") + 6
         val without = completions(bare, bareOffset, prelude)
-        assertTrue(without.none { it.label == "appInit" },
-            "engine symbol must not complete without 'use engine': $without")
+        assertTrue(without.any { it.label == "appInit" && it.importModule == "engine" },
+            "engine symbol should carry an auto-import before it is visible: $without")
 
         val imported = "import engine\nfunc main() {\n    ap\n}"
         val importedOffset = imported.indexOf("    ap") + 6
         val with = completions(imported, importedOffset, prelude)
-        assertTrue(with.any { it.label == "appInit" && "engine" in it.detail },
+        assertTrue(with.any { it.label == "appInit" && "engine" in it.detail && it.importModule == null },
             "engine symbol should complete (tagged) with 'use engine': $with")
 
         // Unmarked (project) prelude symbols are never gated.
@@ -532,6 +542,36 @@ fin array = @collect_all(tuple)"""
         val offset = source.indexOf("    ch") + 6
         val list = completions(source, offset)
         assertTrue(list.any { it.label == "channel" && it.kind == "function" }, "builtin channel should complete: $list")
+    }
+
+    @Test
+    fun sigilCompletionContainsAnnotationsAndMacrosButNotOrdinaryValues() {
+        val source = """
+            annot @Component {}
+            macro @compose[] => 1
+            func ordinary() {}
+            @
+        """.trimIndent()
+        val list = completions(source, source.length)
+        assertTrue(list.any { it.label == "Component" && it.kind == "annotation" }, list.toString())
+        assertTrue(list.any { it.label == "compose" && it.kind == "macro" }, list.toString())
+        assertTrue(list.none { it.label == "ordinary" }, list.toString())
+    }
+
+    @Test
+    fun constructorCompletionOffersNamedFields() {
+        val source = """
+            pack Point {
+                fin x: Int
+                fin y: Int
+            }
+            func main() {
+                Point(x
+            }
+        """.trimIndent()
+        val offset = source.indexOf("Point(x") + "Point(x".length
+        val list = completions(source, offset)
+        assertTrue(list.any { it.label == "x" && it.kind == "field" && it.insert == "x: " }, list.toString())
     }
 
     @Test
@@ -658,7 +698,7 @@ fin array = @collect_all(tuple)"""
     fun definitionAndHoverResolveContextualReceiverParameter() {
         val source = """
             impl Text {
-                react ctor[self: Self&, anchor: Anchor&](value: String): Entity {
+                react func (self: Self&, anchor: Anchor&).render(value: String): Entity {
                     return anchor.pass.text(value)
                 }
             }

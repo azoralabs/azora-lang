@@ -129,6 +129,27 @@ class GroupBindingTest {
         assertEquals(listOf(1L, 2L, 3L), stmts.map { assertIs<Expr.IntLiteral>(bound(it).second).value })
     }
 
+    @Test fun oneTypedVarGroupMayBeInitializedByConditionalSourceGroups() {
+        val stmts = body(
+            "var {sign, index}: Int = if charAt(text, 0) == '-' { {-1, 1} } else { {1, 0} }",
+        )
+
+        assertEquals(3, stmts.size, "$stmts")
+        assertTrue(assertIs<Stmt.FinDecl>(stmts[0]).name.startsWith("__group_condition_"))
+        val bindings = stmts.drop(1).map { assertIs<Stmt.VarDecl>(it) }
+        assertEquals(listOf("sign", "index"), bindings.map { it.name })
+        assertTrue(bindings.all { assertIs<TypeAnnotation.Explicit>(it.type).ref.displayName() == "Int" })
+        assertTrue(bindings.all { it.initializer is Expr.IfExpr })
+    }
+
+    @Test fun everyConditionalGroupBranchMustMatchTheBindingArity() {
+        val error = assertFailsWith<IllegalStateException> {
+            body("var {a, b}: Int = if ready { {1} } else { {2, 3} }")
+        }
+        assertTrue("one value per name" in error.message.orEmpty(), error.message.orEmpty())
+        assertTrue("'if' branch" in error.message.orEmpty(), error.message.orEmpty())
+    }
+
     @Test fun theTypeIsStatedOnceOrPerName() {
         val e = assertFailsWith<IllegalStateException> { body("fin {a: Int, b}: Int = 0") }
         assertTrue("states its type once" in e.message.orEmpty(), e.message.orEmpty())

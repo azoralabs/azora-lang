@@ -35,6 +35,9 @@ import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.InferredTypeArgs
 import org.azora.lang.semantic.InlineCallables
 import org.azora.lang.semantic.SemanticPipeline
+import org.azora.lang.semantic.SemanticRedundantVariantQualifier
+import org.azora.lang.semantic.SemanticSymbolNamespace
+import org.azora.lang.semantic.SemanticUnresolvedSymbol
 import org.azora.lang.semantic.ReflectDecoExpander
 import org.azora.lang.semantic.SpecDefaults
 import org.azora.lang.semantic.CastDeriver
@@ -43,6 +46,37 @@ import org.azora.lang.semantic.DisplayDeriver
 import org.azora.lang.semantic.ScopeQualifiedImplTargets
 import org.azora.lang.semantic.SerializationDeriver
 import org.azora.lang.semantic.VariadicMonomorphizer
+import org.azora.lang.diagnostics.AnalysisCancelledException
+import org.azora.lang.diagnostics.AnalysisCompleteness
+import org.azora.lang.diagnostics.AnalysisMode
+import org.azora.lang.diagnostics.AnalysisRequest
+import org.azora.lang.diagnostics.AnalysisSnapshot
+import org.azora.lang.diagnostics.AnalysisSnapshotId
+import org.azora.lang.diagnostics.AzoraDiagnostic
+import org.azora.lang.diagnostics.DiagnosticSeverity
+import org.azora.lang.diagnostics.DiagnosticStage
+import org.azora.lang.diagnostics.DocumentVersion
+import org.azora.lang.diagnostics.DiagnosticFix
+import org.azora.lang.diagnostics.DiagnosticRenderer
+import org.azora.lang.diagnostics.FixApplicability
+import org.azora.lang.diagnostics.FixId
+import org.azora.lang.diagnostics.ImportEditPlanner
+import org.azora.lang.diagnostics.LabeledSpan
+import org.azora.lang.diagnostics.LegacyDiagnosticAdapter
+import org.azora.lang.diagnostics.RedundantVariantQualifier
+import org.azora.lang.diagnostics.SourceEdit
+import org.azora.lang.diagnostics.SourceId
+import org.azora.lang.diagnostics.SourceKind
+import org.azora.lang.diagnostics.SourcePosition
+import org.azora.lang.diagnostics.SourceSetSnapshot
+import org.azora.lang.diagnostics.SourceSpan
+import org.azora.lang.diagnostics.SourceUnit
+import org.azora.lang.diagnostics.StringLineIndex
+import org.azora.lang.diagnostics.SymbolNamespace
+import org.azora.lang.diagnostics.TextOffset
+import org.azora.lang.diagnostics.UndefinedSymbol
+import org.azora.lang.stdlib.UnresolvedContractAccess
+import org.azora.lang.stdlib.UnresolvedTypeAccess
 
 /**
  * Full compiler pipeline:
@@ -75,6 +109,7 @@ import org.azora.lang.semantic.VariadicMonomorphizer
  * The result of compiling Azora source code through the full pipeline.
  */
 sealed class CompilationResult {
+    abstract val diagnostics: List<AzoraDiagnostic>
     /**
      * Successful compilation result containing all generated outputs and metadata.
      *
@@ -93,7 +128,8 @@ sealed class CompilationResult {
         val ir: IrProgram,
         val optimizedIr: IrProgram,
         val effects: List<EffectChecker.EffectInfo>,
-        val warnings: List<String> = emptyList()
+        val warnings: List<String> = emptyList(),
+        override val diagnostics: List<AzoraDiagnostic> = emptyList(),
     ) : CompilationResult()
 
     /**
@@ -101,11 +137,27 @@ sealed class CompilationResult {
      *
      * @property errors the list of error messages that prevented compilation
      */
-    data class Failure(val errors: List<String>) : CompilationResult()
+    data class Failure(
+        val errors: List<String>,
+        override val diagnostics: List<AzoraDiagnostic> = emptyList(),
+    ) : CompilationResult()
 }
 
-/** An external Azora module made available to one compiler instance. */
-data class LibrarySource(val path: String, val source: String)
+/**
+ * An external Azora module made available to one compiler instance.
+ *
+ * [validateModulePath] is true for build/CLI inputs, where the build graph has
+ * resolved a real source root and a mismatched path is actionable. IDE
+ * snapshots deliberately set it to false: an editor may have a package open
+ * through a workspace folder, a generated overlay, or a manifest-defined
+ * source root, and the module declaration remains authoritative until that
+ * source-root metadata reaches the compiler.
+ */
+data class LibrarySource(
+    val path: String,
+    val source: String,
+    val validateModulePath: Boolean = true,
+)
 
 /**
  * Full compiler pipeline orchestrator.
@@ -119,6 +171,152 @@ class Compiler(
     private val librarySources: List<LibrarySource> = emptyList(),
 ) {
 
+    private fun sourceSpan(
+        source: SourceUnit,
+        line: Int,
+        column: Int,
+        length: Int,
+    ): SourceSpan {
+        val lineIndex = StringLineIndex(source.text)
+        val start = lineIndex.offset(
+            SourcePosition(
+                line = (line - 1).coerceAtLeast(0),
+                character = (column - 1).coerceAtLeast(0),
+            ),
+        ) ?: TextOffset(0)
+        return SourceSpan(
+            source.id,
+            start,
+            TextOffset((start.value + length).coerceAtMost(source.text.length)),
+        )
+    }
+
+    /** Turns one resolver occurrence into a compiler-owned diagnostic and edit. */
+    private fun undefinedSymbolDiagnostic(
+        source: SourceUnit,
+        name: String,
+        line: Int,
+        column: Int,
+        length: Int,
+        namespace: SymbolNamespace,
+        providerModule: String?,
+    ): UndefinedSymbol {
+        val span = sourceSpan(source, line, column, length)
+        val fixes = providerModule?.let { module ->
+            ImportEditPlanner.plan(source.text, module, name)
+        }?.let { edit ->
+            val editSpan = SourceSpan(
+                source.id,
+                TextOffset(edit.start),
+                TextOffset(edit.endExclusive),
+            )
+            listOf(
+                DiagnosticFix(
+                    id = FixId("import-$providerModule-$name"),
+                    title = "Import '$name' from '$providerModule'",
+                    applicability = FixApplicability.MACHINE_APPLICABLE,
+                    preferred = true,
+                    edits = listOf(
+                        SourceEdit(
+                            source = source.id,
+                            range = editSpan,
+                            replacement = edit.replacement,
+                            expectedText = source.text.substring(edit.start, edit.endExclusive),
+                            requiredVersion = source.version,
+                        ),
+                    ),
+                ),
+            )
+        }.orEmpty()
+        return UndefinedSymbol(
+            symbol = name,
+            namespace = namespace,
+            candidates = emptyList(),
+            providerModule = providerModule,
+            primary = LabeledSpan(span, if (providerModule == null) "not found here" else "not imported here"),
+            fixes = fixes,
+        )
+    }
+
+    /** Compiler-owned `.Case` style hint and its version-checked source edit. */
+    private fun redundantVariantQualifierDiagnostic(
+        source: SourceUnit,
+        occurrence: SemanticRedundantVariantQualifier,
+    ): RedundantVariantQualifier {
+        val span = sourceSpan(
+            source,
+            occurrence.line,
+            occurrence.column,
+            occurrence.length,
+        )
+        val expected = "${occurrence.qualifier}."
+        return RedundantVariantQualifier(
+            qualifier = occurrence.qualifier,
+            variant = occurrence.variant,
+            primary = LabeledSpan(span, "the surrounding context already supplies this type"),
+            fixes = listOf(
+                DiagnosticFix(
+                    id = FixId("use-inferred-variant-${occurrence.line}-${occurrence.column}"),
+                    title = "Use inferred variant '.${occurrence.variant}'",
+                    applicability = FixApplicability.MACHINE_APPLICABLE,
+                    preferred = true,
+                    edits = listOf(
+                        SourceEdit(
+                            source = source.id,
+                            range = span,
+                            replacement = ".",
+                            expectedText = expected,
+                            requiredVersion = source.version,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    private fun unresolvedContractDiagnostic(
+        source: SourceUnit,
+        access: UnresolvedContractAccess,
+    ): UndefinedSymbol = undefinedSymbolDiagnostic(
+        source = source,
+        name = access.name,
+        line = access.line,
+        column = access.column,
+        length = access.length,
+        namespace = SymbolNamespace.SPEC_OR_DECORATOR,
+        providerModule = access.module,
+    )
+
+    private fun unresolvedSemanticDiagnostic(
+        source: SourceUnit,
+        issue: SemanticUnresolvedSymbol,
+        libraries: StdlibInjector,
+    ): UndefinedSymbol = undefinedSymbolDiagnostic(
+        source = source,
+        name = issue.sourceName,
+        line = issue.line,
+        column = issue.column,
+        length = issue.length,
+        namespace = when (issue.namespace) {
+            SemanticSymbolNamespace.FUNCTION -> SymbolNamespace.FUNCTION
+            SemanticSymbolNamespace.VALUE -> SymbolNamespace.VALUE
+        },
+        providerModule = libraries.moduleOf(issue.internalName),
+    )
+
+    private fun unresolvedTypeDiagnostic(
+        source: SourceUnit,
+        access: UnresolvedTypeAccess,
+    ): UndefinedSymbol = undefinedSymbolDiagnostic(
+        source = source,
+        name = access.name,
+        line = access.line,
+        column = access.column,
+        length = access.length,
+        namespace = SymbolNamespace.TYPE,
+        providerModule = access.module,
+    )
+
     /**
      * Compiles Azora source code through the full pipeline.
      *
@@ -128,25 +326,121 @@ class Compiler(
      * @return a [CompilationResult.Success] with all generated outputs, or a
      *   [CompilationResult.Failure] with error messages
      */
-    /** Points unknown symbols at their imported scope path or providing module. */
-    private fun withLibraryHint(message: String, program: Program, libraries: StdlibInjector): String {
-        // The message already carries the source spelling (`println`), while
-        // the tables are keyed by the frontend's internal one - so the name is read
-        // in source form, looked up in internal form, and reported in source form.
-        val match = Regex("(?:undefined function|undefined variable) '([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)'")
-            .find(message) ?: return message
-        val shown = match.groupValues[1]
-        val name = shown.replace("::", "__")
-        val qualified = libraries.qualifiedAccessOf(name, program)
-        if (qualified != null) {
-            val scope = qualified.substringBeforeLast("::")
-            return "$message; '$shown' is part of scope '$scope', use '$qualified' instead"
+    fun compile(
+        source: String,
+        warningsAsErrors: Boolean = false,
+        release: Boolean = true,
+        debug: Boolean = false,
+        defines: Map<String, String> = emptyMap(),
+    ): CompilationResult = compileSource(
+        SourceUnit(
+            id = SourceId("memory-main"),
+            uri = "azora-memory:/main.az",
+            displayPath = "<memory>",
+            text = source,
+            version = null,
+            kind = SourceKind.VIRTUAL,
+        ),
+        warningsAsErrors,
+        release,
+        debug,
+        defines,
+        generateBackends = true,
+    )
+
+    /** Analyze immutable source snapshots without running either backend. */
+    fun analyze(request: AnalysisRequest): AnalysisSnapshot {
+        val byId = request.sources.associateBy { it.id }
+        val roots = if (request.roots.isEmpty()) byId.keys else request.roots
+        val diagnostics = mutableListOf<AzoraDiagnostic>()
+        var program: Program? = null
+        var blocked = false
+        for (rootId in roots.sortedBy { it.value }) {
+            if (request.cancellation.isCancelled()) throw AnalysisCancelledException()
+            val root = byId[rootId] ?: continue
+            val workspaceLibraries = request.sources
+                .asSequence()
+                .filter { it.id != rootId }
+                .map { LibrarySource(it.displayPath, it.text, validateModulePath = false) }
+                .toList()
+            val result = Compiler(librarySources + workspaceLibraries).compileSource(
+                root,
+                request.policy.warningsAsErrors,
+                release = false,
+                debug = false,
+                defines = request.defines,
+                generateBackends = false,
+                reportUnreachableLibraryWarnings = request.mode != AnalysisMode.IDE,
+            )
+            diagnostics += result.diagnostics
+            when (result) {
+                is CompilationResult.Success -> if (program == null) program = result.ast
+                is CompilationResult.Failure -> blocked = true
+            }
+            if (diagnostics.size >= request.policy.maximumDiagnostics) break
         }
-        val module = libraries.moduleOf(name) ?: return message
-        return "$message - '$shown' is provided by '$module': add 'import $module'"
+        val versions = request.sources.joinToString("|") {
+            "${it.id.value}:${it.version?.value ?: -1}:${it.text.hashCode()}"
+        }
+        return AnalysisSnapshot(
+            id = AnalysisSnapshotId("a-${versions.hashCode().toUInt().toString(16)}"),
+            sources = SourceSetSnapshot(byId),
+            program = program,
+            diagnostics = diagnostics
+                .take(request.policy.maximumDiagnostics)
+                .sortedWith(compareBy({ byId[it.primary.span.source]?.uri.orEmpty() }, { it.primary.span.start.value }, { it.code.value })),
+            completeness = if (blocked) AnalysisCompleteness.BLOCKED else AnalysisCompleteness.COMPLETE,
+        )
     }
 
-    fun compile(source: String, warningsAsErrors: Boolean = false, release: Boolean = true, debug: Boolean = false, defines: Map<String, String> = emptyMap()): CompilationResult {
+    private fun compileSource(
+        source: SourceUnit,
+        warningsAsErrors: Boolean,
+        release: Boolean,
+        debug: Boolean,
+        defines: Map<String, String>,
+        generateBackends: Boolean,
+        reportUnreachableLibraryWarnings: Boolean = true,
+    ): CompilationResult {
+        val result = compileLegacy(
+            source,
+            warningsAsErrors,
+            release,
+            debug,
+            defines,
+            generateBackends,
+            reportUnreachableLibraryWarnings,
+        )
+        return when (result) {
+            is CompilationResult.Success -> result.copy(
+                diagnostics = result.diagnostics + result.warnings.map {
+                    LegacyDiagnosticAdapter.convert(
+                        it,
+                        source,
+                        defaultSeverity = DiagnosticSeverity.WARNING,
+                        defaultStage = DiagnosticStage.SEMANTIC,
+                    )
+                },
+            )
+            is CompilationResult.Failure -> result.copy(
+                diagnostics = result.diagnostics.ifEmpty {
+                    result.errors.map { LegacyDiagnosticAdapter.convert(it, source) }
+                },
+            )
+        }
+    }
+
+    private fun compileLegacy(
+        sourceUnit: SourceUnit,
+        warningsAsErrors: Boolean,
+        release: Boolean,
+        debug: Boolean,
+        defines: Map<String, String>,
+        generateBackends: Boolean,
+        reportUnreachableLibraryWarnings: Boolean,
+    ): CompilationResult {
+
+        val source = sourceUnit.text
 
         // Clear per-compilation state
         org.azora.lang.frontend.Parser.resetFragmentMacros()
@@ -154,7 +448,7 @@ class Compiler(
 
         val libraries = try {
             StdlibInjector.create(
-                additionalSources = librarySources.map { it.path to it.source },
+                additionalSources = librarySources,
                 configOverrides = defines,
             )
         } catch (error: IllegalArgumentException) {
@@ -214,9 +508,30 @@ class Compiler(
             return CompilationResult.Failure(cycleErrors)
         }
 
-        val typeAccessErrors = libraries.validateTypeAccess(parsed)
-        if (typeAccessErrors.isNotEmpty()) {
-            return CompilationResult.Failure(typeAccessErrors)
+        val unresolvedContractAccesses = libraries.unresolvedContracts(parsed)
+        val unresolvedContracts = unresolvedContractAccesses
+            .map { unresolvedContractDiagnostic(sourceUnit, it) }
+        if (unresolvedContracts.isNotEmpty()) {
+            return CompilationResult.Failure(
+                errors = unresolvedContracts.zip(unresolvedContractAccesses).map { (diagnostic, access) ->
+                    "line ${access.line}: ${DiagnosticRenderer.summary(diagnostic)}"
+                },
+                diagnostics = unresolvedContracts,
+            )
+        }
+
+        val typeAccess = libraries.validateTypeAccess(parsed)
+        if (typeAccess.unresolved.isNotEmpty() || typeAccess.errors.isNotEmpty()) {
+            val unresolvedTypes = typeAccess.unresolved.map { unresolvedTypeDiagnostic(sourceUnit, it) }
+            val renderedUnresolved = unresolvedTypes.zip(typeAccess.unresolved).map { (diagnostic, access) ->
+                "line ${access.line}: ${DiagnosticRenderer.summary(diagnostic)}"
+            }
+            return CompilationResult.Failure(
+                errors = renderedUnresolved + typeAccess.errors,
+                diagnostics = unresolvedTypes + typeAccess.errors.map {
+                    LegacyDiagnosticAdapter.convert(it, sourceUnit)
+                },
+            )
         }
 
         // 2a-ter. A leading underscore keeps a declaration inside its owning
@@ -239,7 +554,7 @@ class Compiler(
         if (serialization.errors.isNotEmpty()) {
             return CompilationResult.Failure(serialization.errors)
         }
-        // `Point derives [Equal, Order]` asks the compiler to write the members.
+        // `Point derives (Equal, Order)` asks the compiler to write the members.
         // Generated as ordinary AST, so everything below
         // this point sees code the author could have written.
         val comparison = ComparisonDeriver.derive(serialization.program)
@@ -333,19 +648,62 @@ class Compiler(
         // Before analysis, because a type argument is what an `inline` body
         // substitutes and what `T.typeName` reads.
         val semantic = SemanticPipeline().analyze(InferredTypeArgs.apply(ast), defines = defines)
+        val shorthandDiagnostics = semantic.redundantVariantQualifiers.map {
+            redundantVariantQualifierDiagnostic(sourceUnit, it)
+        }
 
         // A library source nothing here imports was skipped rather than fatal;
         // it is still worth saying so, because the next file to import it will
         // not compile.
         val warnings = semantic.errors.filter { it.startsWith("warning:") } +
-            libraries.skippedLibraryNotices().map { "warning: $it" }
+            if (reportUnreachableLibraryWarnings) {
+                libraries.skippedLibraryNotices().map { "warning: $it" }
+            } else {
+                emptyList()
+            }
         val errors = semantic.errors.filter { !it.startsWith("warning:") }
 
         if (errors.isNotEmpty()) {
-            return CompilationResult.Failure(semantic.errors.map { withLibraryHint(it, ast, libraries) })
+            val unresolvedIssues = semantic.unresolvedSymbols
+                .distinctBy { listOf(it.namespace, it.internalName, it.line, it.column) }
+            val unresolvedDiagnostics = unresolvedIssues
+                .map { unresolvedSemanticDiagnostic(sourceUnit, it, libraries) }
+            val renderedByMessage = unresolvedIssues.zip(unresolvedDiagnostics)
+                .associate { (issue, diagnostic) ->
+                    issue.renderedMessage to "line ${issue.line}: ${DiagnosticRenderer.summary(diagnostic)}"
+                }
+            val renderedErrors = semantic.errors.map { renderedByMessage[it] ?: it }
+            val structuredMessages = semantic.unresolvedSymbols.mapTo(hashSetOf()) { it.renderedMessage }
+            val remainingDiagnostics = semantic.errors
+                .filterNot { it in structuredMessages }
+                .map { message ->
+                    LegacyDiagnosticAdapter.convert(
+                        message,
+                        sourceUnit,
+                        defaultSeverity = if (message.startsWith("warning:")) {
+                            DiagnosticSeverity.WARNING
+                        } else {
+                            DiagnosticSeverity.ERROR
+                        },
+                    )
+                }
+            return CompilationResult.Failure(
+                errors = renderedErrors,
+                diagnostics = unresolvedDiagnostics + remainingDiagnostics + shorthandDiagnostics,
+            )
         }
         if (warningsAsErrors && warnings.isNotEmpty()) {
-            return CompilationResult.Failure(errors + warnings)
+            return CompilationResult.Failure(
+                errors + warnings,
+                diagnostics = shorthandDiagnostics + warnings.map {
+                    LegacyDiagnosticAdapter.convert(
+                        it,
+                        sourceUnit,
+                        defaultSeverity = DiagnosticSeverity.WARNING,
+                        defaultStage = DiagnosticStage.SEMANTIC,
+                    )
+                },
+            )
         }
 
         // ===============================================================
@@ -372,13 +730,22 @@ class Compiler(
         // (e.g. indirect value calls) degrades only that target's output rather
         // than failing the whole compilation, so the interpreter and other targets
         // remain usable.
-        val wasm = try { WasmCodegen().generate(backendIr) }
+        val wasm = if (!generateBackends) "" else try { WasmCodegen().generate(backendIr) }
             catch (e: IllegalStateException) { "(; WebAssembly codegen unsupported: ${e.message} ;)" }
 
         // 12. IR → LLVM IR
-        val llvm = try { LlvmCodegen().generate(backendIr) }
+        val llvm = if (!generateBackends) "" else try { LlvmCodegen().generate(backendIr) }
             catch (e: IllegalStateException) { "; LLVM codegen unsupported: ${e.message}" }
 
-        return CompilationResult.Success(wasm, llvm, semantic.program, ir, optimizedIr, semantic.effects, warnings)
+        return CompilationResult.Success(
+            wasm,
+            llvm,
+            semantic.program,
+            ir,
+            optimizedIr,
+            semantic.effects,
+            warnings,
+            diagnostics = shorthandDiagnostics,
+        )
     }
 }

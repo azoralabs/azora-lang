@@ -86,6 +86,8 @@ class WasmCodegen {
     private val reactiveStorage = mutableMapOf<Pair<String, String>, ReactiveStorage>()
     private val reactiveAliases = mutableMapOf<String, ReactiveStorage>()
     private var currentFunctionName = ""
+    /** Source-level return type; Unit/Nothing both erase from the Wasm ABI. */
+    private var currentReturnType: IrType = IrType.Unit
 
     // Module state.
     private val structs = HashMap<String, List<IrField>>()
@@ -189,7 +191,7 @@ class WasmCodegen {
             if (wasmFloatOpFor(extern) != null) continue
             if (wasmSoftwareMathFor(extern) != null) { usesTrig = true; usesExpLog = true; usesInvTrig = true; usesVhaTrig = true; continue }
             val params = extern.params.joinToString("") { " (param ${wasmType(it.second)})" }
-            val result = if (extern.returnType == IrType.Unit) "" else " (result ${wasmType(extern.returnType)})"
+            val result = if (hasFunctionResult(extern.returnType)) " (result ${wasmType(extern.returnType)})" else ""
             sb.appendLine("  (import \"env\" \"$name\" (func \$$name$params$result))")
         }
         for (name in neededExterns) {
@@ -213,7 +215,7 @@ class WasmCodegen {
         for ((callable, name) in closureTypes) {
             val params = (callable.params + callable.receivers + IrType.Any)
                 .joinToString("") { " (param ${wasmType(it)})" }
-            val result = if (callable.ret == IrType.Unit) "" else " (result ${wasmType(callable.ret)})"
+            val result = if (hasFunctionResult(callable.ret)) " (result ${wasmType(callable.ret)})" else ""
             sb.appendLine("  (type \$$name (func$params$result))")
         }
         if (closureFunctions.isNotEmpty()) {
@@ -297,6 +299,7 @@ class WasmCodegen {
         lazyLocals.clear()
         reactiveAliases.clear()
         currentFunctionName = func.name
+        currentReturnType = func.returnType
         localIrTypes.putAll(func.params)
 
         out.clear(); indent = 2
@@ -315,7 +318,7 @@ class WasmCodegen {
 
         val sig = StringBuilder("  (func \$${func.name}")
         for ((n, t) in func.params) sig.append(" (param \$$n ${wasmType(t)})")
-        if (func.returnType != IrType.Unit) sig.append(" (result ${wasmType(func.returnType)})")
+        if (hasFunctionResult(func.returnType)) sig.append(" (result ${wasmType(func.returnType)})")
         sig.append("\n")
         for ((n, t) in locals) if (n !in params) sig.append("    (local \$$n $t)\n")
         sig.append(body)
@@ -374,9 +377,22 @@ class WasmCodegen {
             is IrStmt.MemberAssign -> line("(i32.store ${fieldAddr(stmt.target, stmt.name)} ${emitExpr(stmt.value)})")
             is IrStmt.ExprStmt -> {
                 val e = emitExpr(stmt.expr)
-                if (stmt.expr.type == IrType.Unit) line(e) else line("(drop $e)")
+                // Every expression lowering yields a private runtime value;
+                // Unit is encoded as zero and Nothing as an unreachable block.
+                line("(drop $e)")
             }
-            is IrStmt.Return -> line(if (stmt.value != null) "(return ${emitExpr(stmt.value)})" else "(return)")
+            is IrStmt.Return -> {
+                val value = stmt.value
+                when {
+                    value == null -> line("(return)")
+                    value.type == IrType.Nothing -> line("(drop ${emitExpr(value)})")
+                    currentReturnType == IrType.Unit -> {
+                        line("(drop ${emitExpr(value)})")
+                        line("(return)")
+                    }
+                    else -> line("(return ${emitExpr(value)})")
+                }
+            }
             is IrStmt.If -> emitIf(stmt)
             is IrStmt.When -> emitWhen(stmt)
             is IrStmt.While -> emitWhile(stmt.label, emitExpr(stmt.condition), stmt.body, isFor = false, forInc = null)
@@ -624,6 +640,7 @@ class WasmCodegen {
     // ── Expressions (return a folded S-expression) ────────────────────────
 
     private fun emitExpr(expr: IrExpr): String = when (expr) {
+        IrExpr.UnitLiteral -> "(i32.const 0)"
         // WebAssembly's widest integer is 64 bits, so a 128-bit literal has
         // nowhere to go and says so rather than arriving truncated.
         is IrExpr.IntLiteral -> expr.text
@@ -771,7 +788,12 @@ class WasmCodegen {
         // to a no-op here rather than a call to a function that does not exist.
         // Its operand is still evaluated, so any effect in it still happens.
         if (expr.name == "__delay") {
-            return "(drop ${emitExpr(expr.args.single())})"
+            return wrapCallResult(expr.type, "(drop ${emitExpr(expr.args.single())})")
+        }
+        if (expr.name == "__panic") {
+            // The message is evaluated even though the MVP target has no host
+            // panic reporter. `unreachable` is Wasm's bottom instruction.
+            return "(block (result i32) (drop ${emitExpr(expr.args.single())}) unreachable)"
         }
         if (expr.receiver != null) {
             val callable = expr.receiver.type as? IrType.Function
@@ -782,10 +804,11 @@ class WasmCodegen {
             val environment = "(i32.load (i32.add (local.get $closure) (i32.const 4)))"
             val tableIndex = "(i32.load (local.get $closure))"
             val operands = listOf(args, environment, tableIndex).filter { it.isNotEmpty() }.joinToString(" ")
-            val result = if (expr.type == IrType.Unit) "" else " (result ${wasmType(expr.type)})"
-            return "(block$result " +
+            val result = if (hasFunctionResult(expr.type)) " (result ${wasmType(expr.type)})" else ""
+            val call = "(block$result " +
                 "(local.set $closure ${emitExpr(expr.receiver)}) " +
                 "(call_indirect (type \$$typeName) $operands))"
+            return wrapCallResult(expr.type, call)
         }
         if ((symbolDenotes(expr.name, "println") || symbolDenotes(expr.name, "print")) && expr.args.size == 1) {
             val arg = expr.args.single()
@@ -797,7 +820,7 @@ class WasmCodegen {
                 usesAlloc = true
                 usesDoubleToStr = true
                 val v = if (wasmType(arg.type) == "f32") "(f64.promote_f32 ${emitExpr(arg)})" else emitExpr(arg)
-                return "(call \$${operation}_str (call \$__double_to_str $v))"
+                return wrapCallResult(expr.type, "(call \$${operation}_str (call \$__double_to_str $v))")
             }
             val fn = when {
                 arg.type == IrType.String -> "${operation}_str"
@@ -805,7 +828,7 @@ class WasmCodegen {
                 wasmType(arg.type) == "i64" -> "${operation}_i64"
                 else -> "${operation}_i32"
             }
-            return "(call \$$fn ${emitExpr(arg)})"
+            return wrapCallResult(expr.type, "(call \$$fn ${emitExpr(arg)})")
         }
         if (expr.name == "__isCheck") usesIsCheck = true
         // `Array::fill<T>(count)` → `[ len, T×count ]` (all cells i32 in Wasm).
@@ -821,7 +844,17 @@ class WasmCodegen {
         if (expr.name in stringIntrinsics) neededIntrinsics.add(expr.name)
         if (expr.name in externs && expr.name !in stringIntrinsics) neededExterns.add(expr.name)
         val args = expr.args.joinToString(" ") { emitExpr(it) }
-        return "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})"
+        return wrapCallResult(
+            expr.type,
+            "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})",
+        )
+    }
+
+    /** Turns an erased Unit/Nothing call into a value-shaped Wasm expression. */
+    private fun wrapCallResult(type: IrType, call: String): String = when (type) {
+        IrType.Unit -> "(block (result i32) $call (i32.const 0))"
+        IrType.Nothing -> "(block (result i32) $call unreachable)"
+        else -> call
     }
 
     private fun emitStructCtor(expr: IrExpr.StructCtor): String {
@@ -912,6 +945,7 @@ class WasmCodegen {
         params = closure.lambda.params.map { it.first }.toSet() + "__env"
         localIrTypes.putAll(closure.lambda.params)
         localIrTypes["__env"] = IrType.Any
+        currentReturnType = (closure.lambda.type as IrType.Function).ret
 
         out.clear(); indent = 2
         for (capture in closure.captures) {
@@ -936,7 +970,7 @@ class WasmCodegen {
         for ((name, type) in closure.lambda.params) sig.append(" (param \$$name ${wasmType(type)})")
         sig.append(" (param \$__env i32)")
         val returnType = (closure.lambda.type as IrType.Function).ret
-        if (returnType != IrType.Unit) sig.append(" (result ${wasmType(returnType)})")
+        if (hasFunctionResult(returnType)) sig.append(" (result ${wasmType(returnType)})")
         sig.append("\n")
         for ((name, type) in locals) if (name !in params) sig.append("    (local \$$name $type)\n")
         sig.append(body)
@@ -1222,6 +1256,7 @@ class WasmCodegen {
             is IrExpr.EnumLiteral,
             is IrExpr.BoolLiteral,
             is IrExpr.CharLiteral,
+            IrExpr.UnitLiteral,
             is IrExpr.SlotPattern -> Unit
         }
     }
@@ -1321,6 +1356,10 @@ class WasmCodegen {
         if (extern.params.any { it.second != IrType.Double }) return null
         return op
     }
+
+    /** Unit is ABI-erased on return; Nothing has no return edge at all. */
+    private fun hasFunctionResult(type: IrType): Boolean =
+        type != IrType.Unit && type != IrType.Nothing
 
     private fun wasmType(type: IrType): String = when (type) {
         IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> "i64"

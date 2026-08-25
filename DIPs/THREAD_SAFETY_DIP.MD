@@ -346,7 +346,7 @@ scope std {
      * someone remembers.
      */
     @Since("0.1")
-    pack Guard<T> derive [Deref, DerefMut] {
+    pack Guard<T> derives (Deref, DerefMut) {
         var _owner: Mutex<T>*
     }
 

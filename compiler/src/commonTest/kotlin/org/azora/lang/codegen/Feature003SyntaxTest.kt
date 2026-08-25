@@ -5,7 +5,6 @@ import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -350,15 +349,14 @@ class Feature003SyntaxTest {
         """.trimIndent()))
     }
 
-    @Test fun operInsideRegularImplIsRejected() {
-        val error = assertFailsWith<IllegalStateException> {
-            compile("""
+    @Test fun operatorInsideRegularImplUsesReceiverShorthand() {
+        assertEquals("1", run("""
             import std.io
             pack Box {
                 var value: Int
             }
             impl Box {
-                oper[](i: Int): Int {
+                oper[] &.(i: Int): Int {
                     return self.value
                 }
             }
@@ -366,9 +364,7 @@ class Feature003SyntaxTest {
                 var box = Box(1)
                 println(box[0])
             }
-            """.trimIndent())
-        }
-        assertTrue(error.message?.contains("impl oper[]") == true, "error: ${error.message}")
+            """.trimIndent()))
     }
 
     @Test fun activeCodegenTargetsAreProducedForNewSyntax() {

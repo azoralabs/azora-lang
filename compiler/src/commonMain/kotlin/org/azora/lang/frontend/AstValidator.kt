@@ -161,7 +161,10 @@ class AstValidator {
         // `@Since("0.1")` - single positional string argument.
         since?.let {
             if (it.args.size != 1 || it.args[0] !is Expr.StringLiteral) {
-                errors.add("line ${it.line}: @since requires a single string version argument")
+                errors.add(
+                    "line ${it.line}: @Since accepts one positional string version argument; " +
+                        "write @Since(\"0.1\")",
+                )
             }
         }
         // `@Deprecated(since: "0.1", replacement: "X")` - string named arguments.
@@ -330,6 +333,9 @@ class AstValidator {
             // `return .Variant` fails the function, which leaves it as surely as a
             // value return does - a body that can only fail still terminates.
             is Stmt.Throw -> true
+            // An unrecoverable panic cannot fall through either. In particular,
+            // it is a valid body for a function declared to return `Nothing`.
+            is Stmt.Panic -> true
             // `inline for` bodies are expanded later; a return inside one counts.
             is Stmt.InlineFor -> hasReturnInBody(stmt.body)
             is Stmt.Try -> hasReturnInBody(stmt.body) ||

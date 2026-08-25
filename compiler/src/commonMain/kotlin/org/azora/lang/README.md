@@ -129,16 +129,16 @@ checking; `break`/`continue`.
 | Construct | Purpose |
 |-----------|---------|
 | `pack Name { fields }` / `pack Empty` | struct; empty packs may omit `{ }` |
-| `pack Name derives [A, B] { fields }` | struct plus generated spec implementations |
-| `derive [A, B] for ExistingType` | request generated implementations outside the type declaration |
+| `pack Name derives (A, B) { fields }` | struct plus generated spec implementations |
+| `derive (A, B) for ExistingType` | request generated implementations outside the type declaration |
 | `pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
 | `variant enum Option { Some(Int); None }` | tagged union |
 | `unsafe union Value { i: Int; d: Double }` | untagged, overlapping storage |
 | `impl Name { members }` / `impl Spec for Name { members }` | members / mandatory manual spec implementation |
-| `impl Name:: { }` / `impl Spec for Name:: { }` | statics, reached as `Name::member` |
+| Receiver-free members in `impl Name { }` / `impl Spec for Name { }` | statics, reached as `Name::member` |
 | `func Name.method(args) { }` | extension declared outside the type's file |
-| `spec Name { func f[self: Self&](): T }` | capability: `func`, `prop` and `oper` requirements |
+| `spec Name { func &.f(): T }` | capability: `func`, `prop` and `oper` requirements |
 | `spec Name requires Other { }` | a capability the implementor must already have |
 | `typealias T = U` | type alias |
 | `error ErrSet { V1, V2 }` | error-set declaration |
@@ -177,12 +177,15 @@ Operators are declared with `oper`, either beside the type or - for the
 families that have a spec - inside that spec's impl:
 
 ```azora
-oper[] [self: Grid&](index: Int): Int { ... }
+oper[] Grid&.(index: Int): Int { ... }
 
 impl Order for Version {
-    oper<=> [self: Self&](rhs: Self&) { ... }
+    oper<=> &.(rhs: Self&) { ... }
 }
 ```
+
+The operand list is always explicit. A zero-operand operator writes `()`, as in
+`oper- Number&.(): Number`; `oper- Number&.: Number` is not accepted.
 
 
 ### Variadic tuples

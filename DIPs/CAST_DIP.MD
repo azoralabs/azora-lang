@@ -99,7 +99,7 @@ spec From<T> {
     func from(value: T): Self
 }
 
-impl From<String> for Username:: {
+impl From<String> for Username {
     func from(value: return String): Self {
         return Username(value: take value)
     }
@@ -109,8 +109,8 @@ fin username: Username = Username::from(lend text)
 ```
 
 `From` carries no `use as`: `Type::from` is already the name callers write, so
-there is no alias to generate. The `::` on the impl target is the same `::` the
-use site writes.
+there is no alias to generate. The implementation member has no receiver;
+`::` belongs to the use site, not to the `impl` target.
 
 ---
 
@@ -144,7 +144,7 @@ Accurate as of `0.0.5`, because the rest of this document is a delta against it.
 
 ```azora
 impl Celsius {
-    oper as<U> [self: Self&] = Fahrenheit(self.degrees * 1.8 + 32.0)
+    oper as<U> &. = Fahrenheit(self.degrees * 1.8 + 32.0)
 }
 ```
 

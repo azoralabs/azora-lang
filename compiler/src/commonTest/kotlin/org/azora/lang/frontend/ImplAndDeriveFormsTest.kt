@@ -38,7 +38,7 @@ class ImplAndDeriveFormsTest {
 
     @Test fun animplHoldsBindingsThatBelongToTheType() {
         // `impl Byte { inline fin minValue: Int = -128 }` - no receiver, so it
-        // belongs to the type. It leaves mangled, as `impl Byte:: { … }` produced.
+        // belongs to the type. It leaves mangled, as a receiver-free member does.
         val items = parse("impl Byte {\n    inline fin minValue: Int = -128\n    inline fin maxValue: Int = 127\n}")
         assertEquals(
             listOf("Byte__minValue", "Byte__maxValue"),
@@ -63,27 +63,68 @@ class ImplAndDeriveFormsTest {
         assertTrue("'fin'" in e.message.orEmpty(), "the message lists bindings too: ${e.message}")
     }
 
+    @Test fun trailingStaticImplSyntaxIsRejected() {
+        val e = assertFailsWith<IllegalStateException> {
+            parse("impl ReflectedParam:: {\n    func make(): Int { return 1 }\n}")
+        }
+        assertTrue("trailing '::' implementation form was removed" in e.message.orEmpty(), e.message.orEmpty())
+        assertTrue("impl ReflectedParam" in e.message.orEmpty(), e.message.orEmpty())
+    }
+
+    @Test fun aStaticTypeComputationLivesInTheSingleOrdinaryImpl() {
+        val source = """
+            impl ReflectedParam {
+                prop &.name: String = "parameter"
+
+                deepinline func<T> DefaultValueType(hasDefault: Bool): Type {
+                    return when {
+                        hasDefault => T
+                        else => Nothing
+                    }
+                }
+            }
+        """.trimIndent()
+        val program = Parser(Lexer(source).tokenize()).parse()
+        assertEquals(1, program.items.filterIsInstance<TopLevel.Impl>().size)
+        assertEquals(listOf("ReflectedParam__DefaultValueType"), program.typeFunctions.map { it.name })
+    }
+
+    @Test fun currentGenericFunctionsAndBridgeReceiverPropertiesParseTogether() {
+        val items = parse("""
+            func<T> identity(value: T): T { return value }
+
+            impl ReflectedParam {
+                bridge prop &.name: String
+            }
+        """.trimIndent())
+
+        assertEquals(listOf("identity"), items.filterIsInstance<TopLevel.Func>().map { it.decl.name })
+        val reflected = items.filterIsInstance<TopLevel.Impl>().single()
+        assertEquals(listOf("name"), reflected.methods.map { it.name })
+        assertEquals(ParamModifier.SHARED, reflected.methods.single().receiverModifier)
+    }
+
     // -- one body, several types --------------------------------------------
 
-    @Test fun aBracketedTargetListGivesEachTypeTheBody() {
-        // `impl [Byte, UByte] { … }` - written once, given to each.
-        val items = parse("impl [Byte, UByte] {\n    inline fin sizeBytes: Int = 1\n}")
+    @Test fun aTupleTargetListGivesEachTypeTheBody() {
+        // `impl (Byte, UByte) { … }` - written once, given to each.
+        val items = parse("impl (Byte, UByte) {\n    inline fin sizeBytes: Int = 1\n}")
         assertEquals(
             listOf("Byte__sizeBytes", "UByte__sizeBytes"),
             items.filterIsInstance<TopLevel.InlineFin>().map { it.name },
         )
     }
 
-    @Test fun aBracketedTargetListRepeatsMethodsToo() {
-        val impls = impls("impl [A, B] {\n    func &.f(): Int { return 1 }\n}")
+    @Test fun aTupleTargetListRepeatsMethodsToo() {
+        val impls = impls("impl (A, B) {\n    func &.f(): Int { return 1 }\n}")
         assertEquals(listOf("A", "B"), impls.map { it.typeName })
         assertTrue(impls.all { it.methods.map { m -> m.name } == listOf("f") })
     }
 
-    @Test fun aBracketListBeforeForStillNamesDecorators() {
+    @Test fun aTupleBeforeForStillNamesDecorators() {
         // The brace is what says the list named targets; a `for` says it named
         // decorators, and that reading is untouched.
-        val impls = impls("derive [Debug, Display] for Point")
+        val impls = impls("derive (Debug, Display) for Point")
         assertEquals(listOf("Debug", "Display"), impls.map { it.traitName })
         assertTrue(impls.all { it.typeName == "Point" })
     }
@@ -143,23 +184,23 @@ class ImplAndDeriveFormsTest {
 
     @Test fun aDeriveWithValuesNeedsASingleSpec() {
         val e = assertFailsWith<IllegalStateException> {
-            parse("derive [A, B](x: 1) for Fixture")
+            parse("derive (A, B)(x: 1) for Fixture")
         }
         assertTrue("single spec" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun aPlainDeriveIsUnchanged() {
-        val impls = impls("derive [Clone, Copy] for [A, B]")
+        val impls = impls("derive (Clone, Copy) for (A, B)")
         assertEquals(4, impls.size)
     }
 
     @Test fun targetsMayBeSeparatedByNewlinesAlone() {
         val impls = impls(
             """
-            derive [SerialName] for [
+            derive (SerialName) for (
                 Fixture::name
                 Fixture::password
-            ]
+            )
             """.trimIndent(),
         )
         assertEquals(2, impls.size)
@@ -168,7 +209,7 @@ class ImplAndDeriveFormsTest {
     // -- a `derives` clause on the declaration itself ------------------------
 
     @Test fun aDeclarationCarriesItsOwnConformances() {
-        val impls = impls("bridge pack Char derives [PartialEqual, Equal, Order, Hash]")
+        val impls = impls("bridge pack Char derives (PartialEqual, Equal, Order, Hash)")
         assertEquals(listOf("PartialEqual", "Equal", "Order", "Hash"), impls.map { it.traitName })
         assertTrue(impls.all { it.typeName == "Char" })
     }
@@ -179,7 +220,7 @@ class ImplAndDeriveFormsTest {
         val impls = impls(
             """
             bridge pack Int<N: UInt = 32>(__int)
-            derives [Integer, SignedInteger, SignedNumber]
+            derives (Integer, SignedInteger, SignedNumber)
             """.trimIndent(),
         )
         assertEquals(listOf("Integer", "SignedInteger", "SignedNumber"), impls.map { it.traitName })

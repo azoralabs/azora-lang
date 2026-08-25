@@ -33,8 +33,113 @@ data class StdlibTree(
     val files: List<StdlibFile>,
 )
 
-/** The file at a stdlib root that states which language version it is for. */
-const val STDLIB_VERSION_FILE = "STDLIB_VERSION"
+/** The package manifest beside a `std/` root. */
+const val STDLIB_PACKAGE_MANIFEST = "package.azon"
+
+/** The standard-library fields read from `package.azon`. */
+internal data class StdlibPackageManifest(val name: String, val version: String)
+
+/**
+ * Reads `package.name` and `package.version` from AZON without treating the
+ * manifest as JSON or matching source text with regular expressions.
+ *
+ * The small tokenizer is intentionally tolerant of comments, quoted keys,
+ * additional fields, and nested objects. Package discovery must continue to
+ * work as the manifest grows; only these two fields belong to stdlib identity.
+ */
+internal fun parseStdlibPackageManifest(source: String): StdlibPackageManifest? {
+    data class ManifestToken(val kind: Char, val text: String)
+
+    val tokens = mutableListOf<ManifestToken>()
+    var index = 0
+    while (index < source.length) {
+        val character = source[index]
+        when {
+            character.isWhitespace() || character == ',' -> index++
+            character == '#' -> {
+                while (index < source.length && source[index] != '\n') index++
+            }
+            character == '/' && source.getOrNull(index + 1) == '/' -> {
+                index += 2
+                while (index < source.length && source[index] != '\n') index++
+            }
+            character == '/' && source.getOrNull(index + 1) == '*' -> {
+                index += 2
+                while (index + 1 < source.length &&
+                    !(source[index] == '*' && source[index + 1] == '/')
+                ) index++
+                index = (index + 2).coerceAtMost(source.length)
+            }
+            character == '"' -> {
+                index++
+                val value = StringBuilder()
+                while (index < source.length && source[index] != '"') {
+                    if (source[index] == '\\' && index + 1 < source.length) {
+                        index++
+                        value.append(
+                            when (val escaped = source[index]) {
+                                'n' -> '\n'
+                                'r' -> '\r'
+                                't' -> '\t'
+                                else -> escaped
+                            },
+                        )
+                    } else {
+                        value.append(source[index])
+                    }
+                    index++
+                }
+                if (index < source.length) index++
+                tokens += ManifestToken('s', value.toString())
+            }
+            character.isLetter() || character == '_' -> {
+                val start = index++
+                while (index < source.length &&
+                    (source[index].isLetterOrDigit() || source[index] in setOf('_', '-'))
+                ) index++
+                tokens += ManifestToken('i', source.substring(start, index))
+            }
+            character in setOf(':', '{', '}', '[', ']', '(', ')') -> {
+                tokens += ManifestToken(character, character.toString())
+                index++
+            }
+            else -> index++
+        }
+    }
+
+    val packageIndex = tokens.indices.firstOrNull { at ->
+        tokens[at].text == "package" && tokens.getOrNull(at + 1)?.kind == ':' &&
+            tokens.getOrNull(at + 2)?.kind == '{'
+    } ?: return null
+
+    var depth = 1
+    var name: String? = null
+    var version: String? = null
+    var cursor = packageIndex + 3
+    while (cursor < tokens.size && depth > 0) {
+        val token = tokens[cursor]
+        when (token.kind) {
+            '{' -> depth++
+            '}' -> depth--
+            'i', 's' -> if (depth == 1 && tokens.getOrNull(cursor + 1)?.kind == ':' &&
+                tokens.getOrNull(cursor + 2)?.kind == 's'
+            ) {
+                val value = tokens[cursor + 2].text
+                when (token.text) {
+                    "name" -> name = value
+                    "version" -> version = value
+                }
+                cursor += 2
+            }
+        }
+        cursor++
+    }
+    return if (!name.isNullOrBlank() && !version.isNullOrBlank()) {
+        StdlibPackageManifest(name, version)
+    } else {
+        null
+    }
+}
 
 /**
  * Candidate `std/` roots on this platform, most specific first.
@@ -65,5 +170,5 @@ internal data class StdlibRoot(
  */
 internal expect fun readStdlibTree(root: String): List<StdlibFile>?
 
-/** Reads one text file under a stdlib root, or null when it is absent. */
-internal expect fun readStdlibFile(root: String, relativePath: String): String?
+/** Reads `package.azon` beside a stdlib root, or null when it is absent. */
+internal expect fun readStdlibPackageManifest(root: String): String?

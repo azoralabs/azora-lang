@@ -476,6 +476,7 @@ class IrOptimizer {
     }
 
     private fun isConstant(expr: IrExpr): Boolean = when (expr) {
+        IrExpr.UnitLiteral,
         is IrExpr.IntLiteral, is IrExpr.DoubleLiteral,
         is IrExpr.StringLiteral, is IrExpr.EnumLiteral, is IrExpr.BoolLiteral,
         is IrExpr.CharLiteral -> true

@@ -59,7 +59,7 @@ class EngineArchitectureSyntaxTest {
             }
         }
         impl Single<...T> {
-            oper.* [self: Self&] {
+            oper.* &.() {
                 return self.value
             }
         }

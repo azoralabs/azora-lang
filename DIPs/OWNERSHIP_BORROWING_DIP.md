@@ -140,7 +140,7 @@ Implicit duplication has to be cheap and has to be safe, so `Copy` **requires**
 sibling.
 
 ```azora
-pack Vec2 derives [Clone, Copy]  // both, in one declaration
+pack Vec2 derives (Clone, Copy)  // both, in one declaration
 ```
 
 ### `Clone`

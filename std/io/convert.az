@@ -41,11 +41,7 @@ import std.container.array::*
  */
 @Experimental(since: "0.1")
 func<T> padLeft(s: T, count: Int, char: T): T {
-    var result = s
-    for i in 0..<count {
-        result = char + result
-    }
-    return result
+    return char * count + s
 }
 
 /**
@@ -58,27 +54,7 @@ func<T> padLeft(s: T, count: Int, char: T): T {
  */
 @Experimental(since: "0.1")
 func<T> padRight(s: T, count: Int, char: T): T {
-    var result = s
-    for i in 0..<count {
-        result = result + char
-    }
-    return result
-}
-
-/**
- * Repeats a string the given number of times.
- *
- * @param s The string to repeat.
- * @param count The number of repetitions.
- * @return The repeated string.
- */
-@Experimental(since: "0.1")
-func<T> repeatString(s: T, count: Int): T {
-    var result = ""
-    for i in 0..<count {
-        result = result + s
-    }
-    return result
+    return s + char * count
 }
 
 /**
@@ -92,7 +68,7 @@ func<T> repeatString(s: T, count: Int): T {
 func<T> join(arr: Array<T>, sep: T): T {
     if arr.size == 0 { return "" }
     var result = arr[0]
-    for i in 1..<arr.size {
+    for i: Int in 1..<arr.size {
         result = result + sep + arr[i]
     }
     return result

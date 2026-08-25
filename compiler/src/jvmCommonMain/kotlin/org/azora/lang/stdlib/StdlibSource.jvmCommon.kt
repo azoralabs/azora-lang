@@ -84,5 +84,7 @@ internal actual fun readStdlibTree(root: String): List<StdlibFile>? {
         .toList()
 }
 
-internal actual fun readStdlibFile(root: String, relativePath: String): String? =
-    File(root, relativePath).takeIf { it.isFile }?.readText()
+internal actual fun readStdlibPackageManifest(root: String): String? =
+    File(File(root).absoluteFile.parentFile, STDLIB_PACKAGE_MANIFEST)
+        .takeIf { it.isFile }
+        ?.readText()

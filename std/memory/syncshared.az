@@ -43,7 +43,7 @@ pack SyncShared<T> {
 }
 
 @Experimental(since: "0.1")
-oper.* [self: SyncShared<T>&]: T {
+oper.* SyncShared<T>&.(): T {
     return self.raw.*
 }
 

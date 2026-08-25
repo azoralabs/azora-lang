@@ -32,19 +32,12 @@ import std.traits::Order
  */
 @Experimental(since: "0.1")
 func<T> mergeSort(arr: Array<T>): Array<T> {
-    if arr.size <= 1 {
-        return arr
-    }
+    if arr.size <= 1 { return arr }
     var mid: Int = arr.size / 2
     var left: Array<T> = .() * mid
     var right: Array<T> = .() * arr.size - mid
-    for i: Int in 0..mid {
-        left[i] = arr[i]
-    }
-    for j: Int in 0..arr.size {
-        right[j] = arr[i]
-        i++
-    }
+    for i: Int in 0..mid { left[i] = arr[i] }
+    for j: Int in 0..arr.size { right[j] = arr[mid + j] }
     var sortedLeft: Array<T> = mergeSort(left)
     var sortedRight: Array<T> = mergeSort(right)
     return merge(sortedLeft, sortedRight)
@@ -58,25 +51,10 @@ func<T: Order> merge(a: Array<T>, b: Array<T>): Array<T> {
     var result: Array<T> = .() * a.size + b.size
     var {ri, ai, bi} = 0
     while ai < a.size && bi < b.size {
-        if a[ai] <= b[bi] {
-            result[ri] = a[ai]
-            ai++
-        } else {
-            result[ri] = b[bi]
-            bi++
-        }
-        ri++
+        result[ri++] = if a[ai] <= b[bi] { a[ai++] } else { b[bi++] }
     }
-    while ai < a.size {
-        result[ri] = a[ai]
-        ai++
-        ri++
-    }
-    while bi < b.size {
-        result[ri] = b[bi]
-        bi++
-        ri++
-    }
+    while ai < a.size { result[ri++] = a[ai++] }
+    while bi < b.size { result[ri++] = b[bi++] }
     return result
 }
 
@@ -103,20 +81,14 @@ out {
 } scope {
     fin count = arr.size
     var result: Array<T> = .() * count
-    for i: Int in 0..<count {
-        result[i] = arr[i]
-    }
-    if count <= 1 {
-        return result
-    }
+    for i: Int in 0..<count { result[i] = arr[i] }
+    if count <= 1 { return result }
 
     // Keys are computed once per element rather than once per comparison:
     // a key function may be arbitrarily expensive, and a comparison sort
     // asks O(n log n) times.
     var keys: Array<K> = .() * count
-    for i: Int in 0..<count {
-        keys[i] = key(result[i])
-    }
+    for i: Int in 0..<count { keys[i] = key(result[i]) }
 
     var width: Int = 1
     var scratch: Array<T> = .() * count
@@ -124,16 +96,10 @@ out {
     while width < count {
         for lo: Int in 0..count {
             var mid = lo + width
-            if mid > count {
-                mid = count
-            }
+            if mid > count { mid = count }
             var hi = lo + width + width
-            if hi > count {
-                hi = count
-            }
-            var left = lo
-            var right = mid
-            var at = lo
+            if hi > count { hi = count }
+            var {left, right, at} = {lo, mid, lo}
             while at < hi {
                 fin takeLeft: Bool = if left >= mid {
                     false
@@ -146,16 +112,14 @@ out {
                 }
                 if takeLeft {
                     scratch[at] = result[left]
-                    scratchKeys[at] = keys[left]
-                    left++
+                    scratchKeys[at] = keys[left++]
                 } else {
                     scratch[at] = result[right]
-                    scratchKeys[at] = keys[right]
-                    right++
+                    scratchKeys[at] = keys[right++]
                 }
                 at++
             }
-            lo = lo + width + width
+            lo += width * 2
         }
         for i: Int in 0..<count {
             result[i] = scratch[i]
@@ -174,19 +138,14 @@ out {
 func<T> groupBy(arr: Array<T>, key: (T) -> T): Array<T> {
     var keys: Array<T> = .() * arr.size
     var groups: Array<T> = .() * arr.size
-    var keyCount = 0
-    for i in 0..<arr.size {
+    var keyCount: Int = 0
+    for i: Int in 0..<arr.size {
         var k: T = key(arr[i])
         var found = -1
-        for j in 0..<keyCount {
-            if keys[j] == k {
-                found = j
-            }
-        }
+        for j: Int in 0..<keyCount { if keys[j] == k { found = j } }
         if found == -1 {
             keys[keyCount] = k
-            groups[keyCount] = @arr[arr[i]]
-            keyCount++
+            groups[keyCount++] = [arr[i]]
         } else {
             var g: Array<T> = groups[found]
             g[g.size] = arr[i]
@@ -195,9 +154,7 @@ func<T> groupBy(arr: Array<T>, key: (T) -> T): Array<T> {
     }
     // Trim groups to actual count
     var trimmed: Array<T> = .() * keyCount
-    for ti in 0..<keyCount {
-        trimmed[ti] = groups[ti]
-    }
+    for ti: Int in 0..<keyCount { trimmed[ti] = groups[ti] }
     return trimmed
 }
 
@@ -207,20 +164,11 @@ func<T> groupBy(arr: Array<T>, key: (T) -> T): Array<T> {
 @Experimental(since: "0.1")
 func<T> interleave(a: Array<T>, b: Array<T>): Array<T> {
     var result: Array<T> = .() * a.size + b.size
-    var ri = 0
-    var maxLen: Int = a.size
-    if b.size > maxLen {
-        maxLen = b.size
-    }
-    for i in 0..<maxLen {
-        if i < a.size {
-            result[ri] = a[i]
-            ri++
-        }
-        if i < b.size {
-            result[ri] = b[i]
-            ri++
-        }
+    var {ri, maxLen}: Int = {0, a.size}
+    if b.size > maxLen { maxLen = b.size }
+    for i: Int in 0..<maxLen {
+        if i < a.size { result[ri++] = a[i] }
+        if i < b.size { result[ri++] = b[i] }
     }
     return result
 }
@@ -230,21 +178,13 @@ func<T> interleave(a: Array<T>, b: Array<T>): Array<T> {
  */
 @Experimental(since: "0.1")
 func<T> windows(arr: Array<T>, size: Int): Array<T> {
-    fin count = if arr.size >= size {
-        arr.size - size + 1
-    } else {
-        0
-    }
+    fin count: Int = if arr.size >= size { arr.size - size + 1 } else { 0 }
     var result: Array<T> = .() * count
-    var ri = 0
-    var i = 0
+    var {ri, i}: Int = 0
     while i + size <= arr.size {
         var w: Array<T> = .() * size
-        for j in 0..<size {
-            w[j] = arr[i + j]
-        }
-        result[ri] = w
-        ri++
+        for j: Int in 0..<size { w[j] = arr[i + j] }
+        result[ri++] = w
         i++
     }
     return result
@@ -255,15 +195,9 @@ func<T> windows(arr: Array<T>, size: Int): Array<T> {
  */
 @Experimental(since: "0.1")
 func<T> evens(arr: Array<T>): Array<T> {
-    fin count = (arr.size + 1) / 2
+    fin count: Int = (arr.size + 1) / 2
     var result: Array<T> = .() * count
-    var ri = 0
-    var i = 0
-    while i < arr.size {
-        result[ri] = arr[i]
-        ri++
-        i += 2
-    }
+    for i: Int in 0..<arr.size by 2 with index { result[index] = arr[i] }
     return result
 }
 
@@ -272,14 +206,8 @@ func<T> evens(arr: Array<T>): Array<T> {
  */
 @Experimental(since: "0.1")
 func<T> odds(arr: Array<T>): Array<T> {
-    fin count = arr.size / 2
+    fin count: Int = arr.size / 2
     var result: Array<T> = .() * count
-    var ri = 0
-    var i = 1
-    while i < arr.size {
-        result[ri] = arr[i]
-        ri++
-        i += 2
-    }
+    for i: Int in 1..<arr.size by 2 with index { result[index] = arr[i] }
     return result
 }

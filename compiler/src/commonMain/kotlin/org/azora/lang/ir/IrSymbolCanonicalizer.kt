@@ -161,6 +161,7 @@ internal object IrSymbolCanonicalizer {
         }
 
         private fun expr(expr: IrExpr): IrExpr = when (expr) {
+            IrExpr.UnitLiteral -> expr
             is IrExpr.IntLiteral -> expr.copy(type = type(expr.type))
             is IrExpr.DoubleLiteral -> expr.copy(type = type(expr.type))
             is IrExpr.StringLiteral -> expr

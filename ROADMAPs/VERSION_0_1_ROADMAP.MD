@@ -151,7 +151,8 @@ lines).
 - ✅ Extensions declared beside a type they merely use
 - ✅ `spec` (traits) with validated impls
 - ✅ Computed properties (`prop`), secondary constructors (`ctor`), `dtor`
-- ✅ Static members via `impl Type:: { }` and `impl Spec for Type:: { }`
+- ✅ Static members as receiver-free declarations inside `impl Type { }` and
+  `impl Spec for Type { }`
 - 🟨 Dynamic dispatch on spec-typed values (fat pointer + type-id switch); no
   keyword, using a spec as a type is what selects it. Bindings, parameters,
   returns and fields work; see `DYNAMIC_DISPATCH_DIP.MD`
@@ -552,8 +553,9 @@ files ship alongside the compiler and are read from there.
 - ✅ Browser and playground: the same `.az` files ship inside the artifact and
   are read through the same reader as a disk tree - the bundle is the virtual
   filesystem, not a second code path (`stdlibDiskRoots()` is simply empty there)
-- ✅ A version handshake: a root must carry `STDLIB_VERSION`, checked against
-  `BuildConfig.VERSION`. A root the user *named* and that lacks the marker is
+- ✅ A version handshake: a `std/` root uses the `package.version` from the
+  sibling `package.azon`, checked against the standard-library package bundled
+  with the compiler. A root the user *named* and that lacks a valid manifest is
   rejected; a merely *discovered* directory without one is skipped, so a stray
   `~/std` cannot break a working install
 - ✅ Users can point at a different standard library without rebuilding the

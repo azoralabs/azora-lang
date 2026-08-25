@@ -493,7 +493,7 @@ impl MutableSet<T> for HashSet<T> {
 }
 
 @Experimental(since: "0.1")
-oper[] [self: HashSet<T>&](index: Int): T {
+oper[] HashSet<T>&.(index: Int): T {
     assert index >= 0 && index < self.size {
         "Set index out of bounds"
     }
@@ -513,7 +513,7 @@ impl Into<String> for HashSet<T> {
 }
 
 @Experimental(since: "0.1")
-oper== [self: HashSet<T>&](rhs: Set<T>): Bool {
+oper== HashSet<T>&.(rhs: Set<T>): Bool {
     if self.size != rhs.size { return false }
     for i in 0..<self.size {
         if !rhs.contains(self.data[i]) { return false }
@@ -522,7 +522,7 @@ oper== [self: HashSet<T>&](rhs: Set<T>): Bool {
 }
 
 @Experimental(since: "0.1")
-oper!= [self: HashSet<T>&](rhs: Set<T>): Bool {
+oper!= HashSet<T>&.(rhs: Set<T>): Bool {
     return !(self == rhs)
 }
 
@@ -692,7 +692,7 @@ impl MutableSet<T> for TreeSet<T> {
 }
 
 @Experimental(since: "0.1")
-oper[] [self: TreeSet<T>&](index: Int): T {
+oper[] TreeSet<T>&.(index: Int): T {
     assert index >= 0 && index < self.size {
         "Set index out of bounds"
     }
@@ -712,7 +712,7 @@ impl Into<String> for TreeSet<T> {
 }
 
 @Experimental(since: "0.1")
-oper== [self: TreeSet<T>&](rhs: Set<T>): Bool {
+oper== TreeSet<T>&.(rhs: Set<T>): Bool {
     if self.size != rhs.size { return false }
     for i in 0..<self.size {
         if !rhs.contains(self.data[i]) { return false }
@@ -721,7 +721,7 @@ oper== [self: TreeSet<T>&](rhs: Set<T>): Bool {
 }
 
 @Experimental(since: "0.1")
-oper!= [self: TreeSet<T>&](rhs: Set<T>): Bool {
+oper!= TreeSet<T>&.(rhs: Set<T>): Bool {
     return !(self == rhs)
 }
 
@@ -741,7 +741,7 @@ impl TreeSet<T> {
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-oper[] [self: LinkedHashSet<T>&](index: Int): T {
+oper[] LinkedHashSet<T>&.(index: Int): T {
     assert index >= 0 && index < self.size {
         "Set index out of bounds"
     }
@@ -761,7 +761,7 @@ impl Into<String> for LinkedHashSet<T> {
 }
 
 @Experimental(since: "0.1")
-oper== [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
+oper== LinkedHashSet<T>&.(rhs: Set<T>): Bool {
     if self.size != rhs.size { return false }
     for i in 0..<self.size {
         if !rhs.contains(self.data[i]) { return false }
@@ -770,7 +770,7 @@ oper== [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
 }
 
 @Experimental(since: "0.1")
-oper!= [self: LinkedHashSet<T>&](rhs: Set<T>): Bool {
+oper!= LinkedHashSet<T>&.(rhs: Set<T>): Bool {
     return !(self == rhs)
 }
 

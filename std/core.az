@@ -25,16 +25,30 @@
 @Supress(.Unused)
 exposed module std.core
 
+/**
+ * The successful result of a computation that has no meaningful payload.
+ *
+ * `Unit` is both the type name and its single value, just as in Kotlin. An
+ * omitted function return type means `Unit`; `return Unit` and a bare `return`
+ * are therefore the same successful result. Backends may erase the singleton
+ * from a function ABI, but it remains a first-class value to Azora code.
+ */
 @Since("0.1")
 bridge pack Unit
 
 /**
  * The bottom type: no value has it, and nothing can be read at it.
  *
- * What a compile-time computation answers when the question it was asked has
- * none - the type of a default that was never declared, say. `Unit` would be
- * the wrong answer there: it says there *is* a value and it happens to carry
- * nothing, where `Nothing` says there is no value at all.
+ * It is a subtype of every type, just as in Kotlin, because control cannot
+ * produce a `Nothing` value and then continue. Non-returning functions and
+ * unrecoverable termination use it, and an expression branch of `Nothing`
+ * leaves the other branch to determine the expression's type. `Nothing?` has
+ * exactly one possible value: `null`.
+ *
+ * A compile-time computation also answers `Nothing` when the question it was
+ * asked has no answer - the type of a default that was never declared, say.
+ * `Unit` would be wrong there: it says there is one successful value, while
+ * `Nothing` says there is no value at all.
  */
 @Since("0.1")
 bridge pack Nothing
@@ -164,18 +178,14 @@ impl Compare {
     prop &.isGreaterOrEqual: Bool = self != .Less
 
     /** The comparison with its operands swapped. `Less` becomes `Greater`. */
-    prop &.reversed: Compare {
-        return when self {
-            .Less -> .Greater
-            .Greater -> .Less
-            else -> .Equal
-        }
+    prop &.reversed: Compare = when self {
+        .Less -> .Greater
+        .Greater -> .Less
+        else -> .Equal
     }
 
     /** `self` when it is decisive, otherwise `next`. Lexicographic chaining. */
-    func &.then(next: Compare): Compare {
-        return if self == .Equal { next } else { self }
-    }
+    func &.then(next: Compare): Compare = if self == .Equal { next } else { self }
 }
 
 /**
@@ -255,13 +265,13 @@ spec Into<T> {
  * `From` is what `Into` cannot express: it *constructs* rather than
  * consumes, so there is no `self` to convert and its member is a **static**.
  * A receiver-less `func` in a spec asks for exactly that, and
- * `impl From<T> for Type::` supplies it.
+ * `impl From<T> for Type` supplies it with a receiver-free member.
  *
  * It carries no `use as`: the member is reached as `Type::from`, which is
  * already the name callers write, so there is no alias to generate.
  *
  * ```azora
- * impl From<String> for Username:: {
+ * impl From<String> for Username {
  *     func from(value: return String): Self {
  *         return Username(value: take value)
  *     }
@@ -442,7 +452,7 @@ bridge annot @Derive for .Annot {
     fin listModule: String = ""
 }
 
-@Since(version: "0.1")
+@Since("0.1")
 bridge enum SupressKind {
     Unused
 }

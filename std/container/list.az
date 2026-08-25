@@ -463,7 +463,7 @@ func<T> arrayListOf(...elements: T): ArrayList<T> {
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-oper[] [self: ArrayList<T>&](index: Int): T {
+oper[] ArrayList<T>&.(index: Int): T {
     assert index >= 0 && index < self._size {
         "List index out of bounds"
     }
@@ -471,7 +471,7 @@ oper[] [self: ArrayList<T>&](index: Int): T {
 }
 
 @Experimental(since: "0.1")
-oper[]= [self: ArrayList<T>!](index: Int, element: T) {
+oper[]= ArrayList<T>!.(index: Int, element: T) {
     assert index >= 0 && index < self._size {
         "List index out of bounds"
     }
@@ -490,7 +490,7 @@ impl Into<String> for ArrayList<T> {
 }
 
 @Experimental(since: "0.1")
-oper== [self: ArrayList<T>&](rhs: List<T>): Bool {
+oper== ArrayList<T>&.(rhs: List<T>): Bool {
     if self._size != rhs.size {
         return false
     }
@@ -502,7 +502,7 @@ oper== [self: ArrayList<T>&](rhs: List<T>): Bool {
 }
 
 @Experimental(since: "0.1")
-oper!= [self: ArrayList<T>&](rhs: List<T>): Bool {
+oper!= ArrayList<T>&.(rhs: List<T>): Bool {
     return !(self == rhs)
 }
 

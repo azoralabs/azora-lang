@@ -164,7 +164,7 @@ func<T> identity(value: T): T { return value }
 
 ### Receivers and borrows
 
-A method declares its receiver in brackets, and a borrow is written with a
+A method declares its receiver before the member name, and a borrow is written with a
 sigil rather than a keyword:
 
 - `&` shared, read-only
@@ -172,8 +172,8 @@ sigil rather than a keyword:
 
 ```azora
 impl Point {
-    prop magnitude[self: Self&]: Int { return self.x * self.x + self.y * self.y }
-    func moveBy[self: Self!](dx: Int) { self.x = self.x + dx }
+    prop &.magnitude: Int = self.x * self.x + self.y * self.y
+    func !.moveBy(dx: Int) { self.x = self.x + dx }
 }
 ```
 
@@ -192,7 +192,7 @@ impl Point {
 ## Types with behaviour
 
 - `impl Type { }` adds members; `impl Spec for Type { }` implements a spec
-- `impl Type:: { }` and `impl Spec for Type:: { }` declare statics, reached as
+- Receiver-free members inside `impl Type { }` and `impl Spec for Type { }` declare statics, reached as
   `Type::member`
 - `spec` declares a capability: `func`, `prop` and `oper` requirements. A spec
   may `require` another - `spec Copy requires Clone` - which states what an
@@ -231,6 +231,10 @@ states its comparison **once**.
 An operator is declared with `oper`, and the specs that own them are in
 `std.traits`:
 
+Every operator writes its operand parentheses. Unary operators and other
+zero-operand declarations use `()`, for example `oper- &.(): Self`; the
+parenthesis-free `oper- &.: Self` form is invalid.
+
 ```azora
 import std.traits
 
@@ -242,7 +246,7 @@ pack Version {
 derive Equal for Version         // Order requires Equal
 
 impl Order for Version {
-    oper<=> [self: Self&](rhs: Self&): Compare {
+    oper<=> &.(rhs: Self&): Compare {
         if self.major < rhs.major { return Compare.Less }
         if self.major > rhs.major { return Compare.Greater }
         if self.minor < rhs.minor { return Compare.Less }
@@ -267,7 +271,7 @@ fourth case, `Unordered`, so `NaN` makes all four relational operators false.
 Derivation is explicit and separate from manual implementation:
 
 ```azora
-derive [Equal, Order] for Point  // == , <=> , < <= > >= , != , hash
+derive (Equal, Order) for Point  // == , <=> , < <= > >= , != , hash
 ```
 
 `==` on a pack that never said what equal means is a **compile error**, not a
@@ -291,7 +295,7 @@ spell, and a type implements the part it wants:
 
 ```azora
 impl Arithmetic for Matrix {
-    oper+= [self: Self!](rhs: Self&) {
+    oper+= !.(rhs: Self&) {
         for i in 0..<self.data.length { self.data[i] += rhs.data[i] }
     }
 }

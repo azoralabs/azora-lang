@@ -250,6 +250,7 @@ class AstValidator {
         is Expr.Call -> expr.args.any(::readsSelf) || expr.receiver?.let(::readsSelf) == true
         is Expr.Binary -> readsSelf(expr.left) || readsSelf(expr.right)
         is Expr.Unary -> readsSelf(expr.operand)
+        is Expr.IncDec -> readsSelf(expr.target)
         is Expr.Grouping -> readsSelf(expr.expr)
         else -> false
     }

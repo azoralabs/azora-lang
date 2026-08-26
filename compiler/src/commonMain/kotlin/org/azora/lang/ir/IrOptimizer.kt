@@ -121,6 +121,7 @@ class IrOptimizer {
             val operand = foldExpr(expr.operand)
             tryFoldUnary(expr.op, operand, expr.type) ?: expr.copy(operand = operand)
         }
+        is IrExpr.IncDec -> expr
         is IrExpr.Call -> expr.copy(args = expr.args.map { foldExpr(it) }, receiver = expr.receiver?.let { foldExpr(it) })
         else -> expr
     }
@@ -423,8 +424,16 @@ class IrOptimizer {
                 is IrStmt.If -> { stmt.thenBranch.forEach(::visit); stmt.elseBranch?.forEach(::visit) }
                 is IrStmt.Scope -> stmt.body.forEach(::visit)
                 is IrStmt.While -> stmt.body.forEach(::visit)
-                is IrStmt.For -> { assigned.add(stmt.counter); stmt.body.forEach(::visit) }
-                is IrStmt.ForEach -> { assigned.add(stmt.elem); stmt.body.forEach(::visit) }
+                is IrStmt.For -> {
+                    assigned.add(stmt.counter)
+                    stmt.indexName?.let(assigned::add)
+                    stmt.body.forEach(::visit)
+                }
+                is IrStmt.ForEach -> {
+                    assigned.add(stmt.elem)
+                    stmt.indexName?.let(assigned::add)
+                    stmt.body.forEach(::visit)
+                }
                 is IrStmt.Loop -> stmt.body.forEach(::visit)
                 is IrStmt.When -> {
                     stmt.branches.forEach { it.body.forEach(::visit) }
@@ -465,6 +474,7 @@ class IrOptimizer {
             right = propagateExpr(expr.right, constants)
         )
         is IrExpr.Unary -> expr.copy(operand = propagateExpr(expr.operand, constants))
+        is IrExpr.IncDec -> expr.copy(target = propagateExpr(expr.target, constants) as IrExpr.Var)
         is IrExpr.EnumToString -> expr.copy(value = propagateExpr(expr.value, constants))
         is IrExpr.Call -> expr.copy(args = expr.args.map { propagateExpr(it, constants) }, receiver = expr.receiver?.let { propagateExpr(it, constants) })
         is IrExpr.IfExpr -> expr.copy(
@@ -662,7 +672,7 @@ class IrOptimizer {
 
     /** True when evaluating [expr] may have observable side effects (calls of any kind). */
     private fun hasSideEffects(expr: IrExpr): Boolean = when (expr) {
-        is IrExpr.Call, is IrExpr.MethodCall, is IrExpr.StructCtor, is IrExpr.Await -> true
+        is IrExpr.Call, is IrExpr.MethodCall, is IrExpr.StructCtor, is IrExpr.Await, is IrExpr.IncDec -> true
         is IrExpr.Binary -> hasSideEffects(expr.left) || hasSideEffects(expr.right)
         is IrExpr.Unary -> hasSideEffects(expr.operand)
         is IrExpr.NumCast -> hasSideEffects(expr.value)
@@ -806,6 +816,7 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(expr.right, names)
             }
             is IrExpr.Unary -> collectReferencedNamesFromExpr(expr.operand, names)
+            is IrExpr.IncDec -> collectReferencedNamesFromExpr(expr.target, names)
             is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
             is IrExpr.SetLit -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
             is IrExpr.Index -> {

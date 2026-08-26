@@ -1043,6 +1043,7 @@ class SymbolCollector {
             TokenType.BANG -> IrType.Bool
             else -> inferExprType(expr.operand, env)
         }
+        is Expr.IncDec -> inferExprType(expr.target, env)
         is Expr.Grouping -> inferExprType(expr.expr, env)
         // A struct constructor yields its named type; a known function yields its
         // (erased) declared return type.

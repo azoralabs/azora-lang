@@ -360,7 +360,7 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             stmt.body.forEach { dumpStmt(sb, it, "$indent    ") }
         }
         is Stmt.For -> {
-            sb.appendLine("${indent}For(var=${stmt.name})")
+            sb.appendLine("${indent}For(var=${stmt.name}${stmt.indexName?.let { ", index=$it" } ?: ""})")
             sb.appendLine("$indent    iterable:")
             dumpExpr(sb, stmt.iterable, "$indent        ")
             sb.appendLine("$indent    body:")
@@ -370,7 +370,13 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             sb.appendLine("${indent}Loop")
             stmt.body.forEach { dumpStmt(sb, it, "$indent    ") }
         }
-        is Stmt.Break -> sb.appendLine("${indent}Break")
+        is Stmt.Break -> {
+            sb.appendLine("${indent}Break${if (stmt.label != null) "(label=${stmt.label})" else ""}")
+            stmt.value?.let {
+                sb.appendLine("$indent    value:")
+                dumpExpr(sb, it, "$indent        ")
+            }
+        }
         is Stmt.Continue -> sb.appendLine("${indent}Continue")
         is Stmt.IndexAssign -> {
             sb.appendLine("${indent}IndexAssign")
@@ -468,6 +474,10 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
         is Expr.Unary -> {
             sb.appendLine("${indent}Unary(op=${expr.op})")
             dumpExpr(sb, expr.operand, "$indent    ")
+        }
+        is Expr.IncDec -> {
+            sb.appendLine("${indent}${if (expr.prefix) "Prefix" else "Postfix"}IncDec(op=${expr.op})")
+            dumpExpr(sb, expr.target, "$indent    ")
         }
         is Expr.Call -> {
             sb.appendLine("${indent}Call(name=${expr.callee})")

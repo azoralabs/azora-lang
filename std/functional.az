@@ -36,7 +36,7 @@ import std.container.array::*
  * @return The same value.
  */
 @Experimental(since: "0.1")
-func<T> identity(x: T): T { return x }
+func<T> identity(x: T): T = x
 
 /**
  * Applies a transformation to each element of an array.
@@ -48,9 +48,7 @@ func<T> identity(x: T): T { return x }
 @Experimental(since: "0.1")
 func<T> map(arr: Array<T>, f: (T) -> T): Array<T> {
     var result: Array<T> = .() * arr.size
-    for i: Int in 0..<arr.size {
-        result[i] = f(arr[i])
-    }
+    for i: Int in 0..<arr.size then result[i] = f(arr[i])
     return result
 }
 
@@ -65,16 +63,9 @@ func<T> map(arr: Array<T>, f: (T) -> T): Array<T> {
 func<T> filter(arr: Array<T>, pred: (T) -> Bool): Array<T> {
     var tmp: Array<T> = .() * arr.size
     var count: Int = 0
-    for i: Int in 0..<arr.size {
-        if pred(arr[i]) {
-            tmp[count] = arr[i]
-            count++
-        }
-    }
+    for i: Int in 0..<arr.size then if pred(arr[i]) then tmp[count++] = arr[i]
     var result: Array<T> = .() * count
-    for j: Int in 0..<count {
-        result[j] = tmp[j]
-    }
+    for j: Int in 0..<count then result[j] = tmp[j]
     return result
 }
 
@@ -89,9 +80,7 @@ func<T> filter(arr: Array<T>, pred: (T) -> Bool): Array<T> {
 @Experimental(since: "0.1")
 func<T> reduce(arr: Array<T>, initial: T, f: (T, T) -> T): T {
     var acc: T = initial
-    for i: Int in 0..<arr.size {
-        acc = f(acc, arr[i])
-    }
+    for i: Int in 0..<arr.size then acc = f(acc, arr[i])
     return acc
 }
 
@@ -103,9 +92,7 @@ func<T> reduce(arr: Array<T>, initial: T, f: (T, T) -> T): T {
  */
 @Experimental(since: "0.1")
 func<T> forEach(arr: Array<T>, action: (T) -> Unit) {
-    for i: Int in 0..<arr.size {
-        action(arr[i])
-    }
+    for i: Int in 0..<arr.size then action(arr[i])
 }
 
 /**
@@ -117,9 +104,7 @@ func<T> forEach(arr: Array<T>, action: (T) -> Unit) {
  */
 @Experimental(since: "0.1")
 func<T> any(arr: Array<T>, pred: (T) -> Bool): Bool {
-    return for i: Int in 0..<arr.size {
-        if pred(arr[i]) { true }
-    } else { false }
+    return for i: Int in 0..<arr.size { if pred(arr[i]) then break true } else false
 }
 
 /**
@@ -131,9 +116,7 @@ func<T> any(arr: Array<T>, pred: (T) -> Bool): Bool {
  */
 @Experimental(since: "0.1")
 func<T> all(arr: Array<T>, pred: (T) -> Bool): Bool {
-    return for i in 0..<arr.size {
-        if !pred(arr[i]) { false }
-    } else { true }
+    return for i: Int in 0..<arr.size { if !pred(arr[i]) then break false } else true
 }
 
 /**
@@ -145,9 +128,7 @@ func<T> all(arr: Array<T>, pred: (T) -> Bool): Bool {
  */
 @Experimental(since: "0.1")
 func<T> none(arr: Array<T>, pred: (T) -> Bool): Bool {
-    return for i in 0..<arr.size {
-        if pred(arr[i]) { false }
-    } else { true }
+    return for i: Int in 0..<arr.size { if pred(arr[i]) then break false } else true
 }
 
 /**
@@ -162,11 +143,9 @@ func<T> take(arr: Array<T>, n: Int): Array<T>
 in {
     assert n >= 0 { "take count must be non-negative" }
 } scope {
-    fin len: Int = if n < arr.size { n } else { arr.size }
+    fin len: Int = if n < arr.size then n else arr.size
     var result: Array<T> = .() * len
-    for i: Int in 0..<len {
-        result[i] = arr[i]
-    }
+    for i: Int in 0..<len then result[i] = arr[i]
     return result
 }
 
@@ -182,13 +161,9 @@ func<T> drop(arr: Array<T>, n: Int): Array<T>
 in {
     assert n >= 0 { "purge count must be non-negative" }
 } scope {
-    fin start = if n < arr.size { n } else { arr.size }
+    fin start = if n < arr.size then n else arr.size
     var result: Array<T> = .() * arr.size - start
-    var index: Int = 0
-    for i: Int in start..<arr.size {
-        result[index] = arr[i]
-        index++
-    }
+    for i: Int in start..<arr.size with index then result[index] = arr[i]
     return result
 }
 
@@ -201,11 +176,9 @@ in {
  */
 @Experimental(since: "0.1")
 func<T> zip(a: Array<T>, b: Array<T>): Array<T> {
-    fin len = if a.size < b.size { a.size } else { b.size }
+    fin len = if a.size < b.size then a.size else b.size
     var result: Array<T> = .() * len
-    for i: Int in 0..<len {
-        result[i] = [a[i], b[i]]
-    }
+    for i: Int in 0..<len then result[i] = [a[i], b[i]]
     return result
 }
 
@@ -222,9 +195,7 @@ in {
     assert count >= 0 { "fill count must be non-negative" }
 } scope {
     var result: Array<T> = .() * count
-    for i: Int in 0..<count {
-        result[i] = value
-    }
+    for i: Int in 0..<count then result[i] = value
     return result
 }
 
@@ -238,9 +209,7 @@ in {
 @Experimental(since: "0.1")
 func<T> generate(count: Int, f: (T) -> T): Array<T> {
     var result: Array<T> = .() * count
-    for i: Int in 0..<count {
-        result[i] = f(i)
-    }
+    for i: Int in 0..<count then result[i] = f(i)
     return result
 }
 
@@ -253,10 +222,8 @@ func<T> generate(count: Int, f: (T) -> T): Array<T> {
  */
 @Experimental(since: "0.1")
 func<T> countWhere(arr: Array<T>, pred: (T) -> Bool): Int {
-    var c = 0
-    for i: Int in 0..<arr.size {
-        if pred(arr[i]) { c++ }
-    }
+    var c: Int = 0
+    for i: Int in 0..<arr.size then if pred(arr[i]) then c++
     return c
 }
 
@@ -270,9 +237,7 @@ func<T> countWhere(arr: Array<T>, pred: (T) -> Bool): Int {
  */
 @Experimental(since: "0.1")
 func<T> findOr(arr: Array<T>, pred: (T) -> Bool, default: T): T {
-    return for i: Int in 0..<arr.size {
-        if pred(arr[i]) { arr[i] }
-    } else { default }
+    return for i: Int in 0..<arr.size { if pred(arr[i]) then break arr[i] } else { default }
 }
 
 /**
@@ -309,9 +274,7 @@ func<T> flatMap(arr: Array<T>, f: (T) -> Array<T>): Array<T> {
 @Experimental(since: "0.1")
 func<T> fold(arr: Array<T>, initial: T, f: (T, T) -> T): T {
     var acc: T = initial
-    for i: Int in 0..<arr.size {
-        acc = f(acc, arr[i])
-    }
+    for i: Int in 0..<arr.size { acc = f(acc, arr[i]) }
     return acc
 }
 
@@ -337,9 +300,7 @@ func<T> scan(arr: Array<T>, initial: T, f: (T, T) -> T): Array<T> {
 @Experimental(since: "0.1")
 func<T> mapIndexed(arr: Array<T>, f: (T, T) -> T): Array<T> {
     var result: Array<T> = .() * arr.size
-    for i: Int in 0..<arr.size {
-        result[i] = f(arr[i], arr[i])
-    }
+    for i: Int in 0..<arr.size { result[i] = f(arr[i], arr[i]) }
     return result
 }
 
@@ -349,9 +310,7 @@ func<T> mapIndexed(arr: Array<T>, f: (T, T) -> T): Array<T> {
 @Experimental(since: "0.1")
 func<T> repeatCall(count: Int, f: () -> T): Array<T> {
     var result: Array<T> = .() * count
-    for i: Int in 0..<count {
-        result[i] = f()
-    }
+    for i: Int in 0..<count { result[i] = f() }
     return result
 }
 
@@ -360,12 +319,7 @@ func<T> repeatCall(count: Int, f: () -> T): Array<T> {
  */
 @Experimental(since: "0.1")
 func<T> firstWhere(arr: Array<T>, pred: (T) -> Bool, default: T): T {
-    for i: Int in 0..<arr.size {
-        if pred(arr[i]) {
-            return arr[i]
-        }
-    }
-    return default
+    return for i: Int in 0..<arr.size { if pred(arr[i]) then break arr[i] } else default
 }
 
 /**
@@ -374,11 +328,7 @@ func<T> firstWhere(arr: Array<T>, pred: (T) -> Bool, default: T): T {
 @Experimental(since: "0.1")
 func<T> lastWhere(arr: Array<T>, pred: (T) -> Bool, default: T): T {
     var result: T = default
-    for i: Int in 0..<arr.size {
-        if pred(arr[i]) {
-            result = arr[i]
-        }
-    }
+    for i: Int in 0..<arr.size { if pred(arr[i]) { result = arr[i] } }
     return result
 }
 

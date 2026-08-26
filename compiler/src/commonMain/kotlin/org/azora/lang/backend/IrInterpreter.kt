@@ -624,9 +624,11 @@ class IrInterpreter {
                     if (stmt.inclusive) end - floorMod(end - start, step)
                     else end - 1 - floorMod(end - 1 - start, step)
                 } else start
+                var ordinal = 0L
                 while (if (stmt.reverse) i >= start else if (stmt.inclusive) i <= end else i < end) {
                     pushScope()
                     defineVar(stmt.counter, i)
+                    stmt.indexName?.let { defineVar(it, ordinal) }
                     val result = executeBody(stmt.body)
                     popScope()
                     when (result) {
@@ -639,6 +641,7 @@ class IrInterpreter {
                             if (result.label != null && result.label != stmt.label) return result
                         }
                     }
+                    ordinal++
                     i = if (stmt.reverse) i - step else i + step
                 }
             }
@@ -648,9 +651,10 @@ class IrInterpreter {
                 // shares a common Iterable supertype, so iterate each directly.
                 when (iterable) {
                     is MutableList<*> -> {
-                        for (item in iterable) {
+                        for ((ordinal, item) in iterable.withIndex()) {
                             pushScope()
                             defineVar(stmt.elem, item)
+                            stmt.indexName?.let { defineVar(it, ordinal.toLong()) }
                             val result = executeBody(stmt.body)
                             popScope()
                             if (result is BreakSignal) break
@@ -659,13 +663,16 @@ class IrInterpreter {
                     }
                     is kotlinx.coroutines.channels.ReceiveChannel<*> -> {
                         try {
+                            var ordinal = 0L
                             for (item in iterable) {
                                 pushScope()
                                 defineVar(stmt.elem, item)
+                                stmt.indexName?.let { defineVar(it, ordinal) }
                                 val result = executeBody(stmt.body)
                                 popScope()
                                 if (result is BreakSignal) break
                                 if (result is ReturnSignal) return result
+                                ordinal++
                             }
                         } finally {
                             // Cancel the producer so an early `break` (or an infinite flow)
@@ -1012,6 +1019,17 @@ class IrInterpreter {
                         if (operand is Long) operand.inv() else error("Cannot bitwise-NOT $operand")
                     }
                 }
+            }
+            is IrExpr.IncDec -> {
+                val old = lookupVar(expr.target.name)
+                val updated = when (old) {
+                    is Long -> old + expr.delta
+                    is Double -> old + expr.delta.toDouble()
+                    is Float -> old + expr.delta.toFloat()
+                    else -> error("Cannot increment or decrement $old")
+                }
+                assignVar(expr.target.name, updated)
+                if (expr.prefix) updated else old
             }
             is IrExpr.Binary -> evalBinary(expr)
             is IrExpr.Call -> evalCall(expr).let { if (expr.type == IrType.Unit) kotlin.Unit else it }

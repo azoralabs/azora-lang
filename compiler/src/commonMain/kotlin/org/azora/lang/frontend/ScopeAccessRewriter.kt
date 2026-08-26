@@ -177,7 +177,13 @@ internal object ScopeAccessRewriter {
             is Stmt.InlineTrace -> { s.level?.let { collectExprNames(it, names) }; collectExprNames(s.message, names) }
             is Stmt.If -> { collectExprNames(s.condition, names); s.thenBranch.forEach { collectStmtNames(it, names) }; s.elseBranch?.forEach { collectStmtNames(it, names) } }
             is Stmt.While -> { collectExprNames(s.condition, names); s.body.forEach { collectStmtNames(it, names) } }
-            is Stmt.For -> { names.add(s.name); collectExprNames(s.iterable, names); s.step?.let { collectExprNames(it, names) }; s.body.forEach { collectStmtNames(it, names) } }
+            is Stmt.For -> {
+                names.add(s.name)
+                s.indexName?.let(names::add)
+                collectExprNames(s.iterable, names)
+                s.step?.let { collectExprNames(it, names) }
+                s.body.forEach { collectStmtNames(it, names) }
+            }
             is Stmt.Loop -> s.body.forEach { collectStmtNames(it, names) }
             is Stmt.When -> {
                 collectExprNames(s.scrutinee, names)
@@ -203,6 +209,7 @@ internal object ScopeAccessRewriter {
             is Expr.Call -> e.args.forEach { collectExprNames(it, names) }
             is Expr.Binary -> { collectExprNames(e.left, names); collectExprNames(e.right, names) }
             is Expr.Unary -> collectExprNames(e.operand, names)
+            is Expr.IncDec -> collectExprNames(e.target, names)
             is Expr.Grouping -> collectExprNames(e.expr, names)
             is Expr.Index -> { collectExprNames(e.target, names); collectExprNames(e.index, names) }
             is Expr.Range -> { collectExprNames(e.from, names); collectExprNames(e.to, names) }
@@ -347,6 +354,7 @@ internal object ScopeAccessRewriter {
         }
         is Expr.Binary -> e.copy(left = expr(e.left, prefix, mangled, shadowed), right = expr(e.right, prefix, mangled, shadowed))
         is Expr.Unary -> e.copy(operand = expr(e.operand, prefix, mangled, shadowed))
+        is Expr.IncDec -> e.copy(target = expr(e.target, prefix, mangled, shadowed))
         is Expr.Grouping -> e.copy(expr = expr(e.expr, prefix, mangled, shadowed))
         is Expr.Index -> e.copy(target = expr(e.target, prefix, mangled, shadowed), index = expr(e.index, prefix, mangled, shadowed))
         is Expr.Range -> e.copy(from = expr(e.from, prefix, mangled, shadowed), to = expr(e.to, prefix, mangled, shadowed))

@@ -192,6 +192,7 @@ class DecoratorResolver {
             is Expr.IntLiteral -> name in integerTypes || name in floatingTypes
             is Expr.DoubleLiteral -> name in floatingTypes
             is Expr.Unary -> literalMatches(expected, value.operand)
+            is Expr.IncDec -> literalMatches(expected, value.target)
             else -> true
         }
     }

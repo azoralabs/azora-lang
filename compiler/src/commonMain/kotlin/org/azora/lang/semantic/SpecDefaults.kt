@@ -79,6 +79,7 @@ object SpecDefaults {
             is Expr.Member -> expr.copy(target = bindExpr(expr.target))
             is Expr.Binary -> expr.copy(left = bindExpr(expr.left), right = bindExpr(expr.right))
             is Expr.Unary -> expr.copy(operand = bindExpr(expr.operand))
+            is Expr.IncDec -> expr.copy(target = bindExpr(expr.target))
             is Expr.Grouping -> expr.copy(expr = bindExpr(expr.expr))
             is Expr.NamedArg -> expr.copy(value = bindExpr(expr.value))
             else -> expr

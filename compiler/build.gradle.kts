@@ -27,7 +27,16 @@ val generateStdlib = tasks.register("generateAzStdlib") {
         val azFiles = stdFiles.map { AzSource(stdDir, it, "STD") }
 
         fun uniqueName(prefix: String, relPath: String): String {
-            val parts = relPath.replace("/", "_").replace(".az", "").uppercase()
+            // File names are source data, not Kotlin identifiers.  In
+            // particular `.azora-preview-filesystem.az` contains both a
+            // leading dot and hyphens; normalize every non-identifier
+            // character before emitting the generated property name.
+            val parts = relPath
+                .removeSuffix(".az")
+                .uppercase()
+                .replace(Regex("[^A-Z0-9_]"), "_")
+                .replace(Regex("_+"), "_")
+                .trim('_')
             return "${prefix}_${parts}_SOURCE"
         }
 

@@ -940,6 +940,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.Identifier -> paramMap[expr.name] ?: expr
             is Expr.Binary -> expr.copy(left = sub(expr.left), right = sub(expr.right))
             is Expr.Unary -> expr.copy(operand = sub(expr.operand))
+            is Expr.IncDec -> expr.copy(target = sub(expr.target))
             is Expr.Call -> expr.copy(args = expr.args.map(::sub))
             is Expr.TryPropagate -> expr.copy(expr = sub(expr.expr))
             is Expr.Grouping -> expr.copy(expr = sub(expr.expr))
@@ -1239,6 +1240,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             e is Expr.MethodCall -> e.copy(target = fold(e.target), args = e.args.map(::fold))
             e is Expr.Binary -> e.copy(left = fold(e.left), right = fold(e.right))
             e is Expr.Unary -> e.copy(operand = fold(e.operand))
+            e is Expr.IncDec -> e.copy(target = fold(e.target))
             e is Expr.Grouping -> e.copy(expr = fold(e.expr))
             e is Expr.Cast -> e.copy(expr = fold(e.expr), targetType = substitute(e.targetType))
             e is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->
@@ -1311,6 +1313,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 if (folded != null) Pair(folded, true)
                 else Pair(expr.copy(operand = operand), changed)
             }
+            is Expr.IncDec -> expr to false
             is Expr.SetLiteral -> {
                 val folded = expr.elements.map { foldExpr(it, program) }
                 Pair(expr.copy(elements = folded.map { it.first }), folded.any { it.second })
@@ -1738,6 +1741,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 } else {
                     arg
                 }
+            is Expr.IncDec -> arg
             else -> arg
         }
     }
@@ -1937,6 +1941,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val operand = evalExpr(expr.operand, env, program) ?: return null
                 tryFoldUnary(expr.op, operand, expr.line)
             }
+            is Expr.IncDec -> null
             is Expr.Binary -> {
                 val left = evalExpr(expr.left, env, program) ?: return null
                 val right = evalExpr(expr.right, env, program) ?: return null

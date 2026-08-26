@@ -53,9 +53,7 @@ error StringError {
  * @return The number of characters.
  */
 @Experimental(since: "0.1")
-func strLength(s: String): Int {
-    return stringLength(s)
-}
+func strLength(s: String): Int = stringLength(s)
 
 /**
  * Returns the character at the given index.
@@ -65,15 +63,8 @@ func strLength(s: String): Int {
  * @return The character at position index.
  */
 @Experimental(since: "0.1")
-func strCharAt(s: String, index: Int): Char ?! StringError
-in {
-    assert index >= 0 { "Index must be non-negative" }
-} scope {
-    if index >= stringLength(s) {
-        return .IndexOutOfBounds
-    }
-    return charAt(s, index)
-}
+func strCharAt(s: String, index: UInt): Char ?! StringError =
+    if index >= stringLength(s) then .IndexOutOfBounds else charAt(s, index)
 
 /**
  * Extracts a substring from start (inclusive) to end (exclusive).
@@ -84,13 +75,10 @@ in {
  * @return The extracted substring.
  */
 @Experimental(since: "0.1")
-func strSlice(s: String, start: Int, end: Int): String
+func strSlice(s: String, start: UInt, end: UInt): String
 in {
-    assert start >= 0 { "Start must be non-negative" }
-    assert end >= start { "End must be >= start" }
-} scope {
-    return substring(s, start, end)
-}
+    assert end >= start panic "End must be >= start"
+} = substring(s, start, end)
 
 /**
  * Checks if a string starts with the given prefix.
@@ -100,9 +88,7 @@ in {
  * @return true if s starts with prefix.
  */
 @Experimental(since: "0.1")
-func strStartsWith(s: String, prefix: String): Bool {
-    return startsWith(s, prefix)
-}
+func strStartsWith(s: String, prefix: String): Bool = startsWith(s, prefix)
 
 /**
  * Checks if a string ends with the given suffix.
@@ -112,9 +98,7 @@ func strStartsWith(s: String, prefix: String): Bool {
  * @return true if s ends with suffix.
  */
 @Experimental(since: "0.1")
-func strEndsWith(s: String, suffix: String): Bool {
-    return endsWith(s, suffix)
-}
+func strEndsWith(s: String, suffix: String): Bool = endsWith(s, suffix)
 
 /**
  * Checks if a string contains the given substring.
@@ -124,9 +108,7 @@ func strEndsWith(s: String, suffix: String): Bool {
  * @return true if s contains sub.
  */
 @Experimental(since: "0.1")
-func strContains(s: String, sub: String): Bool {
-    return contains(s, sub)
-}
+func strContains(s: String, sub: String): Bool = contains(s, sub)
 
 /**
  * Finds the first occurrence of a substring.
@@ -136,9 +118,7 @@ func strContains(s: String, sub: String): Bool {
  * @return The index of the first occurrence, or -1 if not found.
  */
 @Experimental(since: "0.1")
-func strIndexOf(s: String, sub: String): Int {
-    return indexOf(s, sub)
-}
+func strIndexOf(s: String, sub: String): Int = indexOf(s, sub)
 
 /**
  * Removes whitespace from both ends of a string.
@@ -147,9 +127,7 @@ func strIndexOf(s: String, sub: String): Int {
  * @return The trimmed string.
  */
 @Experimental(since: "0.1")
-func strTrim(s: String): String {
-    return trim(s)
-}
+func strTrim(s: String): String = trim(s)
 
 /**
  * Converts a string to uppercase.
@@ -158,9 +136,7 @@ func strTrim(s: String): String {
  * @return The uppercase string.
  */
 @Experimental(since: "0.1")
-func strToUpper(s: String): String {
-    return toUpper(s)
-}
+func strToUpper(s: String): String = toUpper(s)
 
 /**
  * Converts a string to lowercase.
@@ -169,9 +145,7 @@ func strToUpper(s: String): String {
  * @return The lowercase string.
  */
 @Experimental(since: "0.1")
-func strToLower(s: String): String {
-    return toLower(s)
-}
+func strToLower(s: String): String = toLower(s)
 
 /**
  * Replaces all occurrences of a substring.
@@ -182,9 +156,7 @@ func strToLower(s: String): String {
  * @return The string with replacements applied.
  */
 @Experimental(since: "0.1")
-func strReplace(s: String, old: String, new: String): String {
-    return replace(s, old, new)
-}
+func strReplace(s: String, old: String, new: String): String = replace(s, old, new)
 
 /**
  * Splits a string by a delimiter.
@@ -194,9 +166,7 @@ func strReplace(s: String, old: String, new: String): String {
  * @return A sequence of substrings.
  */
 @Experimental(since: "0.1")
-func strSplit(s: String, delim: String): Array<String> {
-    return split(s, delim)
-}
+func strSplit(s: String, delim: String): Array<String> = split(s, delim)
 
 /**
  * Converts a string to an array of characters.
@@ -205,9 +175,7 @@ func strSplit(s: String, delim: String): Array<String> {
  * @return An array of Char values.
  */
 @Experimental(since: "0.1")
-func strToChars(s: String): Array<Char> {
-    return toChars(s)
-}
+func strToChars(s: String): Array<Char> = toChars(s)
 
 /**
  * Builds a string from an array of characters.
@@ -216,9 +184,7 @@ func strToChars(s: String): Array<Char> {
  * @return The concatenated string.
  */
 @Experimental(since: "0.1")
-func charsToString(chars: Array<Char>): String {
-    return fromChars(chars)
-}
+func charsToString(chars: Array<Char>): String = fromChars(chars)
 
 /**
  * Checks if a string is empty.
@@ -227,9 +193,7 @@ func charsToString(chars: Array<Char>): String {
  * @return true if the string has zero length.
  */
 @Experimental(since: "0.1")
-func strIsEmpty(s: String): Bool {
-    return stringLength(s) == 0
-}
+func strIsEmpty(s: String): Bool = stringLength(s) == 0
 
 /**
  * Checks if a string is not empty.
@@ -238,9 +202,7 @@ func strIsEmpty(s: String): Bool {
  * @return true if the string has non-zero length.
  */
 @Experimental(since: "0.1")
-func strIsNotEmpty(s: String): Bool {
-    return stringLength(s) > 0
-}
+func strIsNotEmpty(s: String): Bool = stringLength(s) > 0
 
 /**
  * Reverses a string.
@@ -250,28 +212,11 @@ func strIsNotEmpty(s: String): Bool {
  */
 @Experimental(since: "0.1")
 func strReverse(s: String): String {
-    fin chars = toChars(s)
-    fin len = chars.length
+    fin chars: Array<Char> = toChars(s)
+    fin len: Int = chars.length
     var reversed: Array<Char> = .() * len
-    for i in 0..<len {
-        reversed[i] = chars[len - 1 - i]
-    }
+    for i: Int in 0..<len then reversed[i] = chars[len - 1 - i]
     return fromChars(reversed)
-}
-
-/**
- * Repeats a string the given number of times.
- *
- * @param s The string to repeat.
- * @param n The number of repetitions.
- * @return The repeated string.
- */
-@Experimental(since: "0.1")
-func strRepeat(s: String, n: Int): String
-in {
-    assert n >= 0 { "Repetition count must be non-negative" }
-} scope {
-    return s * n
 }
 
 /**

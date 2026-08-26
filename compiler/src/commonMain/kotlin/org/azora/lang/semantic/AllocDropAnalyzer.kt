@@ -286,6 +286,7 @@ class AllocDropAnalyzer {
             is Expr.UpperScopeAccess -> used.add(expr.name)
             is Expr.Binary -> { collectUsedVars(expr.left, used); collectUsedVars(expr.right, used) }
             is Expr.Unary -> collectUsedVars(expr.operand, used)
+            is Expr.IncDec -> collectUsedVars(expr.target, used)
             is Expr.Call -> expr.args.forEach { collectUsedVars(it, used) }
             is Expr.Grouping -> collectUsedVars(expr.expr, used)
             is Expr.Range -> { collectUsedVars(expr.from, used); collectUsedVars(expr.to, used) }

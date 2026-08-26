@@ -149,7 +149,7 @@ impl Deque<T> {
 
 test "deque starts empty" {
     fin value: Deque<Int> = .()
-    assert value.size == 0 && value.isEmpty { "new deque must be empty" }
+    assert value.size == 0 && value.isEmpty panic "new deque must be empty"
 }
 
 test "deque supports both ends" {
@@ -157,22 +157,20 @@ test "deque supports both ends" {
     value.pushBack(2)
     value.pushFront(1)
     value.pushBack(3)
-    assert value.peekFront() == 1 && value.peekBack() == 3 { "deque peeks changed" }
-    assert value.popFront() == 1 && value.popBack() == 3 { "deque end removal changed" }
-    assert value.size == 1 && value.peekFront() == 2 { "deque middle value changed" }
+    assert value.peekFront() == 1 && value.peekBack() == 3 panic "deque peeks changed"
+    assert value.popFront() == 1 && value.popBack() == 3 panic "deque end removal changed"
+    assert value.size == 1 && value.peekFront() == 2 panic "deque middle value changed"
 }
 
 test "deque wraps and grows without reordering" {
     var value: Deque<Int> = .()
-    for i in 0..<8 {
-        value.pushBack(i)
-    }
-    assert value.popFront() == 0 && value.popFront() == 1 { "deque prefix removal changed" }
+    for i: Int in 0..<8 then value.pushBack(i)
+    assert value.popFront() == 0 && value.popFront() == 1 panic "deque prefix removal changed"
     value.pushBack(8)
     value.pushBack(9)
     value.pushBack(10)
-    assert value.size == 9 { "deque growth size changed" }
-    assert value.popFront() == 2 && value.popBack() == 10 { "deque growth must preserve order" }
+    assert value.size == 9 panic "deque growth size changed"
+    assert value.popFront() == 2 && value.popBack() == 10 panic "deque growth must preserve order"
 }
 
 test "deque clear resets both ends" {
@@ -181,15 +179,11 @@ test "deque clear resets both ends" {
     value.pushBack(2)
     value.clear()
     value.pushBack(7)
-    assert value.size == 1 && value.peekFront() == 7 && value.peekBack() == 7 {
-        "cleared deque must be reusable"
-    }
+    assert value.size == 1 && value.peekFront() == 7 && value.peekBack() == 7 panic "cleared deque must be reusable"
 }
 
 test "deque serialization metadata is declared" {
-    inline assert reflect<Deque>.hasAnnot<Serializable> {
-        "Deque must carry Serializable metadata"
-    }
+    inline assert reflect<Deque>.hasAnnot<Serializable> panic "Deque must carry Serializable metadata"
 }
 
 test .All "deque"

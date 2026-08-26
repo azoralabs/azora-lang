@@ -177,6 +177,16 @@ sealed class Expr {
      */
     data class Unary(val op: TokenType, val operand: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
+    /** C++-style increment/decrement. Prefix returns the new value; postfix the old value. */
+    data class IncDec(
+        val target: Expr,
+        val op: TokenType,
+        val prefix: Boolean,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+    ) : Expr()
+
     /**
      * Function call expression (e.g. `add(1, 2)`).
      *
@@ -336,8 +346,24 @@ sealed class Expr {
      */
     data class StringTemplate(val parts: List<StringTemplatePart>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** Tuple literal `(a, b, c)` (two or more elements). */
-    data class TupleLit(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    /**
+     * Tuple literal `(a, b, c)` or a grouped receiver `{a, b, c}`.
+     *
+     * Grouped receivers keep [grouped] set while postfix operations are read;
+     * the statement parser can then broadcast the complete operation pairwise
+     * instead of treating the values as an ordinary tuple.
+     */
+    data class TupleLit(
+        val elements: List<Expr>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val grouped: Boolean = false,
+        /** True for `receiver.{call(), call()}` sequencing groups. */
+        val sequence: Boolean = false,
+        /** The receiver expression written before a sequencing group, if any. */
+        val sequenceReceiver: Expr? = null,
+    ) : Expr()
 
     /** Variant literal `var(a, b, c)` - constructs a `Var<...>` holding exactly one of the given
      *  candidate values (the first, by default). At least two candidates are required. */
@@ -1062,7 +1088,9 @@ sealed class Stmt {
          * what it holds instead of leaving a reader to work it out from the
          * thing being walked. Null is the unannotated form, which infers.
          */
-        val declaredType: TypeRef? = null
+        val declaredType: TypeRef? = null,
+        /** Optional ordinal binding from `with index` (`0, 1, 2, …`). */
+        val indexName: String? = null,
     ) : Stmt()
 
     /**
@@ -1117,9 +1145,21 @@ sealed class Stmt {
      * `break` statement. Exits the enclosing loop. With a label (`break:lbl`)
      * it exits the loop tagged with that label, skipping any inner loops.
      *
+     * A value (`break result`) is only legal in a `for` expression. The
+     * parser keeps that value on the AST long enough for [Parser.parseForExpr]
+     * to lower it to an assignment followed by an ordinary break; no backend
+     * needs a second kind of jump.
+     *
      * @property label the target label, or `null` for the innermost loop
+     * @property value the value produced by a `for` expression, or `null`
      */
-    data class Break(val label: String? = null, override val line: Int = 0, override val column: Int = 0, override val length: Int = 0) : Stmt()
+    data class Break(
+        val label: String? = null,
+        override val line: Int = 0,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val value: Expr? = null,
+    ) : Stmt()
 
     /**
      * `continue` statement. Skips to the next iteration of the enclosing loop.

@@ -607,6 +607,15 @@ sealed class IrExpr {
         override val type: IrType
     ) : IrExpr()
 
+    /** C++-style increment/decrement of a variable. */
+    data class IncDec(
+        val target: IrExpr.Var,
+        val delta: Int,
+        val prefix: Boolean,
+    ) : IrExpr() {
+        override val type: IrType = target.type
+    }
+
     /**
      * Function call expression.
      *
@@ -810,6 +819,10 @@ sealed class IrExpr {
         is Unary -> {
             val opStr = when (op) { IrUnaryOp.NEG -> "-"; IrUnaryOp.NOT -> "!"; IrUnaryOp.BIT_NOT -> "~" }
             "($opStr${operand.prettyPrint()})"
+        }
+        is IncDec -> {
+            val marker = if (prefix) "prefix" else "postfix"
+            "${marker}${if (delta > 0) "++" else "--"}${target.prettyPrint()}"
         }
         is Binary -> {
             val opStr = when (op) {
@@ -1030,7 +1043,9 @@ sealed class IrStmt {
         /** Iterate downwards from [end] to [start]. */
         val reverse: Boolean = false,
         /** Optional source label for a labeled break or continue. */
-        val label: String? = null
+        val label: String? = null,
+        /** Optional zero-based ordinal binding from `with index`. */
+        val indexName: String? = null
     ) : IrStmt()
 
     /**
@@ -1082,7 +1097,13 @@ sealed class IrStmt {
     data class Yield(val value: IrExpr) : IrStmt()
 
     /** `for x in <iterable>` (non-range) - bind [elem] to each value of [iterable], run [body]. */
-    data class ForEach(val elem: String, val iterable: IrExpr, val body: List<IrStmt>) : IrStmt()
+    data class ForEach(
+        val elem: String,
+        val iterable: IrExpr,
+        val body: List<IrStmt>,
+        /** Optional zero-based ordinal binding from `with index`. */
+        val indexName: String? = null,
+    ) : IrStmt()
 
     /** Pretty-prints this statement as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
@@ -1137,7 +1158,8 @@ sealed class IrStmt {
                 val op = if (inclusive) ".." else "..<"
                 val stepPart = if (step != null) " by ${step.prettyPrint()}" else ""
                 val revPart = if (reverse) "reverse " else ""
-                sb.appendLine("${pad}for $revPart$counter in ${start.prettyPrint()}$op${end.prettyPrint()}$stepPart {")
+                val indexPart = indexName?.let { " with $it" }.orEmpty()
+                sb.appendLine("${pad}for $revPart$counter in ${start.prettyPrint()}$op${end.prettyPrint()}$stepPart$indexPart {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -1182,7 +1204,8 @@ sealed class IrStmt {
             }
             is Yield -> sb.appendLine("${pad}yield ${value.prettyPrint()}")
             is ForEach -> {
-                sb.appendLine("${pad}for $elem in ${iterable.prettyPrint()} {")
+                val indexPart = indexName?.let { " with $it" }.orEmpty()
+                sb.appendLine("${pad}for $elem in ${iterable.prettyPrint()}$indexPart {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -1571,7 +1594,7 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
         }
         is IrStmt.For -> {
-            sb.appendLine("${indent}IrFor(counter=${stmt.counter}, inclusive=${stmt.inclusive}, reverse=${stmt.reverse})")
+            sb.appendLine("${indent}IrFor(counter=${stmt.counter}, inclusive=${stmt.inclusive}, reverse=${stmt.reverse}, index=${stmt.indexName})")
             sb.appendLine("$indent    start:")
             dumpIrExprTree(sb, stmt.start, "$indent        ")
             sb.appendLine("$indent    end:")
@@ -1630,7 +1653,7 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             dumpIrExprTree(sb, stmt.value, "$indent    ")
         }
         is IrStmt.ForEach -> {
-            sb.appendLine("${indent}IrForEach(elem=${stmt.elem})")
+            sb.appendLine("${indent}IrForEach(elem=${stmt.elem}, index=${stmt.indexName})")
             sb.appendLine("$indent    iterable:")
             dumpIrExprTree(sb, stmt.iterable, "$indent        ")
             sb.appendLine("$indent    body:")
@@ -1666,6 +1689,9 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
             sb.appendLine("${indent}IrUnary(op=${expr.op}) : ${expr.type}")
             dumpIrExprTree(sb, expr.operand, "$indent    ")
         }
+        is IrExpr.IncDec -> sb.appendLine(
+            "${indent}IrIncDec(${if (expr.prefix) "prefix" else "postfix"}, delta=${expr.delta}, target=${expr.target.name}) : ${expr.type}",
+        )
         is IrExpr.Call -> {
             sb.appendLine("${indent}IrCall(name=${expr.name}) : ${expr.type}")
             for (arg in expr.args) dumpIrExprTree(sb, arg, "$indent    ")

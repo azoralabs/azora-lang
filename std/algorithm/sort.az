@@ -48,7 +48,7 @@ import std.container.array::*
 @Experimental(since: "0.1")
 func<T> sort(arr: Array<T>): Array<T> where T: Order
 out {
-    assert it.size == arr.size { "sort must preserve length" }
+    assert it.size == arr.size then "sort must preserve length"
 } scope {
     return _mergeSorted<T>(arr, true)
 }
@@ -65,10 +65,8 @@ out {
 @Experimental(since: "0.1")
 func<T> sortDescending(arr: Array<T>): Array<T> where T: Order
 out {
-    assert it.size == arr.size { "sortDescending must preserve length" }
-} scope {
-    return _mergeSorted<T>(arr, false)
-}
+    assert it.size == arr.size panic "sortDescending must preserve length"
+} = _mergeSorted<T>(arr, false)
 
 /**
  * Run length below which insertion sort is used instead of merging.
@@ -77,7 +75,7 @@ out {
  * the first few merge passes - the ones with the worst overhead per element
  * - never happen.
  */
-fin _sortRunLength = 16
+inline fin _sortRunLength: Int = 16
 
 /**
  * The shared engine behind [sort] and [sortDescending].
@@ -178,7 +176,7 @@ func<T: Order> _outOfOrder(first: T, second: T, ascending: Bool): Bool {
 @Experimental(since: "0.1")
 func<T: Order> isSorted(arr: Array<T>): Bool {
     if arr.size <= 1 { return true }
-    return for i: Int in 1..<arr.size { if arr[i] < arr[i - 1] { false } } else { true }
+    return for i: Int in 1..<arr.size { if arr[i] < arr[i - 1] { break false } } else { true }
 }
 
 /**
@@ -189,8 +187,8 @@ func<T: Order> isSorted(arr: Array<T>): Bool {
  */
 @Experimental(since: "0.1")
 func<T: Order> isSortedDescending(arr: Array<T>): Bool {
-    if arr.size <= 1 { return true }
-    return for i: Int in 1..<arr.size { if arr[i] > arr[i - 1] { false } } else { true }
+    if arr.size <= 1 -> return true
+    return for i: Int in 1..<arr.size { if arr[i] > arr[i - 1] { break false } } else { true }
 }
 
 /**
@@ -202,12 +200,10 @@ func<T: Order> isSortedDescending(arr: Array<T>): Bool {
 @Experimental(since: "0.1")
 func<T> reverse(arr: Array<T>): Array<T>
 out {
-    assert it.size == arr.size { "reverse must preserve length" }
+    assert it.size == arr.size panic "reverse must preserve length"
 } scope {
     var result: Array<T> = .() * arr.size
-    for i: Int in 0..<arr.size {
-        result[i] = arr[arr.size - 1 - i]
-    }
+    for i: Int in 0..<arr.size then result[i] = arr[arr.size - 1 - i]
     return result
 }
 
@@ -221,16 +217,13 @@ out {
  */
 @Experimental(since: "0.1")
 func<T: Order> unique(arr: Array<T>): Array<T> {
-    if arr.size == 0 { return .() }
+    if arr.size == 0 then return .()
     var result: Array<T> = .() * arr.size
     result[0] = arr[0]
     var count: Int = 1
-    for i: Int in 1..<arr.size {
-        if arr[i] != arr[i - 1] { result[count++] = arr[i] }
-    }
-    // Trim to actual size
+    for i: Int in 1..<arr.size then if arr[i] != arr[i - 1] then result[count++] = arr[i]
     var trimmed: Array<T> = .() * count
-    for j: Int in 0..<count { trimmed[j] = result[j] }
+    for j: Int in 0..<count then trimmed[j] = result[j]
     return trimmed
 }
 
@@ -245,8 +238,8 @@ func<T: Order> unique(arr: Array<T>): Array<T> {
 @Experimental(since: "0.1")
 func<T> swap(arr: Array<T>, i: Int, j: Int): Array<T>
 in {
-    assert i >= 0 && i < arr.size { "swap index i out of bounds" }
-    assert j >= 0 && j < arr.size { "swap index j out of bounds" }
+    assert i >= 0 && i < arr.size panic "swap index i out of bounds"
+    assert j >= 0 && j < arr.size panic "swap index j out of bounds"
 } scope {
     var result: Array<T> = .() * arr.size
     for k: Int in 0..<arr.size { result[k] = arr[k] }
@@ -263,60 +256,57 @@ in {
  */
 @Experimental(since: "0.1")
 func<T> rotateLeft(arr: Array<T>, n: Int): Array<T> {
-    if arr.size == 0 { return .() }
+    if arr.size == 0 then return .()
     fin {len, shift}: Int = {arr.size, ((n % len) + len) % len}
     var result: Array<T> = .() * len
-    for i: Int in 0..<len { result[i] = arr[(i + shift) % len] }
+    for i: Int in 0..<len then result[i] = arr[(i + shift) % len]
     return result
 }
 
 test "sorting orders ascending and preserves length" {
     var values: Array<Int> = .() * 7
     fin input: Array<Int> = [5, 3, 9, 1, 5, 8, 2]
-    for i: Int in 0..<7 { values[i] = input[i] }
+    for i: Int in 0..<7 then values[i] = input[i]
     fin sorted: Array<Int> = sort(values)
-    assert sorted.size == 7 { "sorting must not lose or add elements" }
-    assert isSorted<Int>(sorted) { "the result must be in ascending order" }
-    assert sorted[0] == 1 && sorted[6] == 9 { "the extremes must land at the ends" }
+    assert sorted.size == 7 panic "sorting must not lose or add elements"
+    assert isSorted<Int>(sorted) panic "the result must be in ascending order"
+    assert sorted[0] == 1 && sorted[6] == 9 panic "the extremes must land at the ends"
 }
 
 test "sorting descending is the ascending order reversed" {
     var values: Array<Int> = .() * 5
     fin input: Array<Int> = [4, 1, 7, 1, 9]
-    for i: Int in 0..<5 { values[i] = input[i] }
+    for i: Int in 0..<5 then values[i] = input[i]
     fin down: Array<Int> = sortDescending(values)
-    assert isSortedDescending(down) { "the result must be in descending order" }
-    assert down[0] == 9 && down[4] == 1 { "the extremes must land at the ends" }
+    assert isSortedDescending(down) panic "the result must be in descending order"
+    assert down[0] == 9 && down[4] == 1 panic "the extremes must land at the ends"
 }
 
 test "sorting an array longer than one merge run stays sorted" {
     // Longer than _sortRunLength, so the merge passes actually run.
     fin count: Int = 40
     var values: Array<Int> = .() * count
-    for i: Int in 0..<count { values[i] = (count - i) * 7 % 31 }
+    for i: Int in 0..<count then values[i] = (count - i) * 7 % 31
     fin sorted: Array<Int> = sort(values)
-    assert isSorted(sorted) { "merging must leave the whole array ordered" }
-    assert sorted.size == count { "merging must preserve length" }
+    assert isSorted(sorted) panic "merging must leave the whole array ordered"
+    assert sorted.size == count panic "merging must preserve length"
 }
 
 test "sorting an empty or single-element array is a no-op" {
     fin empty: Array<Int> = .()
-    assert sort(empty).size == 0 { "an empty array sorts to an empty array" }
-
+    assert sort(empty).size == 0 panic "an empty array sorts to an empty array"
     var one: Array<Int> = .() * 1
     one[0] = 42
     fin sorted: Array<Int> = sort(one)
-    assert sorted.size == 1 && sorted[0] == 42 { "one element is already sorted" }
+    assert sorted.size == 1 && sorted[0] == 42 panic "one element is already sorted"
 }
 
 test "sorting does not modify the original" {
     var values: Array<Int> = .() * 3
-    values[0] = 3
-    values[1] = 1
-    values[2] = 2
+    values[{0, 1, 2}] = {3, 1, 2}
     fin sorted: Array<Int> = sort(values)
-    assert values[0] == 3 { "the input array must be left alone" }
-    assert sorted[0] == 1 { "the returned array must be the sorted one" }
+    assert values[0] == 3 panic "the input array must be left alone"
+    assert sorted[0] == 1 panic "the returned array must be the sorted one"
 }
 
 test .All "std.algorithm.sort"

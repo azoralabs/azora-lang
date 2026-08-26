@@ -88,12 +88,10 @@ impl Queue<T> {
     @Experimental(since: "0.1")
     func &.dequeue(): T
     in {
-        assert self.size > 0 { "Queue is empty" }
+        assert self.size > 0 panic "Queue is empty"
     } scope {
         fin front = self.data[0]
-        for i in 0..<self.size - 1 {
-            self.data[i] = self.data[i + 1]
-        }
+        for i: Int in 0..<self.size - 1 then self.data[i] = self.data[i + 1]
         self.size--
         return front
     }
@@ -113,9 +111,7 @@ impl Queue<T> {
     @Experimental(since: "0.1")
     func !.clear() {
         fin oldData = self.data
-        self.data = alloc .() * 8
-        self.size = 0
-        self.capacity = 8
+        self.{data, size, capacity} = {alloc .() * 8, 0, 8}
         purge oldData
     }
 
@@ -141,49 +137,32 @@ impl Queue<T> {
 
 test "queue starts empty" {
     fin value: Queue<Int> = .()
-    assert value.size == 0 && value.isEmpty { "new queue must be empty" }
+    assert value.size == 0 && value.isEmpty panic "new queue must be empty"
 }
 
 test "queue is FIFO" {
     var value: Queue<Int> = .()
-    value.enqueue(1)
-    value.enqueue(2)
-    value.enqueue(3)
-    assert value.peek() == 1 { "queue peek must return the oldest value" }
-    assert value.dequeue() == 1 && value.dequeue() == 2 && value.dequeue() == 3 { "queue order must be FIFO" }
-    assert value.isEmpty { "queue must be empty after all dequeues" }
+    value.enqueue({1, 2, 3})
+    assert value.peek() == 1 panic "queue peek must return the oldest value"
+    assert value.dequeue() == 1 && value.dequeue() == 2 && value.dequeue() == 3 panic "queue order must be FIFO"
+    assert value.isEmpty panic "queue must be empty after all dequeues"
 }
 
 test "queue grows without losing order" {
     var value: Queue<Int> = .()
-    var i = 0
-    while i < 20 {
-        value.enqueue(i)
-        i += 1
-    }
-    i = 0
-    while i < 20 {
-        assert value.dequeue() == i { "queue growth reordered an element" }
-        i += 1
-    }
+    for i: Int = 0..<20 then value.enqueue(i)
+    for i: Int = 0..<20 then assert value.dequeue() == i panic "queue growth reordered an element"
 }
 
 test "queue clear permits reuse" {
     var value: Queue<Int> = .()
-    value.enqueue(1)
-    value.enqueue(2)
-    value.clear()
-    value.enqueue(8)
-    assert value.size == 1 && value.dequeue() == 8 { "cleared queue must be reusable" }
+    value.{enqueue({1, 2}), clear(), enqueue(8)}
+    assert value.size == 1 && value.dequeue() == 8 panic "cleared queue must be reusable"
 }
 
 test "queue serialization metadata is declared" {
-    import std::{
-        reflection::reflect // still not blue - and with this comment here "Serializable" looses color too
-        serializer::Serializable // cannot find the definition to go
-    }
-    inline assert reflect<Queue>.hasAnnot<Serializable> { "Queue must carry Serializable metadata" } // missing reflect Serializable color, and hasAnnot underline and italic, cannot find the definition to go on reflect and hasAnnot
+    import std.{reflection::reflect, serializer::Serializable}
+    inline assert reflect<Queue>.hasAnnot<Serializable> panic "Queue must carry Serializable metadata"
 }
 
 test .All "queue"
-    import std.error

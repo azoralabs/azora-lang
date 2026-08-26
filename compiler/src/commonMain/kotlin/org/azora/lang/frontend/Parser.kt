@@ -5759,6 +5759,14 @@ class Parser(
 
     private fun parseWhenHead(): Expr {
         consume(TokenType.WHEN, "Expected 'when'")
+        // `when { condition -> value ... }` is the guard form.  The opening
+        // brace belongs to the branch table, not to a lambda scrutinee; using
+        // `true` as its implicit subject lets the normal branch machinery keep
+        // handling guards, `else`, and statement/value forms uniformly.
+        if (check(TokenType.L_BRACE)) {
+            val at = peek()
+            return Expr.BoolLiteral(true, at.line, at.column, 0)
+        }
         // A branch's `{` must not be mistaken for a trailing lambda on a
         // scrutinee that ends in a call.
         return withoutTrailingLambda { parseExpr() }
@@ -5860,11 +5868,8 @@ class Parser(
         } finally {
             allowTrailingLambda = savedTrailing
         }
-        consume(TokenType.L_BRACE, "Expected '{' after assert condition")
-        skipNewlines()
+        consume(TokenType.PANIC, "Expected 'panic' after inline assert condition")
         val message = parseExpr()
-        skipNewlines()
-        consume(TokenType.R_BRACE, "Expected '}' after assert message")
         consumeNewline()
         return TopLevel.InlineAssert(condition, message, start.line, start.column)
     }
@@ -6032,6 +6037,17 @@ class Parser(
                 }
             }
         } else {
+            // Contract bodies normally use `scope { … }`. For one instruction,
+            // `scope` may introduce a single statement without braces, e.g.
+            // `scope self.{offset, allocCount} = 0`.
+            val singleScopeBody = if (check(TokenType.SCOPE)) {
+                advance()
+                !check(TokenType.L_BRACE)
+            } else false
+            if (singleScopeBody) {
+                body = listOf(parseSingleStmt("scope body"))
+                consumeNewline()
+            } else {
             consume(TokenType.L_BRACE, "Expected '{' before function body")
             skipNewlines()
             if (isSelfReceiverHeaderAhead()) {
@@ -6059,6 +6075,7 @@ class Parser(
             consume(TokenType.R_BRACE, "Expected '}' after function body")
             consumeNewline()
             body = stmts
+            }
         }
         val contractedBody = applyContracts(body, contracts)
         currentFailSets = savedFailSets
@@ -7055,6 +7072,26 @@ class Parser(
             // `@rows Item` - a macro applied to a type. Lowercase says macro:
             // a decorator names a declaration and is capitalised, so an `@` on a
             // lowercase name in type position can only be this.
+            // {A, B} is the grouping spelling for a tuple type in a
+            // destructuring declaration. It is distinct from (A, B) only
+            // in punctuation; both describe the same positional type.
+            check(TokenType.L_BRACE) -> {
+                val start = advance()
+                val elements = mutableListOf<TypeRef>()
+                skipNewlines()
+                if (check(TokenType.R_BRACE)) {
+                    error("Empty grouped type at line ${start.line}")
+                }
+                do {
+                    elements.add(parseTypeName())
+                    skipNewlines()
+                } while (match(TokenType.COMMA).also { if (it) skipNewlines() })
+                consume(TokenType.R_BRACE, "Expected '}' after grouped type")
+                if (elements.size < 2) {
+                    error("A grouped type needs at least two elements at line ${start.line}")
+                }
+                TypeRef.Tuple(elements)
+            }
             check(TokenType.AT) && isNamedTypeMacroInvocationAhead(current + 1) -> {
                 advance()
                 parseNamedTypeMacroInvocation()
@@ -7277,7 +7314,12 @@ class Parser(
      * stands for, and those lines belong to the block it was written in.
      */
     private fun parseStmts(): List<Stmt> {
-        val first = parseStmt()
+        // A grouped receiver is a source-level fan-out.  Keep this lowering in
+        // the parser, before semantic analysis/IR, so every backend sees
+        // ordinary scalar statements.  In particular
+        // `if i < {a, b}.size then result[ri++] = {a, b}[i]` becomes two
+        // independent `if` statements, preserving the condition/value pairing.
+        val first = expandGroupedBroadcast(parseStmt())
         val before = pendingPrelude.toList()
         pendingPrelude.clear()
         if (pendingStmts.isEmpty()) return before + first
@@ -7286,10 +7328,207 @@ class Parser(
         return before + first + rest
     }
 
+    /** Expand a statement whose expressions contain one or more grouped receivers. */
+    private fun expandGroupedBroadcast(stmt: Stmt): List<Stmt> {
+        val width = groupedWidth(stmt)
+        if (width == 0) return listOf(stmt)
+        // The complete statement is one broadcast unit. This is what keeps a
+        // grouped condition paired with the matching grouped assignment, and
+        // also makes a plain grouped assignment/call fan out naturally.
+        if (width < 2) return listOf(stmt)
+        return (0 until width).map { index -> replaceGrouped(stmt, index, width) }
+    }
+
+    /** Number of values represented by grouped receivers nested in [expr]. */
+    private fun groupedWidth(expr: Expr): Int = when (expr) {
+        is Expr.TupleLit -> if (expr.grouped) maxOf(expr.elements.size, expr.elements.maxOfOrNull(::groupedWidth) ?: 0)
+        else expr.elements.maxOfOrNull(::groupedWidth) ?: 0
+        is Expr.Binary -> maxOf(groupedWidth(expr.left), groupedWidth(expr.right))
+        is Expr.Unary -> groupedWidth(expr.operand)
+        is Expr.IncDec -> groupedWidth(expr.target)
+        is Expr.Call -> maxOf(groupedWidth(expr.receiver ?: Expr.NullLiteral), expr.args.maxOfOrNull(::groupedWidth) ?: 0)
+        is Expr.Grouping -> groupedWidth(expr.expr)
+        is Expr.MapEntryArg -> maxOf(groupedWidth(expr.key), groupedWidth(expr.value))
+        is Expr.Range -> maxOf(groupedWidth(expr.from), groupedWidth(expr.to))
+        is Expr.ArrayLiteral -> expr.elements.maxOfOrNull(::groupedWidth) ?: 0
+        is Expr.SetLiteral -> expr.elements.maxOfOrNull(::groupedWidth) ?: 0
+        is Expr.Index -> maxOf(groupedWidth(expr.target), groupedWidth(expr.index))
+        is Expr.Member -> groupedWidth(expr.target)
+        is Expr.MethodCall -> maxOf(groupedWidth(expr.target), expr.args.maxOfOrNull(::groupedWidth) ?: 0)
+        is Expr.StringTemplate -> expr.parts.filterIsInstance<Expr.StringTemplatePart.Expr>()
+            .maxOfOrNull { groupedWidth(it.expr) } ?: 0
+        is Expr.VariantLit -> expr.elements.maxOfOrNull(::groupedWidth) ?: 0
+        is Expr.TupleAccess -> groupedWidth(expr.target)
+        is Expr.CatchExpr -> maxOf(groupedWidth(expr.expr), groupedWidth(expr.fallback))
+        is Expr.TryPropagate -> groupedWidth(expr.expr)
+        is Expr.IfExpr -> maxOf(groupedWidth(expr.condition), groupedWidth(expr.thenExpr), groupedWidth(expr.elseExpr))
+        is Expr.Seal -> groupedWidth(expr.value)
+        is Expr.NamedArg -> groupedWidth(expr.value)
+        is Expr.NullCoalesce -> maxOf(groupedWidth(expr.left), groupedWidth(expr.right))
+        is Expr.SafeMember -> groupedWidth(expr.target)
+        is Expr.Cast -> groupedWidth(expr.expr)
+        is Expr.IsCheck -> groupedWidth(expr.expr)
+        is Expr.InCheck -> maxOf(groupedWidth(expr.value), groupedWidth(expr.collection))
+        is Expr.MapLit -> expr.entries.maxOfOrNull { maxOf(groupedWidth(it.first), groupedWidth(it.second)) } ?: 0
+        is Expr.Alloc -> groupedWidth(expr.value)
+        is Expr.Deref -> groupedWidth(expr.target)
+        is Expr.Isolated -> groupedWidth(expr.value)
+        is Expr.Await -> groupedWidth(expr.value)
+        is Expr.Spread -> groupedWidth(expr.array)
+        is Expr.MetaInvoke -> expr.args.maxOfOrNull(::groupedWidth) ?: 0
+        is Expr.Slice -> maxOf(
+            groupedWidth(expr.target), groupedWidth(expr.start ?: Expr.NullLiteral),
+            groupedWidth(expr.stop ?: Expr.NullLiteral), groupedWidth(expr.step ?: Expr.NullLiteral),
+        )
+        else -> 0
+    }
+
+    private fun groupedWidth(stmt: Stmt): Int = when (stmt) {
+        is Stmt.VarDecl -> groupedWidth(stmt.initializer)
+        is Stmt.FinDecl -> groupedWidth(stmt.initializer)
+        is Stmt.LetDecl -> groupedWidth(stmt.initializer)
+        is Stmt.InlineFin -> groupedWidth(stmt.initializer)
+        is Stmt.InlineLet -> groupedWidth(stmt.initializer)
+        is Stmt.InlineVar -> groupedWidth(stmt.initializer)
+        is Stmt.InlineAssignment -> groupedWidth(stmt.value)
+        is Stmt.Assignment -> groupedWidth(stmt.value)
+        is Stmt.Return -> stmt.value?.let(::groupedWidth) ?: 0
+        is Stmt.ExprStmt -> groupedWidth(stmt.expr)
+        is Stmt.IndexAssign -> maxOf(groupedWidth(stmt.target), groupedWidth(stmt.index), groupedWidth(stmt.value))
+        is Stmt.MemberAssign -> maxOf(groupedWidth(stmt.target), groupedWidth(stmt.value), stmt.nameExpr?.let(::groupedWidth) ?: 0)
+        is Stmt.DerefAssign -> maxOf(groupedWidth(stmt.target), groupedWidth(stmt.value))
+        is Stmt.Throw -> groupedWidth(stmt.value)
+        is Stmt.Panic -> groupedWidth(stmt.message)
+        is Stmt.Yield -> groupedWidth(stmt.value)
+        is Stmt.Scope -> stmt.body.maxOfOrNull(::groupedWidth) ?: 0
+        is Stmt.If -> maxOf(groupedWidth(stmt.condition), stmt.thenBranch.maxOfOrNull(::groupedWidth) ?: 0, stmt.elseBranch?.maxOfOrNull(::groupedWidth) ?: 0)
+        is Stmt.While -> maxOf(groupedWidth(stmt.condition), stmt.body.maxOfOrNull(::groupedWidth) ?: 0)
+        is Stmt.For -> maxOf(groupedWidth(stmt.iterable), stmt.step?.let(::groupedWidth) ?: 0, stmt.body.maxOfOrNull(::groupedWidth) ?: 0)
+        is Stmt.Loop -> maxOf(stmt.iterable?.let(::groupedWidth) ?: 0, stmt.everySeconds?.let(::groupedWidth) ?: 0, stmt.body.maxOfOrNull(::groupedWidth) ?: 0)
+        is Stmt.When -> maxOf(groupedWidth(stmt.scrutinee), stmt.branches.maxOfOrNull { b -> maxOf(b.patterns.maxOfOrNull(::groupedWidth) ?: 0, b.body.maxOfOrNull(::groupedWidth) ?: 0) } ?: 0, stmt.elseBranch?.maxOfOrNull(::groupedWidth) ?: 0)
+        is Stmt.Assert -> maxOf(groupedWidth(stmt.condition), groupedWidth(stmt.message))
+        is Stmt.Trace -> maxOf(groupedWidth(stmt.message), stmt.level?.let(::groupedWidth) ?: 0)
+        is Stmt.InlineAssert -> maxOf(groupedWidth(stmt.condition), groupedWidth(stmt.message))
+        is Stmt.InlineTrace -> maxOf(groupedWidth(stmt.message), stmt.level?.let(::groupedWidth) ?: 0)
+        is Stmt.Try -> maxOf(stmt.body.maxOfOrNull(::groupedWidth) ?: 0, stmt.catchBody?.maxOfOrNull(::groupedWidth) ?: 0)
+        is Stmt.Defer -> stmt.body.maxOfOrNull(::groupedWidth) ?: 0
+        is Stmt.RemDecl -> groupedWidth(stmt.initializer)
+        is Stmt.Effect -> maxOf(stmt.body.maxOfOrNull(::groupedWidth) ?: 0, stmt.dependencies?.maxOfOrNull(::groupedWidth) ?: 0, stmt.condition?.let(::groupedWidth) ?: 0)
+        is Stmt.UsingContext -> maxOf(stmt.values.maxOfOrNull(::groupedWidth) ?: 0, stmt.body.maxOfOrNull(::groupedWidth) ?: 0)
+        else -> 0
+    }
+
+    /** Select one lane of every grouped receiver in [expr]. */
+    private fun replaceGrouped(expr: Expr, index: Int, width: Int): Expr = when (expr) {
+        is Expr.TupleLit -> if (expr.grouped) {
+            if (expr.elements.size != width) error("grouped receiver operations must have the same number of elements (found ${expr.elements.size}, expected $width) at line ${expr.line}")
+            replaceGrouped(expr.elements[index], index, width)
+        } else expr.copy(elements = expr.elements.map { replaceGrouped(it, index, width) })
+        is Expr.Binary -> expr.copy(left = replaceGrouped(expr.left, index, width), right = replaceGrouped(expr.right, index, width))
+        is Expr.Unary -> expr.copy(operand = replaceGrouped(expr.operand, index, width))
+        is Expr.IncDec -> expr.copy(target = replaceGrouped(expr.target, index, width))
+        is Expr.Call -> expr.copy(
+            args = expr.args.map { replaceGrouped(it, index, width) },
+            receiver = expr.receiver?.let { replaceGrouped(it, index, width) },
+        )
+        is Expr.Grouping -> expr.copy(expr = replaceGrouped(expr.expr, index, width))
+        is Expr.MapEntryArg -> expr.copy(key = replaceGrouped(expr.key, index, width), value = replaceGrouped(expr.value, index, width))
+        is Expr.Range -> expr.copy(from = replaceGrouped(expr.from, index, width), to = replaceGrouped(expr.to, index, width))
+        is Expr.ArrayLiteral -> expr.copy(elements = expr.elements.map { replaceGrouped(it, index, width) })
+        is Expr.SetLiteral -> expr.copy(elements = expr.elements.map { replaceGrouped(it, index, width) })
+        is Expr.Index -> expr.copy(target = replaceGrouped(expr.target, index, width), index = replaceGrouped(expr.index, index, width))
+        is Expr.Member -> expr.copy(target = replaceGrouped(expr.target, index, width), nameExpr = expr.nameExpr?.let { replaceGrouped(it, index, width) })
+        is Expr.MethodCall -> expr.copy(target = replaceGrouped(expr.target, index, width), args = expr.args.map { replaceGrouped(it, index, width) })
+        is Expr.StringTemplate -> expr.copy(parts = expr.parts.map {
+            if (it is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(replaceGrouped(it.expr, index, width)) else it
+        })
+        is Expr.VariantLit -> expr.copy(elements = expr.elements.map { replaceGrouped(it, index, width) })
+        is Expr.TupleAccess -> expr.copy(target = replaceGrouped(expr.target, index, width))
+        is Expr.CatchExpr -> expr.copy(expr = replaceGrouped(expr.expr, index, width), fallback = replaceGrouped(expr.fallback, index, width))
+        is Expr.TryPropagate -> expr.copy(expr = replaceGrouped(expr.expr, index, width))
+        is Expr.IfExpr -> expr.copy(
+            condition = replaceGrouped(expr.condition, index, width),
+            thenExpr = replaceGrouped(expr.thenExpr, index, width), elseExpr = replaceGrouped(expr.elseExpr, index, width),
+        )
+        is Expr.Seal -> expr.copy(value = replaceGrouped(expr.value, index, width))
+        is Expr.NamedArg -> expr.copy(value = replaceGrouped(expr.value, index, width))
+        is Expr.NullCoalesce -> expr.copy(left = replaceGrouped(expr.left, index, width), right = replaceGrouped(expr.right, index, width))
+        is Expr.SafeMember -> expr.copy(target = replaceGrouped(expr.target, index, width))
+        is Expr.Cast -> expr.copy(expr = replaceGrouped(expr.expr, index, width))
+        is Expr.IsCheck -> expr.copy(expr = replaceGrouped(expr.expr, index, width))
+        is Expr.InCheck -> expr.copy(value = replaceGrouped(expr.value, index, width), collection = replaceGrouped(expr.collection, index, width))
+        is Expr.MapLit -> expr.copy(entries = expr.entries.map { replaceGrouped(it.first, index, width) to replaceGrouped(it.second, index, width) })
+        is Expr.Alloc -> expr.copy(value = replaceGrouped(expr.value, index, width))
+        is Expr.Deref -> expr.copy(target = replaceGrouped(expr.target, index, width))
+        is Expr.Isolated -> expr.copy(value = replaceGrouped(expr.value, index, width))
+        is Expr.Await -> expr.copy(value = replaceGrouped(expr.value, index, width))
+        is Expr.Spread -> expr.copy(array = replaceGrouped(expr.array, index, width))
+        is Expr.MetaInvoke -> expr.copy(args = expr.args.map { replaceGrouped(it, index, width) })
+        is Expr.Slice -> expr.copy(
+            target = replaceGrouped(expr.target, index, width),
+            start = expr.start?.let { replaceGrouped(it, index, width) }, stop = expr.stop?.let { replaceGrouped(it, index, width) },
+            step = expr.step?.let { replaceGrouped(it, index, width) },
+        )
+        else -> expr
+    }
+
+    /** Select one lane in every expression-bearing part of [stmt]. */
+    private fun replaceGrouped(stmt: Stmt, index: Int, width: Int): Stmt = when (stmt) {
+        is Stmt.VarDecl -> stmt.copy(initializer = replaceGrouped(stmt.initializer, index, width))
+        is Stmt.FinDecl -> stmt.copy(initializer = replaceGrouped(stmt.initializer, index, width))
+        is Stmt.LetDecl -> stmt.copy(initializer = replaceGrouped(stmt.initializer, index, width))
+        is Stmt.InlineFin -> stmt.copy(initializer = replaceGrouped(stmt.initializer, index, width))
+        is Stmt.InlineLet -> stmt.copy(initializer = replaceGrouped(stmt.initializer, index, width))
+        is Stmt.InlineVar -> stmt.copy(initializer = replaceGrouped(stmt.initializer, index, width))
+        is Stmt.InlineAssignment -> stmt.copy(value = replaceGrouped(stmt.value, index, width))
+        is Stmt.Assignment -> stmt.copy(value = replaceGrouped(stmt.value, index, width))
+        is Stmt.Return -> stmt.copy(value = stmt.value?.let { replaceGrouped(it, index, width) })
+        is Stmt.ExprStmt -> stmt.copy(expr = replaceGrouped(stmt.expr, index, width))
+        is Stmt.IndexAssign -> stmt.copy(target = replaceGrouped(stmt.target, index, width), index = replaceGrouped(stmt.index, index, width), value = replaceGrouped(stmt.value, index, width))
+        is Stmt.MemberAssign -> stmt.copy(target = replaceGrouped(stmt.target, index, width), value = replaceGrouped(stmt.value, index, width), nameExpr = stmt.nameExpr?.let { replaceGrouped(it, index, width) })
+        is Stmt.DerefAssign -> stmt.copy(target = replaceGrouped(stmt.target, index, width), value = replaceGrouped(stmt.value, index, width))
+        is Stmt.Throw -> stmt.copy(value = replaceGrouped(stmt.value, index, width))
+        is Stmt.Panic -> stmt.copy(message = replaceGrouped(stmt.message, index, width))
+        is Stmt.Yield -> stmt.copy(value = replaceGrouped(stmt.value, index, width))
+        is Stmt.Scope -> stmt.copy(body = stmt.body.map { replaceGrouped(it, index, width) })
+        is Stmt.If -> stmt.copy(
+            condition = replaceGrouped(stmt.condition, index, width),
+            // A synthetic single-statement wrapper can hold a fan-out assignment;
+            // flatten it here so the resulting IR has scalar statements directly
+            // under each branch rather than an avoidable nested scope.
+            thenBranch = replaceGroupedBranch(stmt.thenBranch, index, width),
+            elseBranch = stmt.elseBranch?.let { replaceGroupedBranch(it, index, width) },
+        )
+        is Stmt.While -> stmt.copy(condition = replaceGrouped(stmt.condition, index, width), body = stmt.body.map { replaceGrouped(it, index, width) })
+        is Stmt.For -> stmt.copy(iterable = replaceGrouped(stmt.iterable, index, width), step = stmt.step?.let { replaceGrouped(it, index, width) }, body = stmt.body.map { replaceGrouped(it, index, width) })
+        is Stmt.Loop -> stmt.copy(iterable = stmt.iterable?.let { replaceGrouped(it, index, width) }, everySeconds = stmt.everySeconds?.let { replaceGrouped(it, index, width) }, body = stmt.body.map { replaceGrouped(it, index, width) })
+        is Stmt.When -> stmt.copy(scrutinee = replaceGrouped(stmt.scrutinee, index, width), branches = stmt.branches.map { it.copy(patterns = it.patterns.map { p -> replaceGrouped(p, index, width) }, body = it.body.map { b -> replaceGrouped(b, index, width) }) }, elseBranch = stmt.elseBranch?.map { replaceGrouped(it, index, width) })
+        is Stmt.Assert -> stmt.copy(condition = replaceGrouped(stmt.condition, index, width), message = replaceGrouped(stmt.message, index, width))
+        is Stmt.Trace -> stmt.copy(message = replaceGrouped(stmt.message, index, width))
+        is Stmt.InlineAssert -> stmt.copy(condition = replaceGrouped(stmt.condition, index, width), message = replaceGrouped(stmt.message, index, width))
+        is Stmt.InlineTrace -> stmt.copy(message = replaceGrouped(stmt.message, index, width), level = stmt.level?.let { replaceGrouped(it, index, width) })
+        is Stmt.Try -> stmt.copy(body = stmt.body.map { replaceGrouped(it, index, width) }, catchBody = stmt.catchBody?.map { replaceGrouped(it, index, width) })
+        is Stmt.Defer -> stmt.copy(body = stmt.body.map { replaceGrouped(it, index, width) })
+        is Stmt.RemDecl -> stmt.copy(initializer = replaceGrouped(stmt.initializer, index, width))
+        is Stmt.Effect -> stmt.copy(body = stmt.body.map { replaceGrouped(it, index, width) }, dependencies = stmt.dependencies?.map { replaceGrouped(it, index, width) }, condition = stmt.condition?.let { replaceGrouped(it, index, width) })
+        is Stmt.UsingContext -> stmt.copy(values = stmt.values.map { replaceGrouped(it, index, width) }, body = stmt.body.map { replaceGrouped(it, index, width) })
+        else -> stmt
+    }
+
+    private fun replaceGroupedBranch(branch: List<Stmt>, index: Int, width: Int): List<Stmt> =
+        branch.flatMap { replaced ->
+            val value = replaceGrouped(replaced, index, width)
+            if (value is Stmt.Scope && !value.shared) value.body else listOf(value)
+        }
+
     /** One statement, where the grammar has room for exactly one. */
     private fun parseSingleStmt(what: String): Stmt {
         val line = peek().line
-        val stmt = parseStmt()
+        val parsed = parseStmt()
+        // Keep a `then` body as one AST statement. The controlling body parser
+        // expands it at the correct level (a loop gets several body statements;
+        // an if expands its complete condition/branches as a unit).
+        val stmt = parsed
         if (pendingStmts.isNotEmpty()) {
             pendingStmts.clear()
             error("a grouped binding declares several names, and $what has room for one, at line $line")
@@ -7300,6 +7539,35 @@ class Parser(
         val before = pendingPrelude.toList()
         pendingPrelude.clear()
         return Stmt.Scope(before + stmt, stmt.line, stmt.column)
+    }
+
+    /** A body written with `then` contains exactly one statement. */
+    private fun parseThenBody(what: String): List<Stmt> {
+        consume(TokenType.THEN, "Expected 'then' after $what header")
+        skipNewlines()
+        return listOf(parseSingleStmt("$what then body"))
+    }
+
+    /** A control-flow body: either the traditional block or one `then` statement. */
+    private fun parseThenOrBracedBody(what: String): List<Stmt> {
+        if (check(TokenType.THEN)) {
+            val body = parseThenBody(what)
+            return if (what.contains("if")) body else body.flatMap(::expandGroupedBroadcast)
+        }
+        consume(TokenType.L_BRACE, "Expected '{' or 'then' after $what header")
+        skipNewlines()
+        val body = parseBlock()
+        consume(TokenType.R_BRACE, "Expected '}' after $what body")
+        return if (what.contains("if")) body else body.flatMap(::expandGroupedBroadcast)
+    }
+
+    /** The body after `else`, accepting both `else { … }` and `else stmt`. */
+    private fun parseElseBody(what: String): List<Stmt> {
+        if (check(TokenType.IF)) return listOf(parseIf())
+        if (check(TokenType.L_BRACE)) return parseThenOrBracedBody("if else")
+        if (check(TokenType.THEN)) return parseThenOrBracedBody("if else")
+        skipNewlines()
+        return listOf(parseSingleStmt("$what else body"))
     }
 
     private fun parseStmt(): Stmt {
@@ -7414,10 +7682,7 @@ class Parser(
         allowTrailingLambda = false
         val condition = parseExpr()
         allowTrailingLambda = savedTrailing
-        consume(TokenType.L_BRACE, "Expected '{' after while condition")
-        skipNewlines()
-        val body = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}' after while body")
+        val body = parseThenOrBracedBody("while condition")
         skipNewlines()
         val elseBranch = parseLoopElse()
         consumeNewline()
@@ -7431,11 +7696,7 @@ class Parser(
      */
     private fun parseLoopElse(): List<Stmt>? {
         if (!match(TokenType.ELSE)) return null
-        consume(TokenType.L_BRACE, "Expected '{' after 'else'")
-        skipNewlines()
-        val body = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}' after else body")
-        return body
+        return parseElseBody("loop")
     }
 
     /** Counter for unique hidden flag variables generated by [withLoopElse]. */
@@ -7472,7 +7733,7 @@ class Parser(
         // A labeled `break:outer` targets an enclosing loop and is left untouched.
         is Stmt.Break -> if (stmt.label != null) stmt else Stmt.Scope(listOf(
             Stmt.Assignment(flag, Expr.BoolLiteral(false, stmt.line, stmt.column, stmt.length), stmt.line, stmt.column),
-            Stmt.Break()
+            Stmt.Break(value = stmt.value, line = stmt.line, column = stmt.column, length = stmt.length),
         ), stmt.line, stmt.column)
         // Nested loops own their own breaks - stop descending.
         is Stmt.While, is Stmt.For, is Stmt.Loop -> stmt
@@ -7510,7 +7771,13 @@ class Parser(
         stmts.map { retargetBreak(it, label) }
 
     private fun retargetBreak(stmt: Stmt, label: String): Stmt = when (stmt) {
-        is Stmt.Break -> if (stmt.label != null) stmt else Stmt.Break(label, stmt.line, stmt.column, stmt.length)
+        is Stmt.Break -> if (stmt.label != null) stmt else Stmt.Break(
+            label,
+            stmt.line,
+            stmt.column,
+            stmt.length,
+            stmt.value,
+        )
         is Stmt.While, is Stmt.For, is Stmt.Loop -> stmt
         is Stmt.If -> Stmt.If(
             stmt.condition,
@@ -7556,10 +7823,17 @@ class Parser(
             // Optional step, trailing the iterable it applies to: `for x in 0..<6 by 2`.
             it to (if (match(TokenType.BY)) parseExpr() else null)
         }
-        consume(TokenType.L_BRACE, "Expected '{' after for iterable")
-        skipNewlines()
-        val body = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}' after for body")
+        // `with index` exposes the zero-based ordinal of the iteration while
+        // the loop binding still holds the range/collection value. It belongs
+        // to the loop header, so consume it before the body delimiter rather
+        // than letting it become part of the step expression.
+        val indexName = if (match(TokenType.WITH)) {
+            consumeIdentifierLike("Expected index binding after 'with'")
+        } else null
+        if (indexName == name) {
+            error("the loop value and its 'with' index binding must have different names at line ${start.line}")
+        }
+        val body = parseThenOrBracedBody("for iterable")
         skipNewlines()
         val elseBranch = if (allowElse) parseLoopElse() else null
         if (allowElse) consumeNewline()
@@ -7573,6 +7847,7 @@ class Parser(
             reverse = reverse,
             label = label,
             declaredType = declaredType,
+            indexName = indexName,
         )
         return if (elseBranch != null) withLoopElse(loop, elseBranch, start.line, start.column) else loop
     }
@@ -7624,7 +7899,7 @@ class Parser(
         // what it is doing, and leaves `loop` to mean one thing.
         val savedTrailing = allowTrailingLambda
         allowTrailingLambda = false
-        if (!check(TokenType.L_BRACE) && !check(TokenType.BY)) {
+        if (!check(TokenType.L_BRACE) && !check(TokenType.THEN) && !check(TokenType.BY)) {
             error(
                 "'loop <iterable>' was removed at line ${start.line}: write " +
                     "'for row in <iterable> { … }' to walk something, or 'loop { … }' to repeat",
@@ -7635,10 +7910,7 @@ class Parser(
         val everySeconds: Expr? = if (match(TokenType.BY)) parseExpr() else null
         val skipIteratorReset = false
         allowTrailingLambda = savedTrailing
-        consume(TokenType.L_BRACE, "Expected '{' after 'loop'")
-        skipNewlines()
-        val body = parseBlock().toMutableList()
-        consume(TokenType.R_BRACE, "Expected '}' after loop body")
+        val body = parseThenOrBracedBody("loop").toMutableList()
         // do-while: `loop { body } while cond` - runs the body first, then repeats
         // while [cond] holds. Desugared to `loop { body; if (!cond) { break } }`.
         if (iterable == null && match(TokenType.WHILE)) {
@@ -7706,8 +7978,12 @@ class Parser(
     private fun parseBreak(): Stmt {
         val start = consume(TokenType.BREAK, "Expected 'break'")
         val label = parseOptionalLabel("break")
+        val value = if (
+            !check(TokenType.NEWLINE) && !check(TokenType.SEMICOLON) &&
+            !check(TokenType.R_BRACE) && !check(TokenType.ELSE) && !isAtEnd()
+        ) parseExpr() else null
         consumeNewline()
-        return Stmt.Break(label, start.line, start.column, start.lexeme.length)
+        return Stmt.Break(label, start.line, start.column, start.lexeme.length, value)
     }
 
     private fun parseContinue(): Stmt {
@@ -9384,16 +9660,9 @@ class Parser(
         consume(TokenType.DEEPINLINE, "Expected 'deepinline'")
         consume(TokenType.IF, "Expected 'if' after 'deepinline'")
         val condition = withoutTrailingLambda { parseExpr() }
-        consume(TokenType.L_BRACE, "Expected '{' after deepinline if condition")
-        skipNewlines()
-        val thenBranch = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}'")
+        val thenBranch = parseThenOrBracedBody("deepinline if condition")
         val elseBranch = if (match(TokenType.ELSE)) {
-            consume(TokenType.L_BRACE, "Expected '{' after else")
-            skipNewlines()
-            val branch = parseBlock()
-            consume(TokenType.R_BRACE, "Expected '}'")
-            branch
+            parseElseBody("deepinline if")
         } else null
         consumeNewline()
         return Stmt.DeepInlineIf(condition, thenBranch, elseBranch, start.line, start.column)
@@ -9475,16 +9744,8 @@ class Parser(
         val condition = parseExpr()
         allowTrailingLambda = savedTrailing
         // The `{ message }` block is optional - a bare `assert cond` uses an empty message.
-        val message = if (check(TokenType.L_BRACE)) {
-            advance()
-            skipNewlines()
-            val msg = parseExpr()
-            skipNewlines()
-            consume(TokenType.R_BRACE, "Expected '}' after assert message")
-            msg
-        } else {
-            Expr.StringLiteral("", start.line, start.column, 0)
-        }
+        consume(TokenType.PANIC, "Expected 'panic' after assert condition")
+        val message = parseExpr()
         consumeNewline()
         return Stmt.Assert(condition, message, start.line, start.column)
     }
@@ -9515,11 +9776,8 @@ class Parser(
         } finally {
             allowTrailingLambda = savedTrailing
         }
-        consume(TokenType.L_BRACE, "Expected '{' after inline assert condition")
-        skipNewlines()
+        consume(TokenType.PANIC, "Expected 'panic' after inline assert condition")
         val message = parseExpr()
-        skipNewlines()
-        consume(TokenType.R_BRACE, "Expected '}' after inline assert message")
         consumeNewline()
         return Stmt.InlineAssert(condition, message, start.line, start.column)
     }
@@ -9609,21 +9867,10 @@ class Parser(
         allowTrailingLambda = false
         val condition = parseExpr()
         allowTrailingLambda = savedTrailing
-        consume(TokenType.L_BRACE, "Expected '{' after if condition")
-        skipNewlines()
-        val thenBranch = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}'")
+        val thenBranch = parseThenOrBracedBody("if condition")
         skipNewlines()  // tolerate newlines between } and else
         val elseBranch = if (match(TokenType.ELSE)) {
-            if (check(TokenType.IF)) {
-                listOf(parseIf())
-            } else {
-                consume(TokenType.L_BRACE, "Expected '{' after else")
-                skipNewlines()
-                val branch = parseBlock()
-                consume(TokenType.R_BRACE, "Expected '}'")
-                branch
-            }
+            parseElseBody("if")
         } else null
         consumeNewline()
         return Stmt.If(condition, thenBranch, elseBranch, start.line, start.column)
@@ -9634,16 +9881,9 @@ class Parser(
         consume(TokenType.INLINE, "Expected 'inline'")
         consume(TokenType.IF, "Expected 'if' after 'inline'")
         val condition = withoutTrailingLambda { parseExpr() }
-        consume(TokenType.L_BRACE, "Expected '{' after inline if condition")
-        skipNewlines()
-        val thenBranch = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}'")
+        val thenBranch = parseThenOrBracedBody("inline if condition")
         val elseBranch = if (match(TokenType.ELSE)) {
-            consume(TokenType.L_BRACE, "Expected '{' after else")
-            skipNewlines()
-            val branch = parseBlock()
-            consume(TokenType.R_BRACE, "Expected '}'")
-            branch
+            parseElseBody("inline if")
         } else null
         consumeNewline()
         return Stmt.InlineIf(condition, thenBranch, elseBranch, start.line, start.column)
@@ -9757,7 +9997,22 @@ class Parser(
                         "${names[stated.first()]} already names one",
                 )
             }
-            types.indices.forEach { types[it] = shared }
+            // A tuple type annotates the fan-out positionally:
+            // `fin {base, name}: {Path, String} = …` gives `base: Path` and
+            // `name: String`.  A non-tuple remains the shared type spelling
+            // (`fin {x, y}: Array<T> = …`).
+            val tuple = (shared as TypeAnnotation.Explicit).ref as? TypeRef.Tuple
+            if (tuple != null) {
+                if (tuple.elements.size != names.size) {
+                    error(
+                        "a grouped tuple type must have one element per name at line ${start.line}: " +
+                            "${names.size} named, ${tuple.elements.size} typed",
+                    )
+                }
+                types.indices.forEach { types[it] = TypeAnnotation.Explicit(tuple.elements[it]) }
+            } else {
+                types.indices.forEach { types[it] = shared }
+            }
         }
         if (names.isEmpty()) {
             error("'$keyword {}' binds nothing at line ${start.line}; name what it binds")
@@ -9941,6 +10196,17 @@ class Parser(
             return parseConditionalGroupBindingValues(names, start)
         }
 
+        // `mergeSort{(left), (right)}` is a grouped call: each parenthesized
+        // argument group is one invocation, so the fan-out declarations receive
+        // one result from each call.  It is deliberately recognized here rather
+        // than as a general trailing-lambda form; braces remain grouping syntax
+        // and ordinary calls continue to use parentheses.
+        parseGroupedCallValues(names, start)?.let { return it }
+
+        // `self.{parent, stem}` is the member-group counterpart.  It evaluates
+        // one receiver and projects the named members positionally.
+        parseGroupedMemberValues(names, start)?.let { return it }
+
         // `{v1, v2, v3}` - one source expression per name, positionally.
         if (check(TokenType.L_BRACE)) {
             advance()
@@ -9960,6 +10226,78 @@ class Parser(
         // would have written it.
         val value = parseExpr()
         return GroupBindingValues(names.map { value })
+    }
+
+    /** Parses `callee{(arg1, ...), (arg1, ...)}` for grouped fan-out bindings. */
+    private fun parseGroupedCallValues(names: List<String>, start: Token): GroupBindingValues? {
+        if (!check(TokenType.IDENTIFIER)) return null
+        val saved = current
+        val calleeToken = advance()
+        val typeArgs = parseGenericTypeArgsIfPresent()
+        if (!match(TokenType.L_BRACE) || !check(TokenType.L_PAREN)) {
+            current = saved
+            return null
+        }
+        val calls = mutableListOf<Expr>()
+        skipNewlines()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            consume(TokenType.L_PAREN, "Expected '(' for each grouped call to '${calleeToken.lexeme}'")
+            val args = parseCallArgumentList()
+            consume(TokenType.R_PAREN, "Expected ')' after grouped call arguments")
+            calls += Expr.Call(
+                calleeToken.lexeme,
+                args,
+                calleeToken.line,
+                calleeToken.column,
+                calleeToken.lexeme.length,
+                typeArgs = typeArgs,
+            )
+            skipNewlines()
+            if (!match(TokenType.COMMA)) break
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after grouped calls")
+        if (calls.size != names.size) {
+            error(
+                "a grouped call needs one invocation per name at line ${start.line}: " +
+                    "${names.size} named (${names.joinToString(", ")}), ${calls.size} given",
+            )
+        }
+        return GroupBindingValues(calls)
+    }
+
+    /** Parses `receiver.{member, member}` for grouped fan-out bindings. */
+    private fun parseGroupedMemberValues(names: List<String>, start: Token): GroupBindingValues? {
+        if (!check(TokenType.IDENTIFIER)) return null
+        val saved = current
+        val receiverToken = advance()
+        if (!match(TokenType.DOT) || !match(TokenType.L_BRACE)) {
+            current = saved
+            return null
+        }
+        val receiver = Expr.Identifier(
+            receiverToken.lexeme,
+            receiverToken.line,
+            receiverToken.column,
+            receiverToken.lexeme.length,
+        )
+        val values = mutableListOf<Expr>()
+        skipNewlines()
+        while (!check(TokenType.R_BRACE) && !isAtEnd()) {
+            val member = consumeIdentifierLike("Expected member name inside a grouped member access")
+            values += Expr.Member(receiver, member, receiverToken.line, receiverToken.column, receiverToken.lexeme.length + member.length + 1)
+            skipNewlines()
+            if (!match(TokenType.COMMA)) break
+            skipNewlines()
+        }
+        consume(TokenType.R_BRACE, "Expected '}' after grouped member access")
+        if (values.size != names.size) {
+            error(
+                "a grouped member access needs one member per name at line ${start.line}: " +
+                    "${names.size} named (${names.joinToString(", ")}), ${values.size} given",
+            )
+        }
+        return GroupBindingValues(values)
     }
 
     private fun parseConditionalGroupBindingValues(names: List<String>, start: Token): GroupBindingValues {
@@ -10193,6 +10531,17 @@ class Parser(
      * amount of lookahead at the first token settles it.
      */
     private fun parseReturnBranchBody(what: String): List<Stmt> {
+        if (match(TokenType.THEN)) {
+            skipNewlines()
+            val value = parseReturnedValue(peek())
+            consumeNewline()
+            return listOf(value)
+        }
+        if (what == "else" && !check(TokenType.L_BRACE)) {
+            val value = parseReturnedValue(peek())
+            consumeNewline()
+            return listOf(value)
+        }
         consume(TokenType.L_BRACE, "Expected '{' after $what")
         skipNewlines()
         val at = peek()
@@ -10480,6 +10829,46 @@ class Parser(
             pendingMemberGroup = null
             return parseGroupedAssignment(expr, names, start)
         }
+        // `value.{enqueue({1, 2}), clear(), enqueue(8)}` is a compact
+        // sequential statement group.  Lower it here, before semantic analysis,
+        // so every backend observes ordinary statements and nested grouped call
+        // arguments are expanded while their evaluation order is still explicit.
+        if (expr is Expr.TupleLit && expr.sequence) {
+            consumeNewline()
+            val receiver = expr.sequenceReceiver
+            val receiverName = if (receiver != null && receiver !is Expr.Identifier) {
+                "__group_receiver_${groupValueCounter++}"
+            } else null
+            val loweredReceiver = receiverName?.let { Expr.Identifier(it, expr.line, expr.column, it.length) }
+            val operations = expr.elements.map { operation ->
+                if (receiver != null && loweredReceiver != null) {
+                    replaceSequenceReceiver(operation, receiver, loweredReceiver)
+                } else operation
+            }
+            val statements = operations.flatMap { operation ->
+                expandSequenceOperation(operation).map { item ->
+                    Stmt.ExprStmt(item, item.line, item.column, item.length)
+                }
+            }
+            val prefix = if (receiver != null && receiverName != null) {
+                listOf(Stmt.LetDecl(receiverName, TypeAnnotation.Inferred, receiver, expr.line, expr.column, expr.length))
+            } else emptyList()
+            return Stmt.Scope(prefix + statements, expr.line, expr.column, expr.length)
+        }
+        // Preserve the long-standing statement forms such as `arr[i]++` and
+        // `self.count--`. Their value is discarded, so they can remain the
+        // ordinary assignment desugaring; expression-position increments use
+        // the dedicated node below to distinguish prefix from postfix value.
+        if (expr is Expr.IncDec && expr.target !is Expr.Identifier) {
+            consumeNewline()
+            val op = if (expr.op == TokenType.PLUS_PLUS) TokenType.PLUS else TokenType.MINUS
+            return buildAssignment(
+                expr.target,
+                Expr.Binary(expr.target, op, Expr.IntLiteral(1, start.line, start.column), start.line, start.column),
+                start.line,
+                start.column,
+            )
+        }
         val opTok = peek()
         return when (opTok.type) {
             TokenType.EQUAL -> {
@@ -10569,6 +10958,40 @@ class Parser(
                     }
                 }
             }
+        }
+    }
+
+    /** Expand a call whose argument is a grouped value, preserving source order. */
+    private fun expandSequenceOperation(expr: Expr): List<Expr> = when (expr) {
+        is Expr.TupleLit -> if (expr.sequence) expr.elements.flatMap(::expandSequenceOperation) else listOf(expr)
+        is Expr.Call -> expandCallArguments(expr) { args -> expr.copy(args = args) }
+        is Expr.MethodCall -> expandCallArguments(expr) { args -> expr.copy(args = args) }
+        else -> listOf(expr)
+    }
+
+    private fun replaceSequenceReceiver(expr: Expr, from: Expr, to: Expr): Expr = when (expr) {
+        is Expr.MethodCall -> expr.copy(target = if (expr.target == from) to else replaceSequenceReceiver(expr.target, from, to))
+        is Expr.Call -> expr.copy(receiver = expr.receiver?.let { if (it == from) to else replaceSequenceReceiver(it, from, to) })
+        is Expr.TupleLit -> expr.copy(elements = expr.elements.map { replaceSequenceReceiver(it, from, to) })
+        else -> expr
+    }
+
+    private fun expandCallArguments(expr: Expr, rebuild: (List<Expr>) -> Expr): List<Expr> {
+        val args = when (expr) {
+            is Expr.Call -> expr.args
+            is Expr.MethodCall -> expr.args
+            else -> return listOf(expr)
+        }
+        val grouped = args.filterIsInstance<Expr.TupleLit>().filter { it.grouped && !it.sequence }
+        if (grouped.isEmpty()) return listOf(expr)
+        val width = grouped.maxOf { it.elements.size }
+        if (grouped.any { it.elements.size != width }) {
+            error("grouped call arguments must have the same number of values at line ${expr.line}")
+        }
+        return (0 until width).map { index ->
+            rebuild(args.map { arg ->
+                if (arg is Expr.TupleLit && arg.grouped && !arg.sequence) arg.elements[index] else arg
+            })
         }
     }
 
@@ -11352,6 +11775,11 @@ class Parser(
             consume(TokenType.R_BRACKET, "Expected ']' after set elements")
             return Expr.SetLiteral(elements, at.line, at.column, at.lexeme.length)
         }
+        if (check(TokenType.PLUS_PLUS) || check(TokenType.MINUS_MINUS)) {
+            val op = advance()
+            val target = parseUnary()
+            return Expr.IncDec(target, op.type, prefix = true, line = op.line, column = op.column, length = op.lexeme.length)
+        }
         if (check(TokenType.BANG) || check(TokenType.MINUS) || check(TokenType.TILDE)) {
             val op = advance()
             val operand = parseUnary()
@@ -11401,6 +11829,10 @@ class Parser(
                 }
             }
             when {
+                check(TokenType.PLUS_PLUS) || check(TokenType.MINUS_MINUS) -> {
+                    val op = advance()
+                    expr = Expr.IncDec(expr, op.type, prefix = false, line = op.line, column = op.column, length = op.lexeme.length)
+                }
                 // Call-site borrow markers, in either spelling: `x.&` / `x.!` (the
                 // ownership model's) and the bare `x&` / `x!`. The bare form is only
                 // a borrow when a delimiter ends the expression, so `a & b` stays
@@ -11423,6 +11855,45 @@ class Parser(
                 // The receiver is handed back here and the statement parser builds
                 // the assignments from it and the names collected on the side.
                 check(TokenType.DOT) && peekNext()?.type == TokenType.L_BRACE -> {
+                    // A call-bearing brace group is the sequencing form:
+                    // `value.{enqueue(1), clear()}`.  Member-name groups remain
+                    // available for fan-out assignment (`self.{x, y} = …`).
+                    if (isOperationGroupAhead()) {
+                        val dot = advance()
+                        advance() // '{'
+                        skipNewlines()
+                        val operations = mutableListOf<Expr>()
+                        if (check(TokenType.R_BRACE)) {
+                            error("an operation group must contain at least one call at line ${dot.line}")
+                        }
+                        while (true) {
+                            val operation = parseExpr()
+                            operations += attachOperationReceiver(expr, operation)
+                            // Commas are optional between entries separated by
+                            // a newline, matching the rest of Azora's multiline
+                            // argument/group grammar.
+                            val hadNewline = check(TokenType.NEWLINE)
+                            if (hadNewline) skipNewlines()
+                            if (match(TokenType.COMMA)) {
+                                skipNewlines()
+                                if (check(TokenType.R_BRACE)) break
+                                continue
+                            }
+                            if (hadNewline && !check(TokenType.R_BRACE)) continue
+                            break
+                        }
+                        consume(TokenType.R_BRACE, "Expected '}' after operation group")
+                        expr = Expr.TupleLit(
+                            operations,
+                            expr.line,
+                            expr.column,
+                            dot.lexeme.length,
+                            grouped = true,
+                            sequence = true,
+                            sequenceReceiver = expr,
+                        )
+                        continue
+                    }
                     if (!allowMemberGroup) {
                         error(
                             "'.{…}' names an assignment target, not a value, " +
@@ -11436,6 +11907,19 @@ class Parser(
                 }
                 check(TokenType.DOT) -> {
                     val dot = advance()
+                    if (expr is Expr.TupleLit && expr.grouped) {
+                        val name = consumeMemberName("Expected member name after grouped receiver '.'")
+                        expr = Expr.TupleLit(
+                            expr.elements.map { target ->
+                                Expr.Member(target, name, target.line, target.column, dot.lexeme.length + name.length)
+                            },
+                            expr.line,
+                            expr.column,
+                            expr.length,
+                            grouped = true,
+                        )
+                        continue
+                    }
                     // `p.*` reads through a const pointer, `p.^` through a mutable
                     // one. The sigil matches the pointer type it came from, so the
                     // read says which kind of pointer it went through.
@@ -11519,7 +12003,19 @@ class Parser(
                             expr = Expr.Slice(expr, first, stop, step, expr.line, expr.column)
                         } else {
                             consume(TokenType.R_BRACKET, "Expected ']' after index")
-                            expr = Expr.Index(expr, first, expr.line, expr.column)
+                            expr = if (expr is Expr.TupleLit && expr.grouped) {
+                                Expr.TupleLit(
+                                    expr.elements.map { target ->
+                                        Expr.Index(target, first, target.line, target.column)
+                                    },
+                                    expr.line,
+                                    expr.column,
+                                    expr.length,
+                                    grouped = true,
+                                )
+                            } else {
+                                Expr.Index(expr, first, expr.line, expr.column)
+                            }
                         }
                     }
                 }
@@ -11903,22 +12399,35 @@ class Parser(
         // The branch's `{` must not be mistaken for a trailing lambda on a
         // condition that ends in a call - `if ready() { a } else { b }`.
         val condition = withoutTrailingLambda { parseExpr() }
-        consume(TokenType.L_BRACE, "Expected '{' after if-expression condition")
-        skipNewlines()
-        val thenExpr = parseExpr()
-        skipNewlines()
-        consume(TokenType.R_BRACE, "Expected '}' after if-expression value")
+        val thenExpr = if (match(TokenType.THEN)) {
+            skipNewlines()
+            parseExpr()
+        } else {
+            consume(TokenType.L_BRACE, "Expected '{' or 'then' after if-expression condition")
+            skipNewlines()
+            val value = parseExpr()
+            skipNewlines()
+            consume(TokenType.R_BRACE, "Expected '}' after if-expression value")
+            value
+        }
         skipNewlines()
         consume(TokenType.ELSE, "Expected 'else' - an if-expression needs both branches")
         val elseExpr = if (check(TokenType.IF)) {
             parseIfExpr()
+        } else if (match(TokenType.THEN)) {
+            skipNewlines()
+            parseExpr()
         } else {
-            consume(TokenType.L_BRACE, "Expected '{' after 'else'")
-            skipNewlines()
-            val value = parseExpr()
-            skipNewlines()
-            consume(TokenType.R_BRACE, "Expected '}' after else-expression value")
-            value
+            if (check(TokenType.L_BRACE)) {
+                consume(TokenType.L_BRACE, "Expected '{' or 'then' after 'else'")
+                skipNewlines()
+                val value = parseExpr()
+                skipNewlines()
+                consume(TokenType.R_BRACE, "Expected '}' after else-expression value")
+                value
+            } else {
+                parseExpr()
+            }
         }
         return Expr.IfExpr(condition, thenExpr, elseExpr, start.line, start.column)
     }
@@ -11947,11 +12456,17 @@ class Parser(
         }
         skipNewlines()
         consume(TokenType.ELSE, "Expected 'else' - a 'for' used as a value needs one for when nothing is produced")
-        consume(TokenType.L_BRACE, "Expected '{' after 'else'")
-        skipNewlines()
-        val fallback = parseExpr()
-        skipNewlines()
-        consume(TokenType.R_BRACE, "Expected '}' after the else value")
+        val fallback = if (match(TokenType.L_BRACE)) {
+            skipNewlines()
+            val value = parseExpr()
+            skipNewlines()
+            consume(TokenType.R_BRACE, "Expected '}' after the else value")
+            value
+        } else {
+            // The compact form is intentionally the same single expression:
+            // `... else -1` is equivalent to `... else { -1 }`.
+            parseExpr()
+        }
 
         val temp = "__for_value_${forExprCounter++}"
         val (body, produces) = rewriteForYields(loop.body, temp)
@@ -12007,6 +12522,19 @@ class Parser(
         is Stmt.Scope -> {
             val (body, produces) = rewriteForYields(stmt.body, temp)
             stmt.copy(body = body) to produces
+        }
+        is Stmt.Break -> if (stmt.value != null) {
+            Stmt.Scope(
+                listOf(
+                    Stmt.Assignment(temp, stmt.value, stmt.line, stmt.column),
+                    Stmt.Break(stmt.label, stmt.line, stmt.column, stmt.length),
+                ),
+                stmt.line,
+                stmt.column,
+                stmt.length,
+            ) to true
+        } else {
+            stmt to false
         }
         else -> stmt to false
     }
@@ -12191,7 +12719,7 @@ class Parser(
                     }
                 }
             }
-            TokenType.L_BRACE if isBraceReceiverListCallAhead() -> {
+            TokenType.L_BRACE if isBraceReceiverListCallAhead() || isBraceValueGroupAhead() -> {
                 advance()
                 skipNewlines()
                 val values = mutableListOf<Expr>()
@@ -12201,9 +12729,9 @@ class Parser(
                 } while (match(TokenType.COMMA).also { if (it) skipNewlines() })
                 consume(TokenType.R_BRACE, "Expected '}' after receiver group")
                 if (values.size < 2) {
-                    error("A receiver group contains at least two values at line ${tok.line}")
+                    error("A brace value group contains at least two values at line ${tok.line}")
                 }
-                Expr.TupleLit(values, tok.line, tok.column)
+                Expr.TupleLit(values, tok.line, tok.column, grouped = true)
             }
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)
             else -> error("Unexpected token '${tok.lexeme}' at line ${tok.line}")
@@ -12498,7 +13026,7 @@ class Parser(
                 TokenType.L_BRACE -> depth++
                 TokenType.R_BRACE -> {
                     depth--
-                    if (depth == 0) return tokens.getOrNull(i + 1)?.type == TokenType.DOT
+                    if (depth == 0) return tokens.getOrNull(i + 1)?.type in setOf(TokenType.DOT, TokenType.L_BRACKET)
                 }
                 TokenType.EOF -> return false
                 else -> {}
@@ -12506,6 +13034,61 @@ class Parser(
             i++
         }
         return false
+    }
+
+    /** True when a brace group after `.` contains calls rather than member names. */
+    private fun isOperationGroupAhead(startIndex: Int = current): Boolean {
+        var braces = 0
+        var i = startIndex
+        while (i < tokens.size) {
+            when (tokens[i].type) {
+                TokenType.L_BRACE -> braces++
+                TokenType.R_BRACE -> {
+                    braces--
+                    if (braces == 0) return false
+                }
+                TokenType.L_PAREN -> if (braces > 0) return true
+                TokenType.EOF -> return false
+                else -> Unit
+            }
+            i++
+        }
+        return false
+    }
+
+    /** True for a value group `{a, b}`; lambdas `{ value -> body }` have no top-level comma. */
+    private fun isBraceValueGroupAhead(startIndex: Int = current): Boolean {
+        var braces = 0
+        var i = startIndex
+        while (i < tokens.size) {
+            when (tokens[i].type) {
+                TokenType.L_BRACE -> braces++
+                TokenType.R_BRACE -> {
+                    braces--
+                    if (braces == 0) return false
+                }
+                TokenType.COMMA -> if (braces == 1) return true
+                TokenType.EOF -> return false
+                else -> Unit
+            }
+            i++
+        }
+        return false
+    }
+
+    /** Attach the receiver of `target.{call(), …}` to each unqualified call. */
+    private fun attachOperationReceiver(target: Expr, operation: Expr): Expr = when (operation) {
+        is Expr.Call -> if (operation.receiver == null) {
+            // A named call with a receiver must be represented as MethodCall.
+            // Expr.Call(receiver = …) is reserved for calling a function value
+            // and would otherwise discard the callee name during IR lowering.
+            Expr.MethodCall(target, operation.callee, operation.args, operation.line, operation.column, operation.length)
+        } else operation
+        is Expr.TupleLit -> if (operation.sequence) {
+            operation.copy(elements = operation.elements.map { attachOperationReceiver(target, it) })
+        } else operation
+        is Expr.MethodCall -> operation
+        else -> error("operation groups contain calls; expected a call at line ${operation.line}")
     }
 
     /** True when the cursor is on a bare `=` / `&` / `!` / `take` default. */

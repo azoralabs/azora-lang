@@ -591,7 +591,8 @@ internal object MacroExpander {
             elseBranch = stmt.elseBranch?.let { rewriteStmts(it, macros, depth) },
         )
         is Stmt.NoInline -> stmt.copy(stmt = rewriteStmt(stmt.stmt, macros, depth))
-        is Stmt.Break, is Stmt.Continue -> stmt
+        is Stmt.Break -> stmt.copy(value = stmt.value?.let { rewriteExpr(it, macros, depth) })
+        is Stmt.Continue -> stmt
     }
 
     // ------------------------------------------------------------------
@@ -622,6 +623,7 @@ internal object MacroExpander {
             is Expr.StringLiteral, is Expr.BoolLiteral, is Expr.NullLiteral,
             is Expr.UpperScopeAccess, is Expr.Inject -> expr
             is Expr.Unary -> expr.copy(operand = rewriteExpr(expr.operand, macros, depth))
+            is Expr.IncDec -> expr.copy(target = rewriteExpr(expr.target, macros, depth))
             is Expr.Grouping -> expr.copy(expr = rewriteExpr(expr.expr, macros, depth))
             is Expr.Member -> expr.copy(target = rewriteExpr(expr.target, macros, depth))
             is Expr.SafeMember -> expr.copy(target = rewriteExpr(expr.target, macros, depth))
@@ -824,6 +826,7 @@ internal object MacroExpander {
         is Expr.StringLiteral, is Expr.BoolLiteral, is Expr.NullLiteral,
         is Expr.UpperScopeAccess, is Expr.Inject -> template
         is Expr.Unary -> template.copy(operand = substitute(template.operand, bindings, invokeLine))
+        is Expr.IncDec -> template.copy(target = substitute(template.target, bindings, invokeLine))
         is Expr.Grouping -> template.copy(expr = substitute(template.expr, bindings, invokeLine))
         is Expr.Member -> {
             val target = substitute(template.target, bindings, invokeLine)
@@ -1034,7 +1037,8 @@ internal object MacroExpander {
             iterable = substitute(stmt.iterable, bindings, invokeLine),
             body = stmt.body.map { substituteStmt(it, bindings, invokeLine) },
         )
-        is Stmt.Break, is Stmt.Continue -> stmt
+        is Stmt.Break -> stmt.copy(value = stmt.value?.let { substitute(it, bindings, invokeLine) })
+        is Stmt.Continue -> stmt
     }
 
     /**

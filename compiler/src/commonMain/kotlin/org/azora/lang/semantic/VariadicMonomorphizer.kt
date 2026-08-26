@@ -1020,7 +1020,8 @@ private class MonoContext(
             )
             is Stmt.UsingContext -> stmt.copy(values = stmt.values.map(::expr), body = nested(stmt.body))
             is Stmt.NoInline -> stmt.copy(stmt = expandReflectedStmt(stmt.stmt, fields, binding).single())
-            is Stmt.Break, is Stmt.Continue -> stmt
+            is Stmt.Break -> stmt.copy(value = stmt.value?.let(::rewriteExpr))
+            is Stmt.Continue -> stmt
         }
         return listOf(rewritten)
     }
@@ -1528,6 +1529,7 @@ private class MonoContext(
         is Expr.InCheck -> e.copy(value = rewriteExpr(e.value), collection = rewriteExpr(e.collection))
         is Expr.InlineForArgs -> e.copy(iterable = rewriteExpr(e.iterable), body = rewriteExpr(e.body))
         is Expr.Unary -> e.copy(operand = rewriteExpr(e.operand))
+        is Expr.IncDec -> e.copy(target = rewriteExpr(e.target))
         is Expr.Grouping -> e.copy(expr = rewriteExpr(e.expr))
         is Expr.Range -> e.copy(from = rewriteExpr(e.from), to = rewriteExpr(e.to))
         is Expr.ArrayLiteral -> e.copy(elements = e.elements.map(::rewriteExpr))
@@ -1829,7 +1831,8 @@ private class MonoContext(
         )
         is Stmt.UsingContext -> s.copy(values = s.values.map(::rewriteExpr), body = s.body.map(::rewriteStmt))
         is Stmt.NoInline -> s.copy(stmt = rewriteStmt(s.stmt))
-        is Stmt.Break, is Stmt.Continue -> s
+        is Stmt.Break -> s.copy(value = s.value?.let(::rewriteExpr))
+        is Stmt.Continue -> s
         }
     }
 

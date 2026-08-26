@@ -67,7 +67,9 @@ class AzoraLanguageServer {
 
     /** Standard-library symbols (functions, constants, packs, enums) for completion/hover. */
     private val stdlibIndex: SymbolIndex by lazy {
-        val programs = AzStdlib.loadPrograms()
+        // Index valid std siblings even while one checked-out file is being
+        // migrated; compiler/check remains strict and reports that file.
+        val programs = AzStdlib.loadPrograms(strict = false)
         val files = AzStdlib.tree().files
         SymbolIndex().apply {
             programs.forEachIndexed { index, program ->

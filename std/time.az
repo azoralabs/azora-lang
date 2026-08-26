@@ -785,41 +785,41 @@ bridge [.C, .WebAssembly] {
 
 test "duration normalizes positive nanosecond overflow" {
     fin value = duration(2, 1500000000)
-    assert value.seconds == 3 { "overflow nanoseconds must carry into seconds" }
-    assert value.nanosecondAdjustment == 500000000 { "the remainder must stay normalized" }
+    assert value.seconds == 3 panic "overflow nanoseconds must carry into seconds"
+    assert value.nanosecondAdjustment == 500000000 panic "the remainder must stay normalized"
 }
 
 test "duration normalizes negative nanoseconds" {
     fin value = duration(0, -1)
-    assert value.seconds == -1 { "a negative fraction must borrow one second" }
-    assert value.nanosecondAdjustment == 999999999 { "nanoseconds must remain non-negative" }
+    assert value.seconds == -1 panic "a negative fraction must borrow one second"
+    assert value.nanosecondAdjustment == 999999999 panic "nanoseconds must remain non-negative"
 }
 
 test "duration factories use fixed SI units" {
-    assert microseconds(2).nanosecondAdjustment == 2000 { "microseconds must scale by 1,000" }
-    assert milliseconds(2).nanosecondAdjustment == 2000000 { "milliseconds must scale by 1,000,000" }
-    assert minutes(2).seconds == 120 { "minutes must contain 60 seconds" }
-    assert hours(2).seconds == 7200 { "hours must contain 3,600 seconds" }
-    assert days(2).seconds == 172800 { "fixed days must contain 86,400 seconds" }
+    assert microseconds(2).nanosecondAdjustment == 2000 panic "microseconds must scale by 1,000"
+    assert milliseconds(2).nanosecondAdjustment == 2000000 panic "milliseconds must scale by 1,000,000"
+    assert minutes(2).seconds == 120 panic "minutes must contain 60 seconds"
+    assert hours(2).seconds == 7200 panic "hours must contain 3,600 seconds"
+    assert days(2).seconds == 172800 panic "fixed days must contain 86,400 seconds"
 }
 
 test "unit suffixes match the factory of the same name" {
-    assert 2.microseconds.nanosecondAdjustment == 2000 { "Int.microseconds must scale by 1,000" }
-    assert 250.milliseconds.inWholeMilliseconds == 250 { "Int.milliseconds must scale by 1,000,000" }
-    assert 2.minutes.seconds == 120 { "Int.minutes must contain 60 seconds" }
-    assert 3.hours.seconds == 10800 { "Int.hours must contain 3,600 seconds" }
-    assert 2.days.seconds == 172800 { "Int.days must contain 86,400 seconds" }
+    assert 2.microseconds.nanosecondAdjustment == 2000 panic "Int.microseconds must scale by 1,000"
+    assert 250.milliseconds.inWholeMilliseconds == 250 panic "Int.milliseconds must scale by 1,000,000"
+    assert 2.minutes.seconds == 120 panic "Int.minutes must contain 60 seconds"
+    assert 3.hours.seconds == 10800 panic "Int.hours must contain 3,600 seconds"
+    assert 2.days.seconds == 172800 panic "Int.days must contain 86,400 seconds"
 }
 
 test "unit suffixes accept a Long receiver" {
-    assert 3.hours.seconds == 10800 { "Long.hours must contain 3,600 seconds" }
-    assert 1.nanoseconds.nanosecondAdjustment == 1 { "Long.nanoseconds must be exact" }
-    assert 90.seconds.seconds == 90 { "Long.seconds must pass through unscaled" }
+    assert 3.hours.seconds == 10800 panic "Long.hours must contain 3,600 seconds"
+    assert 1.nanoseconds.nanosecondAdjustment == 1 panic "Long.nanoseconds must be exact"
+    assert 90.seconds.seconds == 90 panic "Long.seconds must pass through unscaled"
 }
 
 test "unit suffixes compose with duration arithmetic" {
     fin total = 1.seconds.plus(500.milliseconds)
-    assert total.inWholeMilliseconds == 1500 { "unit suffixes must produce ordinary durations" }
+    assert total.inWholeMilliseconds == 1500 panic "unit suffixes must produce ordinary durations"
 }
 
 test "duration arithmetic preserves normalization" {
@@ -827,21 +827,21 @@ test "duration arithmetic preserves normalization" {
     fin right = duration(2, 400000000)
     fin sum = left.plus(right)
     fin difference = sum.minus(right)
-    assert sum.seconds == 4 && sum.nanosecondAdjustment == 200000000 { "addition must carry fractions" }
-    assert difference.seconds == left.seconds { "subtraction must recover seconds" }
-    assert difference.nanosecondAdjustment == left.nanosecondAdjustment { "subtraction must recover nanoseconds" }
+    assert sum.seconds == 4 && sum.nanosecondAdjustment == 200000000 panic "addition must carry fractions"
+    assert difference.seconds == left.seconds panic "subtraction must recover seconds"
+    assert difference.nanosecondAdjustment == left.nanosecondAdjustment panic "subtraction must recover nanoseconds"
 }
 
 test "duration negation handles negative fractions" {
     fin value = duration(0, -1).negated()
-    assert value.seconds == 0 { "negating -1ns must not retain a negative second" }
-    assert value.nanosecondAdjustment == 1 { "negating -1ns must produce +1ns" }
+    assert value.seconds == 0 panic "negating -1ns must not retain a negative second"
+    assert value.nanosecondAdjustment == 1 panic "negating -1ns must produce +1ns"
 }
 
 test "instant normalizes before epoch" {
     fin value = instant(0, -1)
-    assert value.epochSecond == -1 { "negative fractions must cross the epoch correctly" }
-    assert value.nanosecond == 999999999 { "instant nanoseconds must remain normalized" }
+    assert value.epochSecond == -1 panic "negative fractions must cross the epoch correctly"
+    assert value.nanosecond == 999999999 panic "instant nanoseconds must remain normalized"
 }
 
 test "instant arithmetic and elapsed duration round trip" {
@@ -849,28 +849,28 @@ test "instant arithmetic and elapsed duration round trip" {
     fin delta = milliseconds(250)
     fin finish = start.plus(delta)
     fin elapsed = finish.durationSince(start)
-    assert finish.epochSecond == 1700000001 { "instant addition must carry into seconds" }
-    assert finish.nanosecond == 150000000 { "instant addition must preserve the fraction" }
-    assert elapsed.inWholeMilliseconds == 250 { "durationSince must recover the exact delta" }
+    assert finish.epochSecond == 1700000001 panic "instant addition must carry into seconds"
+    assert finish.nanosecond == 150000000 panic "instant addition must preserve the fraction"
+    assert elapsed.inWholeMilliseconds == 250 panic "durationSince must recover the exact delta"
 }
 
 test "leap year follows Gregorian rules" {
-    assert isLeapYear(2000) { "years divisible by 400 are leap years" }
-    assert !isLeapYear(1900) { "century years not divisible by 400 are common" }
-    assert isLeapYear(2024) { "years divisible by four are leap years" }
-    assert !isLeapYear(2023) { "ordinary years are not leap years" }
+    assert isLeapYear(2000) panic "years divisible by 400 are leap years"
+    assert !isLeapYear(1900) panic "century years not divisible by 400 are common"
+    assert isLeapYear(2024) panic "years divisible by four are leap years"
+    assert !isLeapYear(2023) panic "ordinary years are not leap years"
 }
 
 test "month lengths include leap February" {
-    assert (daysInMonth(2024, 2) catch 0) == 29 { "leap February must have 29 days" }
-    assert (daysInMonth(2023, 2) catch 0) == 28 { "common February must have 28 days" }
-    assert (daysInMonth(2024, 4) catch 0) == 30 { "April must have 30 days" }
-    assert (daysInMonth(2024, 12) catch 0) == 31 { "December must have 31 days" }
+    assert (daysInMonth(2024, 2) catch 0) == 29 panic "leap February must have 29 days"
+    assert (daysInMonth(2023, 2) catch 0) == 28 panic "common February must have 28 days"
+    assert (daysInMonth(2024, 4) catch 0) == 30 panic "April must have 30 days"
+    assert (daysInMonth(2024, 12) catch 0) == 31 panic "December must have 31 days"
 }
 
 test "invalid month is rejected" {
     fin days = daysInMonth(2024, 13) catch -1
-    assert days == -1 { "month 13 must fail validation" }
+    assert days == -1 panic "month 13 must fail validation"
 }
 
 test "local date validates leap day" {
@@ -884,103 +884,103 @@ test "local time validates every boundary" {
     fin valid = localTime(23, 59, 59, 999999999) catch LocalTime(0, 0, 0)
     fin invalidHour = localTime(24, 0, 0) catch LocalTime(-1, 0, 0)
     fin invalidNanos = localTime(0, 0, 0, 1000000000) catch LocalTime(-1, 0, 0)
-    assert valid.hour == 23 && valid.nanosecond == 999999999 { "the inclusive upper boundary must be valid" }
-    assert invalidHour.hour == -1 { "hour 24 must fail" }
-    assert invalidNanos.hour == -1 { "one billion nanoseconds must fail" }
+    assert valid.hour == 23 && valid.nanosecond == 999999999 panic "the inclusive upper boundary must be valid"
+    assert invalidHour.hour == -1 panic "hour 24 must fail"
+    assert invalidNanos.hour == -1 panic "one billion nanoseconds must fail"
 }
 
 test "UTC offset validates ISO limits" {
-    assert (utcOffset(64800) catch UtcOffset(0)).totalSeconds == 64800 { "+18:00 must be valid" }
-    assert (utcOffset(-64800) catch UtcOffset(0)).totalSeconds == -64800 { "-18:00 must be valid" }
-    assert (utcOffset(64801) catch UtcOffset(-1)).totalSeconds == -1 { "offsets beyond +18:00 must fail" }
+    assert (utcOffset(64800) catch UtcOffset(0)).totalSeconds == 64800 panic "+18:00 must be valid"
+    assert (utcOffset(-64800) catch UtcOffset(0)).totalSeconds == -64800 panic "-18:00 must be valid"
+    assert (utcOffset(64801) catch UtcOffset(-1)).totalSeconds == -1 panic "offsets beyond +18:00 must fail"
 }
 
 test "UTC offset hours and minutes preserve sign" {
     fin value = utcOffsetOf(-5, 30) catch UtcOffset(0)
-    assert value.totalSeconds == -19800 { "-05:30 must remain negative" }
+    assert value.totalSeconds == -19800 panic "-05:30 must remain negative"
 }
 
 test "Unix epoch converts to civil UTC" {
     fin value = atOffset(instant(0), UtcOffset(0))
-    assert value.date.year == 1970 && value.date.month == 1 && value.date.day == 1 { "epoch date changed" }
-    assert value.time.hour == 0 && value.time.minute == 0 && value.time.second == 0 { "epoch time changed" }
+    assert value.date.year == 1970 && value.date.month == 1 && value.date.day == 1 panic "epoch date changed"
+    assert value.time.hour == 0 && value.time.minute == 0 && value.time.second == 0 panic "epoch time changed"
 }
 
 test "pre-epoch instant uses floor division" {
     fin value = atOffset(instant(-1), UtcOffset(0))
-    assert value.date.year == 1969 && value.date.month == 12 && value.date.day == 31 { "-1 second must be on the previous day" }
-    assert value.time.hour == 23 && value.time.minute == 59 && value.time.second == 59 { "-1 second must map to 23:59:59" }
+    assert value.date.year == 1969 && value.date.month == 12 && value.date.day == 31 panic "-1 second must be on the previous day"
+    assert value.time.hour == 23 && value.time.minute == 59 && value.time.second == 59 panic "-1 second must map to 23:59:59"
 }
 
 test "date time and instant round trip at an offset" {
     fin original = DateTime(LocalDate(2026, 7, 16), LocalTime(14, 25, 30, 123000000), UtcOffset(10800))
     fin restored = atOffset(toInstant(original), original.offset)
-    assert restored.date.year == original.date.year && restored.date.month == original.date.month && restored.date.day == original.date.day { "date must round trip" }
-    assert restored.time.hour == original.time.hour && restored.time.nanosecond == original.time.nanosecond { "time must round trip" }
+    assert restored.date.year == original.date.year && restored.date.month == original.date.month && restored.date.day == original.date.day panic "date must round trip"
+    assert restored.time.hour == original.time.hour && restored.time.nanosecond == original.time.nanosecond panic "time must round trip"
 }
 
 test "weekday matches known calendar dates" {
-    assert weekday(LocalDate(1970, 1, 1)) == Weekday.Thursday { "Unix epoch was Thursday" }
-    assert LocalDate(2024, 2, 29).weekday == Weekday.Thursday { "2024 leap day was Thursday" }
+    assert weekday(LocalDate(1970, 1, 1)) == Weekday.Thursday panic "Unix epoch was Thursday"
+    assert LocalDate(2024, 2, 29).weekday == Weekday.Thursday panic "2024 leap day was Thursday"
 }
 
 test "ISO UTC formatting is canonical" {
     fin value = DateTime(LocalDate(2026, 7, 16), LocalTime(9, 5, 7), UtcOffset(0))
-    assert formatIsoDateTime(value) == "2026-07-16T09:05:07Z" { "UTC formatting changed" }
+    assert formatIsoDateTime(value) == "2026-07-16T09:05:07Z" panic "UTC formatting changed"
 }
 
 test "ISO formatting trims fractional trailing zeroes" {
     fin value = DateTime(LocalDate(2026, 1, 2), LocalTime(3, 4, 5, 120000000), UtcOffset(0))
-    assert value.formatIso() == "2026-01-02T03:04:05.12Z" { "fraction formatting must be canonical" }
+    assert value.formatIso() == "2026-01-02T03:04:05.12Z" panic "fraction formatting must be canonical"
 }
 
 test "ISO formatting includes offset seconds when needed" {
     fin value = DateTime(LocalDate(2026, 1, 2), LocalTime(3, 4, 5), UtcOffset(19815))
-    assert formatIsoDateTime(value) == "2026-01-02T03:04:05+05:30:15" { "second-precision offsets must not be lost" }
+    assert formatIsoDateTime(value) == "2026-01-02T03:04:05+05:30:15" panic "second-precision offsets must not be lost"
 }
 
 test "ISO parser accepts UTC fractions" {
     fin value = parseIsoDateTime("2026-07-16T09:05:07.1234Z") catch DateTime(LocalDate(0, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
-    assert value.date.year == 2026 && value.time.nanosecond == 123400000 { "fraction must be scaled to nanoseconds" }
+    assert value.date.year == 2026 && value.time.nanosecond == 123400000 panic "fraction must be scaled to nanoseconds"
 }
 
 test "ISO parser accepts signed offsets" {
     fin value = parseIsoDateTime("2026-07-16T09:05:07-05:30") catch DateTime(LocalDate(0, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
-    assert value.offset.totalSeconds == -19800 { "negative offset parsing changed" }
+    assert value.offset.totalSeconds == -19800 panic "negative offset parsing changed"
 }
 
 test "ISO parser rejects malformed calendar text" {
     fin value = parseIsoDateTime("2026-02-30T09:05:07Z") catch DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
-    assert value.date.year == -1 { "invalid calendar dates must fail" }
+    assert value.date.year == -1 panic "invalid calendar dates must fail"
 }
 
 test "ISO parser rejects invalid offset minutes" {
     fin value = parseIsoDateTime("2026-07-16T09:05:07+01:99") catch DateTime(LocalDate(-1, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
-    assert value.date.year == -1 { "offset minutes above 59 must fail" }
+    assert value.date.year == -1 panic "offset minutes above 59 must fail"
 }
 
 test "ISO instant round trip preserves nanoseconds" {
     fin original = instant(1770000000, 987654321)
     fin restored = parseIsoInstant(original.formatIso()) catch Instant(0)
-    assert restored.epochSecond == original.epochSecond { "epoch seconds must round trip" }
-    assert restored.nanosecond == original.nanosecond { "nanoseconds must round trip" }
+    assert restored.epochSecond == original.epochSecond panic "epoch seconds must round trip"
+    assert restored.nanosecond == original.nanosecond panic "nanoseconds must round trip"
 }
 
 test "monotonic elapsed rejects reversed readings" {
     fin elapsed: MonotonicInstant = .(10).elapsedSince(MonotonicInstant(20)) catch Duration(-1)
-    assert elapsed.seconds == -1 { "reversed monotonic readings must fail" }
+    assert elapsed.seconds == -1 panic "reversed monotonic readings must fail"
 }
 
 test "monotonic elapsed returns exact duration" {
     fin elapsed: MonotonicInstant = .(2000000050).elapsedSince(MonotonicInstant(1000000000)) catch Duration(-1)
-    assert elapsed.seconds == 1 && elapsed.nanosecondAdjustment == 50 { "monotonic elapsed time must be exact" }
+    assert elapsed.seconds == 1 && elapsed.nanosecondAdjustment == 50 panic "monotonic elapsed time must be exact"
 }
 
 test "instant serializer uses canonical ISO text" {
     fin serializer = InstantSerializer()
     fin tree = serializer.toSerialValue(Instant(0)) catch SerialValue.Null
     fin text = encodeSerialValue(tree, serializerOptions()) catch "error"
-    assert text == "\"1970-01-01T00:00:00Z\"" { "Instant serializer wire form changed" }
+    assert text == "\"1970-01-01T00:00:00Z\"" panic "Instant serializer wire form changed"
 }
 
 test "date time serializer round trips offsets" {
@@ -988,8 +988,8 @@ test "date time serializer round trips offsets" {
     fin original = DateTime(LocalDate(2026, 7, 16), LocalTime(9, 5, 7, 42), UtcOffset(-12600))
     fin tree = serializer.toSerialValue(original) catch SerialValue.Null
     fin restored = serializer.fromSerialValue(tree) catch DateTime(LocalDate(0, 1, 1), LocalTime(0, 0, 0), UtcOffset(0))
-    assert restored.date.year == 2026 && restored.offset.totalSeconds == -12600 { "DateTime serializer must preserve offset" }
-    assert restored.time.nanosecond == 42 { "DateTime serializer must preserve nanoseconds" }
+    assert restored.date.year == 2026 && restored.offset.totalSeconds == -12600 panic "DateTime serializer must preserve offset"
+    assert restored.time.nanosecond == 42 panic "DateTime serializer must preserve nanoseconds"
 }
 
 test "duration serializer preserves normalized fields" {
@@ -998,16 +998,16 @@ test "duration serializer preserves normalized fields" {
     fin tree = serializer.toSerialValue(original) catch SerialValue.Null
     fin restored = serializer.fromSerialValue(tree) catch Duration(0)
     assert restored.seconds == original.seconds { "Duration serializer must preserve seconds" }
-    assert restored.nanosecondAdjustment == original.nanosecondAdjustment { "Duration serializer must preserve nanoseconds" }
+    assert restored.nanosecondAdjustment == original.nanosecondAdjustment panic "Duration serializer must preserve nanoseconds"
 }
 
 test "serializable metadata is present on portable time values" {
-    inline assert reflect<Duration>.hasAnnot<Serializable> { "Duration must be serializable" }
-    inline assert reflect<Instant>.hasAnnot<Serializable> { "Instant must be serializable" }
-    inline assert reflect<LocalDate>.hasAnnot<Serializable> { "LocalDate must be serializable" }
-    inline assert reflect<LocalTime>.hasAnnot<Serializable> { "LocalTime must be serializable" }
-    inline assert reflect<UtcOffset>.hasAnnot<Serializable> { "UtcOffset must be serializable" }
-    inline assert reflect<DateTime>.hasAnnot<Serializable> { "DateTime must be serializable" }
+    inline assert reflect<Duration>.hasAnnot<Serializable> panic "Duration must be serializable"
+    inline assert reflect<Instant>.hasAnnot<Serializable> panic "Instant must be serializable"
+    inline assert reflect<LocalDate>.hasAnnot<Serializable> panic "LocalDate must be serializable"
+    inline assert reflect<LocalTime>.hasAnnot<Serializable> panic "LocalTime must be serializable"
+    inline assert reflect<UtcOffset>.hasAnnot<Serializable> panic "UtcOffset must be serializable"
+    inline assert reflect<DateTime>.hasAnnot<Serializable> panic "DateTime must be serializable"
 }
 
 test "monotonic readings are intentionally not serializable" {

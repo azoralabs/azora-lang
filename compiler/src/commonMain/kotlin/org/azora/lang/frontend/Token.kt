@@ -41,6 +41,7 @@ package org.azora.lang.frontend
  * - [RETURN] -- return statement
  * - [IF] -- conditional branch
  * - [ELSE] -- alternative conditional branch
+ * - [THEN] -- introduces a single-statement control-flow body without braces
  * - [INLINE] -- compile-time evaluation marker
  * - [DEEPINLINE] -- recursive compile-time evaluation marker
  * - [NOINLINE] -- escape from compile-time context back to runtime
@@ -88,7 +89,7 @@ enum class TokenType {
     // Keywords
     VAR, FIN, LET, VAL, FUNC, RETURN, IF, ELSE, INLINE, DEEPINLINE, NOINLINE, SCOPE,
     TEST, ASSERT, TRACE, PANIC, MACRO,
-    FOR, WHILE, LOOP, IN, BREAK, CONTINUE,
+    FOR, WHILE, LOOP, IN, BREAK, CONTINUE, THEN,
     // `pack` structs and `enum` variants. `union` has its own token below;
     // established APIs may still use it in unambiguous member-name positions.
     PACK, ENUM, WHEN,

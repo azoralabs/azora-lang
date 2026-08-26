@@ -108,6 +108,7 @@ object InferredTypeArgs {
             is Expr.Member -> e.copy(target = expr(e.target))
             is Expr.Binary -> e.copy(left = expr(e.left), right = expr(e.right))
             is Expr.Unary -> e.copy(operand = expr(e.operand))
+            is Expr.IncDec -> e.copy(target = expr(e.target))
             is Expr.Grouping -> e.copy(expr = expr(e.expr))
             is Expr.NamedArg -> e.copy(value = expr(e.value))
             else -> e

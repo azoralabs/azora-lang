@@ -242,6 +242,7 @@ class EffectChecker {
             }
             is Expr.Binary -> { collectCallsFromExpr(expr.left, calls); collectCallsFromExpr(expr.right, calls) }
             is Expr.Unary -> collectCallsFromExpr(expr.operand, calls)
+            is Expr.IncDec -> collectCallsFromExpr(expr.target, calls)
             is Expr.Grouping -> collectCallsFromExpr(expr.expr, calls)
             is Expr.Range -> { collectCallsFromExpr(expr.from, calls); collectCallsFromExpr(expr.to, calls) }
             is Expr.ArrayLiteral -> expr.elements.forEach { collectCallsFromExpr(it, calls) }

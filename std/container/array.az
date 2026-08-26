@@ -97,22 +97,20 @@ impl Array<T, N: Int> {
 
 test "[] preserves values and order" {
     fin values: Array<Int> = [10, 20, 30]
-    assert values.size == 3 { "[] changed the number of elements" }
-    assert values[0] == 10 && values[1] == 20 && values[2] == 30 { "[] changed element order" }
+    assert values.size == 3 panic "[] changed the number of elements"
+    assert values[0] == 10 && values[1] == 20 && values[2] == 30 panic "[] changed element order"
 }
 
 test "[] produces the canonical Array type" {
     fin values: Array<String> = ["first", "second"]
-    assert values.size == 2 { "[] did not create an Array" }
-    assert values[0] == "first" && values[1] == "second" { "[] changed its elements" }
+    assert values.size == 2 panic "[] did not create an Array"
+    assert values[0] == "first" && values[1] == "second" panic "[] changed its elements"
 }
 
 test "array exposes size and contiguous data fields" {
     fin values: Array<Int> = [5, 8, 13]
-    assert values.size == 3 { "Array.size must report the element count" }
-    unsafe assert values.data[0] == 5 && values.data[2] == 13 {
-        "Array.data must point to the first contiguous element"
-    }
+    assert values.size == 3 panic "Array.size must report the element count"
+    unsafe assert values.data[0] == 5 && values.data[2] == 13 panic "Array.data must point to the first contiguous element"
 }
 
 test .All "array"

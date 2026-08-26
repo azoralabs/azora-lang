@@ -690,6 +690,7 @@ class LlvmCodegen {
                 is IrStmt.While -> collectLocalSlots(stmt.body, slots)
                 is IrStmt.For -> {
                     slots.add(stmt.counter to mapType(stmt.start.type))
+                    stmt.indexName?.let { slots.add(it to mapType(IrType.Int)) }
                     collectLocalSlots(stmt.body, slots)
                 }
                 is IrStmt.ForEach -> {
@@ -700,6 +701,7 @@ class LlvmCodegen {
                     }
                     slots.add(stmt.elem to mapType(elemType))
                     slots.add(foreachIndexName(stmt.elem) to "i64")
+                    stmt.indexName?.let { slots.add(it to mapType(IrType.Int)) }
                     collectLocalSlots(stmt.body, slots)
                 }
                 is IrStmt.Loop -> collectLocalSlots(stmt.body, slots)
@@ -1295,6 +1297,7 @@ class LlvmCodegen {
                 collectReactiveStorageInExpr(owner, expr.right)
             }
             is IrExpr.Unary -> collectReactiveStorageInExpr(owner, expr.operand)
+            is IrExpr.IncDec -> collectReactiveStorageInExpr(owner, expr.target)
             is IrExpr.Member -> collectReactiveStorageInExpr(owner, expr.target)
             is IrExpr.Index -> {
                 collectReactiveStorageInExpr(owner, expr.target)
@@ -1466,6 +1469,18 @@ class LlvmCodegen {
         val initVal = emitExpr(if (stmt.reverse) stmt.end else stmt.start)
         emit("  store $t $initVal, $t* $counterAlloca")
         localVars[stmt.counter] = counterAlloca to t
+        val indexAlloca = stmt.indexName?.let { name ->
+            val indexType = mapType(IrType.Int)
+            val slot = allocaSlots[name to indexType] ?: run {
+                val reg = "%loc${allocaCounter++}.${sanitizeName(name)}"
+                emit("  $reg = alloca $indexType")
+                allocaSlots[name to indexType] = reg
+                reg
+            }
+            emit("  store $indexType 0, $indexType* $slot")
+            localVars[name] = slot to indexType
+            slot
+        }
 
         val condLabel = nextLabel("for_cond")
         val bodyLabel = nextLabel("for_body")
@@ -1507,6 +1522,13 @@ class LlvmCodegen {
         if (stmt.reverse) emit("  $incd = sub $t $incLoaded, $stepVal")
         else emit("  $incd = add $t $incLoaded, $stepVal")
         emit("  store $t $incd, $t* $counterAlloca")
+        if (indexAlloca != null) {
+            val ordinal = nextTmp()
+            emit("  $ordinal = load i32, i32* $indexAlloca")
+            val nextOrdinal = nextTmp()
+            emit("  $nextOrdinal = add i32 $ordinal, 1")
+            emit("  store i32 $nextOrdinal, i32* $indexAlloca")
+        }
         emitTerminator("  br label %$condLabel")
 
         startBlock(endLabel)
@@ -1530,11 +1552,11 @@ class LlvmCodegen {
             allocaSlots[stmt.elem to et] = reg
             reg
         }
-        val indexName = foreachIndexName(stmt.elem)
-        val indexAlloca = allocaSlots[indexName to "i64"] ?: run {
-            val reg = "%loc${allocaCounter++}.${sanitizeName(indexName)}"
+        val iterationName = foreachIndexName(stmt.elem)
+        val iterationAlloca = allocaSlots[iterationName to "i64"] ?: run {
+            val reg = "%loc${allocaCounter++}.${sanitizeName(iterationName)}"
             emit("  $reg = alloca i64")
-            allocaSlots[indexName to "i64"] = reg
+            allocaSlots[iterationName to "i64"] = reg
             reg
         }
 
@@ -1544,7 +1566,19 @@ class LlvmCodegen {
         emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
         val data = nextTmp()
         emit("  $data = bitcast i8* $dataRaw to $et*")
-        emit("  store i64 0, i64* $indexAlloca")
+        emit("  store i64 0, i64* $iterationAlloca")
+        val userIndexAlloca = stmt.indexName?.let { name ->
+            val indexType = mapType(IrType.Int)
+            val slot = allocaSlots[name to indexType] ?: run {
+                val reg = "%loc${allocaCounter++}.${sanitizeName(name)}"
+                emit("  $reg = alloca $indexType")
+                allocaSlots[name to indexType] = reg
+                reg
+            }
+            emit("  store $indexType 0, $indexType* $slot")
+            localVars[name] = slot to indexType
+            slot
+        }
 
         val condLabel = nextLabel("foreach_cond")
         val bodyLabel = nextLabel("foreach_body")
@@ -1554,7 +1588,7 @@ class LlvmCodegen {
         emitTerminator("  br label %$condLabel")
         startBlock(condLabel)
         val idx = nextTmp()
-        emit("  $idx = load i64, i64* $indexAlloca")
+        emit("  $idx = load i64, i64* $iterationAlloca")
         val cmp = nextTmp()
         emit("  $cmp = icmp ult i64 $idx, $len")
         emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$endLabel")
@@ -1565,6 +1599,11 @@ class LlvmCodegen {
         val value = nextTmp()
         emit("  $value = load $et, $et* $ep, align 1")
         emit("  store $et $value, $et* $elemAlloca")
+        if (userIndexAlloca != null) {
+            val ordinal32 = nextTmp()
+            emit("  $ordinal32 = trunc i64 $idx to i32")
+            emit("  store i32 $ordinal32, i32* $userIndexAlloca")
+        }
         localVars[stmt.elem] = elemAlloca to et
         loopStack.addLast(LoopTarget(incLabel, endLabel))
         emitStmts(stmt.body)
@@ -1573,10 +1612,10 @@ class LlvmCodegen {
 
         startBlock(incLabel)
         val incLoaded = nextTmp()
-        emit("  $incLoaded = load i64, i64* $indexAlloca")
+        emit("  $incLoaded = load i64, i64* $iterationAlloca")
         val next = nextTmp()
         emit("  $next = add i64 $incLoaded, 1")
-        emit("  store i64 $next, i64* $indexAlloca")
+        emit("  store i64 $next, i64* $iterationAlloca")
         emitTerminator("  br label %$condLabel")
 
         startBlock(endLabel)
@@ -1913,6 +1952,7 @@ class LlvmCodegen {
             tmp
         }
         is IrExpr.Unary -> emitUnary(expr)
+        is IrExpr.IncDec -> emitIncDec(expr)
         is IrExpr.Binary -> emitBinary(expr)
         is IrExpr.Call -> emitCall(expr)
         is IrExpr.StringTemplate -> emitStringTemplate(expr)
@@ -2494,6 +2534,7 @@ class LlvmCodegen {
         when (expr) {
             is IrExpr.Var -> refs.putIfAbsentCompat(expr.name, expr.type)
             is IrExpr.Unary -> collectReferencedVars(expr.operand, refs)
+            is IrExpr.IncDec -> collectReferencedVars(expr.target, refs)
             is IrExpr.Binary -> {
                 collectReferencedVars(expr.left, refs)
                 collectReferencedVars(expr.right, refs)
@@ -4168,6 +4209,24 @@ class LlvmCodegen {
             IrUnaryOp.BIT_NOT -> emit("  $tmp = xor ${mapType(expr.type)} $operand, -1")
         }
         return tmp
+    }
+
+    private fun emitIncDec(expr: IrExpr.IncDec): String {
+        val type = mapType(expr.type)
+        val (slot, slotType) = localVars[expr.target.name]
+            ?: ("@${expr.target.name}" to type)
+        val old = nextTmp()
+        emit("  $old = load $slotType, $slotType* $slot")
+        val amount = if (expr.type in IrType.floatTypes) floatConst(1.0, expr.type, null) else "1"
+        val updated = nextTmp()
+        val op = if (expr.type in IrType.floatTypes) {
+            if (expr.delta > 0) "fadd" else "fsub"
+        } else {
+            if (expr.delta > 0) "add" else "sub"
+        }
+        emit("  $updated = $op $type $old, $amount")
+        emit("  store $type $updated, $type* $slot")
+        return if (expr.prefix) updated else old
     }
 
     private fun emitBinary(expr: IrExpr.Binary): String {

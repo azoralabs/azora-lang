@@ -241,6 +241,17 @@ class Tier1PolishTest {
         """.trimIndent()))
     }
 
+    @Test fun forStepWithIndexExposesOrdinal() {
+        assertEquals("0:0\n2:1\n4:2", run("""
+            import std.io
+            func main() {
+                for x in 0..<6 by 2 with index {
+                    println("${'$'}x:${'$'}index")
+                }
+            }
+        """.trimIndent()))
+    }
+
     // -- for / while / loop … else -----------------------------------------
 
     @Test fun whileElseRunsWhenLoopCompletes() {

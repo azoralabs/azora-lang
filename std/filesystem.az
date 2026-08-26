@@ -109,7 +109,7 @@ pack Path {
 
 /** The path [text] names. */
 @Experimental(since: "0.1")
-func path(text: String): Path { return .(text) }
+func path(text: String): Path = .(text)
 
 impl Path {
     /**
@@ -121,37 +121,35 @@ impl Path {
      */
     @Experimental(since: "0.1")
     func &.join(segment: String): Path {
-        if stringLength(segment) == 0 { return .(self.text) }
-        if stringLength(self.text) == 0 { return .(segment) }
-        if _isSeparator(charAt(segment, 0)) { return .(segment) }
-        return if _isSeparator(charAt(self.text, stringLength(self.text) - 1)) {
-            return .(self.text + segment)
-        } else { .(self.text + pathSeparator + segment) }
+        if stringLength(segment) == 0 then return .(self.text)
+        if stringLength(self.text) == 0 then return .(segment)
+        if _isSeparator(charAt(segment, 0)) then return .(segment)
+        return if _isSeparator(charAt(self.text, stringLength(self.text) - 1))
+        then .(self.text + segment)
+        else .(self.text + pathSeparator + segment)
     }
 
     /** The directory holding this path; `"."` when there is no separator. */
     @Experimental(since: "0.1")
     prop &.parent: Path {
-        fin cut = _lastSeparator(self.text)
-        if cut < 0 { return .(".") }
-        return if cut == 0 { .(pathSeparator) } else { .(substring(self.text, 0, cut)) }
+        fin cut: Int = _lastSeparator(self.text)
+        if cut < 0 then return .(".")
+        return if cut == 0 then .(pathSeparator) else .(substring(self.text, 0, cut))
     }
 
     /** The final segment: `a/b/c.az` → `c.az`. */
     @Experimental(since: "0.1")
     prop &.fileName: String {
-        fin cut = _lastSeparator(self.text)
-        if cut < 0 { return self.text }
+        fin cut: Int = _lastSeparator(self.text)
+        if cut < 0 then return self.text
         return substring(self.text, cut + 1, stringLength(self.text))
     }
 
     /** The final segment without its extension: `a/b/c.az` → `c`. */
     @Experimental(since: "0.1")
     prop &.stem: String {
-        fin name = self.fileName
-        fin dot = _lastDot(name)
-        if dot <= 0 { return name }
-        return substring(name, 0, dot)
+        fin {name, dot}: {String, Int} = {self.fileName, _lastDot(name)}
+        return if dot <= 0 then name else substring(name, 0, dot)
     }
 
     /**
@@ -162,31 +160,28 @@ impl Path {
      */
     @Experimental(since: "0.1")
     prop &.extension: String {
-        fin name = self.fileName
-        fin dot = _lastDot(name)
-        if dot <= 0 { return "" }
-        return substring(name, dot + 1, stringLength(name))
+        fin {name, dot}: {String, Int} = {self.fileName, _lastDot(name)}
+        return if dot <= 0 then "" else substring(name, dot + 1, stringLength(name))
     }
 
     /** This path with its extension replaced (or added when it had none). */
     @Experimental(since: "0.1")
     func &.withExtension(extension: String): Path {
-        fin base = self.parent
-        fin name = self.stem
-        fin renamed = if stringLength(extension) == 0 { name } else { name + "." + extension }
-        if self.parent.text == "." && _lastSeparator(self.text) < 0 { return .(renamed) }
-        return base.join(renamed)
+        fin {base, name}: {Path, String} = self.{parent, stem}
+        fin renamed: Bool = if stringLength(extension) == 0 then name else name + "." + extension
+        return if self.parent.text == "." && _lastSeparator(self.text) < 0 then .(renamed)
+        else base.join(renamed)
     }
 
     /** True when this path starts at a filesystem root. */
     @Experimental(since: "0.1")
     prop &.isAbsolute: Bool {
-        if stringLength(self.text) == 0 { return false }
-        if _isSeparator(charAt(self.text, 0)) { return true }
+        if stringLength(self.text) == 0 then return false
+        if _isSeparator(charAt(self.text, 0)) then return true
         // A Windows drive letter: "C:\…" or "C:/…".
-        return if stringLength(self.text) >= 3 && charAt(self.text, 1) == ':' {
-            _isSeparator(charAt(self.text, 2))
-        } else { false }
+        return if stringLength(self.text) >= 3 && charAt(self.text, 1) == ':'
+        then _isSeparator(charAt(self.text, 2))
+        else false
     }
 
     /**

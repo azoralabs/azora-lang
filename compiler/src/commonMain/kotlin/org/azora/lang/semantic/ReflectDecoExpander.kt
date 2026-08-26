@@ -200,6 +200,7 @@ object ReflectDecoExpander {
                 is Expr.TupleAccess -> e.copy(target = expr(e.target))
                 is Expr.Binary -> e.copy(left = expr(e.left), right = expr(e.right))
                 is Expr.Unary -> e.copy(operand = expr(e.operand))
+                is Expr.IncDec -> e.copy(target = expr(e.target))
                 is Expr.Grouping -> e.copy(expr = expr(e.expr))
                 is Expr.Cast -> e.copy(expr = expr(e.expr), targetType = typeRef(e.targetType))
                 is Expr.ArrayLiteral -> e.copy(elements = e.elements.map { expr(it) })
@@ -439,6 +440,7 @@ object ReflectDecoExpander {
             is Expr.Index -> e.copy(target = expr(e.target), index = expr(e.index))
             is Expr.Binary -> e.copy(left = expr(e.left), right = expr(e.right))
             is Expr.Unary -> e.copy(operand = expr(e.operand))
+            is Expr.IncDec -> e.copy(target = expr(e.target))
             is Expr.Grouping -> e.copy(expr = expr(e.expr))
             is Expr.Cast -> e.copy(expr = expr(e.expr), targetType = typeRef(e.targetType))
             is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->

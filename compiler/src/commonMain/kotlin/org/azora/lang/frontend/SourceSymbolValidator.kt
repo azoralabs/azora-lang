@@ -227,10 +227,18 @@ internal object SourceSymbolValidator {
             is Stmt.InlineAssert -> { expression(statement.condition); expression(statement.message) }
             is Stmt.InlineTrace -> { statement.level?.let(::expression); expression(statement.message) }
             is Stmt.While -> { statement.label?.let { declaration(it, "loop label", statement.line) }; expression(statement.condition); statement.body.forEach(::statement) }
-            is Stmt.For -> { declaration(statement.name, "loop variable", statement.line); statement.label?.let { declaration(it, "loop label", statement.line) }; expression(statement.iterable); statement.step?.let(::expression); statement.body.forEach(::statement) }
+            is Stmt.For -> {
+                declaration(statement.name, "loop variable", statement.line)
+                statement.indexName?.let { declaration(it, "loop index", statement.line) }
+                statement.label?.let { declaration(it, "loop label", statement.line) }
+                expression(statement.iterable)
+                statement.step?.let(::expression)
+                statement.body.forEach(::statement)
+            }
             is Stmt.Loop -> { statement.label?.let { declaration(it, "loop label", statement.line) }; statement.iterable?.let(::expression); statement.body.forEach(::statement) }
             is Stmt.InlineFor -> { declaration(statement.name, "inline loop variable", statement.line); statement.indexName?.let { declaration(it, "inline loop index", statement.line) }; expression(statement.iterable); statement.body.forEach(::statement) }
-            is Stmt.Break, is Stmt.Continue -> Unit
+            is Stmt.Break -> statement.value?.let(::expression)
+            is Stmt.Continue -> Unit
             is Stmt.IndexAssign -> { expression(statement.target); expression(statement.index); expression(statement.value) }
             is Stmt.MemberAssign -> { expression(statement.target); statement.nameExpr?.let(::expression); expression(statement.value) }
             is Stmt.When -> { expression(statement.scrutinee); statement.branches.forEach { branch -> branch.patterns.forEach(::expression); branch.body.forEach(::statement) }; statement.elseBranch?.forEach(::statement) }
@@ -259,6 +267,7 @@ internal object SourceSymbolValidator {
             is Expr.Inject -> Unit
             is Expr.Binary -> { expression(expression.left); expression(expression.right) }
             is Expr.Unary -> expression(expression.operand)
+            is Expr.IncDec -> expression(expression.target)
             is Expr.Call -> { expression.args.forEach(::expression); expression.receiver?.let(::expression) }
             is Expr.Grouping -> expression(expression.expr)
             is Expr.Range -> { expression(expression.from); expression(expression.to) }

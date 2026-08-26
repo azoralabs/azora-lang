@@ -438,6 +438,7 @@ class IrGenerator(private val table: SymbolTable) {
                 collectReferencedNames(expr.right, names)
             }
             is IrExpr.Unary -> collectReferencedNames(expr.operand, names)
+            is IrExpr.IncDec -> collectReferencedNames(expr.target, names)
             is IrExpr.Call -> {
                 expr.receiver?.let { collectReferencedNames(it, names) }
                 expr.args.forEach { collectReferencedNames(it, names) }
@@ -1139,6 +1140,50 @@ class IrGenerator(private val table: SymbolTable) {
         else -> null
     }
 
+    /**
+     * Iterator-backed `for … with index` loops are represented as a reset plus
+     * `while`, so their ordinal must be advanced even when the body continues.
+     * Rewrite only continues targeting this generated loop; nested loops own
+     * their own continue statements.
+     */
+    private fun rewriteContinuesForIndex(stmts: List<IrStmt>, index: String, label: String?): List<IrStmt> =
+        stmts.map { stmt -> rewriteContinueForIndex(stmt, index, label) }
+
+    private fun rewriteContinueForIndex(stmt: IrStmt, index: String, label: String?): IrStmt {
+        val increment = IrStmt.Assignment(
+            index,
+            IrExpr.Binary(
+                IrExpr.Var(index, IrType.Int),
+                IrBinaryOp.ADD,
+                IrExpr.IntLiteral(1),
+                IrType.Int,
+            ),
+        )
+        return when (stmt) {
+            is IrStmt.Continue -> if (stmt.label == null || stmt.label == label) {
+                IrStmt.Scope(listOf(increment, stmt))
+            } else stmt
+            // A nested loop consumes its own continue statements.
+            is IrStmt.While, is IrStmt.For, is IrStmt.ForEach, is IrStmt.Loop -> stmt
+            is IrStmt.If -> stmt.copy(
+                thenBranch = rewriteContinuesForIndex(stmt.thenBranch, index, label),
+                elseBranch = stmt.elseBranch?.let { rewriteContinuesForIndex(it, index, label) },
+            )
+            is IrStmt.Scope -> stmt.copy(body = rewriteContinuesForIndex(stmt.body, index, label))
+            is IrStmt.When -> stmt.copy(
+                branches = stmt.branches.map { branch ->
+                    branch.copy(body = rewriteContinuesForIndex(branch.body, index, label))
+                },
+                elseBranch = stmt.elseBranch?.let { rewriteContinuesForIndex(it, index, label) },
+            )
+            is IrStmt.Try -> stmt.copy(
+                body = rewriteContinuesForIndex(stmt.body, index, label),
+                catchBody = stmt.catchBody?.let { rewriteContinuesForIndex(it, index, label) },
+            )
+            else -> stmt
+        }
+    }
+
     private fun lowerStmt(stmt: Stmt): IrStmt {
         return when (stmt) {
             is Stmt.VarDecl -> {
@@ -1302,10 +1347,25 @@ class IrGenerator(private val table: SymbolTable) {
                     pushNameScope()
                     val counter = registerName(stmt.name)
                     table.defineVariable(VariableSymbol(stmt.name, IrType.Int, mutable = true))
+                    val index = stmt.indexName?.let { name ->
+                        val registered = registerName(name)
+                        table.defineVariable(VariableSymbol(name, IrType.Int, mutable = false))
+                        registered
+                    }
                     val body = lowerBody(stmt.body)
                     popNameScope()
                     table.popScope()
-                    IrStmt.For(counter, start, end, range.inclusive, body, step = step, reverse = stmt.reverse, label = stmt.label)
+                    IrStmt.For(
+                        counter,
+                        start,
+                        end,
+                        range.inclusive,
+                        body,
+                        step = step,
+                        reverse = stmt.reverse,
+                        label = stmt.label,
+                        indexName = index,
+                    )
                 } else {
                     // For-in over a non-range iterable (array, flow, channel): for-each.
                     val iterable = lowerExpr(stmt.iterable)
@@ -1326,17 +1386,38 @@ class IrGenerator(private val table: SymbolTable) {
                         pushNameScope()
                         val row = registerName(stmt.name)
                         table.defineVariable(VariableSymbol(stmt.name, iteratorElement, mutable = false))
+                        val index = stmt.indexName?.let { name ->
+                            val registered = registerName(name)
+                            table.defineVariable(VariableSymbol(name, IrType.Int, mutable = false))
+                            registered
+                        }
                         val bind = IrStmt.VarDecl(
                             row,
                             iteratorElement,
                             iteratorCall(iterable, "next", iteratorElement),
                         )
-                        val body = lowerBody(stmt.body)
+                        val body = lowerBody(stmt.body).let { lowered ->
+                            if (index == null) lowered else rewriteContinuesForIndex(lowered, index, stmt.label)
+                        }
                         popNameScope()
                         table.popScope()
                         val reset = IrStmt.ExprStmt(iteratorCall(iterable, "reset", IrType.Unit))
                         val cond = iteratorCall(iterable, "hasNext", IrType.Bool)
-                        IrStmt.Scope(listOf(reset, IrStmt.While(cond, listOf(bind) + body, stmt.label)))
+                        val indexDecl = index?.let {
+                            IrStmt.VarDecl(it, IrType.Int, IrExpr.IntLiteral(0), valueMutable = true)
+                        }
+                        val indexIncrement = index?.let {
+                            IrStmt.Assignment(
+                                it,
+                                IrExpr.Binary(
+                                    IrExpr.Var(it, IrType.Int),
+                                    IrBinaryOp.ADD,
+                                    IrExpr.IntLiteral(1),
+                                    IrType.Int,
+                                ),
+                            )
+                        }
+                        IrStmt.Scope(listOfNotNull(reset, indexDecl, IrStmt.While(cond, listOf(bind) + body + listOfNotNull(indexIncrement), stmt.label)))
                     } else {
                     val elemType = when (val type = iterable.type) {
                         is IrType.Array -> type.element
@@ -1347,10 +1428,15 @@ class IrGenerator(private val table: SymbolTable) {
                     pushNameScope()
                     val elem = registerName(stmt.name)
                     table.defineVariable(VariableSymbol(stmt.name, elemType, mutable = false))
+                    val index = stmt.indexName?.let { name ->
+                        val registered = registerName(name)
+                        table.defineVariable(VariableSymbol(name, IrType.Int, mutable = false))
+                        registered
+                    }
                     val body = lowerBody(stmt.body)
                     popNameScope()
                     table.popScope()
-                    IrStmt.ForEach(elem, iterable, body)
+                    IrStmt.ForEach(elem, iterable, body, indexName = index)
                     }
                 }
             }
@@ -1574,6 +1660,7 @@ class IrGenerator(private val table: SymbolTable) {
         if (expr == from) return to
         return when (expr) {
             is IrExpr.Unary -> expr.copy(operand = replaceExpr(expr.operand, from, to))
+            is IrExpr.IncDec -> expr.copy(target = replaceExpr(expr.target, from, to) as IrExpr.Var)
             is IrExpr.Binary -> expr.copy(left = replaceExpr(expr.left, from, to), right = replaceExpr(expr.right, from, to))
             is IrExpr.Call -> expr.copy(args = expr.args.map { replaceExpr(it, from, to) })
             is IrExpr.ArrayLiteral -> expr.copy(elements = expr.elements.map { replaceExpr(it, from, to) })
@@ -1620,6 +1707,7 @@ class IrGenerator(private val table: SymbolTable) {
                 captures[expr.name] = expr.type
             }
             is IrExpr.Unary -> collectTraceCaptures(expr.operand, captures)
+            is IrExpr.IncDec -> collectTraceCaptures(expr.target, captures)
             is IrExpr.Binary -> {
                 collectTraceCaptures(expr.left, captures)
                 collectTraceCaptures(expr.right, captures)
@@ -2082,6 +2170,16 @@ class IrGenerator(private val table: SymbolTable) {
                     else -> error("Unknown unary op: ${expr.op}")
                 }
                 IrExpr.Unary(op, operand, operand.type)
+            }
+            is Expr.IncDec -> {
+                val target = lowerExpr(expr.target)
+                val variable = target as? IrExpr.Var
+                    ?: error("increment expression target must lower to a variable")
+                IrExpr.IncDec(
+                    variable,
+                    if (expr.op == TokenType.PLUS_PLUS) 1 else -1,
+                    expr.prefix,
+                )
             }
             is Expr.Binary -> {
                 // `.(args) * count` - `count` values built the same way, not a

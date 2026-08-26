@@ -25,6 +25,7 @@ private fun Expr.bindTraceReceiver(receiver: Expr, interpolation: Boolean): Expr
     is Expr.UpperScopeAccess, is Expr.Inject -> this
     is Expr.Binary -> copy(left = left.bindTraceReceiver(receiver, interpolation), right = right.bindTraceReceiver(receiver, interpolation))
     is Expr.Unary -> copy(operand = operand.bindTraceReceiver(receiver, interpolation))
+    is Expr.IncDec -> copy(target = target.bindTraceReceiver(receiver, interpolation))
     is Expr.Call -> copy(args = args.map { it.bindTraceReceiver(receiver, interpolation) })
     is Expr.Grouping -> copy(expr = expr.bindTraceReceiver(receiver, interpolation))
     is Expr.Range -> copy(from = from.bindTraceReceiver(receiver, interpolation), to = to.bindTraceReceiver(receiver, interpolation))

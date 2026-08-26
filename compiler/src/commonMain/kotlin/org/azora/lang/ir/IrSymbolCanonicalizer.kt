@@ -134,6 +134,7 @@ internal object IrSymbolCanonicalizer {
                 end = expr(stmt.end),
                 body = stmt.body.map(::stmt),
                 step = stmt.step?.let(::expr),
+                indexName = stmt.indexName?.let(::symbol),
             )
             is IrStmt.Loop -> stmt.copy(body = stmt.body.map(::stmt))
             is IrStmt.Break -> stmt
@@ -157,6 +158,7 @@ internal object IrSymbolCanonicalizer {
                 elem = symbol(stmt.elem),
                 iterable = expr(stmt.iterable),
                 body = stmt.body.map(::stmt),
+                indexName = stmt.indexName?.let(::symbol),
             )
         }
 
@@ -175,6 +177,7 @@ internal object IrSymbolCanonicalizer {
                 type = type(expr.type),
             )
             is IrExpr.Unary -> expr.copy(operand = expr(expr.operand), type = type(expr.type))
+            is IrExpr.IncDec -> expr.copy(target = expr(expr.target) as IrExpr.Var)
             is IrExpr.Call -> {
                 val callType = type(expr.type)
                 val args = expr.args.map(::expr).toMutableList()

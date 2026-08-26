@@ -187,7 +187,8 @@ object InlineCallables {
             is Expr.Member -> e.copy(target = expr(e.target))
             is Expr.Index -> e.copy(target = expr(e.target), index = expr(e.index))
             is Expr.Binary -> e.copy(left = expr(e.left), right = expr(e.right))
-            is Expr.Unary -> e.copy(operand = expr(e.operand))
+                is Expr.Unary -> e.copy(operand = expr(e.operand))
+                is Expr.IncDec -> e.copy(target = expr(e.target))
             is Expr.Grouping -> e.copy(expr = expr(e.expr))
             is Expr.Cast -> e.copy(expr = expr(e.expr))
             is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->

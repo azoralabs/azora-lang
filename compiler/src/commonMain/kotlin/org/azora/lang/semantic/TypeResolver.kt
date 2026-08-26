@@ -1713,6 +1713,9 @@ class TypeResolver(private val table: SymbolTable) {
                         table.defineVariable(
                             VariableSymbol(stmt.name, loopRowType(stmt, IrType.Int), mutable = true),
                         )
+                        stmt.indexName?.let { index ->
+                            table.defineVariable(VariableSymbol(index, IrType.Int, mutable = false))
+                        }
                         inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
                     }
@@ -1732,6 +1735,9 @@ class TypeResolver(private val table: SymbolTable) {
                         table.defineVariable(
                             VariableSymbol(stmt.name, loopRowType(stmt, walked), mutable = false),
                         )
+                        stmt.indexName?.let { index ->
+                            table.defineVariable(VariableSymbol(index, IrType.Int, mutable = false))
+                        }
                         inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
                         return
@@ -1752,7 +1758,10 @@ class TypeResolver(private val table: SymbolTable) {
                     table.defineVariable(
                         VariableSymbol(stmt.name, loopRowType(stmt, elementType), mutable = false),
                     )
-                        inLoop { resolveBody(stmt.body, returnType) }
+                    stmt.indexName?.let { index ->
+                        table.defineVariable(VariableSymbol(index, IrType.Int, mutable = false))
+                    }
+                    inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
                     }
                 }
@@ -1773,7 +1782,15 @@ class TypeResolver(private val table: SymbolTable) {
                 inLoop { resolveBody(stmt.body, returnType) }
                 table.popScope()
             }
-            is Stmt.Break -> { /* no type constraint */ }
+            is Stmt.Break -> {
+                if (stmt.value != null) {
+                    resolveExpr(stmt.value)
+                    errors.add(
+                        "line ${stmt.line}: a break value is only valid in a for-expression; " +
+                            "use 'break value' inside 'for … else …'",
+                    )
+                }
+            }
             is Stmt.Continue -> { /* no type constraint */ }
             is Stmt.IndexAssign -> {
                 if (!checkValueMutable(stmt.target, stmt.line, "assign by index")) return
@@ -2255,6 +2272,23 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     else -> { errors.add("line ${expr.line}: unknown unary op ${expr.op}"); null }
                 }
+            }
+            is Expr.IncDec -> {
+                val targetType = resolveExpr(expr.target) ?: return null
+                if (expr.op != TokenType.PLUS_PLUS && expr.op != TokenType.MINUS_MINUS) {
+                    errors.add("line ${expr.line}: invalid increment operator ${expr.op}")
+                    return null
+                }
+                if (targetType !in IrType.integerTypes && targetType !in IrType.floatTypes && targetType != IrType.Any) {
+                    errors.add("line ${expr.line}: ${expr.op} requires a numeric target, got $targetType")
+                    return null
+                }
+                if (!checkValueMutable(expr.target, expr.line, "increment or decrement")) return null
+                if (expr.target !is Expr.Identifier) {
+                    errors.add("line ${expr.line}: increment expressions currently require a variable target")
+                    return null
+                }
+                targetType
             }
             is Expr.Binary -> {
                 // `.(args) * count` builds `count` values, so the `*` joins a

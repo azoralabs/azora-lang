@@ -97,6 +97,7 @@ internal object ConstraintEvaluator {
             right = substituteConsts(expr.right, values),
         )
         is Expr.Unary -> expr.copy(operand = substituteConsts(expr.operand, values))
+        is Expr.IncDec -> expr.copy(target = substituteConsts(expr.target, values))
         is Expr.Grouping -> expr.copy(expr = substituteConsts(expr.expr, values))
         is Expr.InCheck -> expr.copy(
             value = substituteConsts(expr.value, values),

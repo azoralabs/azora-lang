@@ -74,6 +74,7 @@ object AzStdlib {
     fun invalidate() {
         cachedTree = null
         cachedPrograms = null
+        cachedLenientPrograms = null
         comptimeLists.clear()
         declaredEnums.clear()
         comptimeListScopes.clear()
@@ -81,6 +82,7 @@ object AzStdlib {
 
     private var cachedTree: StdlibTree? = null
     private var cachedPrograms: List<Program>? = null
+    private var cachedLenientPrograms: List<Program>? = null
 
     /**
      * Compile-time lists bound by the standard library, e.g. `Numbers`.
@@ -114,8 +116,16 @@ object AzStdlib {
     /** The standard library's source texts, in path order. */
     val sources: List<String> get() = tree().files.map { it.source }
 
-    /** Every standard-library module, parsed once per resolved tree. */
-    fun loadPrograms(): List<Program> = cachedPrograms ?: parse(tree()).also { cachedPrograms = it }
+    /**
+     * Load the complete standard library. Compiler callers use strict mode so
+     * a broken std source remains a real compilation error. Editor tooling can
+     * use lenient mode so one migrating file does not disable all highlighting.
+     */
+    fun loadPrograms(strict: Boolean = true): List<Program> = if (strict) {
+        cachedPrograms ?: parse(tree(), strict = true).also { cachedPrograms = it }
+    } else {
+        cachedLenientPrograms ?: parse(tree(), strict = false).also { cachedLenientPrograms = it }
+    }
 
     // ------------------------------------------------------------------
     // Resolution
@@ -187,7 +197,7 @@ object AzStdlib {
      * is rebuilt from empty on each parse so a re-resolved standard library
      * cannot inherit bindings from the one it replaced.
      */
-    private fun parse(tree: StdlibTree): List<Program> {
+    private fun parse(tree: StdlibTree, strict: Boolean): List<Program> {
         comptimeLists.clear()
         declaredEnums.clear()
         comptimeListScopes.clear()
@@ -200,6 +210,10 @@ object AzStdlib {
                     typeListScope = comptimeListScopes,
                 ).parse()
             } catch (e: Exception) {
+                // Keep one placeholder per source in lenient mode. AZLS uses
+                // the parallel list to retain the correct file/documentation
+                // association for every successfully parsed sibling.
+                if (!strict) return@map Program(null, emptyList())
                 error(
                     "Failed to parse standard library source ${file.path} " +
                         "(${tree.origin}): ${e.message}",

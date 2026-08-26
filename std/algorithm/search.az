@@ -47,7 +47,7 @@ error SearchError {
  */
 @Experimental(since: "0.1")
 func<T: Order> linearSearch(arr: Array<T>, target: T): Int {
-    return for i: Int in 0..<arr.size { if arr[i] == target { i } } else { -1 }
+    return for i: Int in 0..<arr.size { if arr[i] == target then break i } else { -1 }
 }
 
 /**
@@ -64,8 +64,8 @@ func<T: Order> binarySearch(arr: Array<T>, target: T): Int {
     var {lo, hi}: Int = {0, arr.size - 1}
     while lo <= hi {
         fin mid = (lo + hi) / 2
-        if arr[mid] == target { return mid }
-        if arr[mid] < target { lo = mid + 1 } else { hi = mid - 1 }
+        if arr[mid] == target then return mid
+        if arr[mid] < target then lo = mid + 1 else hi = mid - 1
     }
     return -1
 }
@@ -79,12 +79,10 @@ func<T: Order> binarySearch(arr: Array<T>, target: T): Int {
 @Experimental(since: "0.1")
 func<T: Order> minOf(arr: Array<T>): T
 in {
-    assert arr.size > 0 { "Input must not be empty" }
+    assert arr.size > 0 panic "Input must not be empty"
 } scope {
     var result = arr[0]
-    for i: Int in 1..<arr.size {
-        if arr[i] < result { result = arr[i] }
-    }
+    for i: Int in 1..<arr.size then if arr[i] < result then result = arr[i]
     return result
 }
 
@@ -97,12 +95,10 @@ in {
 @Experimental(since: "0.1")
 func<T: Order> maxOf(arr: Array<T>): T
 in {
-    assert arr.size > 0 { "Input must not be empty" }
+    assert arr.size > 0 panic "Input must not be empty"
 } scope {
     var result = arr[0]
-    for i: Int in 1..<arr.size {
-        if arr[i] > result { result = arr[i] }
-    }
+    for i: Int in 1..<arr.size then if arr[i] > result then result = arr[i]
     return result
 }
 
@@ -116,12 +112,10 @@ in {
 @Experimental(since: "0.1")
 func<T: Order> count(arr: Array<T>, target: T): Int
 out {
-    assert it >= 0 { "count must return non-negative" }
+    assert it >= 0 panic "count must return non-negative"
 } scope {
     var c: Int = 0
-    for i: Int in 0..<arr.size {
-        if arr[i] == target { c++ }
-    }
+    for i: Int in 0..<arr.size then if arr[i] == target then c++
     return c
 }
 
@@ -133,9 +127,13 @@ out {
  * @return The index of the first match, or -1 if none found.
  */
 @Experimental(since: "0.1")
-func<T> findIndex(arr: Array<T>, pred: (T) -> Bool): Int {
-    return for i: Int in 0..<arr.size { if pred(arr[i]) { i } } else { -1 }
+func<T, I: Indexed<T>> findIndex(arr: Array<T>, pred: (T) -> Bool): Int {
+    return for i: Int in 0..<arr.size { if pred(arr[i]) then break i } else -1
 }
+/*@Experimental(since: "0.1")
+func<T, C: Index<T>> findIndex(collection: C, pred: (T) -> Bool): Int {
+    return for i: Int in 0..<collection.size { if pred(collection[i]) then break i } else -1
+}*/
 
 /**
  * Returns the index of the last element satisfying a predicate.
@@ -146,11 +144,7 @@ func<T> findIndex(arr: Array<T>, pred: (T) -> Bool): Int {
  */
 @Experimental(since: "0.1")
 func<T> findLastIndex(arr: Array<T>, pred: (T) -> Bool): Int {
-    var result = -1
-    for i: Int in 0..<arr.size {
-        if pred(arr[i]) { result = i }
-    }
-    return result
+    return for i: Int in arr.size>..0 { if pred(arr[i]) then break i } else -1
 }
 
 /**

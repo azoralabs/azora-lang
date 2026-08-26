@@ -992,45 +992,39 @@ test scope {
 }
 
 test "serializer decorator is visible at compile time" {
-    inline assert reflect<SerializerMetadataFixture>.hasAnnot<Serializable> {
+    inline assert reflect<SerializerMetadataFixture>.hasAnnot<Serializable> panic
         "@Serializable must be visible through hasAnnot"
-    }
 }
 
 test "serializer decorator exposes named options" {
-    inline assert reflect<SerializerMetadataFixture>.annotMeta<Serializable>.ignoreUnknownFields {
+    inline assert reflect<SerializerMetadataFixture>.annotMeta<Serializable>.ignoreUnknownFields panic
         "ignoreUnknownFields must retain its annotation value"
-    }
-    inline assert !reflect<SerializerMetadataFixture>.annotMeta<Serializable>.encodeDefaults {
+    inline assert !reflect<SerializerMetadataFixture>.annotMeta<Serializable>.encodeDefaults panic
         "encodeDefaults must retain its annotation value"
-    }
 }
 
 test "serial ignore is visible on fields" {
-    inline assert reflect<SerializerMetadataFixture::secret>.hasAnnot<SerialIgnore> {
+    inline assert reflect<SerializerMetadataFixture::secret>.hasAnnot<SerialIgnore> panic
         "@SerialIgnore must target field metadata"
-    }
 }
 
 test "serial name exposes its immutable value" {
     inline fin name = reflect<SerializerMetadataFixture::displayName>.annotMeta<SerialName>.value
-    inline assert name == "display_name" { "@SerialName must preserve its value" }
+    inline assert name == "display_name" panic "@SerialName must preserve its value"
 }
 
 test "azon-only decorator is independent" {
-    inline assert reflect<_AzonMetadataFixture>.hasAnnot<AzonSerializable> {
+    inline assert reflect<_AzonMetadataFixture>.hasAnnot<AzonSerializable> panic
         "AZON-only metadata must be present"
-    }
-    inline assert !reflect<_AzonMetadataFixture>.hasAnnot<Serializable> {
+    inline assert !reflect<_AzonMetadataFixture>.hasAnnot<Serializable> panic
         "AZON-only metadata must not imply the value-tree decorator"
-    }
 }
 
 test "manual Serializer impl converts a typed value" {
     fin serializer = _ManualTextSerializer()
     fin value = serializer.toSerialValue(_ManualTextValue("Azora")) catch SerialValue.Null
     fin encoded = encodeSerialValue(value, serializerOptions()) catch "error"
-    assert encoded == "\"Azora\"" { "Serializer.toSerialValue must use the implementation body" }
+    assert encoded == "\"Azora\"" panic "Serializer.toSerialValue must use the implementation body"
 }
 
 test "manual Serializer impl reconstructs a typed value" {
@@ -1043,7 +1037,7 @@ test "manual Serializer impl reconstructs a typed value" {
 test "manual Serializer impl reports unexpected value types" {
     fin serializer = _ManualTextSerializer()
     fin value = serializer.fromSerialValue(SerialValue.Bool(true)) catch _ManualTextValue("failed")
-    assert value.value == "failed" { "the serializer must fail for an incompatible SerialValue" }
+    assert value.value == "failed" panic "the serializer must fail for an incompatible SerialValue"
 }
 
 test "manual Serializer impl round trips through AZON" {
@@ -1053,190 +1047,173 @@ test "manual Serializer impl round trips through AZON" {
     fin text = encodeSerialValue(tree, options) catch "error"
     fin decodedTree = decodeSerialValue(text, options) catch SerialValue.Null
     fin decoded = serializer.fromSerialValue(decodedTree) catch _ManualTextValue("failed")
-    assert decoded.value == "round-trip" { "custom serializers must compose with wire formats" }
+    assert decoded.value == "round-trip" panic "custom serializers must compose with wire formats"
 }
 
 test "impl Serializable accepts configured decorator metadata" {
-    inline assert reflect<_ImplSerializableFixture>.hasAnnot<Serializable> {
+    inline assert reflect<_ImplSerializableFixture>.hasAnnot<Serializable> panic
         "empty decorator implementation bodies must be visible through hasAnnot"
-    }
-    inline assert reflect<_ImplSerializableFixture>.annotMeta<Serializable>.ignoreUnknownFields {
+    inline assert reflect<_ImplSerializableFixture>.annotMeta<Serializable>.ignoreUnknownFields panic
         "configured decorator implementations must expose named metadata"
-    }
-    inline assert !reflect<_ImplSerializableFixture>.annotMeta<Serializable>.encodeDefaults {
+    inline assert !reflect<_ImplSerializableFixture>.annotMeta<Serializable>.encodeDefaults panic
         "configured decorator implementations must override defaults"
-    }
 }
 
 test "impl Serializable still uses omitted metadata defaults" {
-    inline assert reflect<_DefaultSerializableFixture>.hasAnnot<Serializable> {
+    inline assert reflect<_DefaultSerializableFixture>.hasAnnot<Serializable> panic
         "unconfigured decorator implementations must remain valid"
-    }
-    inline assert !reflect<_DefaultSerializableFixture>.annotMeta<Serializable>.ignoreUnknownFields {
+    inline assert !reflect<_DefaultSerializableFixture>.annotMeta<Serializable>.ignoreUnknownFields panic
         "omitted ignoreUnknownFields must use its default"
-    }
-    inline assert reflect<_DefaultSerializableFixture>.annotMeta<Serializable>.encodeDefaults {
+    inline assert reflect<_DefaultSerializableFixture>.annotMeta<Serializable>.encodeDefaults panic
         "omitted encodeDefaults must use its default"
-    }
 }
 
 test "decorator impl targets one pack field" {
-    inline assert reflect<_DirectFieldDecoratorFixture::name>.hasAnnot<SerialName> {
+    inline assert reflect<_DirectFieldDecoratorFixture::name>.hasAnnot<SerialName> panic
         "field implementation must apply SerialName to the selected field"
-    }
     inline fin name = reflect<_DirectFieldDecoratorFixture::name>.annotMeta<SerialName>.value
-    inline assert name == "display_name" { "field implementation must preserve configured metadata" }
-    inline assert !reflect<_DirectFieldDecoratorFixture::password>.hasAnnot<SerialName> {
+    inline assert name == "display_name" panic "field implementation must preserve configured metadata"
+    inline assert !reflect<_DirectFieldDecoratorFixture::password>.hasAnnot<SerialName> panic
         "field implementation must not affect sibling fields"
-    }
 }
 
 test "decorator impl accepts a decorator list" {
-    inline assert reflect<_GroupedDecoratorFixture::name>.hasAnnot<SerialName> {
+    inline assert reflect<_GroupedDecoratorFixture::name>.hasAnnot<SerialName> panic
         "decorator lists must apply every listed decorator"
-    }
-    inline assert reflect<_GroupedDecoratorFixture::name>.hasAnnot<SerialRequired> {
+    inline assert reflect<_GroupedDecoratorFixture::name>.hasAnnot<SerialRequired> panic
         "decorator lists must preserve all marker contracts"
-    }
 }
 
 test "decorator impl accepts a field target list" {
-    inline assert reflect<_GroupedTargetFixture::name>.hasAnnot<SerialIgnore> {
+    inline assert reflect<_GroupedTargetFixture::name>.hasAnnot<SerialIgnore> panic
         "target lists must decorate their first field"
-    }
-    inline assert reflect<_GroupedTargetFixture::password>.hasAnnot<SerialIgnore> {
+    inline assert reflect<_GroupedTargetFixture::password>.hasAnnot<SerialIgnore> panic
         "target lists must decorate every selected field"
-    }
 }
 
 test "decorator and target lists form a cross product" {
     inline assert reflect<_CrossProductDecoratorFixture::name>.hasAnnot<SerialName> &&
         reflect<_CrossProductDecoratorFixture::name>.hasAnnot<SerialRequired> &&
         reflect<_CrossProductDecoratorFixture::password>.hasAnnot<SerialName> &&
-        reflect<_CrossProductDecoratorFixture::password>.hasAnnot<SerialRequired> {
+        reflect<_CrossProductDecoratorFixture::password>.hasAnnot<SerialRequired> panic
         "each listed decorator must apply to each listed field"
-    }
 }
 
 test "field wildcard applies a decorator to every pack field" {
     inline assert reflect<WildcardDecoratorFixture::name>.hasAnnot<SerialIgnore> &&
-        reflect<WildcardDecoratorFixture::password>.hasAnnot<SerialIgnore> {
+        reflect<WildcardDecoratorFixture::password>.hasAnnot<SerialIgnore> panic
         "Pack::* must select every declared pack field"
-    }
 }
 
 test "field wildcard accepts a decorator list" {
     inline assert reflect<_GroupedWildcardDecoratorFixture::name>.hasAnnot<SerialName> &&
         reflect<_GroupedWildcardDecoratorFixture::name>.hasAnnot<SerialRequired> &&
         reflect<_GroupedWildcardDecoratorFixture::password>.hasAnnot<SerialName> &&
-        reflect<_GroupedWildcardDecoratorFixture::password>.hasAnnot<SerialRequired> {
+        reflect<_GroupedWildcardDecoratorFixture::password>.hasAnnot<SerialRequired> panic
         "decorator lists must apply to every field selected by Pack::*"
-    }
 }
 
 test "serial text extraction validates the slot type" {
     fin text = serialAsText(SerialValue.Text("Azora")) catch "failed"
     fin fallback = serialAsText(SerialValue.Bool(true)) catch "wrong-type"
-    assert text == "Azora" { "serialAsText must return text payloads" }
-    assert fallback == "wrong-type" { "serialAsText must reject non-text values" }
+    assert text == "Azora" panic "serialAsText must return text payloads"
+    assert fallback == "wrong-type" panic "serialAsText must reject non-text values"
 }
 
 test "serial bool extraction validates the slot type" {
     fin boolean = serialAsBool(SerialValue.Bool(true)) catch false
     fin fallback = serialAsBool(SerialValue.Text("true")) catch false
-    assert boolean { "serialAsBool must return Boolean payloads" }
-    assert !fallback { "serialAsBool must reject non-Boolean values" }
+    assert boolean panic "serialAsBool must return Boolean payloads"
+    assert !fallback panic "serialAsBool must reject non-Boolean values"
 }
 
 test "serial char extraction requires exactly one character" {
     fin character = serialAsChar(SerialValue.Text("A")) catch '?'
     fin fallback = serialAsChar(SerialValue.Text("AB")) catch '?'
-    assert character == 'A' { "serialAsChar must return one character" }
-    assert fallback == '?' { "serialAsChar must reject wider strings" }
+    assert character == 'A' panic "serialAsChar must return one character"
+    assert fallback == '?' panic "serialAsChar must reject wider strings"
 }
 
 test "serial long extraction accepts signed integers" {
     fin positive = serialAsLong(SerialValue.Number("42")) catch -1
     fin negative = serialAsLong(SerialValue.Number("-17")) catch 0
-    assert positive == 42 { "serialAsLong must parse positive integers" }
-    assert negative == -17 { "serialAsLong must parse negative integers" }
+    assert positive == 42 panic "serialAsLong must parse positive integers"
+    assert negative == -17 panic "serialAsLong must parse negative integers"
 }
 
 test "serial long extraction rejects real syntax" {
     fin fraction = serialAsLong(SerialValue.Number("1.5")) catch -1
     fin exponent = serialAsLong(SerialValue.Number("1e2")) catch -2
-    assert fraction == -1 { "integral decoding must reject fractions" }
-    assert exponent == -2 { "integral decoding must reject exponents" }
+    assert fraction == -1 panic "integral decoding must reject fractions"
+    assert exponent == -2 panic "integral decoding must reject exponents"
 }
 
 test "serial long extraction rejects overflow" {
     fin overflow = serialAsLong(SerialValue.Number("9223372036854775808")) catch -1
-    assert overflow == -1 { "integral decoding must reject values above Long" }
+    assert overflow == -1 panic "integral decoding must reject values above Long"
 }
 
 test "serial long extraction accepts the minimum value" {
     fin minimum = serialAsLong(SerialValue.Number("-9223372036854775808")) catch 0
-    assert minimum == 0 - 9223372036854775807 - 1 {
-        "serialAsLong must preserve the full signed Long range"
-    }
+    assert minimum == 0 - 9223372036854775807 - 1 panic "serialAsLong must preserve the full signed Long range"
 }
 
 test "serial integer extraction rejects narrowing overflow" {
     fin valid = serialAsInt(SerialValue.Number("2147483647")) catch -1
     fin overflow = serialAsInt(SerialValue.Number("2147483648")) catch -2
-    assert valid == 2147483647 { "serialAsInt must accept Int.maxValue" }
-    assert overflow == -2 { "serialAsInt must reject values above Int" }
+    assert valid == 2147483647 panic "serialAsInt must accept Int.maxValue"
+    assert overflow == -2 panic "serialAsInt must reject values above Int"
 }
 
 test "serial real extraction accepts fractions" {
     fin value = serialAsReal(SerialValue.Number("12.5")) catch -1.0
-    assert value == 12.5 { "serialAsReal must parse fractional numbers" }
+    assert value == 12.5 panic "serialAsReal must parse fractional numbers"
 }
 
 test "serial real extraction accepts exponents" {
     fin positive = serialAsReal(SerialValue.Number("1.25e2")) catch -1.0
     fin negative = serialAsReal(SerialValue.Number("2.5e-1")) catch -1.0
-    assert positive == 125.0 { "serialAsReal must apply positive exponents" }
-    assert negative == 0.25 { "serialAsReal must apply negative exponents" }
+    assert positive == 125.0 panic "serialAsReal must apply positive exponents"
+    assert negative == 0.25 panic "serialAsReal must apply negative exponents"
 }
 
 test "serial number accepts zero" {
-    assert isValidSerialNumber("0") { "zero is a valid serialized number" }
+    assert isValidSerialNumber("0") panic "zero is a valid serialized number"
 }
 
 test "serial number accepts negative integer" {
-    assert isValidSerialNumber("-42") { "negative integers are valid" }
+    assert isValidSerialNumber("-42") panic "negative integers are valid"
 }
 
 test "serial number accepts fraction" {
-    assert isValidSerialNumber("12.375") { "fractions are valid" }
+    assert isValidSerialNumber("12.375") panic "fractions are valid"
 }
 
 test "serial number accepts exponent" {
-    assert isValidSerialNumber("-1.25e+10") { "exponents are valid" }
+    assert isValidSerialNumber("-1.25e+10") panic "exponents are valid"
 }
 
 test "serial number rejects empty input" {
-    assert !isValidSerialNumber("") { "an empty number token is invalid" }
+    assert !isValidSerialNumber("") panic "an empty number token is invalid"
 }
 
 test "serial number rejects leading zero" {
-    assert !isValidSerialNumber("01") { "leading zeroes are invalid" }
+    assert !isValidSerialNumber("01") panic "leading zeroes are invalid"
 }
 
 test "serial number rejects trailing decimal point" {
-    assert !isValidSerialNumber("1.") { "a fraction needs digits" }
+    assert !isValidSerialNumber("1.") panic "a fraction needs digits"
 }
 
 test "serial number rejects incomplete exponent" {
-    assert !isValidSerialNumber("1e+") { "an exponent needs digits" }
+    assert !isValidSerialNumber("1e+") panic "an exponent needs digits"
 }
 
 test "serial number preserves exact source text" {
     let options = serializerOptions()
     fin number = serialNumber("9007199254740993123456789") catch SerialValue.Null
     fin encoded = encodeSerialValue(number, options) catch "error"
-    assert encoded == "9007199254740993123456789" { "large integers must not lose precision" }
+    assert encoded == "9007199254740993123456789" panic "large integers must not lose precision"
 }
 
 test "invalid number nodes cannot be encoded" {
@@ -1245,72 +1222,72 @@ test "invalid number nodes cannot be encoded" {
         SerialValue.Number("01"),
         options
     ) catch "invalid"
-    assert encoded == "invalid" { "invalid number text must fail encoding" }
+    assert encoded == "invalid" panic "invalid number text must fail encoding"
 }
 
 test "azon encodes scalar values" {
     let options = serializerOptions()
-    fin nullText = encodeSerialValue(SerialValue.Null, options) catch "error"
-    fin trueText = encodeSerialValue(SerialValue.Bool(true), options) catch "error"
-    fin stringText = encodeSerialValue(SerialValue.Text("Azora"), options) catch "error"
-    assert nullText == "null" { "null encoding changed" }
-    assert trueText == "true" { "boolean encoding changed" }
-    assert stringText == "\"Azora\"" { "text encoding changed" }
+    fin nullText = encodeSerialValue(.Null, options) catch "error"
+    fin trueText = encodeSerialValue(.Bool(true), options) catch "error"
+    fin stringText = encodeSerialValue(.Text("Azora"), options) catch "error"
+    assert nullText == "null" panic "null encoding changed"
+    assert trueText == "true" panic "boolean encoding changed"
+    assert stringText == "\"Azora\"" panic "text encoding changed"
 }
 
 test "azon round trips arrays" {
     let options = serializerOptions()
     fin value = decodeSerialValue("[1,true,null,\"x\"]", options) catch SerialValue.Null
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "[1,true,null,\"x\"]" { "AZON arrays must round trip canonically" }
+    assert encoded == "[1,true,null,\"x\"]" panic "AZON arrays must round trip canonically"
 }
 
 test "azon round trips ordered objects" {
     let options = serializerOptions()
     fin value = decodeSerialValue("{\"id\":7,\"name\":\"Ada\"}", options) catch SerialValue.Null
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "{\"id\":7,\"name\":\"Ada\"}" { "AZON object order must be deterministic" }
+    assert encoded == "{\"id\":7,\"name\":\"Ada\"}" panic "AZON object order must be deterministic"
 }
 
 test "decoder ignores insignificant whitespace" {
     let options = serializerOptions()
     fin value = decodeSerialValue(" { \"a\" : [ 1, 2 ] } ", options) catch SerialValue.Null
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "{\"a\":[1,2]}" { "whitespace must not alter the value tree" }
+    assert encoded == "{\"a\":[1,2]}" panic "whitespace must not alter the value tree"
 }
 
 test "azon escapes control characters" {
     let options = serializerOptions()
     fin encoded = encodeSerialValue(SerialValue.Text("a\nb\tc"), options) catch "error"
-    assert encoded == "\"a\\nb\\tc\"" { "control characters must be escaped" }
+    assert encoded == "\"a\\nb\\tc\"" panic "control characters must be escaped"
 }
 
 test "decoder resolves unicode escapes" {
     let options = serializerOptions()
     fin value = decodeSerialValue("\"\\u0041\"", options) catch SerialValue.Null
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"A\"" { "unicode escapes must decode to their character" }
+    assert encoded == "\"A\"" panic "unicode escapes must decode to their character"
 }
 
 test "decoder rejects invalid escapes" {
     let options = serializerOptions()
     fin value = decodeSerialValue("\"\\x\"", options) catch SerialValue.Text("failed")
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"failed\"" { "invalid escapes must fail decoding" }
+    assert encoded == "\"failed\"" panic "invalid escapes must fail decoding"
 }
 
 test "decoder rejects trailing content" {
     let options = serializerOptions()
     fin value = decodeSerialValue("true false", options) catch SerialValue.Text("failed")
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"failed\"" { "trailing content must be rejected" }
+    assert encoded == "\"failed\"" panic "trailing content must be rejected"
 }
 
 test "decoder rejects duplicate object fields by default" {
     let options = serializerOptions()
     fin value = decodeSerialValue("{\"a\":1,\"a\":2}", options) catch SerialValue.Text("failed")
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"failed\"" { "duplicate fields must be rejected by default" }
+    assert encoded == "\"failed\"" panic "duplicate fields must be rejected by default"
 }
 
 test "decoder can retain duplicate object fields explicitly" {
@@ -1318,14 +1295,14 @@ test "decoder can retain duplicate object fields explicitly" {
     options.allowDuplicateFields = true
     fin value = decodeSerialValue("{\"a\":1,\"a\":2}", options) catch SerialValue.Null
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "{\"a\":1,\"a\":2}" { "explicit duplicate handling must preserve order" }
+    assert encoded == "{\"a\":1,\"a\":2}" panic "explicit duplicate handling must preserve order"
 }
 
 test "azon rejects equals separators" {
     let options = serializerOptions()
     fin value = decodeSerialValue("{\"a\"=1}", options) catch SerialValue.Text("failed")
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"failed\"" { "AZON must require colon separators" }
+    assert encoded == "\"failed\"" panic "AZON must require colon separators"
 }
 
 test "decoder enforces input length" {
@@ -1333,7 +1310,7 @@ test "decoder enforces input length" {
     options.maxInputLength = 4
     fin value = decodeSerialValue("false", options) catch SerialValue.Text("failed")
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"failed\"" { "maxInputLength must be enforced before parsing" }
+    assert encoded == "\"failed\"" panic "maxInputLength must be enforced before parsing"
 }
 
 test "decoder enforces nesting depth" {
@@ -1341,7 +1318,7 @@ test "decoder enforces nesting depth" {
     options.maxDepth = 0
     fin value = decodeSerialValue("[[]]", options) catch SerialValue.Text("failed")
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"failed\"" { "maxDepth must reject deeply nested input" }
+    assert encoded == "\"failed\"" panic "maxDepth must reject deeply nested input"
 }
 
 test "encoder omits null object fields when configured" {
@@ -1349,7 +1326,7 @@ test "encoder omits null object fields when configured" {
     options.encodeNulls = false
     fin value = decodeSerialValue("{\"a\":null,\"b\":1}", serializerOptions()) catch SerialValue.Null
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "{\"b\":1}" { "encodeNulls=false must omit null object fields" }
+    assert encoded == "{\"b\":1}" panic "encodeNulls=false must omit null object fields"
 }
 
 test "pretty encoder uses configured indentation" {
@@ -1358,7 +1335,7 @@ test "pretty encoder uses configured indentation" {
     options.indent = "    "
     fin value = decodeSerialValue("[1,2]", serializerOptions()) catch SerialValue.Null
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "[\n    1,\n    2\n]" { "pretty output must use the configured indent" }
+    assert encoded == "[\n    1,\n    2\n]" panic "pretty output must use the configured indent"
 }
 
 test "serial field returns an existing object member" {
@@ -1366,7 +1343,7 @@ test "serial field returns an existing object member" {
     fin object = decodeSerialValue("{\"id\":17}", options) catch SerialValue.Null
     fin value = serialField(object, "id") catch SerialValue.Null
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "17" { "serialField must return the requested value" }
+    assert encoded == "17" panic "serialField must return the requested value"
 }
 
 test "serial field fails for a missing member" {
@@ -1374,14 +1351,14 @@ test "serial field fails for a missing member" {
     fin object = decodeSerialValue("{\"id\":17}", options) catch SerialValue.Null
     fin value = serialField(object, "name") catch SerialValue.Text("missing")
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"missing\"" { "serialField must fail for absent names" }
+    assert encoded == "\"missing\"" panic "serialField must fail for absent names"
 }
 
 test "serial field rejects non-object values" {
     fin options = serializerOptions()
     fin value = serialField(SerialValue.Bool(true), "name") catch SerialValue.Text("wrong-type")
     fin encoded = encodeSerialValue(value, options) catch "error"
-    assert encoded == "\"wrong-type\"" { "serialField must reject non-object values" }
+    assert encoded == "\"wrong-type\"" panic "serialField must reject non-object values"
 }
 
 test .All "serializer"

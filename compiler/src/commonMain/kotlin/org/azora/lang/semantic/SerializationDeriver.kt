@@ -563,6 +563,7 @@ object SerializationDeriver {
         is Expr.Identifier -> expr.name
         is Expr.Grouping -> renderExpr(expr.expr)?.let { "($it)" }
         is Expr.Unary -> renderExpr(expr.operand)?.let { "${operator(expr.op)}$it" }
+        is Expr.IncDec -> renderExpr(expr.target)?.let { if (expr.prefix) "${operator(expr.op)}$it" else "$it${operator(expr.op)}" }
         is Expr.Binary -> {
             val left = renderExpr(expr.left)
             val right = renderExpr(expr.right)
@@ -605,6 +606,8 @@ object SerializationDeriver {
         TokenType.AND_AND -> "&&"
         TokenType.OR_OR -> "||"
         TokenType.BANG -> "!"
+        TokenType.PLUS_PLUS -> "++"
+        TokenType.MINUS_MINUS -> "--"
         else -> error("unsupported source operator $type")
     }
 

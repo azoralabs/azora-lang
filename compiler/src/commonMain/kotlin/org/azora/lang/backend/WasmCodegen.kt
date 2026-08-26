@@ -627,6 +627,10 @@ class WasmCodegen {
     private fun emitFor(stmt: IrStmt.For) {
         declareLocal(stmt.counter, IrType.Int)
         line("(local.set \$${stmt.counter} ${emitExpr(stmt.start)})")
+        stmt.indexName?.let { index ->
+            declareLocal(index, IrType.Int)
+            line("(local.set \$$index (i32.const 0))")
+        }
         val cmp = if (stmt.reverse) (if (stmt.inclusive) "i32.ge_s" else "i32.gt_s")
         else (if (stmt.inclusive) "i32.le_s" else "i32.lt_s")
         val cond = "($cmp (local.get \$${stmt.counter}) ${emitExpr(stmt.end)})"
@@ -634,6 +638,9 @@ class WasmCodegen {
         val op = if (stmt.reverse) "i32.sub" else "i32.add"
         emitWhile(stmt.label, cond, stmt.body, isFor = true) {
             line("(local.set \$${stmt.counter} ($op (local.get \$${stmt.counter}) $step))")
+            stmt.indexName?.let { index ->
+                line("(local.set \$$index (i32.add (local.get \$$index) (i32.const 1)))")
+            }
         }
     }
 
@@ -672,6 +679,17 @@ class WasmCodegen {
             }
             IrUnaryOp.NOT -> "(i32.eqz ${emitExpr(expr.operand)})"
             IrUnaryOp.BIT_NOT -> { val p = numPrefix(expr.type); "($p.xor ${emitExpr(expr.operand)} ($p.const -1))" }
+        }
+        is IrExpr.IncDec -> {
+            declareLocal(expr.target.name, expr.type)
+            val old = "(local.get \$${expr.target.name})"
+            val scalar = wasmType(expr.type)
+            val prefix = if (expr.delta > 0) "$scalar.add" else "$scalar.sub"
+            val one = "($scalar.const 1)"
+            val updated = "($prefix $old $one)"
+            // A folded S-expression cannot express a local.set as a value, so
+            // use the helper block form that returns the selected old/new value.
+            "(block (result ${wasmType(expr.type)}) (local.set \$${expr.target.name} $updated) ${if (expr.prefix) "(local.get \$${expr.target.name})" else old})"
         }
         is IrExpr.Binary -> emitBinary(expr)
         is IrExpr.Call -> emitCall(expr)
@@ -1206,6 +1224,7 @@ class WasmCodegen {
         when (expr) {
             is IrExpr.Var -> if (expr.name !in refs) refs[expr.name] = expr.type
             is IrExpr.Unary -> collectReferencedVars(expr.operand, refs)
+            is IrExpr.IncDec -> collectReferencedVars(expr.target, refs)
             is IrExpr.Binary -> {
                 collectReferencedVars(expr.left, refs)
                 collectReferencedVars(expr.right, refs)

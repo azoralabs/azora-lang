@@ -12,9 +12,9 @@ belief into a diagnostic.
 ```azora
 func half(n: Int): Int
 in {
-    assert n >= 0 { "n must be non-negative" }
+    assert n >= 0 panic "n must be non-negative"
 } out {
-    assert it >= 0 { "result must be non-negative" }
+    assert it >= 0 panic "result must be non-negative"
 } scope {
     return n / 2
 }
@@ -25,17 +25,19 @@ in {
 ## 1. `assert`
 
 ```azora
-assert condition { message }
-assert condition
+assert condition panic message
 ```
 
-The message block is optional; a bare `assert` uses an empty one, which is worth
-avoiding since it is what the failure prints.
+The `panic` clause is required and carries the failure message:
 
-The `{ message }` is part of the assert, not a trailing lambda on the condition.
-The parser suppresses trailing-lambda parsing for the duration of the condition,
-so `assert list.add(v) { "could not add" }` means what it looks like rather than
-handing the block to `add`.
+```azora
+assert it >= 0 panic "count must return non-negative"
+```
+
+`panic` introduces only the failure message; it does not introduce a separate
+control-flow body. The condition is evaluated first, and the message is
+evaluated only when the assertion fails. The old brace and `else` message forms
+are not part of the grammar.
 
 ### 1.1 Failure
 
@@ -58,11 +60,11 @@ Contract clauses sit between a function's signature and its body.
 ```azora
 func f(a: Int, b: Int): Int
 in {
-    assert a > 0 { "a must be positive" }
-    assert b > 0 { "b must be positive" }
+    assert a > 0 panic "a must be positive"
+    assert b > 0 panic "b must be positive"
 } out {
-    assert it > 0 { "result must be positive" }
-    assert it == a + b { "result must be the sum" }
+    assert it > 0 panic "result must be positive"
+    assert it == a + b panic "result must be the sum"
 } scope {
     return a + b
 }
@@ -91,7 +93,7 @@ A postcondition needs the value being returned. By default it is bound to `it`:
 
 ```azora
 out {
-    assert it >= 0 { "result must be non-negative" }
+    assert it >= 0 panic "result must be non-negative"
 }
 ```
 
@@ -100,7 +102,7 @@ Naming it explicitly is the other form:
 ```azora
 func twice(n: Int): Int
 out { r ->
-    assert r == n * 2 { "must double" }
+    assert r == n * 2 panic "must double"
 } scope {
     return n * 2
 }
@@ -147,7 +149,7 @@ A function with no contracts writes its body as a plain block, as usual. The
 ## 3. `inline assert` - a contract on the compiler
 
 ```azora
-inline assert TARGET == Target.C { "this module is C-only" }
+inline assert TARGET == Target.C panic "this module is C-only"
 ```
 
 The condition is evaluated at compile time. If it folds to `false`, the message
@@ -161,7 +163,8 @@ failing to compile. Nothing warns.
 - ⬜ Decide whether a non-folding `inline assert` should be an error. Silently
   becoming a runtime check defeats the point of writing `inline`
 
-Unlike a runtime `assert`, the message block is **required**.
+Unlike a runtime `assert`, the message is **required**. It may be written as a
+brace expression or as a single expression after `else`.
 
 Inside a `deepinline` block, an ordinary `assert` is treated as an
 `inline assert` - the whole block is compile-time, so its assertions are too.
@@ -190,7 +193,7 @@ time, which is how a metaprogram reports what it is generating.
 ```azora
 test "duration normalizes overflow" {
     fin value = duration(2L, 1500000000L)
-    assert value.seconds == 3L { "overflow must carry into seconds" }
+    assert value.seconds == 3L panic "overflow must carry into seconds"
 }
 
 test .All "generators"

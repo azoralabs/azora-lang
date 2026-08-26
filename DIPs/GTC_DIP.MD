@@ -136,9 +136,11 @@ This proposal does not:
 A group is a source-level collection of names, targets, source expressions,
 declarations, or import selectors. It expands at parsing or an early
 normalization phase. A group has no runtime type, cannot be assigned to a
-variable, cannot be returned, and cannot be passed to a function. A source
-expression group is legal only as the right side of a brace binding/assignment
-group and pairs with it by position.
+variable, cannot be returned, and cannot be passed to a function as a group
+value. A source expression group is legal as the right side of a brace
+binding/assignment group and pairs with it by position, or as a direct argument
+of a call inside a sequenced member-call group, where it expands that call by
+position.
 
 ### 5.2 Sequence literal
 
@@ -201,11 +203,11 @@ self.{width, height} = {measuredWidth, measuredHeight}
 pack Point derives (Equal, Hash, Display) { ... }
 ```
 
-There is no general brace-group expression. A brace source group is recognized
-only immediately after `=` whose left side is already a brace group. In ordinary
-expression position, `{...}` continues to mean a lambda or a block according to
-the surrounding construct. In particular, `{a + b} * c` is not expression
-grouping.
+There is no general brace-group value expression. A brace source group is
+recognized immediately after `=` whose left side is already a brace group, or
+as a direct argument in a sequenced member-call group. In ordinary expression
+position, `{...}` continues to mean a lambda or a block according to the
+surrounding construct. In particular, `{a + b} * c` is not expression grouping.
 
 ### 6.2 Brackets
 
@@ -427,6 +429,59 @@ A bare target group may assign variables or arbitrary assignable targets:
 ```
 
 This is still fan-out. It is not positional assignment.
+
+### 7.4 Sequenced member-call groups
+
+A receiver may be followed by a brace group whose entries are calls:
+
+```azora
+value.{
+    enqueue(1)
+    enqueue(2)
+    clear()
+    enqueue(8)
+}
+```
+
+The compact comma form is equivalent and is preferred for short sequences:
+
+```azora
+value.{enqueue(1), enqueue(2), clear(), enqueue(8)}
+```
+
+The compiler lowers this syntax to ordinary expression statements in exactly
+the written order. The receiver expression is evaluated once for the whole
+group, then each operation is invoked in sequence. This is therefore not a
+tuple, collection, lambda, or macro and it cannot be used as a value or returned
+from a function. A call-bearing group is distinguished from `self.{x, y}` by
+the presence of call parentheses; the latter remains a grouped member target.
+
+Brace value groups may be nested in call arguments. They fan out the call while
+preserving the operation's position in the surrounding sequence:
+
+```azora
+value.{enqueue({1, 2}), clear(), enqueue(8)}
+```
+
+lowers to:
+
+```azora
+value.enqueue(1)
+value.enqueue(2)
+value.clear()
+value.enqueue(8)
+```
+
+The grouped argument expressions are evaluated left-to-right. With more than
+one grouped argument, all groups must have the same arity and are paired by
+position (`zip` semantics), so `f({a, b}, {c, d})` becomes `f(a, c); f(b, d)`.
+An arity mismatch is a compile-time error. Nested operation groups are flattened
+recursively at the point where they occur, without changing order or evaluating
+the outer receiver more than once per syntactic group.
+
+An operation group must contain at least one call. Assignment groups and member
+fan-out continue to use the existing `.{names}` form, and ordinary tuple values
+continue to use parentheses.
 
 The same targets may use single-evaluation broadcast:
 

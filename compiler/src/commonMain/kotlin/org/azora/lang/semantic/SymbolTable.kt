@@ -183,6 +183,11 @@ data class SpecMethodSig(
     val paramTypes: List<org.azora.lang.ir.IrType>,
     val returnType: org.azora.lang.ir.IrType,
     val isProperty: Boolean,
+    /** Source types, so a use can put the receiver's type arguments in place. */
+    val paramTypeRefs: List<org.azora.lang.frontend.TypeRef> = emptyList(),
+    val returnTypeRef: org.azora.lang.frontend.TypeRef? = null,
+    /** The spec that declares the member, which is whose parameters it names. */
+    val owner: String = "",
 )
 
 /** A validated `impl Contract for Type` conformance. */

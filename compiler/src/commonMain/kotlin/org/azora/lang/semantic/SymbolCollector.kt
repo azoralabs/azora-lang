@@ -628,7 +628,12 @@ class SymbolCollector {
                 val ownMethodSigs = item.methods.associate { m ->
                     val ret = (m.returnType as? TypeAnnotation.Explicit)?.ref?.let { IrType.resolve(it, tpSet) } ?: IrType.Unit
                     val params = m.params.map { IrType.resolve(it.type, tpSet) }
-                    m.name to SpecMethodSig(params, ret, m.memberCallStyle == MemberCallStyle.PROPERTY)
+                    m.name to SpecMethodSig(
+                        params, ret, m.memberCallStyle == MemberCallStyle.PROPERTY,
+                        paramTypeRefs = m.params.map { it.type },
+                        returnTypeRef = (m.returnType as? TypeAnnotation.Explicit)?.ref,
+                        owner = item.name,
+                    )
                 }
                 // Spec inheritance (`spec Mutable: Read`): store only own members
                 // plus the parent name. Inherited members resolve by walking the

@@ -1476,7 +1476,9 @@ class TypeResolver(private val table: SymbolTable) {
     private fun isUnboundTypeParam(type: IrType): Boolean {
         val named = type as? IrType.Named ?: return false
         if (named.args.isNotEmpty()) return false
-        return table.lookupStruct(named.name) == null && table.lookupEnum(named.name) == null
+        // A spec is a type in its own right, not a variable standing for one.
+        return table.lookupStruct(named.name) == null && table.lookupEnum(named.name) == null &&
+            table.lookupSpec(named.name) == null
     }
 
     /** If [expr] is `ErrSet.Variant`, returns the error-set name; otherwise null. */
@@ -2991,7 +2993,10 @@ class TypeResolver(private val table: SymbolTable) {
                         // (e.g. `map.size` where `map: Map<K,V>` - a spec) resolves to
                         // the spec's declared prop type and dispatches to the impl.
                         val specProp = table.lookupSpecProp(targetType.name, expr.name)
-                        if (specProp != null) return specProp
+                        if (specProp != null) {
+                            return table.lookupSpecMethod(targetType.name, expr.name)
+                                ?.let { instantiateSpecMember(table, targetType, it).returnType } ?: specProp
+                        }
                         val struct = table.lookupStruct(targetType.name)
                         // A conditional field belongs to some layouts and not others,
                         // so membership is asked of the specialization. An application
@@ -3284,6 +3289,7 @@ class TypeResolver(private val table: SymbolTable) {
                     // (e.g. `list.get(0)` where `list: List<T>`). The concrete impl
                     // is selected at runtime; here we type-check against the spec.
                     val specMethod = table.lookupSpecMethod(targetType.name, expr.name)
+                        ?.let { instantiateSpecMember(table, targetType, it) }
                     if (specMethod != null) {
                         if (specMethod.isProperty) {
                             errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")

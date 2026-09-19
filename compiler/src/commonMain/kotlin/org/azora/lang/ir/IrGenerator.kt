@@ -41,6 +41,7 @@ import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.semantic.ComparisonPlan
 import org.azora.lang.semantic.instantiateMember
 import org.azora.lang.semantic.literalFactoryTypes
+import org.azora.lang.semantic.instantiateSpecMember
 import org.azora.lang.semantic.StructType
 import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.semantic.TypeFunctionEvaluator
@@ -2873,7 +2874,11 @@ class IrGenerator(private val table: SymbolTable) {
                     // dispatches it. Carry the spec's declared type so arithmetic and
                     // comparisons on the result still lower.
                     val specProp = table.lookupSpecProp(tt2.name, expr.name)
-                    if (specProp != null) return IrExpr.Member(target, expr.name, specProp)
+                    if (specProp != null) {
+                        val typed = table.lookupSpecMethod(tt2.name, expr.name)
+                            ?.let { instantiateSpecMember(table, tt2, it).returnType } ?: specProp
+                        return IrExpr.Member(target, expr.name, typed)
+                    }
                 }
                 // A member declared in an `impl` on an aggregate builtin -
                 // `impl<T, N: Int> Array<T, N> { prop isEmpty … }` - is an ordinary
@@ -3020,9 +3025,11 @@ class IrGenerator(private val table: SymbolTable) {
                 // the receiver's `__type`; native backends via the spec table. We
                 // still stamp the erased return type from the spec signature.
                 if (tt is IrType.Named) {
-                    val sig = table.lookupSpecMethod(tt.name, expr.name)
+                    val sig = table.lookupSpecMethod(tt.name, expr.name)?.let { instantiateSpecMember(table, tt, it) }
                     if (sig != null && !sig.isProperty) {
-                        val args = expr.args.map { lowerExpr(it) }
+                        val args = expr.args.mapIndexed { i, arg ->
+                            sig.paramTypes.getOrNull(i)?.let { coerceToFloat(lowerExpr(arg), it) } ?: lowerExpr(arg)
+                        }
                         return IrExpr.MethodCall(target, expr.name, args, sig.returnType)
                     }
                 }

@@ -12,8 +12,8 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.3 (closed 2026-09-19 by user decision). ArrayList runs on
   the interpreter, LLVM and WASM; its remaining items moved to 016, 019/022,
   023 and 063.
-- In progress: 010.C3.4, target-owned literal factories. C3.4.1 (sequence
-  factories declared by packs) is complete; spec-owned (C3.4.2) is next.
+- In progress: 010.C3.4, target-owned literal factories. C3.4.1 (packs) and
+  C3.4.2 (specs) are complete; associative factories (C3.4.3) are next.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -1135,3 +1135,48 @@ Evidence:
   --tests '*LiteralFactoryTest' --tests '*LiteralFactoryExecTest'
 ./gradlew :azls:test --offline --console=plain
 ```
+
+
+## 2026-09-19 — 010.C3.4.2: spec-owned literal factories
+
+C3.4.1 is committed as `757f5a02`.
+
+A spec may now declare its own factory (GTC_DIP §8.7):
+
+```azora
+spec Stack<T> {
+    func &.top(): T
+    literal [...items: T]: Self { return ArrayStack<T>(items.size, items[items.size - 1]) }
+}
+fin ints: Stack<Int> = [1, 2, 3]
+```
+
+- In a spec body, `literal` is not a requirement. It is the spec's own function,
+  lifted to `Stack__literal` with the spec's type parameters, and `Self` means the
+  spec. Selection, element checking and lowering are the C3.4.1 path. The body's
+  concrete result is converted to the spec on return, which boxes it for dispatch
+  on the native targets. The DIP's `bridge literal` spelling is not accepted;
+  plain `literal` is the one form in both packs and specs.
+- A child spec does not inherit its parent's factory. The parent's builds a
+  parent value, and the child target asks for more (DIP: each spec defines its own).
+- Owner substitution (`instantiateMember`) now accepts a spec owner as well as a
+  pack. Without it, a spec target's element type stayed erased: every element
+  type-checked and Double literals kept their Float bits.
+- Spec method and property signatures now keep their source types.
+  `Stack<Double>.top()` is typed Double in the resolver and IR, and arguments
+  such as `choose(1.25, true)` take `T` = Double. Before, the result was `Any`: WASM
+  printed the value's raw bits and LLVM printed `<value>`. LLVM now converts spec
+  dispatch results (methods and properties) to the call-site type, as WASM does.
+  Members a child spec inherits from a parent still use the parent's erased
+  signature; mapping parent arguments through `spec Child<T>: Parent<T>` is open.
+- `isUnboundTypeParam` treated any argument-less name that is not a pack or enum
+  as a type variable, including a spec such as `Shape`. A `Shape` literal
+  therefore skipped factory selection. It also let `Array<SomeSpec>` unify with
+  any declared array element. Specs are now excluded.
+
+Evidence: `LiteralFactoryTest` adds the `Stack` program and three rejections: a
+spec without a factory, a child spec without its own, and a factory body
+returning a non-implementation (15 tests). `LiteralFactoryExecTest` runs the
+`Stack` program on LLVM and WASM, optimized and unoptimized, with interpreter
+parity (`3, 3, 2.5, 1.25, 2`). `SpecDispatchExecTest` still passes. Full run:
+**2,337 tests, 2,133 passed, 204 failed, 0 skipped**; no failure identity changed.

@@ -67,6 +67,43 @@ class LiteralFactoryTest {
             }
         """.trimIndent()
 
+        /**
+         * A spec's factory designates the concrete value built where the spec
+         * is expected, and members read through the spec take its arguments.
+         */
+        val stack = """
+            import std.io
+            spec Stack<T> {
+                prop &.size: Int
+                func &.top(): T
+                func &.choose(fallback: T, useFallback: Bool): T
+                literal [...items: T]: Self {
+                    return ArrayStack<T>(items.size, items[items.size - 1])
+                }
+            }
+            pack ArrayStack<T> {
+                var count: Int
+                var last: T
+            }
+            impl Stack<T> for ArrayStack<T> {
+                prop &.size: Int = self.count
+                func &.top(): T { return self.last }
+                func &.choose(fallback: T, useFallback: Bool): T {
+                    return if useFallback then fallback else self.last
+                }
+            }
+            func depth(stack: Stack<Int>): Int { return stack.size }
+            func main() {
+                fin ints: Stack<Int> = [1, 2, 3]
+                println(ints.size)
+                println(ints.top())
+                fin halves: Stack<Double> = [0.5, 2.5]
+                println(halves.top())
+                println(halves.choose(1.25, true))
+                println(depth([4, 5]))
+            }
+        """.trimIndent()
+
         fun compile(source: String, optimized: Boolean): IrProgram {
             val result = Compiler().compile(source, release = optimized)
             assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
@@ -89,6 +126,48 @@ class LiteralFactoryTest {
         for (optimized in listOf(false, true)) {
             assertEquals("3\n8\n25\n2.5", IrInterpreter().interpret(compile(bag, optimized)).trim())
         }
+    }
+
+    @Test fun aSpecsFactoryBuildsTheValueItDesignates() {
+        for (optimized in listOf(false, true)) {
+            assertEquals("3\n3\n2.5\n1.25\n2", IrInterpreter().interpret(compile(stack, optimized)).trim())
+        }
+    }
+
+    @Test fun aSpecWithoutAFactoryIsNotBuiltFromALiteral() = assertRejects(
+        """
+            spec Shape { func &.area(): Double }
+            func main() { fin shape: Shape = [1.0] }
+        """,
+        "type 'Shape' does not define a sequence literal factory",
+    )
+
+    // A parent's factory builds the parent; the child spec asks for more.
+    @Test fun aChildSpecDoesNotInheritItsParentsFactory() = assertRejects(
+        """
+            spec Sized<T> {
+                prop &.size: Int
+                literal [...items: T]: Self { return Counted<T>(items.size) }
+            }
+            spec Growable<T>: Sized<T> { func &.grow(): Int }
+            pack Counted<T> { var count: Int }
+            impl Sized<T> for Counted<T> { prop &.size: Int = self.count }
+            func main() { fin grown: Growable<Int> = [1, 2] }
+        """,
+        "type 'Growable' does not define a sequence literal factory",
+    )
+
+    @Test fun aSpecsFactoryReturnsAnImplementation() {
+        errors(
+            """
+                spec Shape {
+                    func &.area(): Double
+                    literal [...sides: Double]: Self { return Plain(1) }
+                }
+                pack Plain { var value: Int }
+                func main() { fin shape: Shape = [1.0] }
+            """,
+        )
     }
 
     @Test fun elementsAreEvaluatedOnceInOrder() {

@@ -9,14 +9,17 @@ internal fun instantiateMember(
     receiver: IrType.Named,
     function: FunctionSymbol,
 ): FunctionSymbol {
-    val owner = table.lookupStruct(receiver.name) ?: return function
-    if (receiver.args.isEmpty() || owner.typeParams.isEmpty()) return function
-    val bindings = owner.typeParams.mapIndexedNotNull { index, name ->
+    // A spec owns members too: the literal factory it designates.
+    val ownerParams = table.lookupStruct(receiver.name)?.typeParams
+        ?: table.lookupSpec(receiver.name)?.typeParams
+        ?: return function
+    if (receiver.args.isEmpty() || ownerParams.isEmpty()) return function
+    val bindings = ownerParams.mapIndexedNotNull { index, name ->
         if (name in function.typeParams) return@mapIndexedNotNull null
         val argument = receiver.args.getOrNull(index) ?: return@mapIndexedNotNull null
         name to (receiver.constArgs.getOrNull(index)?.let { TypeRef.Const(it) } ?: typeRefOf(argument))
     }.toMap()
-    val unbound = (owner.typeParams.toSet() - bindings.keys) + function.typeParams
+    val unbound = (ownerParams.toSet() - bindings.keys) + function.typeParams
     fun resolve(ref: TypeRef, registered: IrType): IrType {
         val substituted = substituteMemberType(ref, bindings)
         // Keep resolved aliases/type functions when this position does not use
@@ -29,6 +32,28 @@ internal fun instantiateMember(
         },
         returnType = function.returnTypeRef?.let { resolve(it, function.returnType) } ?: function.returnType,
     )
+}
+
+/**
+ * A spec member's signature where the receiver is [receiver]: `Stack<Double>`
+ * reads `top(): T` as returning Double. A member inherited from a parent spec
+ * names that parent's parameters, which the receiver does not bind directly, so
+ * it keeps its erased signature.
+ */
+internal fun instantiateSpecMember(table: SymbolTable, receiver: IrType.Named, sig: SpecMethodSig): SpecMethodSig {
+    if (sig.owner != receiver.name) return sig
+    val typed = instantiateMember(
+        table,
+        receiver,
+        FunctionSymbol(
+            name = sig.owner,
+            params = sig.paramTypes.mapIndexed { i, type -> "p$i" to type },
+            returnType = sig.returnType,
+            paramTypeRefs = sig.paramTypeRefs,
+            returnTypeRef = sig.returnTypeRef,
+        ),
+    )
+    return sig.copy(paramTypes = typed.params.map { it.second }, returnType = typed.returnType)
 }
 
 /**

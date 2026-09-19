@@ -12,6 +12,7 @@ class LiteralFactoryExecTest {
     private val programs = listOf(
         LiteralFactoryTest.bag to "3\n8\n25\n2.5",
         LiteralFactoryTest.digits to "123\n123\n0",
+        LiteralFactoryTest.stack to "3\n3\n2.5\n1.25\n2",
     )
 
     @Test fun factoryLiteralsRunOnLlvm() {

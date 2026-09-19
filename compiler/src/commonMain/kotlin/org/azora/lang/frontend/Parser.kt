@@ -5487,6 +5487,15 @@ class Parser(
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             parseAnnotations() // trailing metadata on a requirement is accepted and dropped
+            // `literal [...elements: T]: Self { … }` - not a requirement but the
+            // spec's own factory, designating the concrete value a `[…]` builds
+            // where the spec is expected. `Self` here is the spec itself.
+            if (check(TokenType.LITERAL)) {
+                val factory = bindSelf(listOf(parseLiteralFactory(emptyList(), Visibility.PUBLIC)), name).single()
+                pendingTopLevels.add(mangleTopLevel(withImplTypeParams(TopLevel.Func(factory), typeParams.names), name))
+                skipNewlines()
+                continue
+            }
             // `spec Clone { self& }` - a capability with a receiver but no
             // members. It states how the value is reached (`self&` / `self: Self&`)
             // without requiring anything of it, which is what a marker capability

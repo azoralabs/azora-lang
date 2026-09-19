@@ -3225,7 +3225,7 @@ class LlvmCodegen {
                 }
                 val r = nextTmp()
                 emit("  $r = call ${mapType(property.returnType)} @${specDispatcherName(targetType.name, expr.name)}(i8* $box)")
-                return r
+                return coerceNumeric(r, property.returnType, expr.type)
             }
         }
         emitExpr(expr.target)
@@ -3341,7 +3341,9 @@ class LlvmCodegen {
                 }
                 val r = nextTmp()
                 emit("  $r = call ${mapType(method.returnType)} @$disp($argList)")
-                return r
+                // The dispatcher returns the spec's erased slot; the call site
+                // may know the type argument (`Stack<Double>.top()`).
+                return coerceNumeric(r, method.returnType, expr.type)
             }
         }
 

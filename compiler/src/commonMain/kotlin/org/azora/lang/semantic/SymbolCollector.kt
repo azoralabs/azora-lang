@@ -244,6 +244,7 @@ class SymbolCollector {
                     // Source types, so a type-scoped member - a lifted static or
                     // a literal factory - can be instantiated for its owner.
                     paramTypeRefs = func.params.map { it.type },
+                    whereClause = func.whereClause,
                     isInline = func.isInline,
                     typeParams = func.typeParams,
                     paramNames = paramNames,

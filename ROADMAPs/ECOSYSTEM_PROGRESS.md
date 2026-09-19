@@ -12,9 +12,9 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.3 (closed 2026-09-19 by user decision). ArrayList runs on
   the interpreter, LLVM and WASM; its remaining items moved to 016, 019/022,
   023 and 063.
-- In progress: 010.C3.4, target-owned literal factories. C3.4.1 (packs),
-  C3.4.2 (specs) and C3.4.3 (associative) are complete; constraints, failure and
-  ownership (C3.4.4) are next.
+- 010.C3.4, target-owned literal factories: all four substeps (packs, specs,
+  associative, constraints/failure/ownership) are complete. C3.5, factory
+  dependency discovery, is next.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -1230,3 +1230,40 @@ key-type, value-type and duplicate rejections and the uncallable
 `literal_entries`. `LiteralFactoryExecTest` runs all six programs on LLVM and
 WASM, optimized and unoptimized, with interpreter parity. Full run: **2,342 tests,
 2,138 passed, 204 failed, 0 skipped**; no failure identity changed.
+
+## 2026-09-19 — 010.C3.4.4: factory constraints, failure and ownership
+
+C3.4.3 is committed as `952d3ff9`.
+
+GTC_DIP §8.7/§8.10 require a factory to take part in ordinary `where`
+constraints and failure, and its elements to follow ordinary argument
+ownership. Measured against an equivalent call first:
+
+- **Failure already matched.** The literal lowers to a direct call of the
+  factory, so a failable factory (`: Small ?! SizeError`) behaves like a failable
+  call. `[…] catch fallback` gives the fallback on the interpreter and LLVM, and
+  `try { … } catch { e -> … }` catches on the interpreter. On LLVM, that `try`
+  form exits with code 1 for **any** failing call, not only factory literals. This
+  pre-existing error-transport defect is recorded here, not fixed. WASM has no
+  exception support; a failure traps instead of reaching the fallback.
+- **Ownership already matched.** Elements resolve as arguments do: `[take res]`
+  moves `res` and a later use gets the same "use of taken value" error as
+  `hold(take res)`. A plain `[res]` is accepted, as `hold(res)` is. Borrowed
+  elements and their lifetimes follow the argument rules and their open work
+  (033/035). Destroying already-built elements after a later failure is 037.
+- **Constraints were missing.** A factory now takes a `where` clause after its
+  result type (`literal [...items: T]: Index<T> where T is Keyed { … }`). The clause
+  is stored on the function symbol and decided at selection by `ConstraintEvaluator`,
+  with the factory's type parameters bound to the target's arguments. Nominal
+  conformance means `T is Keyed` holds only where `impl Keyed for T` exists.
+  Undecidable clauses and still-generic arguments (a literal inside `func<T>`) are
+  accepted, as for any declaration. A violation reports that the literal does not
+  satisfy its factory's `where` clause.
+
+Evidence: `LiteralFactoryTest` (25) adds the `where` clause satisfied, violated and
+undecided inside a generic function. It also adds a failable factory (success and
+`catch`, plus interpreter `try`/`catch`) and a moved element with its use-after-take
+rejection. `LiteralFactoryExecTest` runs the `where` and ownership programs on LLVM
+and WASM. The failable program gives `2, 0` on LLVM and traps after printing `2`
+on WASM. Full run: **2,347 tests, 2,143 passed, 204 failed, 0 skipped**; no failure
+identity changed.

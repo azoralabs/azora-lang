@@ -4418,6 +4418,7 @@ class TypeResolver(private val table: SymbolTable) {
             )
             return null
         }
+        if (!factoryConstraintHolds(named, factory, expr.line)) return null
         val (element, built) = literalFactoryTypes(table, named, factory)
         if (!isCompatible(target, built)) {
             errors.add("line ${expr.line}: the literal factory of '$target' builds $built, not $target")
@@ -4449,6 +4450,7 @@ class TypeResolver(private val table: SymbolTable) {
             )
             return null
         }
+        if (!factoryConstraintHolds(named, factory, expr.line)) return null
         val (entry, built) = literalFactoryTypes(table, named, factory)
         val (keyType, valueType) = (entry as IrType.Tuple).elements
         if (!isCompatible(target, built)) {
@@ -4471,6 +4473,29 @@ class TypeResolver(private val table: SymbolTable) {
         }
         expr.literalFactory = factory.name
         return target
+    }
+
+    /**
+     * A factory's `where` clause decided for the target's type arguments. A
+     * clause, or an argument, the evaluator cannot decide is accepted - a
+     * literal inside a generic still names its own parameters.
+     */
+    private fun factoryConstraintHolds(target: IrType.Named, factory: FunctionSymbol, line: Int): Boolean {
+        val clause = factory.whereClause ?: return true
+        val bindings = mutableMapOf<String, ConstraintEvaluator.Binding>()
+        for ((index, param) in factory.typeParams.withIndex()) {
+            val binding = target.constArgs.getOrNull(index)?.let { ConstraintEvaluator.Binding.Const(it) }
+                ?: target.args.getOrNull(index)?.takeUnless { it == IrType.Any }
+                    ?.let { ConstraintEvaluator.bindingOf(typeRefOf(it)) }
+                ?: return true
+            bindings[param] = binding
+        }
+        val outcome = ConstraintEvaluator.evaluate(clause, bindings, table)
+        if (outcome is ConstraintEvaluator.Outcome.Violated) {
+            errors.add("line $line: a '$target' literal does not satisfy its factory's 'where' clause: ${outcome.reason}")
+            return false
+        }
+        return true
     }
 
     private fun literalElementCompatible(expected: IrType, actual: IrType): Boolean =

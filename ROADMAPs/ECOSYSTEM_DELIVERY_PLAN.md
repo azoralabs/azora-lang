@@ -49,15 +49,15 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,342 tests: 2,138 passed,
+The latest full compiler run has **2,347 tests: 2,143 passed,
 204 failed, 0 skipped**, with no failure identity changed from the preceding
 run. The [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
 records the 2,290-test baseline. ArrayList runs on the interpreter, LLVM and
 WASM, and both native targets release memory on `purge`. Packs and specs can
-declare sequence and associative `literal` factories, so `[…]` and `[k: v]`
-build them wherever the type is expected. Constraints, failure and ownership
-(C3.4.4) remain. **010** remains open, including the collection factory substeps
-below.
+declare sequence and associative `literal` factories with `where` clauses; a
+literal fails, moves and is constrained as a call to its factory would be. All
+four C3.4 substeps are complete. **010** remains open, including the collection
+factory substeps below.
 
 **007**, the complete **008** review and module identity/scope work under **014**
 remain open. Local imports still leak into unrelated declarations; that requires
@@ -99,7 +99,7 @@ selected `Array` as the default for a non-empty sequence without context.
     - [x] **010.C3.4.1. Sequence factories declared by packs.** `literal` is a reserved keyword. `literal [...elements: T]: Type { … }` inside `impl Type` lifts to a type-scoped member no source can name. A literal whose expected type is that pack (binding, argument or return) selects it; elements are checked against the instantiated element type and passed once, left to right, at the factory's physical width. Missing factories, wrong element or result types, duplicates, misplaced declarations and spreads are diagnosed. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest` (interpreter, LLVM, WASM).
     - [x] **010.C3.4.2. Spec-owned factories.** `spec S<T> { literal [...elements: T]: Self { … } }` is the spec's own function, not a requirement; it lifts to `S__literal` and designates the concrete value a `[…]` builds where `S<…>` is expected. Factories are not inherited by child specs. Spec method/property signatures now take the receiver's type arguments (own members), and LLVM converts dispatch results to the call-site type. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest` (interpreter, LLVM, WASM).
     - [x] **010.C3.4.3. Associative factories.** A factory whose declared element type is a two-tuple, `literal [...entries: (K, V)]`, is associative (user decision); a type-parameter element is always a sequence. `[k: v, …]` and `[:]` select it, keys and values are checked separately, and each key runs before its value. Tuples now lower as aggregates on LLVM and WASM, and `t.0` reads a structural tuple. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest` (interpreter, LLVM, WASM).
-    - [ ] **010.C3.4.4. Constraints, failure and ownership.** `where` constraints on factories, failable factories as failure requirements of the literal, `take` for non-`Copy` elements, and borrowed elements.
+    - [x] **010.C3.4.4. Constraints, failure and ownership.** A factory takes a `where` clause, decided at selection for the target's type arguments (undecidable clauses and arguments are accepted, as for any declaration). A failable factory makes the literal fail as a call to it would, and elements are arguments: `take` moves an element and a later use is rejected. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest`. Borrowed elements and their lifetimes follow the argument rules and move with 033/035; partial-construction cleanup is 037.
   - [ ] **010.C3.5. Discover selected factory dependencies before specialization/lowering.** Use canonical declarations and avoid unrelated short-name matches.
 - [ ] **010.C4. Connect real standard List/Set/Map implementations.** Lower literals through the selected constructor/factory and preserve source order, exactly-once key/value evaluation, duplicate rules, failure behavior and ownership.
 - [ ] **010.C5. Qualify factory construction across backends and tooling.** Test nested/empty literals, overloaded/generic contexts, lifetimes, native representation and Studio/compiler diagnostics together.

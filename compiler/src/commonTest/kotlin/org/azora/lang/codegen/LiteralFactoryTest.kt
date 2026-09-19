@@ -170,6 +170,62 @@ class LiteralFactoryTest {
             }
         """.trimIndent()
 
+        /** A factory's `where` clause is decided for the target's arguments. */
+        val keyed = """
+            import std.io
+            spec Keyed { prop &.key: Int }
+            pack Name { var key: Int }
+            impl Keyed for Name { prop &.key: Int = self.key }
+            pack Index<T> { var count: Int }
+            impl Index<T> {
+                literal [...items: T]: Index<T> where T is Keyed { return Index<T>(items.size) }
+            }
+            func<T> wrap(item: T): Index<T> { return [item] }
+            func main() {
+                fin names: Index<Name> = [Name(1), Name(2)]
+                println(names.count)
+                println(wrap(Name(3)).count)
+            }
+        """.trimIndent()
+
+        /** A factory that can fail makes the literal fail as a call to it would. */
+        val bounded = """
+            import std.io
+            error SizeError {
+                TooMany
+            }
+            pack Small { var count: Int }
+            impl Small {
+                literal [...items: Int]: Small ?! SizeError {
+                    if items.size > 2 {
+                        error SizeError.TooMany
+                    }
+                    return Small(items.size)
+                }
+            }
+            func main() {
+                fin two: Small = [1, 2]
+                println(two.count)
+                fin none: Small = [1, 2, 3] catch Small(0)
+                println(none.count)
+            }
+        """.trimIndent()
+
+        /** Elements are arguments: `take` moves one into the factory. */
+        val owned = """
+            import std.io
+            pack Res { var id: Int }
+            pack Holder { var first: Res }
+            impl Holder {
+                literal [...items: Res]: Holder { return Holder(items[0]) }
+            }
+            func main() {
+                fin res = Res(7)
+                fin holder: Holder = [take res]
+                println(holder.first.id)
+            }
+        """.trimIndent()
+
         fun compile(source: String, optimized: Boolean): IrProgram {
             val result = Compiler().compile(source, release = optimized)
             assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
@@ -233,6 +289,55 @@ class LiteralFactoryTest {
                 pack Plain { var value: Int }
                 func main() { fin shape: Shape = [1.0] }
             """,
+        )
+    }
+
+    @Test fun aSatisfiedWhereClauseAdmitsTheLiteral() {
+        for (optimized in listOf(false, true)) {
+            assertEquals("2\n1", IrInterpreter().interpret(compile(keyed, optimized)).trim())
+        }
+    }
+
+    @Test fun aViolatedWhereClauseRejectsTheLiteral() = assertRejects(
+        keyed.replace("fin names: Index<Name> = [Name(1), Name(2)]", "fin names: Index<Int> = [1, 2]"),
+        "a 'Index' literal does not satisfy its factory's 'where' clause",
+    )
+
+    @Test fun aFailingFactoryFailsTheLiteralLikeACall() {
+        for (optimized in listOf(false, true)) {
+            assertEquals("2\n0", IrInterpreter().interpret(compile(bounded, optimized)).trim())
+        }
+        val caught = """
+            import std.io
+            error SizeError {
+                TooMany
+            }
+            pack Small { var count: Int }
+            impl Small {
+                literal [...items: Int]: Small ?! SizeError {
+                    error SizeError.TooMany
+                    return Small(items.size)
+                }
+            }
+            func main() {
+                try {
+                    fin small: Small = [1]
+                    println(small.count)
+                } catch {
+                    e -> println(e)
+                }
+            }
+        """.trimIndent()
+        assertEquals("TooMany", IrInterpreter().interpret(compile(caught, optimized = false)).trim())
+    }
+
+    @Test fun aTakenElementMovesLikeATakenArgument() {
+        for (optimized in listOf(false, true)) {
+            assertEquals("7", IrInterpreter().interpret(compile(owned, optimized)).trim())
+        }
+        assertRejects(
+            owned.replace("println(holder.first.id)", "println(res.id)"),
+            "use of taken value 'res'",
         )
     }
 

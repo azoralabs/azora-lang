@@ -55,6 +55,8 @@ data class FunctionSymbol(
     val returnTypeRef: TypeRef? = null,
     /** Source parameter types before owner type parameters are erased. */
     val paramTypeRefs: List<TypeRef> = emptyList(),
+    /** The declaration's `where` clause, for a use that binds its type parameters. */
+    val whereClause: org.azora.lang.frontend.Expr? = null,
     val isReactive: Boolean = false,
     /**
      * Indices of parameters declared `x!` - an exclusive borrow the callee may

@@ -6223,12 +6223,15 @@ class Parser(
         consume(TokenType.R_BRACKET, "A literal factory takes one variadic parameter at line ${start.line}; $shape")
         consume(TokenType.COLON, "Expected ':' and the type a literal factory builds at line ${start.line}")
         val result = parseTypeName()
+        // `where T is Hash` - decided for the target's arguments when a literal selects it.
+        val whereClause = parseWhereClause()
         val body = parseMemberBody("literal", "literal [...elements: T]: Type { … }")
         return FuncDecl(
             if (associative) LITERAL_ENTRIES_FACTORY else LITERAL_FACTORY,
             listOf(Param(name, TypeRef.Array(element), variadic = true)), TypeAnnotation.Explicit(result), body,
             false, emptyList(), start.line, start.column,
             annotations = annotations, visibility = visibility, declaresReceiver = false,
+            whereClause = whereClause,
         )
     }
 

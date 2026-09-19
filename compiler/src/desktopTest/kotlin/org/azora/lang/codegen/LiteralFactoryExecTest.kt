@@ -16,6 +16,8 @@ class LiteralFactoryExecTest {
         LiteralFactoryTest.ledger to "2\ntea\n3.25\n15",
         LiteralFactoryTest.pairs to "1234\n1234\n0",
         LiteralFactoryTest.pairedBag to "2\n2",
+        LiteralFactoryTest.keyed to "2\n1",
+        LiteralFactoryTest.owned to "7",
     )
 
     @Test fun factoryLiteralsRunOnLlvm() {
@@ -23,6 +25,16 @@ class LiteralFactoryExecTest {
         for ((source, expected) in programs) for (optimized in listOf(false, true)) {
             val ir = LiteralFactoryTest.compile(source, optimized)
             assertEquals(expected, LlvmExec.runIr(LlvmCodegen().generate(ir)), "optimized=$optimized")
+        }
+    }
+
+    // WebAssembly has no exception support: a failure it cannot handle traps
+    // rather than reaching the fallback, which LLVM does.
+    @Test fun aFailingFactoryFailsLikeACallOnEachTarget() {
+        for (optimized in listOf(false, true)) {
+            val ir = LiteralFactoryTest.compile(LiteralFactoryTest.bounded, optimized)
+            if (LlvmExec.available) assertEquals("2\n0", LlvmExec.runIr(LlvmCodegen().generate(ir)), "optimized=$optimized")
+            if (WasmExec.available) assertEquals("2", WasmExec.runWatExpectingTrap(WasmCodegen().generate(ir)), "optimized=$optimized")
         }
     }
 

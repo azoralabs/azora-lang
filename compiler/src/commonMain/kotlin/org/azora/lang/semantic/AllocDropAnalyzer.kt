@@ -110,6 +110,7 @@ class AllocDropAnalyzer {
 
     private fun analyzeStmt(stmt: Stmt, defined: MutableSet<String>, used: MutableSet<String>, errors: MutableList<String>) {
         when (stmt) {
+            is Stmt.Import -> Unit
             is Stmt.VarDecl -> {
                 validateReferenceBinding(stmt.type, stmt.initializer, mutable = true, stmt.line, errors)
                 collectUsedVars(stmt.initializer, used)

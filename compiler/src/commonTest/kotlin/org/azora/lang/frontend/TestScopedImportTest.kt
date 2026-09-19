@@ -18,6 +18,7 @@ package org.azora.lang.frontend
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -25,17 +26,17 @@ import kotlin.test.assertTrue
  *
  * ```
  * test "queue serialization metadata is declared" {
- *     import std.[
- *         reflection::reflect
- *         serializer::Serializable
- *     ]
+ *     import std::{
+ *         reflection.reflect
+ *         serializer.Serializable
+ *     }
  *     inline assert reflect<Queue>.hasAnnot<Serializable> panic "…"
  * }
  * ```
  *
  * Reading `reflect` is that test's business and nothing else's in the file, so
- * the import that brings it in is written beside the use rather than at the top
- * with everything the module needs.
+ * the import that brings it in is written beside the use and binds there: it
+ * stays in the test's body rather than joining the file's imports.
  */
 class TestScopedImportTest {
 
@@ -46,10 +47,10 @@ class TestScopedImportTest {
         val parsed = items(
             """
             test "metadata is declared" {
-                import std.[
-                    reflection::reflect
-                    serializer::Serializable
-                ]
+                import std::{
+                    reflection.reflect
+                    serializer.Serializable
+                }
                 inline assert reflect<Queue>.hasAnnot<Serializable> panic "declared"
             }
             """.trimIndent()
@@ -57,11 +58,13 @@ class TestScopedImportTest {
 
         val test = parsed.filterIsInstance<TopLevel.Test>().single()
         assertEquals("metadata is declared", test.name)
-        assertTrue(test.body.isNotEmpty(), "the assert survives the imports above it")
-        assertTrue(
-            parsed.any { it is TopLevel.UseImport },
-            "the import reaches the resolver: $parsed",
+        val import = assertIs<Stmt.Import>(test.body.first(), "the import opens the test: ${test.body}")
+        assertEquals(
+            listOf("std.reflection.reflect", "std.serializer.Serializable"),
+            import.use.importSpecs.flatMap { it.flatten() }.map { it.first },
         )
+        assertEquals(2, test.body.size, "the assert survives the import above it")
+        assertTrue(parsed.none { it is TopLevel.UseImport }, "the import binds in the test alone: $parsed")
     }
 
     @Test fun severalImportsMayOpenATest() {
@@ -74,7 +77,23 @@ class TestScopedImportTest {
             }
             """.trimIndent()
         )
-        assertEquals(2, parsed.count { it is TopLevel.UseImport })
+        val body = parsed.filterIsInstance<TopLevel.Test>().single().body
+        assertEquals(2, body.count { it is Stmt.Import })
+        assertTrue(parsed.none { it is TopLevel.UseImport })
+    }
+
+    @Test fun aModuleKeepsItsBlockImportsAtModuleScope() {
+        val parsed = items(
+            """
+            module lib.probe
+            func helper() {
+                import std.io
+                println("hi")
+            }
+            """.trimIndent()
+        )
+        assertEquals(1, parsed.count { it is TopLevel.UseImport })
+        assertTrue(parsed.filterIsInstance<TopLevel.Func>().single().decl.body.none { it is Stmt.Import })
     }
 
     @Test fun aTestWithoutImportsIsUnchanged() {

@@ -204,6 +204,7 @@ internal object SourceSymbolValidator {
 
     private fun statement(statement: Stmt) {
         when (statement) {
+            is Stmt.Import -> Unit
             is Stmt.VarDecl -> { declaration(statement.name, "local variable", statement.line); expression(statement.initializer) }
             is Stmt.FinDecl -> { declaration(statement.name, "local variable", statement.line); expression(statement.initializer) }
             is Stmt.LetDecl -> { declaration(statement.name, "local variable", statement.line); expression(statement.initializer) }

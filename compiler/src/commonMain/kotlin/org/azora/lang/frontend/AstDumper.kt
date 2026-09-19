@@ -220,6 +220,7 @@ private fun dumpTopLevel(sb: StringBuilder, item: TopLevel, indent: String) {
 
 private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
     when (stmt) {
+        is Stmt.Import -> sb.appendLine("${indent}Import(${stmt.use.importSpecs.joinToString { it.path }})")
         is Stmt.VarDecl -> {
             val keyword = if (stmt.valueMutable) "Var" else "Val"
             sb.appendLine("$indent${keyword}Decl(name=${stmt.name}, type=${stmt.type})")

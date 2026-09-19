@@ -481,6 +481,15 @@ fin array = @collect_all(tuple)"""
     }
 
     @Test
+    fun completesWhatABlockImports() {
+        val source = "test \"rounding\" {\n    import std.math\n    ab\n}"
+        val offset = source.indexOf("ab") + "ab".length
+        val list = completions(source, offset)
+        assertTrue(list.any { it.label == "abs" && it.kind == "function" && "std.math" in it.detail },
+            "a test's own import should expose std.math completions: $list")
+    }
+
+    @Test
     fun completesGroupedStdlibImports() {
         val source = "import std.{math, container}\nfunc main() {\n    ab\n}"
         val offset = source.indexOf("ab") + "ab".length

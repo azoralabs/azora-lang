@@ -967,6 +967,7 @@ private class MonoContext(
         fun expr(value: Expr) = substituteReflectedExpr(value, binding)
         fun nested(items: List<Stmt>) = items.flatMap { expandReflectedStmt(it, fields, binding) }
         val rewritten = when (stmt) {
+            is Stmt.Import -> stmt
             is Stmt.VarDecl -> stmt.copy(type = substituteSelf(stmt.type, TypeRef.Named("Self")), initializer = expr(stmt.initializer))
             is Stmt.FinDecl -> stmt.copy(type = substituteSelf(stmt.type, TypeRef.Named("Self")), initializer = expr(stmt.initializer))
             is Stmt.LetDecl -> stmt.copy(type = substituteSelf(stmt.type, TypeRef.Named("Self")), initializer = expr(stmt.initializer))
@@ -1792,6 +1793,7 @@ private class MonoContext(
 
     fun rewriteStmt(s: Stmt): Stmt = withSourceLine(s.line) {
         when (s) {
+        is Stmt.Import -> s
         is Stmt.VarDecl -> { recordBinding(s.name, s.type, s.initializer); s.copy(type = rewriteTypeAnnotation(s.type), initializer = rewriteExpr(s.initializer)) }
         is Stmt.FinDecl -> { recordBinding(s.name, s.type, s.initializer); s.copy(type = rewriteTypeAnnotation(s.type), initializer = rewriteExpr(s.initializer)) }
         is Stmt.LetDecl -> { recordBinding(s.name, s.type, s.initializer); s.copy(type = rewriteTypeAnnotation(s.type), initializer = rewriteExpr(s.initializer)) }

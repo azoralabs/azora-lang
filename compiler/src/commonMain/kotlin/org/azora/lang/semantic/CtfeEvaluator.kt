@@ -448,6 +448,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      */
     private fun foldStmt(stmt: Stmt, program: Program, errors: MutableList<String>): Pair<List<Stmt>, Boolean> {
         return when (stmt) {
+            is Stmt.Import -> listOf(stmt) to false
             is Stmt.DeepInlineIf -> foldDeepInlineIf(stmt, program, errors)
             is Stmt.DeepInlineBlock -> foldDeepInlineBlock(stmt, program, errors)
             is Stmt.NoInline -> foldNoInline(stmt, program)
@@ -1796,6 +1797,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     private fun interpretBody(body: List<Stmt>, env: MutableMap<String, Expr>, program: Program, line: Int): Expr? {
         for (stmt in body) {
             when (stmt) {
+                is Stmt.Import -> Unit
                 is Stmt.VarDecl -> {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value

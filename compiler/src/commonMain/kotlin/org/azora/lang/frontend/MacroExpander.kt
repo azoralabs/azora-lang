@@ -489,6 +489,7 @@ internal object MacroExpander {
         stmts.map { rewriteStmt(it, macros, depth) }
 
     private fun rewriteStmt(stmt: Stmt, macros: MacroTable, depth: Int): Stmt = when (stmt) {
+        is Stmt.Import -> stmt
         is Stmt.VarDecl -> stmt.copy(initializer = rewriteExpr(stmt.initializer, macros, depth))
         is Stmt.FinDecl -> stmt.copy(initializer = rewriteExpr(stmt.initializer, macros, depth))
         is Stmt.LetDecl -> stmt.copy(initializer = rewriteExpr(stmt.initializer, macros, depth))
@@ -936,6 +937,7 @@ internal object MacroExpander {
 
     /** Mirrors [substitute] for the Stmt children of a [Expr.Lambda] body. */
     private fun substituteStmt(stmt: Stmt, bindings: Map<String, List<Expr>>, invokeLine: Int): Stmt = when (stmt) {
+        is Stmt.Import -> stmt
         is Stmt.VarDecl -> stmt.copy(initializer = substitute(stmt.initializer, bindings, invokeLine))
         is Stmt.FinDecl -> stmt.copy(initializer = substitute(stmt.initializer, bindings, invokeLine))
         is Stmt.LetDecl -> stmt.copy(initializer = substitute(stmt.initializer, bindings, invokeLine))

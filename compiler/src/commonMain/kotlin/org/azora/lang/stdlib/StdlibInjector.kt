@@ -282,6 +282,9 @@ class StdlibInjector private constructor(
 
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")
 
+    /** Non-bridge library types named by compiler code (the Display deriver, channels). */
+    private val COMPILER_NAMED_TYPES = setOf("Formatter", "Channel")
+
     /**
      * Evaluates an `exposed if COND` condition against the boolean CLI overrides.
      * `null` (unconditional) and `true` keep the export; an unresolvable or `false`
@@ -344,6 +347,10 @@ class StdlibInjector private constructor(
         val exportedImportsByModule = LinkedHashMap<String, MutableList<ImportRequest>>()
         /** Modules published via `export exposed module …` (auto-injected into every unit). */
         val alwaysOnModules = mutableListOf<String>()
+        /** Every module's own imports, re-exported or not: what its source can name. */
+        val importsOfModule = LinkedHashMap<String, MutableList<ImportRequest>>()
+        /** name → every module registering it, to find which one declared an item. */
+        val modulesDeclaring = LinkedHashMap<String, MutableList<String>>()
     }
 
     private val index: Index by lazy { buildIndex() }
@@ -388,8 +395,7 @@ class StdlibInjector private constructor(
         if (index.modules.isEmpty()) return emptyList()
         val known = index.modules.keys
         val errors = mutableListOf<String>()
-        for (item in program.items) {
-            if (item !is TopLevel.UseImport) continue
+        for (item in program.writtenImports()) {
             for (request in importRequests(item)) {
                 val (path, selected, without) = request
                 // Wildcard and selective-item forms are validated by name resolution.
@@ -443,8 +449,7 @@ class StdlibInjector private constructor(
      */
     private fun importedModulesOf(program: Program, known: Set<String>): Set<String> {
         val edges = linkedSetOf<String>()
-        for (item in program.items) {
-            if (item !is TopLevel.UseImport) continue
+        for (item in program.writtenImports()) {
             for ((path, selector) in importRequests(item)) {
                 when {
                     selector == "*" -> known.filterTo(edges) { it.startsWith("$path.") }
@@ -560,8 +565,8 @@ class StdlibInjector private constructor(
      */
     private fun reachableImportPaths(program: Program): Set<String> {
         val seeds = ArrayDeque<ImportRequest>()
-        for (item in program.items) {
-            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
+        for (item in program.writtenImports()) {
+            if (!item.exported) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
@@ -616,7 +621,7 @@ class StdlibInjector private constructor(
      * a named scope must still be written as `Scope::Type` outside that scope.
      */
     fun validateTypeAccess(program: Program): TypeAccessValidation {
-        val visibleDeclarations = buildSet {
+        var visibleDeclarations: Set<TopLevel> = buildSet {
             addAll(index.implicitRootItems.values)
             addAll(importedItems(program).values)
         }
@@ -799,7 +804,7 @@ class StdlibInjector private constructor(
                     it.defaultValue?.let { value -> expression(value, typeParams, currentScope) }
                 }
                 annotation(func.returnType, func.line, typeParams, currentScope)
-                func.body.forEach { statement(it, typeParams, currentScope) }
+                block(func.body, typeParams, currentScope)
             }
 
             fun expression(expr: Expr, typeParams: Set<String>, currentScope: String?) {
@@ -854,7 +859,7 @@ class StdlibInjector private constructor(
                             it.defaultValue?.let { value -> expression(value, typeParams, currentScope) }
                         }
                         expr.receivers.forEach { type(it.type, expr.line, typeParams, currentScope) }
-                        expr.body.forEach { statement(it, typeParams, currentScope) }
+                        block(expr.body, typeParams, currentScope)
                     }
                     is Expr.NamedArg -> expression(expr.value, typeParams, currentScope)
                     is Expr.NullCoalesce -> {
@@ -887,6 +892,20 @@ class StdlibInjector private constructor(
                         expr.step?.let { expression(it, typeParams, currentScope) }
                     }
                     else -> {}
+                }
+            }
+
+            /** A block's statements, with what its imports bring in visible there and in the blocks it encloses. */
+            fun block(body: List<Stmt>, typeParams: Set<String>, currentScope: String?) {
+                val imports = body.filterIsInstance<Stmt.Import>()
+                val outer = visibleDeclarations
+                if (imports.isNotEmpty()) {
+                    visibleDeclarations = outer + itemsImportedBy(imports.flatMap { importRequests(it.use) }).values
+                }
+                try {
+                    body.forEach { statement(it, typeParams, currentScope) }
+                } finally {
+                    visibleDeclarations = outer
                 }
             }
 
@@ -926,18 +945,18 @@ class StdlibInjector private constructor(
                     is Stmt.ExprStmt -> expression(stmt.expr, typeParams, currentScope)
                     is Stmt.If -> {
                         expression(stmt.condition, typeParams, currentScope)
-                        stmt.thenBranch.forEach { statement(it, typeParams, currentScope) }
-                        stmt.elseBranch?.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.thenBranch, typeParams, currentScope)
+                        stmt.elseBranch?.let { block(it, typeParams, currentScope) }
                     }
                     is Stmt.InlineIf -> {
                         expression(stmt.condition, typeParams, currentScope)
-                        stmt.thenBranch.forEach { statement(it, typeParams, currentScope) }
-                        stmt.elseBranch?.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.thenBranch, typeParams, currentScope)
+                        stmt.elseBranch?.let { block(it, typeParams, currentScope) }
                     }
                     is Stmt.DeepInlineIf -> {
                         expression(stmt.condition, typeParams, currentScope)
-                        stmt.thenBranch.forEach { statement(it, typeParams, currentScope) }
-                        stmt.elseBranch?.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.thenBranch, typeParams, currentScope)
+                        stmt.elseBranch?.let { block(it, typeParams, currentScope) }
                     }
                     is Stmt.Assert -> {
                         expression(stmt.condition, typeParams, currentScope)
@@ -957,21 +976,21 @@ class StdlibInjector private constructor(
                     }
                     is Stmt.While -> {
                         expression(stmt.condition, typeParams, currentScope)
-                        stmt.body.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.body, typeParams, currentScope)
                     }
                     is Stmt.For -> {
                         stmt.declaredType?.let { type(it, stmt.line, typeParams, currentScope) }
                         expression(stmt.iterable, typeParams, currentScope)
                         stmt.step?.let { expression(it, typeParams, currentScope) }
-                        stmt.body.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.body, typeParams, currentScope)
                     }
                     is Stmt.InlineFor -> {
                         expression(stmt.iterable, typeParams, currentScope)
-                        stmt.body.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.body, typeParams, currentScope)
                     }
                     is Stmt.Loop -> {
                         stmt.iterable?.let { expression(it, typeParams, currentScope) }
-                        stmt.body.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.body, typeParams, currentScope)
                     }
                     is Stmt.Exchange -> { expression(stmt.left, typeParams, currentScope); expression(stmt.right, typeParams, currentScope) }
                     is Stmt.IndexAssign -> {
@@ -987,9 +1006,9 @@ class StdlibInjector private constructor(
                         expression(stmt.scrutinee, typeParams, currentScope)
                         stmt.branches.forEach { branch ->
                             branch.patterns.forEach { expression(it, typeParams, currentScope) }
-                            branch.body.forEach { statement(it, typeParams, currentScope) }
+                            block(branch.body, typeParams, currentScope)
                         }
-                        stmt.elseBranch?.forEach { statement(it, typeParams, currentScope) }
+                        stmt.elseBranch?.let { block(it, typeParams, currentScope) }
                     }
                     is Stmt.Throw -> expression(stmt.value, typeParams, currentScope)
                     is Stmt.Panic -> expression(stmt.message, typeParams, currentScope)
@@ -999,20 +1018,20 @@ class StdlibInjector private constructor(
                     }
                     is Stmt.Yield -> expression(stmt.value, typeParams, currentScope)
                     is Stmt.Try -> {
-                        stmt.body.forEach { statement(it, typeParams, currentScope) }
-                        stmt.catchBody?.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.body, typeParams, currentScope)
+                        stmt.catchBody?.let { block(it, typeParams, currentScope) }
                     }
-                    is Stmt.Defer -> stmt.body.forEach { statement(it, typeParams, currentScope) }
-                    is Stmt.Scope -> stmt.body.forEach { statement(it, typeParams, currentScope) }
-                    is Stmt.InlineBlock -> stmt.body.forEach { statement(it, typeParams, currentScope) }
-                    is Stmt.DeepInlineBlock -> stmt.body.forEach { statement(it, typeParams, currentScope) }
+                    is Stmt.Defer -> block(stmt.body, typeParams, currentScope)
+                    is Stmt.Scope -> block(stmt.body, typeParams, currentScope)
+                    is Stmt.InlineBlock -> block(stmt.body, typeParams, currentScope)
+                    is Stmt.DeepInlineBlock -> block(stmt.body, typeParams, currentScope)
                     is Stmt.Effect -> {
                         stmt.dependencies?.forEach { expression(it, typeParams, currentScope) }
-                        stmt.body.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.body, typeParams, currentScope)
                     }
                     is Stmt.UsingContext -> {
                         stmt.values.forEach { expression(it, typeParams, currentScope) }
-                        stmt.body.forEach { statement(it, typeParams, currentScope) }
+                        block(stmt.body, typeParams, currentScope)
                     }
                     is Stmt.NoInline -> statement(stmt.stmt, typeParams, currentScope)
                     else -> {}
@@ -1038,7 +1057,7 @@ class StdlibInjector private constructor(
                     item.type?.let { validator.type(it, item.line, emptySet(), currentScope) }
                     validator.expression(item.initializer, emptySet(), currentScope)
                 }
-                is TopLevel.Test -> item.body.forEach { validator.statement(it, emptySet(), currentScope) }
+                is TopLevel.Test -> validator.block(item.body, emptySet(), currentScope)
                 is TopLevel.Pack -> {
                     item.annotations.forEach { validator.appliedAnnotation(it, currentScope) }
                     item.nameMacro?.let { validator.expression(it, emptySet(), currentScope) }
@@ -1162,6 +1181,7 @@ class StdlibInjector private constructor(
                 }
             }
             fun register(name: String, item: TopLevel) {
+                if (moduleItems[name] == null) idx.modulesDeclaring.getOrPut(name) { mutableListOf() }.add(module)
                 moduleItems.putIfAbsentCompat(name, item)
                 idx.items.putIfAbsentCompat(name, item)
                 idx.moduleOfName.putIfAbsentCompat(name, module)
@@ -1169,6 +1189,9 @@ class StdlibInjector private constructor(
                     val rootPrefix = "${knownRoot}__"
                     if (name.startsWith(rootPrefix)) {
                         val shortName = name.removePrefix(rootPrefix)
+                        if (moduleItems[shortName] == null) {
+                            idx.modulesDeclaring.getOrPut(shortName) { mutableListOf() }.add(module)
+                        }
                         moduleItems.putIfAbsentCompat(shortName, item)
                         idx.items.putIfAbsentCompat(shortName, item)
                         idx.moduleOfName.putIfAbsentCompat(shortName, module)
@@ -1249,6 +1272,9 @@ class StdlibInjector private constructor(
                 idx.scopeTypesByQualifiedName.putIfAbsentCompat(export.qualifiedName, export)
                 idx.scopeTypesByShortName.getOrPut(shortName) { mutableListOf() }.add(export)
             }
+            for (item in program.items) {
+                if (item is TopLevel.UseImport) idx.importsOfModule.getOrPut(module) { mutableListOf() }.addAll(importRequests(item))
+            }
             // Record this module's `exposed import …` re-exports for transitive
             // import propagation, and (if always-on) the module name itself.
             for (item in program.items) {
@@ -1275,7 +1301,6 @@ class StdlibInjector private constructor(
      * match.
      */
     private fun importedItems(program: Program): Map<String, TopLevel> {
-        val visible = LinkedHashMap<String, TopLevel>()
         // Seed with the program's own imports, plus the re-exports of any
         // `exposed module` library that is auto-injected into every unit - its
         // `exposed import …` declarations apply to importers transitively.
@@ -1286,6 +1311,13 @@ class StdlibInjector private constructor(
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
         }
+        return itemsImportedBy(seeds)
+    }
+
+    /** What [requests] make nameable, expanded through the imported modules' re-exports. */
+    private fun itemsImportedBy(requests: Collection<ImportRequest>): Map<String, TopLevel> {
+        val visible = LinkedHashMap<String, TopLevel>()
+        val seeds = ArrayDeque(requests)
         // Expand transitively: resolving a module also pulls in its `export import`
         // re-exports, and so on (visited guards against cycles).
         val visited = mutableSetOf<String>()
@@ -1318,8 +1350,10 @@ class StdlibInjector private constructor(
         val reached = mutableSetOf<String>()
         reached.addAll(index.alwaysOnModules)
         val seeds = ArrayDeque<ImportRequest>()
-        for (item in program.items) {
-            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
+        // A block's import reaches its module for the whole program: what the
+        // module implements holds wherever the implementing type goes.
+        for (item in program.writtenImports()) {
+            if (!item.exported) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
@@ -1416,34 +1450,72 @@ class StdlibInjector private constructor(
     private fun isExternallyImportable(module: String): Boolean =
         index.moduleVisibility[module]?.let { it == ModuleVisibility.PUBLIC } ?: true
 
-    private fun itemsVisibleFromImport(path: String, selected: String?): Map<String, TopLevel> {
+    private fun itemsVisibleFromImport(
+        path: String,
+        selected: String?,
+        isImportable: (String) -> Boolean = ::isExternallyImportable,
+    ): Map<String, TopLevel> {
         // `import path.*` - wildcard: the exact module at `path` (if any) plus every
         // descendant module. This is the only form that pulls in a whole namespace.
         if (selected == "*") {
             val result = LinkedHashMap<String, TopLevel>()
-            if (isExternallyImportable(path)) {
+            if (isImportable(path)) {
                 index.modules[path]?.forEach { (name, declaration) -> result.putIfAbsentCompat(name, declaration) }
             }
             index.modules
-                .filterKeys { it.startsWith("$path.") && isExternallyImportable(it) }
+                .filterKeys { it.startsWith("$path.") && isImportable(it) }
                 .values.forEach { module ->
                     module.forEach { (name, declaration) -> result.putIfAbsentCompat(name, declaration) }
                 }
             return result
         }
         if (selected != null) {
-            if (!isExternallyImportable(path)) return emptyMap()
+            if (!isImportable(path)) return emptyMap()
             val module = index.modules[path] ?: return emptyMap()
             return module[selected]?.let { mapOf(selected to it) } ?: emptyMap()
         }
         // `import path` - plain: `path` must name an actual module file, or resolve to
         // a single `module.item` selection. A bare namespace/folder (e.g. `std`, which
         // has no `std.az`) pulls in nothing; `validateImports` rejects it up front.
-        if (index.modules[path] != null && isExternallyImportable(path)) return index.modules[path]!!
+        if (index.modules[path] != null && isImportable(path)) return index.modules[path]!!
         val (moduleName, itemName) = resolveSelectedLibraryPath(path) ?: return emptyMap()
-        if (!isExternallyImportable(moduleName)) return emptyMap()
+        if (!isImportable(moduleName)) return emptyMap()
         val declaration = index.modules[moduleName]?.get(itemName) ?: return emptyMap()
         return mapOf(itemName to declaration)
+    }
+
+    private val libraryScopes = HashMap<String, Map<String, TopLevel>>()
+
+    /**
+     * Everything library [module]'s own source can name: its declarations, then
+     * what it imports (with their re-exports), then the always-on root. Library
+     * modules may import their own library's confined modules.
+     */
+    private fun libraryScope(module: String): Map<String, TopLevel> = libraryScopes.getOrPut(module) {
+        val scope = LinkedHashMap<String, TopLevel>()
+        index.modules[module]?.let { scope.putAll(it) }
+        val seeds = ArrayDeque(index.importsOfModule[module].orEmpty())
+        val visited = mutableSetOf<String>()
+        while (seeds.isNotEmpty()) {
+            val request = seeds.removeFirst()
+            if (!visited.add("${request.path}::${request.selected}::${request.without.sorted()}")) continue
+            for ((name, declaration) in itemsVisibleFromImport(request.path, request.selected) { true }) {
+                if (name in request.without || name.substringAfterLast("__") in request.without) continue
+                scope.putIfAbsentCompat(name, declaration)
+            }
+            for (imported in modulesForPath(request.path)) {
+                index.exportedImportsByModule[imported].orEmpty()
+                    .forEach { seeds.add(it.copy(without = it.without + request.without)) }
+            }
+        }
+        index.implicitRootItems.forEach { (name, declaration) -> scope.putIfAbsentCompat(name, declaration) }
+        scope
+    }
+
+    /** The module that declared [item] under [name]; null for a user declaration. */
+    private fun declaringModule(item: TopLevel, name: String): String? {
+        if (item is TopLevel.Impl) return item.declaringModule
+        return index.modulesDeclaring[name]?.firstOrNull { index.modules[it]?.get(name) === item }
     }
 
     private fun resolveSelectedLibraryPath(path: String): Pair<String, String>? {
@@ -1509,7 +1581,7 @@ class StdlibInjector private constructor(
         ).distinct()
         val typeMacrosChanged = typeMacros.size != program.typeMacroRules.size
 
-        val shadowed = userDeclaredNames(program)
+        val shadowed = userDeclaredNames(program) - program.injectedNames
         val reachable = reachableModules(program)
 
         val visible = LinkedHashMap<String, TopLevel>().apply {
@@ -1542,31 +1614,40 @@ class StdlibInjector private constructor(
         // type drags unrelated runtime helpers and their bridge dependencies into
         // every backend output.
 
-        val injected = LinkedHashMap<String, TopLevel>()
-        val injectedExterns = LinkedHashMap<String, TopLevel>()
-        var frontier = referenced.toList()
+        // A reference resolves where it is written: in the program (a null
+        // module), where the program's own declarations shadow the library, or
+        // in the library module whose declaration contains it, which names what
+        // that module declares and imports whatever the program declares.
+        val walk = Walk(reachable)
+        var frontier = referenced.map { Ref(it, null) }
+        val bodyImports = bodyImportBlocks(program)
+        frontier = frontier + seedBodyImports(bodyImports, walk)
         while (frontier.isNotEmpty()) {
-            val next = mutableListOf<String>()
-            for (name in frontier) {
-                if (name in shadowed || name in injected) continue
-                val item = visible[name] ?: index.items[name]
+            val next = mutableListOf<Ref>()
+            for (ref in frontier) {
+                if (!walk.seen.add(ref)) continue
+                val (name, scopeModule) = ref
+                if (scopeModule == null && name in shadowed) continue
+                val item = scopeModule?.let { libraryScope(it)[name] } ?: visible[name] ?: index.items[name]
                 if (item != null) {
-                    injected[name] = item
-                    attachImplsForType(name, injected, next, reachable)
-                    attachStaticMembersForType(name, injected, next)
-                    val transitive = mutableSetOf<String>()
-                    collectNamesFromItem(item, transitive)
-                    next.addAll(transitive)
+                    val module = declaringModule(item, name)
+                    val key = identityKey(module, name)
+                    if (scopeModule != null) walk.bindings.getOrPut(scopeModule) { mutableMapOf() }[name] = key
+                    if (key in walk.injected) continue
+                    walk.add(key, item, module, next)
+                    attachImplsForType(item, name, walk, next)
+                    attachStaticMembersForType(name, module, walk, next)
                     continue
                 }
-                attachImplsForType(name, injected, next, reachable)
-                attachStaticMembersForType(name, injected, next)
-                if (name !in injectedExterns) {
-                    index.externs[name]?.let { injectedExterns[name] = it }
+                attachImplsForType(null, name, walk, next)
+                if (name !in walk.externs) {
+                    index.externs[name]?.let { walk.externs[name] = it }
                 }
             }
             frontier = next
         }
+        val injected = walk.injected
+        val injectedExterns = walk.externs
         if (StdlibInjector.DEBUG_INJECT) {
             println("[inject] shadowed=${shadowed.filter { "erial" in it }}")
             println("[inject] visibleSerial=${visible.keys.filter { "erial" in it }.sorted()}")
@@ -1614,12 +1695,17 @@ class StdlibInjector private constructor(
         // One declaration can be indexed by both its qualified and short export
         // names. Preserve discovery order while appending each AST item once.
         val existingIdentities = program.items.mapTo(mutableSetOf()) { itemIdentity(it) }
-        val declarations = injected.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
+        // Deduplicated by the identity each declaration now has, so same-named
+        // declarations from two modules both survive.
+        val (identifiedAll, hidden) = identifiedDeclarations(walk, visible, shadowed)
+        val identified = identifiedAll.filter { (_, renamed) -> existingIdentities.add(itemIdentity(renamed)) }
+        val programItems = rewriteBodyImports(program, bodyImports, hidden)
+        val declarations = identified.map { it.second }
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         // Exported/core compile-time blocks are injected unconditionally.
         val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
         val injectedScopeTypeNamespaces = buildMap {
-            for (declaration in declarations + alwaysDeclarations) {
+            for (declaration in identified.map { it.first } + alwaysDeclarations) {
                 val name = typeDeclarationName(declaration) ?: continue
                 val qualifier = index.scopeTypesByShortName[name]
                     ?.firstOrNull { it.declaration === declaration }
@@ -1636,12 +1722,14 @@ class StdlibInjector private constructor(
             !typeMacrosChanged
         ) return program
         return ScopeAccessRewriter.rewrite(program.copy(
-            items = program.items + declarations + externDeclarations + alwaysDeclarations,
+            items = programItems + declarations + externDeclarations + alwaysDeclarations,
             typeFunctions = typeFunctions,
             typeMacroRules = typeMacros,
             infixOperators = program.infixOperators + index.allInfixOperators,
             infixMacros = program.infixMacros + index.allInfixMacros,
             scopeTypeNamespaces = program.scopeTypeNamespaces + injectedScopeTypeNamespaces,
+            injectedNames = program.injectedNames +
+                userDeclaredNames(program.copy(items = declarations + externDeclarations + alwaysDeclarations)),
         ))
     }
 
@@ -1683,32 +1771,179 @@ class StdlibInjector private constructor(
      * one, and nothing else in the consumer's source mentions `Vec__zero` for the
      * dependency walk to find.
      */
-    private fun attachStaticMembersForType(
-        typeName: String,
-        injected: LinkedHashMap<String, TopLevel>,
-        next: MutableList<String>,
-    ) {
-        // Only a declared type has a `::` block. Without this, a module-qualified
-        // name (`std__io__println`) would look like a member of a type `std__io`.
-        // A spec owns one too: the literal factory designating what `[…]` builds.
-        val owner = index.items[typeName]
-        if (owner !is TopLevel.Pack && owner !is TopLevel.Enum && owner !is TopLevel.Spec) return
-        for (member in staticMembersByOwner[typeName].orEmpty()) {
-            if (member in injected) continue
-            val item = index.items[member] ?: continue
-            injected[member] = item
+    /** A reference and the module whose scope it was written in (null: the program's). */
+    private data class Ref(val name: String, val module: String?)
+
+    /** What the dependency walk has injected, keyed by declaration identity. */
+    private inner class Walk(val reachable: Set<String>) {
+        val injected = LinkedHashMap<String, TopLevel>()
+        val moduleOf = HashMap<String, String?>()
+        /** module → name → the identity that name resolved to there. */
+        val bindings = HashMap<String, MutableMap<String, String>>()
+        val externs = LinkedHashMap<String, TopLevel>()
+        val seen = HashSet<Ref>()
+
+        fun add(key: String, item: TopLevel, module: String?, next: MutableList<Ref>) {
+            injected[key] = item
+            moduleOf[key] = module
             val names = mutableSetOf<String>()
             collectNamesFromItem(item, names)
-            next.addAll(names)
+            names.forEach { next.add(Ref(it, module)) }
         }
     }
 
-    private fun attachImplsForType(
-        typeName: String,
-        injected: LinkedHashMap<String, TopLevel>,
-        next: MutableList<String>,
-        reachableModules: Set<String>? = null,
-    ) {
+    /**
+     * Gives each injected library declaration its identity. One the program can
+     * name - visible to it, and not shadowed by its own declaration - keeps its
+     * name. Any other becomes `module__path__Name`, which no source can spell: a
+     * dependency is then not nameable, and a program's own declaration cannot
+     * capture a reference the library meant for its own. Every reference a
+     * module made is renamed to match. Scope members and lifted statics already
+     * carry a qualified name (a static moves with its owner), and a scope-scoped
+     * type keeps the namespace its scope gives it.
+     *
+     * Returns each declaration paired with its identified form.
+     */
+    private fun identifiedDeclarations(
+        walk: Walk,
+        visible: Map<String, TopLevel>,
+        shadowed: Set<String>,
+    ): Pair<List<Pair<TopLevel, TopLevel>>, Map<String, String>> {
+        val nameable = HashSet<String>()
+        for ((name, item) in visible) {
+            if (name !in shadowed) declaringModule(item, name)?.let { nameable.add(identityKey(it, name)) }
+        }
+        val hidden = HashMap<String, String>()
+        val renames = HashMap<String, MutableMap<String, String>>()
+        for ((key, item) in walk.injected) {
+            if (item is TopLevel.Impl) continue
+            val module = walk.moduleOf[key] ?: continue
+            val name = key.substringAfter("::")
+            if ("__" in name || key in nameable || name in index.scopeTypesByShortName || isCompilerKnown(item, name)) continue
+            val identity = module.replace(".", "__") + "__" + name
+            hidden[key] = identity
+            renames.getOrPut(module) { mutableMapOf() }[name] = identity
+        }
+        // A module's own declarations come first, as in its scope.
+        for ((module, used) in walk.bindings) {
+            val names = renames.getOrPut(module) { mutableMapOf() }
+            for ((name, key) in used) {
+                val identity = hidden[key] ?: continue
+                if (name !in names) names[name] = identity
+            }
+        }
+        val renamers = renames.filterValues { it.isNotEmpty() }.mapValues { (_, names) -> DeclarationRenamer(names) }
+        val identified = walk.injected.map { (key, item) ->
+            item to (walk.moduleOf[key]?.let { renamers[it] }?.item(item) ?: item)
+        }
+        return identified to hidden
+    }
+
+    /** A block of the program's source that imports, and what its imports bind there. */
+    private class BodyImportBlock(
+        val imports: List<Stmt.Import>,
+        val bindings: Map<String, TopLevel>,
+        /** Bound names the block uses → the identity each resolved to. */
+        val used: MutableMap<String, String> = LinkedHashMap(),
+    )
+
+    /** Every block in the program's own items that imports, with what it binds. */
+    private fun bodyImportBlocks(program: Program): Map<TopLevel, List<BodyImportBlock>> {
+        val blocks = LinkedHashMap<TopLevel, List<BodyImportBlock>>()
+        for (item in program.items) {
+            val found = mutableListOf<BodyImportBlock>()
+            DeclarationRenamer(emptyMap(), onImportingBlock = { imports, body ->
+                val bindings = itemsImportedBy(imports.flatMap { importRequests(it.use) })
+                val block = BodyImportBlock(imports, bindings)
+                val names = mutableSetOf<String>()
+                body.forEach { collectNamesFromStmt(it, names) }
+                for (name in names) bindings[name]?.let { block.used[name] = identityKey(declaringModule(it, name), name) }
+                found += block
+            }).item(item)
+            if (found.isNotEmpty()) blocks[item] = found
+        }
+        return blocks
+    }
+
+    /** What a block's imports bind and the block uses enters the walk as the program's own references would. */
+    private fun seedBodyImports(blocks: Map<TopLevel, List<BodyImportBlock>>, walk: Walk): List<Ref> {
+        val next = mutableListOf<Ref>()
+        for (block in blocks.values.flatten()) {
+            for ((name, key) in block.used) {
+                if (key in walk.injected) continue
+                val item = block.bindings.getValue(name)
+                val module = declaringModule(item, name)
+                walk.add(key, item, module, next)
+                attachImplsForType(item, name, walk, next)
+                attachStaticMembersForType(name, module, walk, next)
+            }
+        }
+        return next
+    }
+
+    /**
+     * The program's items with each body import resolved in place: the names it
+     * binds become the identities they resolved to, within that block only, and
+     * the import statements leave. A declaration imported only in a block is not
+     * nameable elsewhere, so it carries a hidden identity.
+     */
+    private fun rewriteBodyImports(
+        program: Program,
+        blocks: Map<TopLevel, List<BodyImportBlock>>,
+        hidden: Map<String, String>,
+    ): List<TopLevel> {
+        if (blocks.isEmpty()) return program.items
+        val bound = HashMap<Stmt.Import, Map<String, String>>()
+        for (block in blocks.values.flatten()) {
+            val renames = block.used.mapNotNull { (name, key) -> hidden[key]?.let { name to it } }.toMap()
+            block.imports.forEach { bound[it] = renames }
+        }
+        val renamer = DeclarationRenamer(emptyMap(), bodyImports = bound)
+        return program.items.map { item -> if (item in blocks) renamer.item(item) else item }
+    }
+
+    /**
+     * A declaration the compiler itself refers to by name keeps that name: a
+     * `bridge` type or capability, a collection spec the compiler maps literals
+     * and annotations onto, and the types its derivers and runtime synthesize.
+     */
+    private fun isCompilerKnown(item: TopLevel, name: String): Boolean =
+        (item is TopLevel.Pack && item.isBridge) ||
+            (item is TopLevel.Spec && item.isBridge) ||
+            (item is TopLevel.Deco && item.isBridge) ||
+            name in implicitCollectionTypes ||
+            name in COMPILER_NAMED_TYPES
+
+    /** A library declaration's identity; a declaration without a module keeps its name. */
+    private fun identityKey(module: String?, name: String): String = if (module == null) name else "$module::$name"
+
+    /**
+     * Pulls in the members a type's `::` block declared.
+     *
+     * They are part of the type in the same way its impls are: `Vec3f::zero` names
+     * one, and nothing else in the consumer's source mentions `Vec__zero` for the
+     * dependency walk to find. Only the owner's own module declares its members.
+     */
+    private fun attachStaticMembersForType(typeName: String, module: String?, walk: Walk, next: MutableList<Ref>) {
+        // Only a declared type has a `::` block. Without this, a module-qualified
+        // name (`std__io__println`) would look like a member of a type `std__io`.
+        // A spec owns one too: the literal factory designating what `[…]` builds.
+        val declarations = module?.let { index.modules[it] } ?: return
+        val owner = declarations[typeName]
+        if (owner !is TopLevel.Pack && owner !is TopLevel.Enum && owner !is TopLevel.Spec) return
+        for (member in staticMembersByOwner[typeName].orEmpty()) {
+            val item = declarations[member] ?: continue
+            val key = identityKey(module, member)
+            if (key !in walk.injected) walk.add(key, item, module, next)
+        }
+    }
+
+    /**
+     * Pulls in the impls on a type. An impl belongs to [type] when its own module
+     * names that declaration by the impl's type name - a same-named type from
+     * another module keeps its impls to itself.
+     */
+    private fun attachImplsForType(type: TopLevel?, typeName: String, walk: Walk, next: MutableList<Ref>) {
         val keys = linkedSetOf(typeName, normalizedTypeName(typeName))
         for (keyName in keys) {
             index.implsByType[keyName]?.filter { impl ->
@@ -1717,23 +1952,25 @@ class StdlibInjector private constructor(
                 // extension in an unimported module would otherwise drag its whole
                 // module's transitive closure into every program. A module the
                 // program cannot see contributes nothing it could have called.
-                reachableModules == null ||
-                    impl.declaringModule == null ||
-                    impl.declaringModule in reachableModules
+                (impl.declaringModule == null || impl.declaringModule in walk.reachable) &&
+                    (type == null || implTarget(impl)?.let { it === type } ?: true)
             }?.forEach { impl ->
                 // Include the member names: a multi-operator impl (`oper[.. , >..]`)
                 // expands to several impls sharing one source position, so position
                 // alone would collapse them into one.
                 val members = impl.methods.joinToString(",") { it.name }
-                val key = "impl::${normalizedTypeName(impl.typeName)}::${impl.traitName.orEmpty()}::${impl.line}:${impl.column}::$members"
-                if (key !in injected) {
-                    injected[key] = impl
-                    val names = mutableSetOf<String>()
-                    collectNamesFromItem(impl, names)
-                    next.addAll(names)
-                }
+                val key = "impl::${impl.declaringModule}::${normalizedTypeName(impl.typeName)}::" +
+                    "${impl.traitName.orEmpty()}::${impl.line}:${impl.column}::$members"
+                if (key !in walk.injected) walk.add(key, impl, impl.declaringModule, next)
             }
         }
+    }
+
+    /** The declaration an impl's module means by the impl's type name. */
+    private fun implTarget(impl: TopLevel.Impl): TopLevel? {
+        val module = impl.declaringModule ?: return null
+        val typeName = impl.typeName.substringBefore('<')
+        return libraryScope(module)[typeName] ?: index.items[typeName]
     }
 
     // -----------------------------------------------------------------
@@ -1956,6 +2193,7 @@ class StdlibInjector private constructor(
 
     private fun collectNamesFromStmt(stmt: Stmt, names: MutableSet<String>) {
         when (stmt) {
+            is Stmt.Import -> Unit // a path, not a reference; injection resolves it
             is Stmt.VarDecl -> {
                 collectNamesFromTypeAnnotation(stmt.type, names)
                 collectNamesFromExpr(stmt.initializer, names)

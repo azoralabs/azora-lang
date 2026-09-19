@@ -40,6 +40,7 @@ import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.stdlib.AzStdlib
+import org.azora.lang.stdlib.writtenImports
 
 /**
  * The Azora Language Server - full language intelligence for `.az` sources.
@@ -872,10 +873,13 @@ class AzoraLanguageServer {
         }
     }
 
-    /** Use the language parser as the sole authority for import syntax. */
+    /**
+     * Use the language parser as the sole authority for import syntax. A block's
+     * own import counts for the whole file here: it offers its names anywhere,
+     * and the compiler reports a use outside the block.
+     */
     private fun importsOf(source: String): ImportVisibility {
-        val specs = parseTolerant(source)?.items
-            ?.filterIsInstance<TopLevel.UseImport>()
+        val specs = parseTolerant(source)?.writtenImports()
             ?.filterNot { it.exported }
             ?.flatMap { it.importSpecs }
             .orEmpty()

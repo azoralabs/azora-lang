@@ -49,19 +49,19 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,353 tests: 2,147 passed,
-206 failed, 0 skipped**. No previously passing test fails; the two new failures
-are the enabled 007/014 acceptance tests in `FactoryDependencyTest`. The
+The latest full compiler run has **2,367 tests: 2,164 passed,
+203 failed, 0 skipped**. No previously passing test fails, and the 007/014
+acceptance tests in `FactoryDependencyTest` pass. The
 [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
 records the 2,290-test baseline. Packs and specs declare sequence and
 associative `literal` factories, and importing the target brings in the factory
-and what it builds. **010** remains open: C3.5's canonical-identity half, then the
-standard List/Set/Map factories (C4).
+and what it builds. Library declarations carry canonical identities, and a
+program's block imports bind lexically. **010** remains open for the standard
+List/Set/Map factories (C4) and their qualification (C5).
 
-**007**, the complete **008** review and module identity/scope work under **014**
-remain open. Local imports still leak into unrelated declarations; that requires
-the binding repair already outlined in the progress log. Engine and full Studio
-build/run qualification also remain open.
+**007**, the complete **008** review and **014** remain open. The progress log
+lists what is left of each. Engine and full Studio build/run qualification also
+remain open.
 
 The [dated audit](ECOSYSTEM_AUDIT_2026_09_08.md) records the initial evidence:
 2,204 compiler tests / 1,749 failures, most obscured by library loading; 26 library
@@ -78,7 +78,7 @@ Dependencies: None. Preserve existing local work and the already verified delimi
 - [x] **004. Migrate standard-library assertion messages and directly related fixtures to the current contract.** Acceptance: Conditions and messages are preserved; removed assertion-message forms are migrated; focused semantic/interpreter/native checks establish lazy evaluation. Unrelated file parse failures remain tracked under 005–009.
 - [x] **005. Repair lifecycle and multiline body parsing/migrations.** Acceptance: Constructor, destructor, property, function, if, and grouped bodies retain the intended ownership and control flow. Receiver modes and statement boundaries are preserved; interpreter/native execution verifies contracts, constructors/properties, and grouped conditions. Full lifecycle cleanup remains under 037.
 - [x] **006. Reconcile range syntax and reserved-name collisions in the library.** Acceptance: `>..` excludes the left bound, descends, and includes the right bound; the reverse keyword/modifier is removed. Bounds/step execute once, invalid steps fail, and Int-edge examples agree across interpreter/LLVM/WASM. Explicit member-name positions support `.then()`; unqualified `then` remains reserved. Tooling source migrations and build limits are recorded in the progress log.
-- [ ] **007. Reconcile receiver and import syntax across library sources and test fixtures.** Acceptance: Accepted forms match current intent; removed forms have accurate diagnostics; imports retain their scope.
+- [ ] **007. Reconcile receiver and import syntax across library sources and test fixtures.** Acceptance: Accepted forms match current intent; removed forms have accurate diagnostics; imports retain their scope. Progress 2026-09-19: a program's block imports bind lexically (`LexicalImportTest`). Open: library modules still hoist block imports, block-imported type functions and macros are not in scope, and the §5.2 receiver discrepancy remains.
 - [ ] **008. Review stale frontend assertions rather than changing code to satisfy them.** Acceptance: Each changed test cites the intended invariant; tests for rejected syntax and evaluation behavior remain meaningful.
 - [x] **009. Make the complete standard-library tree parse and load.** Acceptance: Disk and bundled loading both succeed, including compile-time lists and version validation. Evidence: strict disk/bundle tests and full compiler baseline, 2026-09-10; runtime/library semantic failures remain under subsequent packages.
 - [ ] **010. Establish reproducible per-stage baseline reports.** Acceptance: A full run classifies independent failures, unavailable native tools, and cascades; no blanket skips conceal defects.
@@ -99,7 +99,7 @@ selected `Array` as the default for a non-empty sequence without context.
     - [x] **010.C3.4.2. Spec-owned factories.** `spec S<T> { literal [...elements: T]: Self { … } }` is the spec's own function, not a requirement; it lifts to `S__literal` and designates the concrete value a `[…]` builds where `S<…>` is expected. Factories are not inherited by child specs. Spec method/property signatures now take the receiver's type arguments (own members), and LLVM converts dispatch results to the call-site type. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest` (interpreter, LLVM, WASM).
     - [x] **010.C3.4.3. Associative factories.** A factory whose declared element type is a two-tuple, `literal [...entries: (K, V)]`, is associative (user decision); a type-parameter element is always a sequence. `[k: v, …]` and `[:]` select it, keys and values are checked separately, and each key runs before its value. Tuples now lower as aggregates on LLVM and WASM, and `t.0` reads a structural tuple. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest` (interpreter, LLVM, WASM).
     - [x] **010.C3.4.4. Constraints, failure and ownership.** A factory takes a `where` clause, decided at selection for the target's type arguments (undecidable clauses and arguments are accepted, as for any declaration). A failable factory makes the literal fail as a call to it would, and elements are arguments: `take` moves an element and a later use is rejected. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest`. Borrowed elements and their lifetimes follow the argument rules and move with 033/035; partial-construction cleanup is 037.
-  - [ ] **010.C3.5. Discover selected factory dependencies before specialization/lowering.** Use canonical declarations and avoid unrelated short-name matches. Discovery is implemented: importing a spec or pack brings its literal factories and what their bodies build (`FactoryDependencyTest`). Open: an injected dependency becomes nameable in source, and a program's own declaration captures a library factory's short-name reference. Both are the pre-existing 007/014 identity/scope defect and have enabled acceptance tests.
+  - [x] **010.C3.5. Discover selected factory dependencies before specialization/lowering.** Use canonical declarations and avoid unrelated short-name matches. Importing a spec or pack brings its literal factories and what their bodies build. Library declarations the program cannot name carry canonical identities (`lib__seq__Vector`) and resolve in their own module's scope, so an injected dependency is not nameable and a program's own declaration cannot capture it. Evidence: `FactoryDependencyTest` 6/6 (closed 2026-09-19 with the 007/014 identity work).
 - [ ] **010.C4. Connect real standard List/Set/Map implementations.** Lower literals through the selected constructor/factory and preserve source order, exactly-once key/value evaluation, duplicate rules, failure behavior and ownership.
 - [ ] **010.C5. Qualify factory construction across backends and tooling.** Test nested/empty literals, overloaded/generic contexts, lifetimes, native representation and Studio/compiler diagnostics together.
 
@@ -110,7 +110,7 @@ Dependencies: Steps 001–010; narrow semantic tests can be developed earlier wi
 - [ ] **011. Publish a feature and target support matrix from code inspection.** Acceptance: Every language feature identifies responsible stages, tests, unsupported targets, and actual limits.
 - [ ] **012. Consolidate lexical vocabulary and source locations.** Acceptance: Compiler, AZLS, Studio, and plugin tokenization agree on names, escapes, Unicode, comments, and spans.
 - [ ] **013. Harden parser recovery and AST validation.** Acceptance: Malformed input yields bounded, located diagnostics without corrupting the next declaration.
-- [ ] **014. Repair module resolution, visibility, aliases, and symbol identity.** Acceptance: Multi-file ambiguity, shadowing, access checks, and incremental analysis agree with compilation.
+- [ ] **014. Repair module resolution, visibility, aliases, and symbol identity.** Acceptance: Multi-file ambiguity, shadowing, access checks, and incremental analysis agree with compilation. Foundation in place 2026-09-19: canonical identities for injected library declarations and per-module reference resolution. Open: scope members keep short names, an import naming no module compiles silently, and multi-file ambiguity, access and incremental checks.
 - [ ] **015. Enforce all four binding mutability combinations.** Acceptance: Rebinding and mutation are checked separately for locals, globals, fields, and captures.
 - [ ] **016. Define and enforce numeric conversion and overflow behavior.** Acceptance: Widths, signedness, literals, promotions, casts, shifts, and overflow have target-consistent tests.
   - From 010.C3.3: 128-bit values (`Cent`, `UCent`, `Quad`) do not fit an eight-byte erased generic slot on either native target.

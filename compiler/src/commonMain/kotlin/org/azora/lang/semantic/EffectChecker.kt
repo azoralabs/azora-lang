@@ -123,6 +123,7 @@ class EffectChecker {
 
     private fun collectCallsFromStmt(stmt: Stmt, calls: MutableSet<String>) {
         when (stmt) {
+            is Stmt.Import -> Unit
             is Stmt.VarDecl -> collectCallsFromExpr(stmt.initializer, calls)
             is Stmt.RemDecl -> collectCallsFromExpr(stmt.initializer, calls)
             is Stmt.Effect -> {

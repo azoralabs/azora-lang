@@ -267,6 +267,11 @@ class AstValidator {
 
     private fun validateStmt(stmt: Stmt, funcName: String, errors: MutableList<String>) {
         when (stmt) {
+            // Injection resolves a body import and removes it; one that remains
+            // named nothing a library provides.
+            is Stmt.Import -> errors.add(
+                "line ${stmt.line}: '${stmt.use.importSpecs.joinToString { it.path }}' does not name a library module this program can import",
+            )
             is Stmt.VarDecl -> {
                 if (stmt.name.isEmpty()) {
                     errors.add("line ${stmt.line}: empty variable name in function '$funcName'")

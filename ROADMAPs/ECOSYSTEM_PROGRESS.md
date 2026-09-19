@@ -15,11 +15,13 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.4 (closed 2026-09-19 by user decision), target-owned literal
   factories for packs and specs, sequence and associative, with `where`,
   failure and ownership behaving as a call to the factory.
-- In progress: 010.C3.5. Factory dependency discovery works; canonical identity
-  (no capture by a program's own names, no leak of injected dependencies) is the
-  007/014 defect and awaits a decision on doing that redesign now.
-- 007 lexical imports, the remaining 008 fixture review and 010 failure triage
-  remain open. Older entries below preserve the evidence at each stage.
+- Completed: 010.C3.5. Factory dependencies are discovered and carry canonical
+  identities; nothing injected becomes nameable, and program names capture no
+  library reference.
+- In progress: 007/014. A program's block imports bind lexically. Library-module
+  block imports, receiver syntax, scope members and unknown-module imports remain.
+- The remaining 008 fixture review and 010 (C4–C5) remain open. Older entries
+  below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
 
 ## 004 — assertion migration completed
@@ -1311,3 +1313,87 @@ here without a decision.
 
 Full run: **2,353 tests, 2,147 passed, 206 failed, 0 skipped**. No previously
 passing test fails; the two new failures are the acceptance tests above.
+
+## 2026-09-19 — 007/014: declaration identity and lexical imports; 010.C3.5 closed
+
+C3.5 discovery is committed as `813ee22d`. This entry is the redesign outlined
+under 007/014, done now by user decision.
+
+**Declaration identity.** A library declaration the program cannot name gets a
+canonical identity, its module path plus its name: `lib.seq`'s `Vector` becomes
+`lib__seq__Vector`. Source cannot spell it (an identifier rejects `_` after its
+first character). `DeclarationRenamer` rewrites the declaration and every
+reference to it within the modules that bind it. Lifted statics (`Owner__member`)
+follow their owner, and parameters, locals, lambda parameters and type
+parameters shadow.
+
+- A library reference resolves in its own module's scope: the module's
+  declarations, its imports and their re-exports, then the implicit root. It no
+  longer resolves in the program's scope, so a program's `pack Vector<T>` does not
+  capture the factory's `Vector<T>(…)`.
+- A declaration the program imports and does not shadow keeps its short name.
+  So do compiler-known declarations: bridge packs, specs and decorators, the
+  collection specs, `Formatter` and `Channel`.
+- An impl attaches when its target resolves to the injected type, and a static
+  member only from its owner's module.
+- Injection runs up to four times per compile and is now idempotent.
+  `Program.injectedNames` records what injection added, so a later pass does not
+  mistake it for the program's own declaration and inject a second copy.
+
+**Lexical imports.** In a program (a file without a `module` header), an
+`import` inside a block is a `Stmt.Import` that stays in the block. It binds in
+that block and the blocks it encloses, and locals shadow it. The injector
+resolves each importing block, injects what the block uses, rewrites those uses
+to the identities they resolved to, and drops the statement. A name imported only
+in a block carries a hidden identity everywhere else. An outside use gets the
+same diagnostic as a program with no import:
+`undefined function 'answer' - 'answer' is provided by 'lib.one': add 'import lib.one::answer'`.
+Namespace and selection validation, module cycles, library reachability and
+type access also see block imports; type access is checked per block. The
+language server counts a block import file-wide for completion and hover, as the
+old hoisting did, and the compiler reports a use outside the block.
+
+The 007 follow-up probe, rerun with test-owned libraries:
+
+| User source | Required | Observed |
+|---|---|---|
+| `main` calls `answer()` without an import | Reject | Rejected |
+| `main` imports the module and calls `answer()` | Accept | Accepted |
+| `one` imports the module; unrelated `main` calls `answer()` | Reject | Rejected |
+| A test imports the module; unrelated `main` calls `answer()` | Reject | Rejected |
+
+Evidence:
+
+- `FactoryDependencyTest`: 6/6. Both C3.5 acceptance tests pass: an injected
+  `Vector` is not nameable, and a program's own `Vector` does not capture the
+  factory's.
+- `LexicalImportTest`, new: 13/13. Covers a function's and a test's import, both
+  leak rows, sibling blocks importing different providers of `answer`, nested
+  blocks (inward and not outward), an imported type and its leak, local
+  shadowing, block plus file import, selected imports and namespace validation.
+- `TestScopedImportTest` asserts the lexical shape, 4/4. Its obsolete bracket
+  fixture is migrated to `std::{…}`. A new case checks that library modules still
+  hoist.
+- AZLS: `completesWhatABlockImports` added; 91/91.
+- Full compiler run (`./gradlew :compiler:desktopTest --offline --console=plain`):
+  **2,367 tests, 2,164 passed, 203 failed, 0 skipped**. Compared by test identity
+  with the previous run, no failure is new. Now passing:
+  `TestScopedImportTest.aTestMayOpenWithItsOwnImports` (its obsolete fixture) and
+  the two `FactoryDependencyTest` acceptance tests.
+
+Remaining, with owners:
+
+- Library modules still hoist block imports to module scope (007).
+- Type functions and type macros imported in a block are not in scope there;
+  import them at file scope (007).
+- Scope members (`std__math__floor`) and scope types keep their names. A
+  scope-qualified path to an injected dependency's scope member is not verified
+  as closed (014).
+- Macro templates are not renamed (028).
+- The FUNCTIONS_DIP §5.2 receiver discrepancy remains (007).
+- Found here and pre-existing: an import naming no module compiles silently, at
+  file and block scope alike (`import std.nothere`, `import lib.missing`). This
+  is 014; only namespace paths are rejected.
+
+The full suite now runs in about 1m50s instead of about 4 minutes, because far
+less is injected.

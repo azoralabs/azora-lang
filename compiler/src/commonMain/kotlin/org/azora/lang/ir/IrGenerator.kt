@@ -1195,6 +1195,8 @@ class IrGenerator(private val table: SymbolTable) {
 
     private fun lowerStmt(stmt: Stmt): IrStmt {
         return when (stmt) {
+            // Injection removes every body import; the validator rejects any left.
+            is Stmt.Import -> IrStmt.Scope(emptyList())
             is Stmt.VarDecl -> {
                 val init = withImplicitCopy(
                     stmt.initializer,

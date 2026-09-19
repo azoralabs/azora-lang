@@ -1536,6 +1536,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun resolveStmtInner(stmt: Stmt, returnType: IrType) {
         when (stmt) {
+            is Stmt.Import -> Unit // resolved by library injection before semantics
             // `var` and `val` both rebind; only `var` may be mutated through.
             is Stmt.VarDecl ->
                 resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true, valueMutable = stmt.valueMutable, hasStorageEffects = stmt.lazy)

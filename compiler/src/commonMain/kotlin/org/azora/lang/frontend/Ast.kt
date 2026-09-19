@@ -622,6 +622,18 @@ fun asRepeatedConstruction(expr: Expr.Binary): Pair<Expr, Expr>? {
 }
 
 sealed class Stmt {
+    /**
+     * `import …` written in a program's body. It binds within the enclosing
+     * block - nested blocks included - and nowhere else; library injection
+     * resolves it and leaves no import statement behind.
+     */
+    data class Import(
+        val use: TopLevel.UseImport,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+    ) : Stmt()
+
     /** Ownership-preserving exchange of two mutable storage locations. */
     data class Exchange(
         val left: Expr,
@@ -3169,6 +3181,12 @@ data class Program(
      * `module std.core` answers for every declaration the module makes.
      */
     val moduleAnnotations: List<Annotation> = emptyList(),
+    /**
+     * Declarations the library injector added, by the name they carry. Injection
+     * runs again after later passes; these are library code, not the source
+     * unit's own declarations shadowing the library.
+     */
+    val injectedNames: Set<String> = emptySet(),
 ) {
     /** Convenience - returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

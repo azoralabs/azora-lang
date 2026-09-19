@@ -24,16 +24,13 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * `target++` and `target--` desugar to `target = target ± 1`.
+ * Local prefix/postfix increments retain their value-producing AST node.
+ * Numeric variable evaluation is verified across all three backends by
+ * IncrementSemanticsTest and IncrementExecTest, including optimized IR.
  *
- * Every assignable target takes one - a local, a field, an element, a pointee -
- * which is the same set `target += 1` and `target ?++` already take. Increment is
- * a statement: it has no expression form, because a value-producing side effect
- * would need an IR node all four backends do not have.
- *
- * These are parser tests because the bundled stdlib does not parse yet (see the
- * Baseline section of UPGRADE_PLAN.MD). The desugaring emits exactly the nodes
- * `self.x += 1` already emits, so what the backends do with them is already covered.
+ * Non-variable statement targets currently use assignment lowering; the tests
+ * below describe that existing representation, not proof that complex locations
+ * are evaluated once. General lvalue increment lowering remains under step 041.
  */
 class IncrementTest {
 
@@ -53,14 +50,17 @@ class IncrementTest {
     // -- every assignable target --------------------------------------------
 
     @Test fun aLocalIncrements() {
-        val stmt = assertIs<Stmt.Assignment>(only("x++"))
-        assertEquals("x", stmt.name)
-        assertEquals(TokenType.PLUS to 1L, step(stmt.value))
+        val increment = assertIs<Expr.IncDec>(assertIs<Stmt.ExprStmt>(only("x++")).expr)
+        assertEquals("x", assertIs<Expr.Identifier>(increment.target).name)
+        assertEquals(TokenType.PLUS_PLUS, increment.op)
+        assertEquals(false, increment.prefix)
     }
 
     @Test fun aLocalDecrements() {
-        val stmt = assertIs<Stmt.Assignment>(only("x--"))
-        assertEquals(TokenType.MINUS to 1L, step(stmt.value))
+        val increment = assertIs<Expr.IncDec>(assertIs<Stmt.ExprStmt>(only("x--")).expr)
+        assertEquals("x", assertIs<Expr.Identifier>(increment.target).name)
+        assertEquals(TokenType.MINUS_MINUS, increment.op)
+        assertEquals(false, increment.prefix)
     }
 
     @Test fun aFieldIncrements() {
@@ -104,10 +104,9 @@ class IncrementTest {
     }
 
     @Test fun anIncrementIsNotACompoundAssignment() {
-        // `+=` carries its operator so a type declaring `oper+=` gets the in-place
-        // call. `++` does not, so it keeps lowering to build-and-assign exactly as
-        // it did before it reached targets beyond a local.
-        assertNull(assertIs<Stmt.Assignment>(only("x++")).compoundOp)
+        // Compound assignment retains overload dispatch metadata. Variable
+        // increment has its own node and numeric/mutability semantic checks.
+        assertIs<Expr.IncDec>(assertIs<Stmt.ExprStmt>(only("x++")).expr)
         assertNull(assertIs<Stmt.MemberAssign>(only("self.n++")).compoundOp)
         assertEquals(TokenType.PLUS, assertIs<Stmt.Assignment>(only("x += 1")).compoundOp)
     }
@@ -115,7 +114,7 @@ class IncrementTest {
     @Test fun incrementsSequenceWithoutSeparators() {
         val stmts = body("x++\nself.n--\ncounts[0]++")
         assertEquals(3, stmts.size)
-        assertIs<Stmt.Assignment>(stmts[0])
+        assertIs<Expr.IncDec>(assertIs<Stmt.ExprStmt>(stmts[0]).expr)
         assertIs<Stmt.MemberAssign>(stmts[1])
         assertIs<Stmt.IndexAssign>(stmts[2])
     }
@@ -134,13 +133,23 @@ class IncrementTest {
         assertEquals(TokenType.PLUS, stmt.compoundOp)
     }
 
-    // -- increment is a statement -------------------------------------------
+    // -- value-producing variable forms ------------------------------------
 
-    @Test fun thereIsNoExpressionForm() {
-        // `a[i++]` would need a value-producing side effect. Rejecting it beats
-        // parsing it into something that silently drops either the value or the
-        // increment.
-        assertFailsWith<IllegalStateException> { body("counts[i++] = 1") }
+    @Test fun postfixIncrementMaySupplyAnIndex() {
+        val stmt = assertIs<Stmt.IndexAssign>(only("counts[i++] = 1"))
+        val index = assertIs<Expr.IncDec>(stmt.index)
+        assertEquals("i", assertIs<Expr.Identifier>(index.target).name)
+        assertEquals(TokenType.PLUS_PLUS, index.op)
+        assertEquals(false, index.prefix)
+    }
+
+    @Test fun prefixAndPostfixRemainDistinct() {
+        for ((source, op) in listOf("++x" to TokenType.PLUS_PLUS, "--x" to TokenType.MINUS_MINUS)) {
+            val prefix = assertIs<Expr.IncDec>(assertIs<Stmt.ExprStmt>(only(source)).expr)
+            assertEquals(true, prefix.prefix)
+            assertEquals(op, prefix.op)
+            assertEquals("x", assertIs<Expr.Identifier>(prefix.target).name)
+        }
     }
 
     @Test fun anIncrementTargetMustBeAssignable() {

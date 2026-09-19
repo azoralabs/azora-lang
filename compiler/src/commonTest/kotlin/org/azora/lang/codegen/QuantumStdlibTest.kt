@@ -31,7 +31,7 @@ class QuantumStdlibTest {
 
                 func main() {
                     fin bell = bellPair()
-                    fin hidden = bernsteinVazirani(@arr[1, 0, 1])
+                    fin hidden = bernsteinVazirani([1, 0, 1])
                     fin fourier = quantumFourierTransform(3)
                     fin search = groverSearch(3, 5)
                     println(bell.qubits)

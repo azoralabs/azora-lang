@@ -111,6 +111,7 @@ internal object IrSymbolCanonicalizer {
             is IrStmt.FinDecl -> stmt.copy(name = symbol(stmt.name), type = type(stmt.type), initializer = expr(stmt.initializer))
             is IrStmt.LetDecl -> stmt.copy(name = symbol(stmt.name), type = type(stmt.type), initializer = expr(stmt.initializer))
             is IrStmt.Assignment -> stmt.copy(name = symbol(stmt.name), value = expr(stmt.value))
+            is IrStmt.Exchange -> stmt.copy(left = expr(stmt.left), right = expr(stmt.right))
             is IrStmt.IndexAssign -> stmt.copy(target = expr(stmt.target), index = expr(stmt.index), value = expr(stmt.value))
             is IrStmt.MemberAssign -> stmt.copy(target = expr(stmt.target), value = expr(stmt.value))
             is IrStmt.Return -> stmt.copy(value = stmt.value?.let(::expr))

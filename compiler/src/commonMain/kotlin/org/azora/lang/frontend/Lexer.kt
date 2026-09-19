@@ -130,11 +130,13 @@ class Lexer(private val source: String) {
                 // `<=>` is read before `<=`: maximal munch. Nothing else in the
                 // grammar produces `<`, `=`, `>` in sequence, so this takes no
                 // existing spelling away.
+                match('>') -> addToken(TokenType.EXCHANGE)
                 match('=') -> addToken(if (match('>')) TokenType.SPACESHIP else TokenType.LESS_EQUAL)
                 match('<') -> addToken(if (match('=')) TokenType.SHIFT_LEFT_EQUAL else TokenType.SHIFT_LEFT)
                 else -> addToken(TokenType.LESS)
             }
             '>' -> when {
+                source.getOrNull(current) == '.' && source.getOrNull(current + 1) == '.' -> { advance(); advance(); addToken(TokenType.GREATER_DOT_DOT) }
                 match('=') -> addToken(TokenType.GREATER_EQUAL)
                 match('>') -> addToken(if (match('=')) TokenType.SHIFT_RIGHT_EQUAL else TokenType.SHIFT_RIGHT)
                 else -> addToken(TokenType.GREATER)

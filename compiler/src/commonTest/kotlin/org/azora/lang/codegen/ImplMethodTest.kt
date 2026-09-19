@@ -110,7 +110,7 @@ class ImplMethodTest {
                 }
             }
             func main() {
-                fin pts = @arr[Point(1, 1), Point(3, 4), Point(5, 5)]
+                fin pts = [Point(1, 1), Point(3, 4), Point(5, 5)]
                 println(pts[1].lengthSquared())
             }
         """.trimIndent()))

@@ -354,16 +354,7 @@ class WasmCodegen {
             is IrStmt.LetDecl -> if (stmt.reactiveLifetime != null) emitReactiveDecl(stmt.name, stmt.type, stmt.initializer)
                 else emitLocalDecl(stmt.name, stmt.type, stmt.initializer, stmt.lazy)
             is IrStmt.Assignment -> {
-                val alias = reactiveAliases[stmt.name]
-                val target = alias?.valueGlobal ?: stmt.name
-                val boxed = boxedLocals[target]
-                if (boxed != null) {
-                    val type = localIrTypes[target] ?: stmt.value.type
-                    line("(${wasmStore(type)} (local.get \$$boxed) ${emitExpr(stmt.value)})")
-                } else {
-                    val operation = if (alias != null || (target in globalTypes && target !in localIrTypes)) "global.set" else "local.set"
-                    line("($operation \$$target ${emitExpr(stmt.value)})")
-                }
+                line(storeVariable(stmt.name, stmt.value.type, emitExpr(stmt.value)))
                 if (!emittingReactiveEffect) {
                     val changed = invalidateLazyDependents(stmt.name) + stmt.name
                     for (effect in activeReactiveEffects.filter { effect ->
@@ -373,7 +364,8 @@ class WasmCodegen {
                     }
                 }
             }
-            is IrStmt.IndexAssign -> line("(i32.store ${elemAddr(stmt.target, stmt.index)} ${emitExpr(stmt.value)})")
+            is IrStmt.Exchange -> emitExchange(stmt)
+            is IrStmt.IndexAssign -> line("(${wasmStore(stmt.value.type)} ${elemAddr(stmt.target, stmt.index)} ${emitExpr(stmt.value)})")
             is IrStmt.MemberAssign -> line("(i32.store ${fieldAddr(stmt.target, stmt.name)} ${emitExpr(stmt.value)})")
             is IrStmt.ExprStmt -> {
                 val e = emitExpr(stmt.expr)
@@ -423,6 +415,18 @@ class WasmCodegen {
         } finally {
             emittingReactiveEffect = previous
         }
+    }
+
+    /** Select the same storage for assignment and value-producing mutation. */
+    private fun storeVariable(name: String, type: IrType, value: String): String {
+        val alias = reactiveAliases[name]
+        val target = alias?.valueGlobal ?: name
+        val boxed = boxedLocals[target]
+        if (boxed != null) {
+            return "(${wasmStore(localIrTypes[target] ?: type)} (local.get \$$boxed) $value)"
+        }
+        val storage = if (alias != null || (target in globalTypes && target !in localIrTypes)) "global" else "local"
+        return "($storage.set \$$target $value)"
     }
 
     private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr, lazy: Boolean) {
@@ -625,19 +629,35 @@ class WasmCodegen {
     }
 
     private fun emitFor(stmt: IrStmt.For) {
+        check(stmt.start.type == IrType.Int && stmt.end.type == IrType.Int)
+        val n = blockCounter++
+        val cursor = "__range_cursor_$n"
+        val bound = "__range_bound_$n"
+        val step = "__range_step_$n"
         declareLocal(stmt.counter, IrType.Int)
-        line("(local.set \$${stmt.counter} ${emitExpr(stmt.start)})")
+        declareLocal(cursor, IrType.Long)
+        declareLocal(bound, IrType.Long)
+        declareLocal(step, IrType.Long)
+        line("(local.set \$$cursor (i64.extend_i32_s ${emitExpr(stmt.start)}))")
+        line("(local.set \$$bound (i64.extend_i32_s ${emitExpr(stmt.end)}))")
+        val stepExpr = stmt.step?.let { emitExpr(it) } ?: "(i32.const 1)"
+        line("(local.set \$$step (i64.extend_i32_s $stepExpr))")
+        line("(if (i64.le_s (local.get \$$step) (i64.const 0)) (then unreachable))")
+        if (stmt.descending) {
+            line("(local.set \$$cursor (i64.sub (local.get \$$cursor) (i64.const 1)))")
+        }
         stmt.indexName?.let { index ->
             declareLocal(index, IrType.Int)
             line("(local.set \$$index (i32.const 0))")
         }
-        val cmp = if (stmt.reverse) (if (stmt.inclusive) "i32.ge_s" else "i32.gt_s")
-        else (if (stmt.inclusive) "i32.le_s" else "i32.lt_s")
-        val cond = "($cmp (local.get \$${stmt.counter}) ${emitExpr(stmt.end)})"
-        val step = stmt.step?.let { emitExpr(it) } ?: "(i32.const 1)"
-        val op = if (stmt.reverse) "i32.sub" else "i32.add"
+        val cmp = if (stmt.descending) "i64.ge_s" else if (stmt.inclusive) "i64.le_s" else "i64.lt_s"
+        // Set the visible row as the condition is entered. Progression remains
+        // wide even when the last step leaves the Int range.
+        val cond = "(block (result i32) (local.set \$${stmt.counter} (i32.wrap_i64 (local.get \$$cursor))) " +
+            "($cmp (local.get \$$cursor) (local.get \$$bound)))"
+        val op = if (stmt.descending) "i64.sub" else "i64.add"
         emitWhile(stmt.label, cond, stmt.body, isFor = true) {
-            line("(local.set \$${stmt.counter} ($op (local.get \$${stmt.counter}) $step))")
+            line("(local.set \$$cursor ($op (local.get \$$cursor) (local.get \$$step)))")
             stmt.indexName?.let { index ->
                 line("(local.set \$$index (i32.add (local.get \$$index) (i32.const 1)))")
             }
@@ -681,21 +701,23 @@ class WasmCodegen {
             IrUnaryOp.BIT_NOT -> { val p = numPrefix(expr.type); "($p.xor ${emitExpr(expr.operand)} ($p.const -1))" }
         }
         is IrExpr.IncDec -> {
-            declareLocal(expr.target.name, expr.type)
-            val old = "(local.get \$${expr.target.name})"
+            val read = emitExpr(expr.target)
             val scalar = wasmType(expr.type)
-            val prefix = if (expr.delta > 0) "$scalar.add" else "$scalar.sub"
-            val one = "($scalar.const 1)"
-            val updated = "($prefix $old $one)"
-            // A folded S-expression cannot express a local.set as a value, so
-            // use the helper block form that returns the selected old/new value.
-            "(block (result ${wasmType(expr.type)}) (local.set \$${expr.target.name} $updated) ${if (expr.prefix) "(local.get \$${expr.target.name})" else old})"
+            val old = newTemp(scalar)
+            val updated = newTemp(scalar)
+            val op = if (expr.delta > 0) "$scalar.add" else "$scalar.sub"
+            val write = storeVariable(expr.target.name, expr.type, "(local.get $updated)")
+            // Save the old value before writing. A textual local.get emitted
+            // after the write would return the new value even for postfix.
+            "(block (result $scalar) (local.set $old $read) " +
+                "(local.set $updated ($op (local.get $old) ($scalar.const 1))) " +
+                "$write (local.get ${if (expr.prefix) updated else old}))"
         }
         is IrExpr.Binary -> emitBinary(expr)
         is IrExpr.Call -> emitCall(expr)
         is IrExpr.Await -> emitExpr(expr.value)
         is IrExpr.Spread -> emitExpr(expr.array)
-        is IrExpr.Index -> "(i32.load ${elemAddr(expr.target, expr.index)})"
+        is IrExpr.Index -> "(${wasmLoad(expr.type)} ${elemAddr(expr.target, expr.index)})"
         is IrExpr.Member -> when (expr.name) {
             "length", "size" -> "(i32.load ${emitExpr(expr.target)})"
             "data" -> "(i32.add ${emitExpr(expr.target)} (i32.const 4))"
@@ -720,6 +742,15 @@ class WasmCodegen {
 
     private fun emitBinary(expr: IrExpr.Binary): String {
         val l = expr.left; val r = expr.right
+        // Logical operators evaluate the right operand only when needed.
+        // Wasm's integer and/or instructions eagerly evaluate both operands;
+        // those instructions implement only the distinct bitwise operators.
+        if (expr.op == IrBinaryOp.AND) {
+            return "(if (result i32) ${emitExpr(l)} (then ${emitExpr(r)}) (else (i32.const 0)))"
+        }
+        if (expr.op == IrBinaryOp.OR) {
+            return "(if (result i32) ${emitExpr(l)} (then (i32.const 1)) (else ${emitExpr(r)}))"
+        }
         if (expr.op == IrBinaryOp.ADD && expr.type == IrType.String) {
             usesAlloc = true; usesConcat = true
             return "(call \$__str_concat ${emitExpr(l)} ${emitExpr(r)})"
@@ -753,7 +784,7 @@ class WasmCodegen {
             IrBinaryOp.LTE -> if (flt) "$p.le" else "$p.le_${if (u) "u" else "s"}"
             IrBinaryOp.GT -> if (flt) "$p.gt" else "$p.gt_${if (u) "u" else "s"}"
             IrBinaryOp.GTE -> if (flt) "$p.ge" else "$p.ge_${if (u) "u" else "s"}"
-            IrBinaryOp.AND -> "i32.and"; IrBinaryOp.OR -> "i32.or"
+            IrBinaryOp.AND, IrBinaryOp.OR -> error("Logical operators must use short-circuit control flow")
             IrBinaryOp.BIT_AND -> "$p.and"; IrBinaryOp.BIT_OR -> "$p.or"; IrBinaryOp.BIT_XOR -> "$p.xor"
             IrBinaryOp.SHL -> "$p.shl"; IrBinaryOp.SHR -> "$p.shr_${if (u) "u" else "s"}"
         }
@@ -763,7 +794,7 @@ class WasmCodegen {
     }
 
     private fun isNumericWasm(t: IrType): Boolean =
-        t in IrType.integerTypes || t in IrType.floatTypes || t == IrType.Char
+        IrType.isInteger(t) || t in IrType.floatTypes || t == IrType.Char
 
     private fun commonNumericWasm(a: IrType, b: IrType): IrType {
         if (a == b) return a
@@ -896,12 +927,14 @@ class WasmCodegen {
         usesAlloc = true
         val t = newTemp("i32")
         val n = expr.elements.size
+        val element = (expr.type as IrType.Array).element
+        val stride = wasmSize(element)
         val sb = StringBuilder("(block (result i32)\n")
         val pad = "  ".repeat(indent + 1)
-        sb.append("$pad(local.set $t (call \$__alloc (i32.const ${4 + n * 4})))\n")
+        sb.append("$pad(local.set $t (call \$__alloc (i32.const ${4 + n * stride})))\n")
         sb.append("$pad(i32.store (local.get $t) (i32.const $n))\n")
         for ((i, e) in expr.elements.withIndex()) {
-            sb.append("$pad(i32.store (i32.add (local.get $t) (i32.const ${4 + i * 4})) ${emitExpr(e)})\n")
+            sb.append("$pad(${wasmStore(element)} (i32.add (local.get $t) (i32.const ${4 + i * stride})) ${emitExpr(e)})\n")
         }
         sb.append("$pad(local.get $t))")
         return sb.toString()
@@ -1073,10 +1106,57 @@ class WasmCodegen {
     // ── Address helpers ───────────────────────────────────────────────────
 
     /** Address of `array[index]` or raw `pointer[index]`. */
+    private class ExchangeLocation(val read: String, val write: (String) -> String)
+
+    private fun emitExchange(stmt: IrStmt.Exchange) {
+        fun location(place: IrExpr): ExchangeLocation = when (place) {
+            is IrExpr.Var -> {
+                check(place.name !in lazyLocals && place.name !in reactiveAliases) { "exchange of reactive/lazy storage is not supported" }
+                ExchangeLocation(emitExpr(place)) { storeVariable(place.name, place.type, it) }
+            }
+            is IrExpr.Member, is IrExpr.Index -> {
+                // Existing WASM aggregate storage has four-byte slots. Do not
+                // corrupt adjacent values when a wider layout is required.
+                check(place is IrExpr.Index || wasmSize(place.type) == 4) { "exchange of wide WASM pack fields requires typed aggregate layout" }
+                val address = newTemp("i32")
+                if (place is IrExpr.Member) {
+                    line("(local.set $address ${fieldAddr(place.target, place.name)})")
+                } else {
+                    place as IrExpr.Index
+                    check(place.target.type is IrType.Array) { "exchange requires built-in array storage" }
+                    val base = newTemp("i32")
+                    val index = newTemp("i32")
+                    line("(local.set $base ${emitExpr(place.target)})")
+                    check(place.index.type == IrType.Int) { "WASM exchange index must be Int" }
+                    line("(local.set $index ${emitExpr(place.index)})")
+                    line("(if (i32.ge_u (local.get $index) (i32.load (local.get $base))) (then unreachable))")
+                    line("(local.set $address (i32.add (i32.add (local.get $base) (i32.const 4)) (i32.mul (local.get $index) (i32.const ${wasmSize(place.type)}))))")
+                }
+                ExchangeLocation("(${wasmLoad(place.type)} (local.get $address))") {
+                    "(${wasmStore(place.type)} (local.get $address) $it)"
+                }
+            }
+            else -> error("unsupported exchange location")
+        }
+        val left = location(stmt.left)
+        val right = location(stmt.right)
+        val a = newTemp(wasmType(stmt.left.type))
+        val b = newTemp(wasmType(stmt.right.type))
+        line("(local.set $a ${left.read})")
+        line("(local.set $b ${right.read})")
+        line(left.write("(local.get $b)"))
+        line(right.write("(local.get $a)"))
+    }
+
     private fun elemAddr(target: IrExpr, index: IrExpr): String {
         val base = if (target.type is IrType.Pointer) emitExpr(target)
             else "(i32.add ${emitExpr(target)} (i32.const 4))"
-        return "(i32.add $base (i32.mul ${emitExpr(index)} (i32.const 4)))"
+        val element = when (val type = target.type) {
+            is IrType.Array -> type.element
+            is IrType.Pointer -> type.inner
+            else -> error("indexed storage must have an element type")
+        }
+        return "(i32.add $base (i32.mul ${emitExpr(index)} (i32.const ${wasmSize(element)})))"
     }
 
     /** Address of `target.field` - `ptr + fieldIndex*4`, or `ptr` for a union. */
@@ -1159,6 +1239,7 @@ class WasmCodegen {
                 is IrStmt.FinDecl -> collectReferencedVars(stmt.initializer, refs)
                 is IrStmt.LetDecl -> collectReferencedVars(stmt.initializer, refs)
                 is IrStmt.Assignment -> collectReferencedVars(stmt.value, refs)
+                is IrStmt.Exchange -> { collectReferencedVars(stmt.left, refs); collectReferencedVars(stmt.right, refs) }
                 is IrStmt.IndexAssign -> {
                     collectReferencedVars(stmt.target, refs)
                     collectReferencedVars(stmt.index, refs)

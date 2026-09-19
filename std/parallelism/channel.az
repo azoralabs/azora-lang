@@ -67,7 +67,7 @@ impl Channel<T> {
      */
     @Experimental(since: "0.1")
     func !.send(value: T) {
-        assert !closed { "Cannot send on closed channel" }
+        assert !closed panic "Cannot send on closed channel"
         mutex.lock()
         queue.enqueue(value)
         mutex.unlock()
@@ -81,7 +81,7 @@ impl Channel<T> {
      */
     @Experimental(since: "0.1")
     func !.receive(): T {
-        assert queue.isNotEmpty { "Channel is empty" }
+        assert queue.isNotEmpty panic "Channel is empty"
         mutex.lock()
         fin value = queue.dequeue()
         mutex.unlock()

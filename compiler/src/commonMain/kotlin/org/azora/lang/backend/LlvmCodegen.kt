@@ -106,6 +106,7 @@ class LlvmCodegen {
     private val stdlibMapNames = setOf("Map", "MutableMap")
 
     /** Declared parameter types per function (user functions + bridge externs), for call-site coercion. */
+    private val funcReturnTypes = mutableMapOf<String, IrType>()
     private val funcParamTypes = mutableMapOf<String, List<IrType>>()
 
     /** LLVM element types for top-level and thread-local variables. */
@@ -292,6 +293,7 @@ class LlvmCodegen {
 
         structDefs.clear()
         funcParamTypes.clear()
+        funcReturnTypes.clear()
         failableFunctions.clear()
         errorHandlers.clear()
         usesErrorSlot = false
@@ -323,12 +325,19 @@ class LlvmCodegen {
             when (item) {
                 is IrTopLevel.Func -> {
                     funcParamTypes[item.function.name] = item.function.params.map { it.second }
+                    // A task's public symbol is its spawner, not its payload body.
+                    funcReturnTypes[item.function.name] =
+                        if (item.function.isTask && item.function.name != "main") IrType.Task(item.function.returnType)
+                        else item.function.returnType
                     if (item.function.isFailable) failableFunctions += item.function.name
                     if (item.function.isTask && item.function.name != "main") {
                         usesTaskRuntime = true
                     }
                 }
-                is IrTopLevel.Extern -> funcParamTypes[item.name] = item.params.map { it.second }
+                is IrTopLevel.Extern -> {
+                    funcParamTypes[item.name] = item.params.map { it.second }
+                    funcReturnTypes[item.name] = item.returnType
+                }
                 is IrTopLevel.Global -> when (val stmt = item.stmt) {
                     is IrStmt.VarDecl -> globalVars[stmt.name] = mapType(stmt.type)
                     is IrStmt.FinDecl -> globalVars[stmt.name] = mapType(stmt.type)
@@ -1013,6 +1022,7 @@ class LlvmCodegen {
                 val target = findLoopTarget(stmt.label) ?: error("continue outside of loop")
                 emitTerminator("  br label %${target.continueLabel}")
             }
+            is IrStmt.Exchange -> emitExchange(stmt)
             is IrStmt.IndexAssign -> emitIndexAssign(stmt)
             is IrStmt.MemberAssign -> emitMemberAssign(stmt)
             is IrStmt.Defer -> emit("  ; defer - not lowered")
@@ -1457,71 +1467,81 @@ class LlvmCodegen {
     }
 
     private fun emitFor(stmt: IrStmt.For) {
-        val t = mapType(stmt.start.type)
-        val unsigned = isUnsigned(stmt.start.type)
-        // The counter slot was hoisted to the entry block (see emitEntryAllocas).
-        val counterAlloca = allocaSlots[stmt.counter to t] ?: run {
+        // Semantic range bounds and steps are Int. Keep progression in i64:
+        // the final increment/decrement may lie beyond Int's representable range.
+        check(stmt.start.type == IrType.Int && stmt.end.type == IrType.Int)
+        val start = emitExpr(stmt.start)
+        val end = emitExpr(stmt.end)
+        val step = stmt.step?.let { emitExpr(it) } ?: "1"
+        val startWide = nextTmp()
+        emit("  $startWide = sext i32 $start to i64")
+        val endWide = nextTmp()
+        emit("  $endWide = sext i32 $end to i64")
+        val stepWide = nextTmp()
+        emit("  $stepWide = sext i32 $step to i64")
+        val validStep = nextTmp()
+        emit("  $validStep = icmp sgt i64 $stepWide, 0")
+        val validLabel = nextLabel("for_step_valid")
+        val invalidLabel = nextLabel("for_step_invalid")
+        emitTerminator("  br i1 $validStep, label %$validLabel, label %$invalidLabel")
+        startBlock(invalidLabel)
+        usesAbort = true
+        emit("  call void @abort()")
+        emitTerminator("  unreachable")
+        startBlock(validLabel)
+
+        val counterAlloca = allocaSlots[stmt.counter to "i32"] ?: run {
             val reg = "%loc${allocaCounter++}.${sanitizeName(stmt.counter)}"
-            emit("  $reg = alloca $t")
-            allocaSlots[stmt.counter to t] = reg
+            emit("  $reg = alloca i32")
+            allocaSlots[stmt.counter to "i32"] = reg
             reg
         }
-        val initVal = emitExpr(if (stmt.reverse) stmt.end else stmt.start)
-        emit("  store $t $initVal, $t* $counterAlloca")
-        localVars[stmt.counter] = counterAlloca to t
+        localVars[stmt.counter] = counterAlloca to "i32"
+        val initial = if (stmt.descending) nextTmp().also {
+            emit("  $it = sub i64 $startWide, 1")
+        } else startWide
         val indexAlloca = stmt.indexName?.let { name ->
-            val indexType = mapType(IrType.Int)
-            val slot = allocaSlots[name to indexType] ?: run {
+            val slot = allocaSlots[name to "i32"] ?: run {
                 val reg = "%loc${allocaCounter++}.${sanitizeName(name)}"
-                emit("  $reg = alloca $indexType")
-                allocaSlots[name to indexType] = reg
+                emit("  $reg = alloca i32")
+                allocaSlots[name to "i32"] = reg
                 reg
             }
-            emit("  store $indexType 0, $indexType* $slot")
-            localVars[name] = slot to indexType
+            emit("  store i32 0, i32* $slot")
+            localVars[name] = slot to "i32"
             slot
         }
-
         val condLabel = nextLabel("for_cond")
         val bodyLabel = nextLabel("for_body")
         val incLabel = nextLabel("for_inc")
         val endLabel = nextLabel("for_end")
-
+        // A phi holds progression without allocating a new stack slot each
+        // time an enclosing loop reaches this loop.
+        val entryLabel = nextLabel("for_entry")
+        emitTerminator("  br label %$entryLabel")
+        startBlock(entryLabel)
         emitTerminator("  br label %$condLabel")
         startBlock(condLabel)
-        val loaded = nextTmp()
-        emit("  $loaded = load $t, $t* $counterAlloca")
-        // Emit the bound expression first so register numbering stays increasing.
-        val (bound, pred) = if (stmt.reverse) {
-            emitExpr(stmt.start) to if (unsigned) "uge" else "sge"
-        } else {
-            val endVal = emitExpr(stmt.end)
-            val p = when {
-                stmt.inclusive && unsigned -> "ule"
-                stmt.inclusive -> "sle"
-                unsigned -> "ult"
-                else -> "slt"
-            }
-            endVal to p
-        }
+        val current = nextTmp()
+        val next = "%${nextLabel("for_next")}"
+        emit("  $current = phi i64 [ $initial, %$entryLabel ], [ $next, %$incLabel ]")
+        val pred = if (stmt.descending) "sge" else if (stmt.inclusive) "sle" else "slt"
         val cmp = nextTmp()
-        emit("  $cmp = icmp $pred $t $loaded, $bound")
+        emit("  $cmp = icmp $pred i64 $current, $endWide")
         emitTerminator("  br i1 $cmp, label %$bodyLabel, label %$endLabel")
 
         startBlock(bodyLabel)
+        val row = nextTmp()
+        emit("  $row = trunc i64 $current to i32")
+        emit("  store i32 $row, i32* $counterAlloca")
         loopStack.addLast(LoopTarget(incLabel, endLabel, stmt.label))
         emitStmts(stmt.body)
         loopStack.removeLast()
         emitTerminator("  br label %$incLabel")
 
         startBlock(incLabel)
-        val stepVal = stmt.step?.let { emitExpr(it) } ?: "1"
-        val incLoaded = nextTmp()
-        emit("  $incLoaded = load $t, $t* $counterAlloca")
-        val incd = nextTmp()
-        if (stmt.reverse) emit("  $incd = sub $t $incLoaded, $stepVal")
-        else emit("  $incd = add $t $incLoaded, $stepVal")
-        emit("  store $t $incd, $t* $counterAlloca")
+        val op = if (stmt.descending) "sub" else "add"
+        emit("  $next = $op i64 $current, $stepWide")
         if (indexAlloca != null) {
             val ordinal = nextTmp()
             emit("  $ordinal = load i32, i32* $indexAlloca")
@@ -1530,7 +1550,6 @@ class LlvmCodegen {
             emit("  store i32 $nextOrdinal, i32* $indexAlloca")
         }
         emitTerminator("  br label %$condLabel")
-
         startBlock(endLabel)
     }
 
@@ -2469,6 +2488,7 @@ class LlvmCodegen {
                 is IrStmt.FinDecl -> collectReferencedVars(stmt.initializer, refs)
                 is IrStmt.LetDecl -> collectReferencedVars(stmt.initializer, refs)
                 is IrStmt.Assignment -> collectReferencedVars(stmt.value, refs)
+                is IrStmt.Exchange -> { collectReferencedVars(stmt.left, refs); collectReferencedVars(stmt.right, refs) }
                 is IrStmt.IndexAssign -> {
                     collectReferencedVars(stmt.target, refs)
                     collectReferencedVars(stmt.index, refs)
@@ -2621,7 +2641,7 @@ class LlvmCodegen {
      * floating-point, e.g. `Vec3(1, 2, 3)` with `Double` fields).
      */
     private fun isNumericLike(t: IrType): Boolean =
-        t in IrType.integerTypes || t in IrType.floatTypes || t == IrType.Char
+        IrType.isInteger(t) || t in IrType.floatTypes || t == IrType.Char
 
     /** The common type two numeric operands widen to (wider float wins, else wider int). */
     private fun commonNumeric(a: IrType, b: IrType): IrType {
@@ -2633,8 +2653,11 @@ class LlvmCodegen {
             if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
-        return if (sizeOfScalar(a) >= sizeOfScalar(b)) a else b
+        return if (integerBitWidth(a) >= integerBitWidth(b)) a else b
     }
+
+    private fun integerBitWidth(type: IrType): Int =
+        (type as? IrType.Integer)?.bits ?: mapType(type).removePrefix("i").toInt()
 
     private fun coerceNumeric(value: String, from: IrType, to: IrType): String {
         if (from == to) return value
@@ -2656,8 +2679,8 @@ class LlvmCodegen {
         val ft = mapType(from)
         val tt = mapType(to)
         if (ft == tt) return value
-        val fromInt = from in IrType.integerTypes || from == IrType.Char
-        val toInt = to in IrType.integerTypes || to == IrType.Char
+        val fromInt = IrType.isInteger(from) || from == IrType.Char
+        val toInt = IrType.isInteger(to) || to == IrType.Char
         val fromFloat = from in IrType.floatTypes
         val toFloat = to in IrType.floatTypes
         val fromPtr = ft.endsWith("*")
@@ -2697,7 +2720,7 @@ class LlvmCodegen {
             fromInt && toFloat -> if (isUnsigned(from)) "uitofp" else "sitofp"
             fromFloat && toInt -> if (isUnsigned(to)) "fptoui" else "fptosi"
             fromInt && toInt -> {
-                val fw = sizeOfScalar(from); val tw = sizeOfScalar(to)
+                val fw = integerBitWidth(from); val tw = integerBitWidth(to)
                 when {
                     fw < tw -> if (isUnsigned(from)) "zext" else "sext"
                     fw > tw -> "trunc"
@@ -2819,7 +2842,7 @@ class LlvmCodegen {
     private fun boxToI64(value: String, type: IrType): String {
         val t = nextTmp()
         return when {
-            type in IrType.integerTypes || type == IrType.Char -> coerceNumeric(value, type, IrType.Long)
+            IrType.isInteger(type) || type == IrType.Char -> coerceNumeric(value, type, IrType.Long)
             type == IrType.Bool -> { emit("  $t = zext i1 $value to i64"); t }
             type == IrType.Double || type == IrType.Quad -> { emit("  $t = bitcast double $value to i64"); t }
             type == IrType.Float -> {
@@ -2834,7 +2857,7 @@ class LlvmCodegen {
     private fun unboxFromI64(value: String, type: IrType): String {
         val t = nextTmp()
         return when {
-            type in IrType.integerTypes || type == IrType.Char -> coerceNumeric(value, IrType.Long, type)
+            IrType.isInteger(type) || type == IrType.Char -> coerceNumeric(value, IrType.Long, type)
             type == IrType.Bool -> { emit("  $t = trunc i64 $value to i1"); t }
             type == IrType.Double || type == IrType.Quad -> { emit("  $t = bitcast i64 $value to double"); t }
             type == IrType.Float -> {
@@ -4153,6 +4176,57 @@ class LlvmCodegen {
         return defaultValue(expr.type)
     }
 
+    private fun emitExchange(stmt: IrStmt.Exchange) {
+        fun location(place: IrExpr): Pair<String, String> = when (place) {
+            is IrExpr.Var -> {
+                check(place.name !in lazyLocals && (currentFunctionName to place.name) !in reactiveStorage) {
+                    "exchange of reactive/lazy storage is not supported"
+                }
+                localVars[place.name] ?: ("@${place.name}" to mapType(place.type))
+            }
+            is IrExpr.Member -> {
+                val (address, _, storageType) = emitFieldPtr(place.target, place.name)
+                    ?: error("exchange requires a stored pack field")
+                check(storageType == mapType(place.type)) { "exchange of erased generic fields requires typed storage lowering" }
+                address to storageType
+            }
+            is IrExpr.Index -> {
+                check(place.target.type is IrType.Array) { "exchange requires built-in array storage" }
+                val raw = emitExpr(place.target)
+                val index = indexToI64(emitExpr(place.index), place.index.type)
+                val size = emitArrayLengthI64(raw)
+                val valid = nextTmp()
+                emit("  $valid = icmp ult i64 $index, $size")
+                val ok = nextLabel("exchange_bounds_ok")
+                val bad = nextLabel("exchange_bounds_fail")
+                emitTerminator("  br i1 $valid, label %$ok, label %$bad")
+                startBlock(bad)
+                usesAbort = true
+                emit("  call void @abort()")
+                emitTerminator("  unreachable")
+                startBlock(ok)
+                val type = mapType(place.type)
+                val data = nextTmp()
+                emit("  $data = getelementptr i8, i8* $raw, i64 8")
+                val typed = nextTmp()
+                emit("  $typed = bitcast i8* $data to $type*")
+                val element = nextTmp()
+                emit("  $element = getelementptr $type, $type* $typed, i64 $index")
+                element to type
+            }
+            else -> error("unsupported exchange location")
+        }
+        val (left, type) = location(stmt.left)
+        val (right, rightType) = location(stmt.right)
+        check(type == rightType) { "exchange storage types differ" }
+        val a = nextTmp()
+        val b = nextTmp()
+        emit("  $a = load $type, $type* $left, align 1")
+        emit("  $b = load $type, $type* $right, align 1")
+        emit("  store $type $b, $type* $left, align 1")
+        emit("  store $type $a, $type* $right, align 1")
+    }
+
     private fun emitIndexAssign(stmt: IrStmt.IndexAssign) {
         val tt = stmt.target.type
         if (tt is IrType.Array) {
@@ -4195,7 +4269,7 @@ class LlvmCodegen {
             IrUnaryOp.NEG -> {
                 val llvmType = mapType(expr.type)
                 when {
-                    expr.type in IrType.integerTypes -> emit("  $tmp = sub $llvmType 0, $operand")
+                    IrType.isInteger(expr.type) -> emit("  $tmp = sub $llvmType 0, $operand")
                     expr.type in IrType.floatTypes -> emit("  $tmp = fneg $llvmType $operand")
                     else -> {
                         // Erased generic (Any) - no native negate; stub like other
@@ -4266,7 +4340,7 @@ class LlvmCodegen {
                 val r = if (right == "0") "null" else right
                 emit("  $tmp = icmp $pred i8* $l, $r")
             }
-            opType in IrType.integerTypes || opType == IrType.Char -> {
+            IrType.isInteger(opType) || opType == IrType.Char -> {
                 val u = isUnsigned(opType)
                 val inst = when (expr.op) {
                     IrBinaryOp.ADD -> "add $llvmType"
@@ -4621,7 +4695,8 @@ class LlvmCodegen {
             val value = coerceNumeric(emitExpr(arg), arg.type, paramType)
             "${mapType(paramType)} $value"
         }.joinToString(", ")
-        val retType = mapType(expr.type)
+        val physicalReturn = funcReturnTypes[expr.name] ?: expr.type
+        val retType = mapType(physicalReturn)
         return if (expr.type == IrType.Unit || expr.type == IrType.Nothing) {
             emit("  call void @${expr.name}($args)")
             "void"
@@ -4629,7 +4704,7 @@ class LlvmCodegen {
             val tmp = nextTmp()
             emit("  $tmp = call $retType @${expr.name}($args)")
             if (expr.type is IrType.Task) emitTaskScopeAttach(tmp)
-            tmp
+            coerceNumeric(tmp, physicalReturn, expr.type)
         }
     }
 

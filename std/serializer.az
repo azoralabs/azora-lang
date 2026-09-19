@@ -1031,7 +1031,7 @@ test "manual Serializer impl reconstructs a typed value" {
     fin serializer = _ManualTextSerializer()
     fin serial: SerialValue = .Text("Azora")
     fin value = serializer.fromSerialValue(serial) catch _ManualTextValue("fallback")
-    assert value.value == "Azora" { "Serializer.fromSerialValue must reconstruct the value" }
+    assert value.value == "Azora" panic "Serializer.fromSerialValue must reconstruct the value"
 }
 
 test "manual Serializer impl reports unexpected value types" {

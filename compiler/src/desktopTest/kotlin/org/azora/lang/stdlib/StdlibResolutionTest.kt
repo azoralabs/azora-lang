@@ -93,11 +93,23 @@ class StdlibResolutionTest {
     }
 
     @Test fun bundledTreeIsUsedWhenNoDiskRootAnswers() {
-        AzStdlib.overrideRoot = null
-        AzStdlib.invalidate()
-        val tree = AzStdlib.tree()
+        // An empty search path really exercises fallback; clearing overrideRoot
+        // alone still discovers the checkout's std/ directory.
+        val tree = AzStdlib.resolve(emptyList())
+        assertEquals("bundled with the compiler", tree.origin)
         assertEquals(AzStdlibBundle.VERSION, tree.version)
         assertTrue(tree.files.size > 1, "the bundled standard library must not be empty")
+        assertEquals(tree.files.size, AzStdlib.parse(tree, strict = true).size)
+        assertTrue(AzStdlib.comptimeLists["Numbers"].orEmpty().isNotEmpty())
+    }
+
+    @Test fun completeDiskTreeLoadsWithItsCompileTimeEnvironment() {
+        AzStdlib.overrideRoot = File("../std").canonicalPath
+        val tree = AzStdlib.tree()
+        assertEquals("explicit override", tree.origin)
+        assertEquals(AzStdlibBundle.files.map { it.first }.sorted(), tree.files.map { it.path }.sorted())
+        assertEquals(tree.files.size, AzStdlib.loadPrograms().size)
+        assertTrue(AzStdlib.comptimeLists["Numbers"].orEmpty().isNotEmpty())
     }
 
     @Test fun aStandardLibraryFromAnotherReleaseIsRejected() {

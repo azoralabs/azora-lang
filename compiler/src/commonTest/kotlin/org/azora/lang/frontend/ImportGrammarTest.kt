@@ -60,6 +60,20 @@ class ImportGrammarTest {
     private fun members(spec: ImportSpec): List<ImportSpec> =
         assertIs<ImportSpec.Selector.Group>(spec.selector).members
 
+    @Test fun adjacentGroupMembersRequireASeparator() {
+        for (source in listOf("import a::{x y}", "import a::{b::{x} y}", "import a::{x /* same line */ y}")) {
+            val error = assertFailsWith<IllegalStateException> { specs(source) }
+            assertTrue("Expected ',' or a new line" in error.message.orEmpty(), error.message)
+        }
+    }
+
+    @Test fun physicalNewlinesSeparateGroupMembersIncludingNestedGroups() {
+        assertEquals(
+            listOf("a.b.x" to null, "a.y" to null, "a.z" to null),
+            imports("import a::{b::{x}\ny /* comment\ncontinued */ z,}"),
+        )
+    }
+
     // -- grouped selectors -------------------------------------------------
 
     @Test fun aBraceGroupCarriesItsMembers() {

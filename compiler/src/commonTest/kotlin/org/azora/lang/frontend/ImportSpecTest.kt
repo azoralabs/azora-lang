@@ -66,7 +66,7 @@ class ImportSpecTest {
     }
 
     @Test fun aGroupKeepsItsBasePathAndItsMembers() {
-        val spec = specs("import std.container.{list, map}").single()
+        val spec = specs("import std.container::{list, map}").single()
         assertEquals("std.container", spec.path)
         val group = spec.selector as ImportSpec.Selector.Group
         assertEquals(listOf("std.container.list", "std.container.map"), group.members.map { it.path })
@@ -76,7 +76,7 @@ class ImportSpecTest {
     @Test fun aGroupMemberCarriesItsOwnFullPath() {
         // Nothing downstream has to remember the base path to read a member,
         // which is what lets a group nest to any depth.
-        val group = specs("import a.b.{c, d}").single().selector as ImportSpec.Selector.Group
+        val group = specs("import a.b::{c, d}").single().selector as ImportSpec.Selector.Group
         assertEquals(listOf("a.b.c" to null, "a.b.d" to null), group.members.flatMap { it.flatten() })
     }
 
@@ -85,7 +85,7 @@ class ImportSpecTest {
     @Test fun flatteningAGroupYieldsOnePairPerMember() {
         assertEquals(
             listOf("std.container.list" to null, "std.container.map" to null),
-            imports("import std.container.{list, map}"),
+            imports("import std.container::{list, map}"),
         )
     }
 
@@ -109,7 +109,7 @@ class ImportSpecTest {
                 """
                 import std.io::*
                 import std.math::abs
-                import std.container.{list, map}
+                import std.container::{list, map}
                 import std
                 """.trimIndent(),
             ),
@@ -124,7 +124,7 @@ class ImportSpecTest {
             """
             import std.io::*
             import std.math::abs
-            import std.container.{list, map}
+            import std.container::{list, map}
             """.trimIndent(),
         )
         assertTrue(all.all { it.without.isEmpty() }, "no clause filters yet")

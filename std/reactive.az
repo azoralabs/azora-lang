@@ -311,21 +311,21 @@ test "state notifies in registration order and disposal is idempotent" {
         calls += 1
     }
     source.set(7)
-    assert observed == 7 { "observer did not receive the latest state" }
-    assert calls == 2 { "observer must receive the initial value and first update" }
+    assert observed == 7 panic "observer did not receive the latest state"
+    assert calls == 2 panic "observer must receive the initial value and first update"
     subscription.dispose()
     subscription.dispose()
     source.set(9)
-    assert calls == 2 { "disposed observer received an update" }
+    assert calls == 2 panic "disposed observer received an update"
 }
 
 test "derived state reads the latest inputs" {
     var left = 2
     var right = 3
     fin total = computed { left + right }
-    assert total.value == 5 { "derived value used incorrect initial inputs" }
+    assert total.value == 5 panic "derived value used incorrect initial inputs"
     right = 8
-    assert total.value == 10 { "derived value did not read the latest inputs" }
+    assert total.value == 10 panic "derived value did not read the latest inputs"
 }
 
 test "snapshots restore value and revision" {
@@ -333,8 +333,8 @@ test "snapshots restore value and revision" {
     source.set("ready")
     fin saved = snapshot("document", source)
     fin restored = restore(saved)
-    assert restored.value == "ready" { "snapshot restoration changed the value" }
-    assert restored.version == source.version { "snapshot restoration changed the revision" }
+    assert restored.value == "ready" panic "snapshot restoration changed the value"
+    assert restored.version == source.version panic "snapshot restoration changed the revision"
 }
 
 test .All "reactive"

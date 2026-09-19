@@ -113,7 +113,7 @@ class RepeatConstructionTest {
             impl A {
                 ctor .(fill: Int) * count
                 in {
-                    assert fill > 0 { "fill must be positive" }
+                    assert fill > 0 panic "fill must be positive"
                 } scope {
                     self.x = count
                 }

@@ -35,10 +35,10 @@ class AiMlStdlibTest {
                     chat.system("be concise")
                     chat.user("hello")
                     println(chat.size)
-                    fin probabilities = softmax(@arr[-1.0, 0.0, 2.0])
+                    fin probabilities = softmax([-1.0, 0.0, 2.0])
                     println(argmax(probabilities))
-                    println(meanSquaredError(@arr[1.0, 2.0], @arr[1.0, 4.0]))
-                    println(accuracy(@arr[1, 0], @arr[1, 2]))
+                    println(meanSquaredError([1.0, 2.0], [1.0, 4.0]))
+                    println(accuracy([1, 0], [1, 2]))
                 }
                 """,
             ),

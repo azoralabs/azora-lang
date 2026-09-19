@@ -19,8 +19,8 @@
  *
  * Fixed-size contiguous array storage.
  *
- * Defines the canonical `Array<T>` type and the [] factory. Array values
- * are built with `[a, b, c]`; bracket value literals are not array syntax. Arrays expose their
+ * Defines the canonical `Array<T>` type. Bracket literals default to arrays
+ * and adopt an explicit collection context when one is provided. Arrays expose their
  * element count through `size` and provide low-level access to contiguous
  * storage through `data`.
  *

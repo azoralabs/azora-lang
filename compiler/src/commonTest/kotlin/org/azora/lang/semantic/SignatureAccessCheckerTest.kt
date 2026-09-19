@@ -104,7 +104,7 @@ class SignatureAccessCheckerTest {
             $declarations
 
             @Task func run(bag: Bag&) {
-                fin values = @arr[1, 2]
+                fin values = [1, 2]
                 for value in values {
                     if value > 0 {
                         fin taken = fetch(bag)

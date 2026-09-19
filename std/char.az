@@ -71,9 +71,7 @@ impl From<String> for Char {
  * @return The integer code point.
  */
 @Experimental(since: "0.1")
-func charToCode(c: Char): Int {
-    return ord(take c)
-}
+func charToCode(c: Char): Int = ord(take c)
 
 /**
  * Returns the character for a Unicode code point.
@@ -83,11 +81,8 @@ func charToCode(c: Char): Int {
  */
 @Experimental(since: "0.1")
 func codeToChar(code: Int): Char
-in {
-    assert code >= 0 panic "Code point must be non-negative"
-} scope {
-    return chr(code)
-}
+in assert code >= 0 panic "Code point must be non-negative"
+scope return chr(code)
 
 /**
  * Checks if a character is an ASCII digit (0-9).
@@ -96,9 +91,7 @@ in {
  * @return true if c is a digit.
  */
 @Experimental(since: "0.1")
-func charIsDigit(c: Char): Bool {
-    return isDigit(take c)
-}
+func charIsDigit(c: Char): Bool = isDigit(take c)
 
 /**
  * Checks if a character is an ASCII letter (a-z, A-Z).
@@ -107,9 +100,7 @@ func charIsDigit(c: Char): Bool {
  * @return true if c is a letter.
  */
 @Experimental(since: "0.1")
-func charIsAlpha(c: Char): Bool {
-    return isAlpha(take c)
-}
+func charIsAlpha(c: Char): Bool = isAlpha(take c)
 
 /**
  * Checks if a character is an ASCII character (code 0-127).
@@ -157,9 +148,8 @@ func charIsHexDigit(c: Char&): Bool {
  */
 @Experimental(since: "0.1")
 func hexDigitToInt(c: Char&): Int
-in {
-    assert charIsHexDigit(c) panic "Character must be a hex digit"
-} scope {
+in assert charIsHexDigit(c) panic "Character must be a hex digit"
+scope {
     fin code: Int = ord(c.&)
     if code >= {48, 65} && code <= {57, 70} then return code - {48, 55}
     return code - 87
@@ -173,11 +163,8 @@ in {
  */
 @Experimental(since: "0.1")
 func digitToInt(c: Char&): Int
-in {
-    assert isDigit(c.&) panic "Character must be a digit"
-} scope {
-    return ord(c.&) - 48
-}
+in assert isDigit(c.&) panic "Character must be a digit"
+scope return ord(c.&) - 48
 
 /**
  * Converts an integer (0-9) to a digit character.
@@ -187,8 +174,5 @@ in {
  */
 @Experimental(since: "0.1")
 func intToDigit(n: Int): Char
-in {
-    assert n >= 0 && n <= 9 panic "Integer must be 0-9"
-} scope {
-    return chr(n + 48)
-}
+in assert n >= 0 && n <= 9 panic "Integer must be 0-9"
+scope return chr(n + 48)

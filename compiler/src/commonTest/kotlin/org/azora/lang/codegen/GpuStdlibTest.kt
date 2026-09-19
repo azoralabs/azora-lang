@@ -35,7 +35,7 @@ class GpuStdlibTest {
                     fin source = computeShader("main", "fn main() {}", 64)
                     fin extent = dispatch(100, 33, 5)
                     fin groups = dispatchFor3d(extent, local)
-                    fin layout = rowMajor(@arr[2, 3, 4])
+                    fin layout = rowMajor([2, 3, 4])
                     fin config = launch(groups, local, 4096, true)
                     println(local.x)
                     println(local.y)
@@ -49,7 +49,7 @@ class GpuStdlibTest {
                     println(groups.y)
                     println(groups.z)
                     println(layout.strides[0])
-                    println(linearIndex(layout, @arr[1, 2, 3]))
+                    println(linearIndex(layout, [1, 2, 3]))
                     println(config.sharedBytes)
                     println(config.cooperative)
                 }

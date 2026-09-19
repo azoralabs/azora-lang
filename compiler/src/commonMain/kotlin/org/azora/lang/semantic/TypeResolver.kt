@@ -128,17 +128,21 @@ class TypeResolver(private val table: SymbolTable) {
                 else -> continue
             }
             val (annotation, initializer, line) = declaration
-            val declared = annotation?.let { tryResolveType(it, line) } ?: continue
+            val declared = annotation?.let { tryResolveType(it, line) }
             seedExpectedValue(initializer, declared)
-            if (initializer !is Expr.Lambda) continue
-            val callable = declared as? IrType.Function ?: continue
             val savedParams = expectedLambdaParamTypes
             val savedReceivers = expectedLambdaReceiverTypes
-            expectedLambdaParamTypes = callable.params
-            expectedLambdaReceiverTypes = callable.receivers
-            resolveExpr(initializer)
+            if (initializer is Expr.Lambda && declared is IrType.Function) {
+                expectedLambdaParamTypes = declared.params
+                expectedLambdaReceiverTypes = declared.receivers
+            }
+            val actual = resolveExpr(initializer)
             expectedLambdaParamTypes = savedParams
             expectedLambdaReceiverTypes = savedReceivers
+            if (declared != null && actual != null &&
+                !isCompatible(declared, adoptLiteralType(initializer, actual, declared))) {
+                errors.add("line $line: global initializer expects $declared, got $actual")
+            }
         }
         for (bridge in program.items.filterIsInstance<TopLevel.Bridge>()) {
             for (value in bridge.values) {
@@ -974,6 +978,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.NamedArg -> seedExpectedValue(expr.value, expected)
             is Expr.ArrayLiteral -> {
+                expr.contextualType = typeRefOf(expected)
                 val element = (expected as? IrType.Array)?.element
                 if (element != null) expr.elements.forEach { seedExpectedValue(it, element) }
             }
@@ -982,6 +987,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (element != null) expr.elements.forEach { seedExpectedValue(it, element) }
             }
             is Expr.MapLit -> {
+                expr.contextualType = typeRefOf(expected)
                 val map = expected as? IrType.Map
                 if (map != null) {
                     expr.entries.forEach { (key, value) ->
@@ -1357,6 +1363,10 @@ class TypeResolver(private val table: SymbolTable) {
      */
     private fun bindCtorArguments(expr: Expr.Call, factory: FunctionSymbol): Array<Expr?>? {
         val written = factory.paramNames.drop(factory.contextualParams)
+        if (!factory.isVariadic && expr.args.size > written.size) {
+            errors.add("line ${expr.line}: '${expr.callee}' takes ${written.size} arguments, got ${expr.args.size}")
+            return null
+        }
         val slots = arrayOfNulls<Expr>(maxOf(written.size, expr.args.size))
         // A block written after the arguments fills the trailing callable, which
         // is what lets `Button(action: 7) { … }` leave `key` to its default.
@@ -1524,7 +1534,7 @@ class TypeResolver(private val table: SymbolTable) {
         when (stmt) {
             // `var` and `val` both rebind; only `var` may be mutated through.
             is Stmt.VarDecl ->
-                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true, valueMutable = stmt.valueMutable)
+                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = true, valueMutable = stmt.valueMutable, hasStorageEffects = stmt.lazy)
             is Stmt.RemDecl -> {
                 if (!reactiveContext) {
                     errors.add("line ${stmt.line}: '${stmt.kind.spelling}' requires a 'react func' or 'react async func'")
@@ -1536,6 +1546,7 @@ class TypeResolver(private val table: SymbolTable) {
                     stmt.line,
                     mutable = stmt.binding.nameRebindable,
                     valueMutable = stmt.binding.valueMutable,
+                    hasStorageEffects = true,
                 )
             }
             is Stmt.Effect -> {
@@ -1556,7 +1567,7 @@ class TypeResolver(private val table: SymbolTable) {
                 contextualValues.removeLast()
             }
             is Stmt.FinDecl ->
-                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = false)
+                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = false, hasStorageEffects = stmt.lazy)
             is Stmt.Assignment -> {
                 checkCapture(stmt.name, stmt.line)
                 val varSym = table.lookupVariable(stmt.name)
@@ -1592,7 +1603,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.LetDecl ->
-                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = true)
+                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = true, hasStorageEffects = stmt.lazy)
             is Stmt.DeepInlineBlock -> errors.add("line ${stmt.line}: deepinline block could not be evaluated at compile time")
             is Stmt.NoInline -> resolveStmt(stmt.stmt, returnType)
             is Stmt.InlineBlock -> errors.add("line ${stmt.line}: inline block could not be evaluated at compile time")
@@ -1709,6 +1720,12 @@ class TypeResolver(private val table: SymbolTable) {
                         if (toType != null && toType != IrType.Int) {
                             errors.add("line ${stmt.line}: range end must be Int, got $toType")
                         }
+                        stmt.step?.let { step ->
+                            val stepType = resolveExpr(step)
+                            if (stepType != null && stepType != IrType.Int) {
+                                errors.add("line ${stmt.line}: range step must be Int, got $stepType")
+                            }
+                        }
                         table.pushScope()
                         table.defineVariable(
                             VariableSymbol(stmt.name, loopRowType(stmt, IrType.Int), mutable = true),
@@ -1792,6 +1809,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Stmt.Continue -> { /* no type constraint */ }
+            is Stmt.Exchange -> resolveExchange(stmt)
             is Stmt.IndexAssign -> {
                 if (!checkValueMutable(stmt.target, stmt.line, "assign by index")) return
                 // `p.*[i] = v` writes the i-th slot of the buffer, for the same
@@ -1843,8 +1861,13 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 seedExpectedValue(stmt.value, targetType.element)
                 val valueType = resolveExpr(stmt.value) ?: return
-                if (valueType != targetType.element) {
+                if (!isCompatible(targetType.element, adoptLiteralType(stmt.value, valueType, targetType.element))) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to array of ${targetType.element}")
+                }
+                val integer = targetType.element as? IrType.Integer
+                val literal = untypedIntLiteral(stmt.value)
+                if (integer != null && literal != null && !integerLiteralFits(literal, integer)) {
+                    errors.add("line ${stmt.line}: array element $literal does not fit $integer")
                 }
             }
             is Stmt.DerefAssign -> {
@@ -2253,7 +2276,7 @@ class TypeResolver(private val table: SymbolTable) {
                 when (expr.op) {
                     TokenType.MINUS -> {
                         // Any (an erased generic T) negates at runtime.
-                        if (operandType !in IrType.numericTypes && operandType != IrType.Any) {
+                        if (!IrType.isNumeric(operandType) && operandType != IrType.Any) {
                             errors.add("line ${expr.line}: cannot negate $operandType")
                             null
                         } else operandType
@@ -2265,7 +2288,7 @@ class TypeResolver(private val table: SymbolTable) {
                         } else IrType.Bool
                     }
                     TokenType.TILDE -> {
-                        if (operandType !in IrType.integerTypes) {
+                        if (!IrType.isInteger(operandType)) {
                             errors.add("line ${expr.line}: '~' requires integer, got $operandType")
                             null
                         } else operandType
@@ -2279,7 +2302,7 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${expr.line}: invalid increment operator ${expr.op}")
                     return null
                 }
-                if (targetType !in IrType.integerTypes && targetType !in IrType.floatTypes && targetType != IrType.Any) {
+                if (!IrType.isInteger(targetType) && targetType !in IrType.floatTypes && targetType != IrType.Any) {
                     errors.add("line ${expr.line}: ${expr.op} requires a numeric target, got $targetType")
                     return null
                 }
@@ -2438,7 +2461,11 @@ class TypeResolver(private val table: SymbolTable) {
                             "__ctor_${calleeName}_${it.paramNames.size - it.contextualParams}",
                         ) ?: it
                     }
-                    if (factory != null) {
+                    val ownerType = IrType.Named(calleeName, expr.typeArgs.map { IrType.resolve(it) },
+                        expr.typeArgs.map { (it as? TypeRef.Const)?.value })
+                    val typedFactory = factory?.let { instantiateMember(table, ownerType, it) }
+                    if (typedFactory != null) {
+                        val factory = typedFactory
                         val scoped = factory.params.take(factory.contextualParams).all { (_, t) ->
                             contextualValues.any { frame -> frame.values.any { it.second == t } }
                         }
@@ -2448,7 +2475,12 @@ class TypeResolver(private val table: SymbolTable) {
                             // learns the receiver it is to inherit.
                             val slots = bindCtorArguments(expr, factory) ?: return null
                             for ((i, argument) in slots.withIndex()) {
-                                val expected = factory.params.getOrNull(factory.contextualParams + i)?.second
+                                val parameterIndex = factory.contextualParams + i
+                                val variadicSlot = factory.isVariadic && parameterIndex >= factory.params.lastIndex
+                                val parameterType = factory.params.getOrNull(
+                                    if (variadicSlot) factory.params.lastIndex else parameterIndex,
+                                )?.second
+                                val expected = if (variadicSlot) (parameterType as? IrType.Array)?.element else parameterType
                                 // A parameter nobody wrote still takes its default,
                                 // and that default is an expression the call site
                                 // will lower - so it is typed here like any other.
@@ -2468,7 +2500,10 @@ class TypeResolver(private val table: SymbolTable) {
                                     )
                                     return null
                                 }
-                                resolveContextualArgument(value, expected) ?: return null
+                                val actual = resolveContextualArgument(value, expected) ?: return null
+                                if (expected != null && !isCompatible(expected, adoptLiteralType(value, actual, expected))) {
+                                    errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $expected, got $actual")
+                                }
                             }
                             return factory.returnType
                         }
@@ -2816,21 +2851,7 @@ class TypeResolver(private val table: SymbolTable) {
                 null
             }
             is Expr.ArrayLiteral -> {
-                if (expr.elements.isEmpty()) {
-                    // Empty array literal `arr()` - element type unknown; defaults to Any (erased).
-                    IrType.Array(IrType.Any)
-                } else {
-                    val elemType = resolveExpr(expr.elements[0]) ?: return null
-                    for (i in 1 until expr.elements.size) {
-                        val t = resolveExpr(expr.elements[i]) ?: return null
-                        if (t != elemType) {
-                            errors.add("line ${expr.line}: array elements must share a type, got $elemType and $t")
-                            return null
-                        }
-                    }
-                    // A non-empty literal carries its compile-time element count.
-                    IrType.Array(elemType, expr.elements.size.toLong())
-                }
+                resolveArrayLiteral(expr)
             }
             is Expr.SetLiteral -> {
                 if (expr.elements.isEmpty()) {
@@ -3170,7 +3191,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (targetType is IrType.Named) {
                     val mangled = table.lookupMethod(targetType.name, expr.name)
                     if (mangled != null) {
-                        val func = table.lookupFunction(mangled)!!
+                        val func = instantiateMember(table, targetType, table.lookupFunction(mangled)!!)
                         if (!requireReactiveCaller(func, expr.line)) return null
                 if (!requireTestCaller(func.name, expr.line)) return null
                         if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
@@ -3422,20 +3443,42 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(expr.value)
             }
             is Expr.IfExpr -> {
-                resolveExpr(expr.condition) ?: return null
+                val conditionType = resolveExpr(expr.condition) ?: return null
+                if (conditionType != IrType.Bool) {
+                    errors.add("line ${expr.line}: if condition must be Bool, got $conditionType")
+                }
                 val t1 = resolveExpr(expr.thenExpr) ?: return null
                 val t2 = resolveExpr(expr.elseExpr) ?: return null
                 joinExpressionTypes(t1, t2, expr.line, "if")
             }
             is Expr.NamedArg -> resolveExpr(expr.value)
             is Expr.MapLit -> {
-                var keyType: IrType? = null
-                var valType: IrType? = null
-                for ((k, v) in expr.entries) {
-                    keyType = resolveExpr(k) ?: return null
-                    valType = resolveExpr(v) ?: return null
+                val expected = expr.contextualType?.let { tryResolveType(it, expr.line) }
+                val target = expected as? IrType.Map
+                if (expected != null && expected != IrType.Any && target == null) {
+                    errors.add("line ${expr.line}: associative literal target $expected requires a collection literal factory; it cannot use structural map storage")
+                    return null
                 }
-                IrType.Map(keyType ?: IrType.Any, valType ?: IrType.Any)
+                var keyType: IrType? = target?.key
+                var valType: IrType? = target?.value
+                for ((k, v) in expr.entries) {
+                    val key = resolveExpr(k) ?: return null
+                    val value = resolveExpr(v) ?: return null
+                    if (keyType == null) keyType = key
+                    if (valType == null) valType = value
+                    if (!isCompatible(keyType!!, adoptLiteralType(k, key, keyType!!)) ||
+                        !isCompatible(valType!!, adoptLiteralType(v, value, valType!!))) {
+                        errors.add("line ${expr.line}: associative literal entries must have consistent key and value types")
+                        return null
+                    }
+                }
+                if (keyType == null || valType == null) {
+                    errors.add("line ${expr.line}: cannot infer key and value types of empty associative literal")
+                    return null
+                }
+                val resolved = IrType.Map(keyType!!, valType!!)
+                expr.contextualType = typeRefOf(resolved)
+                resolved
             }
             is Expr.Alloc -> {
                 val inner = resolveExpr(allocatedConstruction(expr.value)) ?: return null
@@ -4017,16 +4060,6 @@ class TypeResolver(private val table: SymbolTable) {
             isCompatible(declared.element, actual.element) &&
             (declared.size == null || declared.size == actual.size)
         ) return true
-        // Primitive literals bridge to std.container collection pack names.
-        val setNames = setOf("Set", "MutableSet")
-        val mapNames = setOf("Map", "MutableMap")
-        val listNames = setOf("List", "MutableList")
-        if (declared is IrType.Set && actual is IrType.Named && actual.name in setNames) return true
-        if (declared is IrType.Named && declared.name in setNames && actual is IrType.Set) return true
-        if (declared is IrType.Map && actual is IrType.Named && actual.name in mapNames) return true
-        if (declared is IrType.Named && declared.name in mapNames && actual is IrType.Map) return true
-        if (declared is IrType.Array && actual is IrType.Named && actual.name in listNames) return true
-        if (declared is IrType.Named && declared.name in listNames && actual is IrType.Array) return true
         // An enum value (Named, known enum) is usable wherever a String is expected.
         if (declared == IrType.String && actual is IrType.Named && table.lookupEnum(actual.name) != null) return true
         // Node upcast: a child node is compatible with its parent (walk the parent chain).
@@ -4071,7 +4104,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** If [t] is a nullable wrapper around a numeric type, return its inner type; else [t]. */
     private fun unwrapNullableNumeric(t: IrType): IrType =
-        if (t is IrType.Nullable && t.inner in IrType.numericTypes) t.inner else t
+        if (t is IrType.Nullable && IrType.isNumeric(t.inner)) t.inner else t
 
     /** Promotes two numeric types to their common supertype (wider wins). */
     private fun promote(a: IrType, b: IrType): IrType? {
@@ -4082,59 +4115,12 @@ class TypeResolver(private val table: SymbolTable) {
             if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
-        // Integer promotion: Byte < Short < Int < Long < Cent
-        // A rank grows with width, and a signed and an unsigned width of the
-        // same size share one: promotion is about how much room a value needs.
-        val rank = IrType.NAMED_WIDTHS.keys.associateWith { it.bits } +
-            mapOf(IrType.ISize to 64, IrType.USize to 64)
-        val ra = rank[a] ?: return null
-        val rb = rank[b] ?: return null
+        // Preserve arbitrary widths; named widths are aliases, not an exhaustive set.
+        val ra = (a as? IrType.Integer)?.bits ?: if (IrType.isInteger(a)) 64 else return null
+        val rb = (b as? IrType.Integer)?.bits ?: if (IrType.isInteger(b)) 64 else return null
         return if (ra >= rb) a else b
     }
 
-    /** Converts an inferred IR type back to the source type form used by type functions. */
-    private fun typeRefOf(type: IrType): TypeRef = when (type) {
-        // A width writes itself: a named one by its name, an unnamed one as the
-        // `Int<N>` it is.
-        is IrType.Integer -> TypeRef.Named(type.toString())
-        IrType.Double -> TypeRef.Named("Double")
-        IrType.String -> TypeRef.Named("String")
-        IrType.Bool -> TypeRef.Named("Bool")
-        IrType.Unit -> TypeRef.Named("Unit")
-        IrType.Nothing -> TypeRef.Named("Nothing")
-        IrType.Char -> TypeRef.Named("Char")
-        IrType.Byte -> TypeRef.Named("Byte")
-        IrType.UByte -> TypeRef.Named("UByte")
-        IrType.Short -> TypeRef.Named("Short")
-        IrType.UShort -> TypeRef.Named("UShort")
-        IrType.Long -> TypeRef.Named("Long")
-        IrType.ULong -> TypeRef.Named("ULong")
-        IrType.ISize -> TypeRef.Named("ISize")
-        IrType.USize -> TypeRef.Named("USize")
-        IrType.Cent -> TypeRef.Named("Cent")
-        IrType.UCent -> TypeRef.Named("UCent")
-        // The floats added beside the integers: each is written as it is
-        // named, so the name is the whole conversion.
-        IrType.Half -> TypeRef.Named("Half")
-        IrType.Float -> TypeRef.Named("Float")
-        IrType.Quad -> TypeRef.Named("Quad")
-        IrType.Any -> TypeRef.Named("Any", synthesized = true)
-        is IrType.Array -> TypeRef.Array(typeRefOf(type.element))
-        is IrType.Map -> TypeRef.Map(typeRefOf(type.key), typeRefOf(type.value))
-        is IrType.Set -> TypeRef.Set(typeRefOf(type.element))
-        is IrType.Function -> TypeRef.Function(
-            type.params.map(::typeRefOf),
-            typeRefOf(type.ret),
-            type.receivers.map(::typeRefOf),
-            type.kind,
-        )
-        is IrType.Task -> TypeRef.Named("Task", listOf(typeRefOf(type.result)))
-        is IrType.Tuple -> TypeRef.Tuple(type.elements.map(::typeRefOf))
-        is IrType.Variant -> TypeRef.Named("Var", type.elements.map(::typeRefOf))
-        is IrType.Nullable -> TypeRef.Nullable(typeRefOf(type.inner))
-        is IrType.Pointer -> TypeRef.Pointer(typeRefOf(type.inner))
-        is IrType.Named -> TypeRef.Named(type.name)
-    }
 
     /** The operand-type key an operator overload is registered under. */
     private fun operandKeyOf(type: IrType): String? = when (type) {
@@ -4201,7 +4187,7 @@ class TypeResolver(private val table: SymbolTable) {
         // is `impl oper* for Int` taking a Vec. Such an overload must name its
         // operand, so only the operand-keyed member is consulted: nothing here can
         // shadow the built-in arithmetic of `2 * 3`.
-        if (left !is IrType.Named && left in IrType.numericTypes) {
+        if (left !is IrType.Named && IrType.isNumeric(left)) {
             operOverloadName(op)?.let { operName ->
                 val key = operandKeyOf(right)
                 if (key != null && key != left.toString()) {
@@ -4240,7 +4226,7 @@ class TypeResolver(private val table: SymbolTable) {
             return when {
                 op == TokenType.MINUS && right is IrType.Pointer -> IrType.Int // pointer distance
                 op == TokenType.PLUS || op == TokenType.MINUS ->
-                    if (right in IrType.integerTypes) left else { errors.add("line $line: pointer arithmetic requires Int offset, got $right"); null }
+                    if (IrType.isInteger(right)) left else { errors.add("line $line: pointer arithmetic requires Int offset, got $right"); null }
                 op == TokenType.EQUAL_EQUAL || op == TokenType.BANG_EQUAL ->
                     if (right is IrType.Pointer || right == IrType.Any) IrType.Bool else { errors.add("line $line: pointer comparison requires Pointer or null, got $right"); null }
                 else -> { errors.add("line $line: unsupported pointer operation '$op'"); null }
@@ -4249,7 +4235,7 @@ class TypeResolver(private val table: SymbolTable) {
         if (left == IrType.Any && right is IrType.Pointer && (op == TokenType.EQUAL_EQUAL || op == TokenType.BANG_EQUAL)) {
             return IrType.Bool
         }
-        if (left in IrType.integerTypes && right is IrType.Pointer && op == TokenType.PLUS) {
+        if (IrType.isInteger(left) && right is IrType.Pointer && op == TokenType.PLUS) {
             return right // Int + Pointer → Pointer
         }
         // Unwrap nullable numeric operands for primitive operations so that
@@ -4259,19 +4245,19 @@ class TypeResolver(private val table: SymbolTable) {
         return when (op) {
             TokenType.PLUS -> {
                 if (left == IrType.String || right == IrType.String) IrType.String
-                else if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                else if (IrType.isNumeric(left) && IrType.isNumeric(right)) promote(left, right)
                 else if (left == IrType.Any || right == IrType.Any) IrType.Any // erased generics
                 else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.STAR -> {
                 if ((left == IrType.String && right == IrType.Int) ||
                     (left == IrType.Int && right == IrType.String)) IrType.String
-                else if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                else if (IrType.isNumeric(left) && IrType.isNumeric(right)) promote(left, right)
                 else if (left == IrType.Any || right == IrType.Any) IrType.Any
                 else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
             TokenType.MINUS, TokenType.SLASH, TokenType.PERCENT -> {
-                if (left in IrType.numericTypes && right in IrType.numericTypes) promote(left, right)
+                if (IrType.isNumeric(left) && IrType.isNumeric(right)) promote(left, right)
                 else if (left == IrType.Any || right == IrType.Any) IrType.Any
                 else { errors.add("line $line: cannot apply '$op' to $left and $right"); null }
             }
@@ -4311,7 +4297,7 @@ class TypeResolver(private val table: SymbolTable) {
             TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL -> {
                 // Any (e.g. an erased generic T) compares at runtime.
                 val anyInvolved = left == IrType.Any || right == IrType.Any
-                if (!anyInvolved && (left != right || (left !in IrType.Companion.numericTypes && left != IrType.Char))) {
+                if (!anyInvolved && (left != right || (!IrType.isNumeric(left) && left != IrType.Char))) {
                     errors.add("line $line: cannot compare $left and $right with '$op'")
                     null
                 } else IrType.Bool
@@ -4323,7 +4309,7 @@ class TypeResolver(private val table: SymbolTable) {
             // here rather than left to the operand types to agree on.
             TokenType.SPACESHIP -> {
                 val comparable = left == right &&
-                    (left in IrType.numericTypes || left == IrType.Char ||
+                    (IrType.isNumeric(left) || left == IrType.Char ||
                         left == IrType.Bool || left == IrType.String)
                 when {
                     left == IrType.Any || right == IrType.Any -> IrType.Named("PartialCompare")
@@ -4342,7 +4328,7 @@ class TypeResolver(private val table: SymbolTable) {
                 } else IrType.Bool
             }
             TokenType.AMP, TokenType.PIPE, TokenType.CARET, TokenType.SHIFT_LEFT, TokenType.SHIFT_RIGHT -> {
-                if (left !in IrType.integerTypes || right !in IrType.integerTypes) {
+                if (!IrType.isInteger(left) || !IrType.isInteger(right)) {
                     errors.add("line $line: '$op' requires integer operands, got $left and $right")
                     null
                 } else left
@@ -4360,11 +4346,60 @@ class TypeResolver(private val table: SymbolTable) {
      * `Int` value still needs an explicit `as`, so the conversion stays where it can
      * be seen in the source.
      */
+    private fun resolveArrayLiteral(expr: Expr.ArrayLiteral): IrType? {
+        val expected = expr.contextualType?.let { tryResolveType(it, expr.line) }
+        val target = expected as? IrType.Array
+        if (expected != null && expected != IrType.Any && !isUnboundTypeParam(expected) && target == null) {
+            errors.add("line ${expr.line}: sequence literal target $expected requires a collection literal factory; it cannot use array storage")
+            return null
+        }
+        var element = target?.element
+        if (element == null && expr.elements.isEmpty()) {
+            errors.add("line ${expr.line}: cannot infer element type of empty sequence literal; provide Array<T> or another collection context")
+            return null
+        }
+        for (value in expr.elements) {
+            element?.let { seedExpectedValue(value, it) }
+            val own = resolveExpr(value) ?: return null
+            if (element == null) {
+                // Inner literal lengths describe values, not distinct element types.
+                element = if (own is IrType.Array) own.copy(size = null) else own
+            }
+            val adopted = adoptLiteralType(value, own, element!!)
+            if (!literalElementCompatible(element!!, adopted)) {
+                errors.add("line ${value.line}: collection element must have type $element, got $own")
+                return null
+            }
+            val integer = element as? IrType.Integer
+            val literal = untypedIntLiteral(value)
+            if (integer != null && literal != null && !integerLiteralFits(literal, integer)) {
+                errors.add("line ${value.line}: collection element $literal does not fit $integer")
+                return null
+            }
+        }
+        val resolved = IrType.Array(element!!, expr.elements.size.toLong())
+        expr.contextualType = typeRefOf(resolved)
+        return resolved
+    }
+
+    private fun integerLiteralFits(value: Long, type: IrType.Integer): Boolean {
+        if (type.bits >= 64) return type.signed || value >= 0
+        return if (type.signed) value in -(1L shl (type.bits - 1)) until (1L shl (type.bits - 1))
+        else value >= 0 && value < (1L shl type.bits)
+    }
+
+    /** Literal lowering currently converts numeric constants, not boxed/spec values. */
+    private fun literalElementCompatible(expected: IrType, actual: IrType): Boolean =
+        expected == actual || actual == IrType.Nothing ||
+            (expected is IrType.Array && actual is IrType.Array &&
+                (expected.size == null || expected.size == actual.size) &&
+                literalElementCompatible(expected.element, actual.element))
+
     private fun adoptLiteralType(expr: Expr, own: IrType, wanted: IrType): IrType {
         // `1.0` is written the same whether it means a `Double` or a `Float`, so an
         // unsuffixed real literal takes the floating-point type asked for.
         if (own in IrType.floatTypes && wanted in IrType.floatTypes && isUntypedDoubleLiteral(expr)) return wanted
-        if (own !in IrType.integerTypes || wanted !in IrType.numericTypes) return own
+        if (!IrType.isInteger(own) || !IrType.isNumeric(wanted)) return own
         untypedIntLiteral(expr) ?: return own
         // `4` is an `IntLiteral` until something says which width to read it
         // at. A declared type, a parameter, a cast or a named width all say so;
@@ -4421,11 +4456,94 @@ class TypeResolver(private val table: SymbolTable) {
         else -> null
     }
 
+    /** Validate both storage locations without desugaring ownership into assignments. */
+    private fun resolveExchange(stmt: Stmt.Exchange) {
+        fun root(expr: Expr): String? = when (expr) {
+            is Expr.Identifier -> expr.name
+            is Expr.Member -> root(expr.target)
+            is Expr.Index -> root(expr.target)
+            else -> null
+        }
+        // Calls can invalidate an earlier resolved address by resizing/rebinding
+        // its owner. Admit them only once location loans span header evaluation.
+        fun stable(expr: Expr): Boolean = when (expr) {
+            is Expr.Identifier -> table.lookupVariable(expr.name)?.hasStorageEffects != true
+            is Expr.IntLiteral -> true
+            is Expr.Grouping -> stable(expr.expr)
+            // A named-type operator is a call too, even without call syntax.
+            // Same-type integer operators lower directly to built-in IR.
+            is Expr.Binary -> stable(expr.left) && stable(expr.right) &&
+                resolveExpr(expr.left).let { IrType.isInteger(it) && it == resolveExpr(expr.right) }
+            is Expr.Unary -> stable(expr.operand) && IrType.isInteger(resolveExpr(expr.operand))
+            is Expr.IncDec -> expr.target is Expr.Identifier && stable(expr.target)
+            is Expr.Index -> stable(expr.target) && stable(expr.index) && resolveExpr(expr.target) is IrType.Array
+            is Expr.Member -> stable(expr.target) && (resolveExpr(expr.target) as? IrType.Named)
+                ?.let { table.lookupStruct(it.name)?.field(expr.name) } != null
+            else -> false
+        }
+        fun location(expr: Expr): IrType? {
+            if (!stable(expr)) {
+                errors.add("line ${stmt.line}: exchange requires stable variable, field, or array-element locations; calls, lazy/reactive storage, and raw dereferences need location-loan support")
+                return null
+            }
+            val type = resolveExpr(expr) ?: return null
+            val owner = root(expr)
+            if (owner != null) {
+                checkBorrowConflict(owner, exclusive = true, stmt.line)
+                if (owner in sharedBorrowedNames || activeBorrows[owner]?.exclusive == false) {
+                    errors.add("line ${stmt.line}: cannot exchange through shared borrow '$owner'")
+                }
+            }
+            when (expr) {
+                is Expr.Identifier -> {
+                    if (table.lookupVariable(expr.name)?.mutable != true) {
+                        errors.add("line ${stmt.line}: exchange requires mutable binding '${expr.name}'")
+                    }
+                    if (expr.name in borrowedNames || expr.name in activeBorrows) {
+                        errors.add("line ${stmt.line}: exchanging a borrowed binding requires address-preserving borrow lowering")
+                    }
+                }
+                is Expr.Member -> {
+                    checkValueMutable(expr.target, stmt.line, "exchange a field")
+                    val base = resolveExpr(expr.target)
+                    val field = (base as? IrType.Named)?.let { table.lookupStruct(it.name)?.field(expr.name) }
+                    if (field == null || !field.mutable || table.lookupStruct((base as? IrType.Named)?.name ?: "")?.isUnion == true) {
+                        errors.add("line ${stmt.line}: exchange requires a mutable stored pack field '${expr.name}'")
+                    }
+                }
+                is Expr.Index -> {
+                    checkValueMutable(expr.target, stmt.line, "exchange an array element")
+                    if (resolveExpr(expr.target) !is IrType.Array) {
+                        errors.add("line ${stmt.line}: exchange indexing requires built-in array storage; accessor calls and raw pointers are not exchange locations")
+                    }
+                }
+                else -> errors.add("line ${stmt.line}: invalid exchange location")
+            }
+            return type
+        }
+        val left = location(stmt.left)
+        val right = location(stmt.right)
+        if (left != null && right != null && left != right) {
+            errors.add("line ${stmt.line}: exchange locations must have the same type, got $left and $right")
+        }
+        // An owner and one of its projections cannot both participate.
+        fun path(expr: Expr): List<String>? = when (expr) {
+            is Expr.Identifier -> listOf(expr.name)
+            is Expr.Member -> path(expr.target)?.plus(".${expr.name}")
+            is Expr.Index -> path(expr.target)?.plus("[]")
+            else -> null
+        }
+        val a = path(stmt.left)
+        val c = path(stmt.right)
+        if (a != null && c != null && a.size != c.size &&
+            a.take(minOf(a.size, c.size)) == c.take(minOf(a.size, c.size))) {
+            errors.add("line ${stmt.line}: exchange locations partially overlap an owner and its projection")
+        }
+    }
+
     /**
      * Rejects a write through a binding whose *value* is immutable (`val`/`fin`).
-     *
-     * Reassigning the name is a separate question - `val` allows it, `fin` does
-     * not - and is checked where the assignment itself is resolved.
+     * Reassigning the name is checked separately where the assignment is resolved.
      */
     private fun checkValueMutable(target: Expr, line: Int, what: String): Boolean {
         val rootName = pathRoot(target)?.name
@@ -5032,6 +5150,7 @@ class TypeResolver(private val table: SymbolTable) {
         line: Int,
         mutable: Boolean,
         valueMutable: Boolean = true,
+        hasStorageEffects: Boolean = false,
     ) {
         // A fresh binding owns a value, whatever happened to an earlier one of
         // the same name. Cleared after the initializer, so `var x = take x`
@@ -5062,10 +5181,10 @@ class TypeResolver(private val table: SymbolTable) {
                 if (!isCompatible(declaredType!!, adoptLiteralType(initializer, initType, declaredType))) {
                     errors.add("line $line: type mismatch in '$name': declared $declaredType but initializer is $initType")
                 }
-                table.defineVariable(VariableSymbol(name, declaredType, mutable, valueMutable = valueMutable))
+                table.defineVariable(VariableSymbol(name, declaredType, mutable, valueMutable = valueMutable, hasStorageEffects = hasStorageEffects))
             }
             is TypeAnnotation.Inferred -> {
-                table.defineVariable(VariableSymbol(name, initType, mutable, valueMutable = valueMutable))
+                table.defineVariable(VariableSymbol(name, initType, mutable, valueMutable = valueMutable, hasStorageEffects = hasStorageEffects))
             }
         }
         movedBindings.remove(name)

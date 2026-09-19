@@ -23,8 +23,8 @@ import kotlin.test.assertTrue
 
 /**
  * Inside an `impl` the receiver's type is never in question, so it may be left
- * out: `[self&]` says the one thing that varies where `[self: Self&]` spends
- * three tokens repeating the type being implemented.
+ * out: `&.member` and `!.member` declare read-only and mutable borrows;
+ * `(self: Self&).member` spells the receiver name and type explicitly.
  *
  * ```
  * impl A {
@@ -65,7 +65,7 @@ class ReceiverShorthandTest {
 
     @Test fun theShortAndLongSpellingsAgree() {
         val short = impl("func &.x() {}", "func !.y() {}")
-        val long = impl("func &.x() {}", "func !.y() {}")
+        val long = impl("func (self: Self&).x() {}", "func (self: Self!).y() {}")
 
         for (name in listOf("x", "y")) {
             assertEquals(
@@ -92,7 +92,7 @@ class ReceiverShorthandTest {
     }
 
     @Test fun furtherReceiversStillNameThemselves() {
-        val source = impl("func x[self&, scale: Double&]() {}")
+        val source = impl("func (self: Self&, scale: Double&).x() {}")
         val x = member(source, "x")
 
         assertEquals(ParamModifier.SHARED, x.receiverModifier)
@@ -100,11 +100,12 @@ class ReceiverShorthandTest {
         assertEquals(listOf("scale"), x.params.take(x.contextualParams).map { it.name })
     }
 
-    @Test fun onlySelfMayLeaveOutItsType() {
+    @Test fun removedBracketReceiversHaveAMigrationDiagnostic() {
         val message = assertFailsWith<Exception> {
             member(impl("func x[other&]() {}"), "x")
         }.message.orEmpty()
-        assertTrue("must name its type" in message, message)
+        assertTrue("receivers no longer use brackets" in message, message)
+        assertTrue("func &.x" in message && "func (self: Type&).x" in message, message)
     }
 
     @Test fun theShorthandIsOnlyForBodiesThatKnowTheirSelf() {

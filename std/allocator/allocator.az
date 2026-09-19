@@ -350,7 +350,6 @@ impl Pool {
         ", inUse: " + self.acquiredCount as String +
         ", free: " + self.freeCount as String +
         ", peak: " + self.peakAcquired as String + ")"
-    }
 }
 
 // -----------------------------------------------------------------------
@@ -473,7 +472,6 @@ impl StackAllocator {
          ", used: " + self.offset as String +
         ", peak: " + self.peakUsage as String +
         ", allocs: " + self.allocCount as String + ")"
-    }
 }
 
 // -----------------------------------------------------------------------
@@ -499,7 +497,7 @@ impl Alloc {
      * @return A new Arena allocator.
      */
     @Experimental(since: "0.1")
-    func &.arena(size: UInt): Arena = return .(size)
+    func &.arena(size: UInt): Arena = .(size)
 
     /**
      * Creates a pool allocator with the given slot configuration.

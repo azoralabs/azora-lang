@@ -239,6 +239,7 @@ internal object SourceSymbolValidator {
             is Stmt.InlineFor -> { declaration(statement.name, "inline loop variable", statement.line); statement.indexName?.let { declaration(it, "inline loop index", statement.line) }; expression(statement.iterable); statement.body.forEach(::statement) }
             is Stmt.Break -> statement.value?.let(::expression)
             is Stmt.Continue -> Unit
+            is Stmt.Exchange -> { expression(statement.left); expression(statement.right) }
             is Stmt.IndexAssign -> { expression(statement.target); expression(statement.index); expression(statement.value) }
             is Stmt.MemberAssign -> { expression(statement.target); statement.nameExpr?.let(::expression); expression(statement.value) }
             is Stmt.When -> { expression(statement.scrutinee); statement.branches.forEach { branch -> branch.patterns.forEach(::expression); branch.body.forEach(::statement) }; statement.elseBranch?.forEach(::statement) }

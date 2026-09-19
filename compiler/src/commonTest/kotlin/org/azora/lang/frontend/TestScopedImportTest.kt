@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
  *         reflection::reflect
  *         serializer::Serializable
  *     ]
- *     inline assert reflect<Queue>.hasAnnot<Serializable> { … }
+ *     inline assert reflect<Queue>.hasAnnot<Serializable> panic "…"
  * }
  * ```
  *
@@ -50,7 +50,7 @@ class TestScopedImportTest {
                     reflection::reflect
                     serializer::Serializable
                 ]
-                inline assert reflect<Queue>.hasAnnot<Serializable> { "declared" }
+                inline assert reflect<Queue>.hasAnnot<Serializable> panic "declared"
             }
             """.trimIndent()
         )
@@ -70,7 +70,7 @@ class TestScopedImportTest {
             test "two imports" {
                 import std.io
                 import std.math
-                assert true { "ok" }
+                assert true panic "ok"
             }
             """.trimIndent()
         )
@@ -78,7 +78,7 @@ class TestScopedImportTest {
     }
 
     @Test fun aTestWithoutImportsIsUnchanged() {
-        val parsed = items("test \"plain\" {\n    assert true { \"ok\" }\n}")
+        val parsed = items("test \"plain\" {\n    assert true panic \"ok\"\n}")
 
         assertEquals(1, parsed.filterIsInstance<TopLevel.Test>().single().body.size)
         assertTrue(parsed.none { it is TopLevel.UseImport })

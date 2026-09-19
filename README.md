@@ -183,7 +183,7 @@ impl Point {
 - `while`, `loop { }`, `loop { } while cond` (do-while)
 - `loop <iterable> { }`, which drives the iterable's `reset` and `hasNext`
 - `for x in a..b`, `for x in a..<b`, `for x in array`
-- `for x in a..b by N` (step), `reverse for`
+- `for x in a..b by N` (step), `for x in a>..b` (descending, exclusive start)
 - `for` / `while` / `loop` with an `else` that runs unless `break` fired
 - Labeled loops: `lbl: for …`, `break:lbl`, `continue:lbl`
 - `when expr { pattern -> { } else -> { } }`, exhaustive over enums and variants,
@@ -224,7 +224,7 @@ states its comparison **once**.
 - Comparison `== != < <= > >=` and the three-way `<=>`
 - Null-conditional `??` `?.` and compound forms `?+= ?-= ?*= ?/= ?%= ?++ ?--`
 - Casts `as` `as?` `as*`; type tests `is`, `is!`
-- Ranges `a..b` (inclusive), `a..<b` (exclusive), `reverse..`
+- Ranges `a..b` (inclusive), `a..<b` (exclusive), `>..` (descending, exclusive start)
 
 ### Overloading
 
@@ -390,13 +390,13 @@ and **inside an `impl` body**, where each iteration generates a member and
 
 ```azora
 impl Vec3 {
-    inline for axis in @arr["x", "y", "z"] {
+    inline for axis in ["x", "y", "z"] {
         prop double$axis[self: Self&]: Double = self.$axis * 2.0
     }
 }
 ```
 
-It iterates a compile-time type list (`[A, B]`), a value list (`@arr[…]`), or
+It iterates a compile-time type list (`[A, B]`), a value list (`[…]`), or
 several lists in parallel, and `with index` binds the position.
 
 **Diagnostics**: `inline assert`, `inline trace`, `inline panic`.
@@ -409,20 +409,28 @@ loop variable.
 and the call. A prefix macro takes arms:
 
 ```azora
-macro @arr {
-    []            => emptyArray()
-    [...$items]   => arrayOf(...$items)
+macro @batch {
+    []            => []
+    [...$items]   => Array(...$items)
 }
 
-@arr[1, 2, 3]        // arrayOf(1, 2, 3)
-@vec[]               // an empty List
-@vec![1, 2]          // a MutableList
+fin values = @batch[1, 2, 3]
+fin empty: Array<Int> = @batch[]
 ```
 
-> `@map` and `@map!` are declared in `std`, but the `key: value` argument form
-> they need is **not implemented** at the call site, so a map literal does not
-> compile yet. Build one with `mapOf(…)`. Two of the failing tests track
-> this.
+`batch` above is a user-defined macro. The standard `arr`, `vec`, `map` and `set`
+macros are removed. Ordinary collection construction uses bracket literals:
+
+```azora
+fin values = [1, 2, 3]             // defaults to Array<Int>
+fin small: Array<Byte> = [1, 2, 3] // context determines element representation
+fin empty: Array<Int> = []
+```
+
+Sequence literals also supply the syntax for contextual lists and sets; keyed
+literals use `[key: value]`, with `[:]` for an empty map. Construction through
+list/set/map factories is still implementation work; see the ecosystem progress
+log for supported contexts and targets.
 
 An infix macro puts its holes around the name, so the declaration reads like
 the call it enables:
@@ -436,8 +444,8 @@ macro $a @to $b => mapEntry($a, $b)
 Dropping the `=>` registers the name without a rewrite, so `a @op b` calls the
 free function `op(a, b)`.
 
-A name may end in one of `! ? & * ^`, and the sigil is part of it: `@vec` and
-`@vec!` are two macros. Any word works as a name, including keywords - `@with`,
+A name may end in one of `! ? & * ^`, and the sigil is part of it: `@inspect` and
+`@inspect!` are two macros. Any word works as a name, including keywords - `@with`,
 `@to`, `@in` - because the leading `@` has already said a name follows. A
 specific container implementation is reached by naming it, `hashSetOf(…)`
 or `treeMapOf(…)`, and a type is always written with generics rather than

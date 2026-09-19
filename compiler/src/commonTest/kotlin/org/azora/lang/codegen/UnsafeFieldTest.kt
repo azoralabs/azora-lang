@@ -20,7 +20,7 @@ class UnsafeFieldTest {
             """
             import std.io
             func main() {
-                var xs = @arr[1, 2]
+                var xs = [1, 2]
                 println(xs.data[0])
             }
             """.trimIndent(),
@@ -36,7 +36,7 @@ class UnsafeFieldTest {
             """
             import std.io
             func main() {
-                var xs = @arr[1, 2]
+                var xs = [1, 2]
                 unsafe {
                     println(xs.data[0])
                 }
@@ -54,7 +54,7 @@ class UnsafeFieldTest {
             """
             import std.io
             func main() {
-                var xs = @arr[1, 2]
+                var xs = [1, 2]
                 println(xs.size)
             }
             """.trimIndent(),

@@ -10,12 +10,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
-import kotlin.test.fail
 
 /**
  * Tests for the `meta` macro system: declaration parsing, the three invocation
- * delimiters, spread-capture splicing, nested macro expansion, and the stdlib
- * `vec`/`set`/`tuple`/`arr` macros.
+ * delimiters, spread-capture splicing, nested expansion, and rejection of removed
+ * standard collection macros. User-defined macros remain supported.
  */
 class MacroTest {
 
@@ -31,14 +30,19 @@ class MacroTest {
         IrInterpreter().interpret(compile(source).ir).trim()
 
     @Test
-    fun vecMacroExpandsToListOf() {
+    fun userMacroConstructsAnArray() {
         val out = run(
             """
             import std.container::*
             import std.io
 
+            macro @batch {
+                [] => []
+                [...${'$'}xs] => Array(...${'$'}xs)
+            }
+
             func main() {
-                fin x = @vec[1, 2, 3]
+                fin x = @batch[1, 2, 3]
                 println(x.size)
                 println(x[0])
                 println(x[2])
@@ -49,16 +53,21 @@ class MacroTest {
     }
 
     @Test
-    fun vecMacroEmptyArmExpandsToEmptyList() {
+    fun userMacroEmptyArmReceivesArrayContext() {
         val out = run(
             """
             import std.container::*
             import std.io
 
+            macro @batch {
+                [] => []
+                [...${'$'}xs] => Array(...${'$'}xs)
+            }
+
             func main() {
-                fin empty: List<Int> = @vec[]
+                fin empty: Array<Int> = @batch[]
                 println(empty.size)
-                println(empty.isEmpty)
+                println(empty.size == 0)
             }
             """,
         )
@@ -71,10 +80,15 @@ class MacroTest {
             import std.container::*
             import std.io
 
+            macro @batch {
+                [] => []
+                [...${'$'}xs] => Array(...${'$'}xs)
+            }
+
             func main() {
-                fin a = @vec(1, 2)
-                fin b = @vec[1, 2]
-                fin c = @vec{1, 2}
+                fin a = @batch(1, 2)
+                fin b = @batch[1, 2]
+                fin c = @batch{1, 2}
                 println(a.size)
                 println(b.size)
                 println(c.size)
@@ -83,41 +97,19 @@ class MacroTest {
         val expected = "2\n2\n2"
         assertEquals(expected, run(src))
         // Sanity: the three forms compile to identical programs.
-        assertEquals(run(src.replace("@vec(1, 2)", "@vec[1, 2]")), run(src.replace("@vec(1, 2)", "@vec{1, 2}")))
+        assertEquals(run(src.replace("@batch(1, 2)", "@batch[1, 2]")), run(src.replace("@batch(1, 2)", "@batch{1, 2}")))
     }
 
     @Test
-    fun setTupleArrMacrosExpandToConstructors() {
-        val out = run(
-            """
-            import std.container::*
-            import std.io
-
-            func main() {
-                fin s = @set[1, 2, 3]
-                fin a = @arr[10, 20, 30]
-                println(s.size)
-                println(a.size)
-                println(a[2])
-            }
-            """,
-        )
-        assertEquals("3\n3\n30", out)
-    }
-
-    @Test
-    fun macroSigilPrecedesScope() {
-        val result = Compiler().compile(
-            """
-            import std.container::*
-            func main() { fin values = @arr[1, 2, 3] }
-            """.trimIndent(),
-        )
-        assertIs<CompilationResult.Failure>(result)
-        assertTrue(
-            result.errors.any { "Expected member name after '::'" in it || "Unexpected token '@'" in it || "macro" in it },
-            "The reversed '@arr' form must be rejected: ${result.errors}",
-        )
+    fun standardCollectionMacrosAreRemoved() {
+        for (name in listOf("arr", "vec", "map", "set")) {
+            val result = Compiler().compile("""
+                import std.container::*
+                func main() { fin values = @$name[1, 2, 3] }
+            """.trimIndent())
+            val failure = assertIs<CompilationResult.Failure>(result)
+            assertTrue(failure.errors.any { name in it && "not defined" in it }, failure.errors.toString())
+        }
     }
 
     @Test
@@ -128,7 +120,7 @@ class MacroTest {
             import std.io
 
             macro @dup {
-                [...${'$'}xs] => listOf(...${'$'}xs, ...${'$'}xs)
+                [...${'$'}xs] => Array(...${'$'}xs, ...${'$'}xs)
             }
 
             func main() {
@@ -139,7 +131,7 @@ class MacroTest {
             }
             """,
         )
-        // listOf(1, 2, 1, 2)
+        // Array(1, 2, 1, 2)
         assertEquals("4\n1\n2", out)
     }
 
@@ -150,9 +142,15 @@ class MacroTest {
             import std.container::*
             import std.io
 
-            // `box` expands to a `vec!` invocation, which must then itself expand.
+            macro @batch {
+                [] => []
+                [...${'$'}xs] => Array(...${'$'}xs)
+            }
+
+
+            // `box` expands to a user-defined `batch` invocation, which expands again.
             macro @box {
-                [...${'$'}xs] => @vec[...${'$'}xs]
+                [...${'$'}xs] => @batch[...${'$'}xs]
             }
 
             func main() {
@@ -189,7 +187,7 @@ class MacroTest {
             import std.container::*
 
             macro @needsArgs {
-                [...$xs] => listOf(...$xs)
+                [...$xs] => Array(...$xs)
             }
 
             func main() {
@@ -210,8 +208,13 @@ class MacroTest {
             """
             import std.container::*
 
+            macro @batch {
+                [] => []
+                [...${'$'}xs] => Array(...${'$'}xs)
+            }
+
             func main() {
-                fin x = @vec[1, 2, 3]
+                fin x = @batch[1, 2, 3]
             }
             """,
         )
@@ -221,10 +224,10 @@ class MacroTest {
             program.items.none { it is TopLevel.Meta },
             "TopLevel.Meta should be removed after expansion",
         )
-        // The `@vec[1,2,3]` site lowered to a concrete `std__listOf` call, with
+        // The user-defined macro expands to an ordinary Array construction, with
         // no residual MetaInvoke anywhere in the program.
         var metaInvokeCount = 0
-        var listOfCallCount = 0
+        var arrayConstructionCount = 0
         for (item in program.items) {
             val decl = (item as? TopLevel.Func)?.decl ?: continue
             if (decl.name != "main") continue
@@ -232,11 +235,11 @@ class MacroTest {
                 val init = (stmt as? Stmt.FinDecl)?.initializer
                     ?: (stmt as? Stmt.VarDecl)?.initializer
                     ?: (stmt as? Stmt.LetDecl)?.initializer
-                if (init is Expr.Call && init.callee == "std__listOf") listOfCallCount++
+                if (init is Expr.Call && init.callee == "Array") arrayConstructionCount++
                 countMetaInvokes(init) { metaInvokeCount++ }
             }
         }
-        assertEquals(1, listOfCallCount, "expected the vec! site to lower to std__listOf")
+        assertEquals(1, arrayConstructionCount, "expected the user macro to expand to Array construction")
         assertEquals(0, metaInvokeCount, "no Expr.MetaInvoke should survive expansion")
     }
 

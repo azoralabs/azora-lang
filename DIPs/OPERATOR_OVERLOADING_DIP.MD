@@ -379,6 +379,10 @@ inline for Ty in [Compare, PartialCompare] {
 starts with a total field and continues into a partial one answers
 `PartialCompare`, which is the correct result type for the mixture.
 
+`then` is accepted in explicit member-name positions (declarations and accesses);
+it remains the branch keyword elsewhere. This preserves `.then()` without
+permitting a bare local or top-level function named `then`.
+
 `then` is what makes a hand-written multi-field comparison read as one
 expression:
 
@@ -1316,7 +1320,7 @@ would open ten `impl` blocks to say it. The families are:
 | `Indexable<Idx = Int, Out>`                     | `[]` `[]=` `[:]`                                               | 12.1 |
 | `Deref<To>`                                     | `.*`                                                           | 12.1 |
 | `DerefMut<To>`                                  | `.^`, `requires Deref`                                         | 12.1 |
-| `Iterator<Rhs = Self, Out>`                     | `..` `reverse..`                                               | 12.8 |
+| `Iterator<Rhs = Self, Out>`                     | `..` `>..`                                               | 12.8 |
 | `Hash`                                          | `prop hash`, `requires Equal`                                  | 12.6 |
 | `Display`                                       | `$`                                                            | 12.7 |
 | `Cast<To>`                                      | `as`                                                           | 12.9 |
@@ -1555,12 +1559,12 @@ Four spellings, four results, no rule for which one `"${v}"` picks. Proposed:
 
 ```azora
 /**
- * A type whose values bound a range: what `a..b` and `a reverse.. b` produce.
+ * A type whose values bound a range: what `a..b` and `a>..b` produce.
  */
 @Since("0.1")
 bridge spec Iterator<Rhs = Self, Out = Range<Self>> {
     oper..         &.(rhs: Rhs&): Out
-    oper reverse.. &.(rhs: Rhs&): Out
+    oper>.. &.(rhs: Rhs&): Out
 }
 ```
 
@@ -1570,8 +1574,9 @@ Three notes, each from something the parser already does:
   (`Parser.kt:468`–`:469`) because inclusivity is a flag on the range node, not
   a different operator. So `Iterator` has two members and not four, and
   `SYNTAX.MD:90`'s four-element `Iterable` alias would have been wrong.
-- **`reverse..` is genuinely separate**, because descending is not the ascending
-  range read backwards for every type.
+- **`>..` is separate.** It excludes its left bound and includes its right
+  bound, stepping down from `left - 1`. It replaces the removed reverse keyword
+  and range spelling per the 2026-09-09 instruction.
 - **The `by` step survives as metadata.** `bridge oper.. Ty&.(rhs: Ty&) by 1`
   (`traits/core.az:22`) parses its step and discards it (`Parser.kt:567`). This
   DIP does not change that; it just gives the declaration a spec to live in.

@@ -44,7 +44,7 @@ class ReadmeSnippetTest {
         // Declarations that stand alone.
         "pack Point {" to emptyMain,
         "func add(a: Int, b: Int = 0): Int" to emptyMain,
-        "macro @arr {" to Context(bodyFrom = "@arr[1, 2, 3]", epilogue = ""),
+        "macro @arr {" to Context(bodyFrom = "[1, 2, 3]", epilogue = ""),
         "macro \$a @to \$b" to Context(
             prelude = "scope std { func<K, V> mapEntry(key: K, value: V): K { return key } }\n",
             bodyFrom = "\"key\" @to 42",

@@ -81,8 +81,12 @@ object LlvmExec {
      * stderr attached for debugging).
      */
     fun run(source: String, optimized: Boolean = false): String {
+        return runIr(compile(source, optimized))
+    }
+
+    /** Executes emitted IR, including isolated stage tests that need no stdlib. */
+    fun runIr(ir: String): String {
         val tool = lli ?: error("lli not available")
-        val ir = compile(source, optimized)
 
         val llFile = File.createTempFile("azora_", ".ll")
         val outFile = File.createTempFile("azora_out_", ".txt")

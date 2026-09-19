@@ -98,9 +98,7 @@ bridge func setEnvVar(name: String, value: String): Bool
  * @param fallback Used when the variable is not set.
  */
 @Experimental(since: "0.1")
-func envOr(name: String, fallback: String): String {
-    return if hasEnvVar(name) { envVar(name) } else { fallback }
-}
+func envOr(name: String, fallback: String): String = if hasEnvVar(name) then envVar(name) else fallback
 
 // ── Working directory ───────────────────────────────────────────────
 
@@ -149,14 +147,10 @@ func runCommand(command: String): ProcessResult {
     // by a leading underscore resolves back to its own caller.
     fin raw: String = _commandParts(command)
     fin codeEnd: Int = indexOf(raw, "\n")
-    if codeEnd < 0 {
-        return .("std.os could not run the command", -1, false)
-    }
+    if codeEnd < 0 then return .("std.os could not run the command", -1, false)
     fin rest: String = substring(raw, codeEnd + 1, stringLength(raw))
     fin startedEnd: Int = indexOf(rest, "\n")
-    if startedEnd < 0 {
-        return .("std.os could not run the command", -1, false)
-    }
+    if startedEnd < 0 then return .("std.os could not run the command", -1, false)
     return .(
         substring(rest, startedEnd + 1, stringLength(rest)),
         _decimalValue(substring(raw, 0, codeEnd)),
@@ -178,15 +172,11 @@ bridge func _commandParts(command: String): String
 /** A signed decimal integer, or 0 when [text] is not one. */
 @Experimental(since: "0.1")
 func _decimalValue(text: String): Int {
-    if stringLength(text) == 0 {
-        return 0
-    }
-    var {sign, index}: Int = if charAt(text, 0) == '-' { {-1, 1} } else { {1, 0} }
+    if stringLength(text) == 0 then return 0
+    var {sign, index}: Int = if charAt(text, 0) == '-' then {-1, 1} else {1, 0}
     for value: Int in 0..<stringLength(text) {
         fin digit: Char = charAt(text, index)
-        if !isDigit(digit) {
-            return 0
-        }
+        if !isDigit(digit) then return 0
         value = value * 10 + (ord(digit) - ord('0'))
         index++
     }

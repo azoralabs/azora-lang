@@ -37,7 +37,7 @@ class SortStdlibTest {
             import std.io
 
             func main() {
-                fin values: Array<Int> = @arr[5, 3, 9, 1, 5, 8, 2]
+                fin values: Array<Int> = [5, 3, 9, 1, 5, 8, 2]
                 fin sorted: Array<Int> = sort<Int>(values)
                 var line = ""
                 for i in 0..<sorted.size {
@@ -62,7 +62,7 @@ class SortStdlibTest {
             import std.io
 
             func main() {
-                fin values: Array<Int> = @arr[4, 1, 7, 1, 9]
+                fin values: Array<Int> = [4, 1, 7, 1, 9]
                 fin down: Array<Int> = sortDescending<Int>(values)
                 var line = ""
                 for i in 0..<down.size {
@@ -119,7 +119,7 @@ class SortStdlibTest {
             func main() {
                 fin empty: Array<Int> = Array::fill<Int>(0)
                 println(sort<Int>(empty).size)
-                fin one: Array<Int> = @arr[42]
+                fin one: Array<Int> = [42]
                 fin sorted: Array<Int> = sort<Int>(one)
                 println(sorted.size)
                 println(sorted[0])

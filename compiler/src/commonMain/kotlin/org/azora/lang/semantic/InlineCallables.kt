@@ -166,10 +166,11 @@ object InlineCallables {
             is Stmt.LetDecl -> s.copy(initializer = expr(s.initializer))
             is Stmt.Assignment -> s.copy(value = expr(s.value))
             is Stmt.MemberAssign -> s.copy(target = expr(s.target), value = expr(s.value))
+            is Stmt.Exchange -> s.copy(left = expr(s.left), right = expr(s.right))
             is Stmt.IndexAssign -> s.copy(target = expr(s.target), index = expr(s.index), value = expr(s.value))
             is Stmt.If -> s.copy(condition = expr(s.condition), thenBranch = body(s.thenBranch), elseBranch = s.elseBranch?.let { body(it) })
             is Stmt.While -> s.copy(condition = expr(s.condition), body = body(s.body))
-            is Stmt.For -> s.copy(iterable = expr(s.iterable), body = body(s.body))
+            is Stmt.For -> s.copy(iterable = expr(s.iterable), step = s.step?.let(::expr), body = body(s.body))
             is Stmt.Loop -> s.copy(body = body(s.body))
             is Stmt.Scope -> s.copy(body = body(s.body))
             is Stmt.When -> s.copy(

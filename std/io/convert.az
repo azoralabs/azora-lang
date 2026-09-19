@@ -40,9 +40,7 @@ import std.container.array::*
  * @return The padded string.
  */
 @Experimental(since: "0.1")
-func<T> padLeft(s: T, count: Int, char: T): T {
-    return char * count + s
-}
+func<T> padLeft(s: T, count: Int, char: T): T = char * count + s
 
 /**
  * Pads a string on the right by appending characters.
@@ -53,9 +51,7 @@ func<T> padLeft(s: T, count: Int, char: T): T {
  * @return The padded string.
  */
 @Experimental(since: "0.1")
-func<T> padRight(s: T, count: Int, char: T): T {
-    return s + char * count
-}
+func<T> padRight(s: T, count: Int, char: T): T = s + char * count
 
 /**
  * Joins an array of strings with a separator.
@@ -66,10 +62,8 @@ func<T> padRight(s: T, count: Int, char: T): T {
  */
 @Experimental(since: "0.1")
 func<T> join(arr: Array<T>, sep: T): T {
-    if arr.size == 0 { return "" }
+    if arr.size == 0 then return ""
     var result = arr[0]
-    for i: Int in 1..<arr.size {
-        result = result + sep + arr[i]
-    }
+    for i: Int in 1..<arr.size then result += sep + arr[i]
     return result
 }

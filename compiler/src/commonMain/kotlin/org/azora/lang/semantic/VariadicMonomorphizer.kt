@@ -976,6 +976,7 @@ private class MonoContext(
             is Stmt.RemDecl -> stmt.copy(initializer = expr(stmt.initializer))
             is Stmt.Assignment -> stmt.copy(value = expr(stmt.value))
             is Stmt.InlineAssignment -> stmt.copy(value = expr(stmt.value))
+            is Stmt.Exchange -> stmt.copy(left = expr(stmt.left), right = expr(stmt.right))
             is Stmt.IndexAssign -> stmt.copy(target = expr(stmt.target), index = expr(stmt.index), value = expr(stmt.value))
             is Stmt.MemberAssign -> {
                 val folded = stmt.nameExpr?.let { n -> binding?.let { foldFieldNameExpr(n, it) } }
@@ -1800,6 +1801,7 @@ private class MonoContext(
         is Stmt.RemDecl -> { recordBinding(s.name, s.type, s.initializer); s.copy(type = rewriteTypeAnnotation(s.type), initializer = rewriteExpr(s.initializer)) }
         is Stmt.Assignment -> s.copy(value = rewriteExpr(s.value))
         is Stmt.InlineAssignment -> s.copy(value = rewriteExpr(s.value))
+        is Stmt.Exchange -> s.copy(left = rewriteExpr(s.left), right = rewriteExpr(s.right))
         is Stmt.IndexAssign -> s.copy(target = rewriteExpr(s.target), index = rewriteExpr(s.index), value = rewriteExpr(s.value))
         is Stmt.MemberAssign -> s.copy(target = rewriteExpr(s.target), value = rewriteExpr(s.value))
         is Stmt.DerefAssign -> s.copy(target = rewriteExpr(s.target), value = rewriteExpr(s.value))

@@ -84,10 +84,10 @@ bridge pack MlOptimizer
 func tensor(shape: Array<Int>, values: Array<Double>): Tensor {
     var expected = 1
     for i in 0..<shape.size {
-        assert shape[i] > 0 { "tensor dimensions must be positive" }
+        assert shape[i] > 0 panic "tensor dimensions must be positive"
         expected = expected * shape[i]
     }
-    assert expected == values.size { "tensor shape does not match values" }
+    assert expected == values.size panic "tensor shape does not match values"
     return Tensor(shape, values)
 }
 
@@ -102,7 +102,7 @@ func vector(values: Array<Double>): Tensor {
 /** Creates a zero-filled vector. */
 @Experimental(since: "0.1")
 func zeros(size: Int): Array<Double> {
-    assert size >= 0 { "zero vector size must be non-negative" }
+    assert size >= 0 panic "zero vector size must be non-negative"
     var result: Array<Double> = .() * size
     for i in 0..<size {
         result[i] = 0.0
@@ -113,7 +113,7 @@ func zeros(size: Int): Array<Double> {
 /** Creates a one-filled vector. */
 @Experimental(since: "0.1")
 func ones(size: Int): Array<Double> {
-    assert size >= 0 { "one vector size must be non-negative" }
+    assert size >= 0 panic "one vector size must be non-negative"
     var result: Array<Double> = .() * size
     for i in 0..<size {
         result[i] = 1.0
@@ -134,7 +134,7 @@ func relu(values: Array<Double>): Array<Double> {
 /** Computes numerically stable softmax probabilities. */
 @Experimental(since: "0.1")
 func softmax(values: Array<Double>): Array<Double> {
-    assert values.size > 0 { "softmax needs at least one value" }
+    assert values.size > 0 panic "softmax needs at least one value"
     var maximum = values[0]
     for i in 1..<values.size {
         if values[i] > maximum { maximum = values[i] }
@@ -154,7 +154,7 @@ func softmax(values: Array<Double>): Array<Double> {
 /** Returns the index of the largest value. */
 @Experimental(since: "0.1")
 func argmax(values: Array<Double>): Int {
-    assert values.size > 0 { "argmax needs at least one value" }
+    assert values.size > 0 panic "argmax needs at least one value"
     var best = 0
     for i in 1..<values.size {
         if values[i] > values[best] { best = i }
@@ -165,7 +165,7 @@ func argmax(values: Array<Double>): Int {
 /** Computes mean squared error over two equally sized vectors. */
 @Experimental(since: "0.1")
 func meanSquaredError(predicted: Array<Double>, target: Array<Double>): Double {
-    assert predicted.size == target.size { "metric vectors must have equal size" }
+    assert predicted.size == target.size panic "metric vectors must have equal size"
     if predicted.size == 0 { return 0.0 }
     var total = 0.0
     for i in 0..<predicted.size {
@@ -178,7 +178,7 @@ func meanSquaredError(predicted: Array<Double>, target: Array<Double>): Double {
 /** Computes classification accuracy over integer labels. */
 @Experimental(since: "0.1")
 func accuracy(predicted: Array<Int>, target: Array<Int>): Double {
-    assert predicted.size == target.size { "accuracy vectors must have equal size" }
+    assert predicted.size == target.size panic "accuracy vectors must have equal size"
     if predicted.size == 0 { return 0.0 }
     var correct = 0
     for i in 0..<predicted.size {
@@ -190,7 +190,7 @@ func accuracy(predicted: Array<Int>, target: Array<Int>): Double {
 /** Creates a backend dataset from paired tensors. */
 @Experimental(since: "0.1")
 func dataset(inputs: Array<Tensor>, targets: Array<Tensor>): Dataset {
-    assert inputs.size == targets.size { "dataset inputs and targets differ" }
+    assert inputs.size == targets.size panic "dataset inputs and targets differ"
     return Dataset(inputs, targets)
 }
 

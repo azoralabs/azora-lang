@@ -19,18 +19,18 @@ class ArrayStdlibTest {
     }
 
     @Test
-    fun arrayOfAndLiteralProduceEquivalentValues() {
+    fun annotatedAndInferredLiteralsProduceEquivalentValues() {
         val result = compile(
             """
             import std.container.array
             import std.io
 
             func main() {
-                fin factory: Array<Int> = arrayOf(1, 2, 3)
-                fin literal: Array<Int> = @arr[1, 2, 3]
-                println(factory.size)
-                println(factory[1])
-                unsafe { println(factory.data[1]) }
+                fin annotated: Array<Int> = [1, 2, 3]
+                fin literal = [1, 2, 3]
+                println(annotated.size)
+                println(annotated[1])
+                unsafe { println(annotated.data[1]) }
                 println(literal.size)
                 println(literal[1])
             }
@@ -56,8 +56,8 @@ class ArrayStdlibTest {
             }
 
             func main() {
-                println(first(@arr["a", "b"]))
-                println(last(arrayOf("a", "b")))
+                println(first(["a", "b"]))
+                println(last(["a", "b"]))
             }
             """,
         )
@@ -70,14 +70,14 @@ class ArrayStdlibTest {
     }
 
     @Test
-    fun arrayOfSupportsNestedHomogeneousArrays() {
+    fun literalsSupportNestedHomogeneousArrays() {
         val result = compile(
             """
             import std.container.array
             import std.io
 
             func main() {
-                fin rows: Array<Array<Int>> = arrayOf(@arr[1, 2], @arr[3, 4])
+                fin rows: Array<Array<Int>> = [[1, 2], [3, 4]]
                 println(rows[1][0])
             }
             """,
@@ -87,14 +87,14 @@ class ArrayStdlibTest {
     }
 
     @Test
-    fun arrayOfSupportsAnExplicitlyTypedEmptyArray() {
+    fun literalsSupportAnExplicitlyTypedEmptyArray() {
         val result = compile(
             """
             import std.container.array
             import std.io
 
             func main() {
-                fin values: Array<Int> = arrayOf<Int>()
+                fin values: Array<Int> = []
                 println(values.size)
             }
             """,
@@ -104,27 +104,27 @@ class ArrayStdlibTest {
     }
 
     @Test
-    fun arrayOfRejectsMixedElementTypes() {
+    fun literalsRejectIncompatibleElementTypes() {
         val mixed = Compiler().compile(
             """
             import std.container.array
 
             func main() {
-                fin values = arrayOf(1, "two")
+                fin values = [1, "two"]
             }
             """.trimIndent(),
             release = false,
         )
 
         assertIs<CompilationResult.Failure>(mixed)
-        assertTrue(mixed.errors.any { "must share a type" in it }, mixed.errors.toString())
+        assertTrue(mixed.errors.any { "collection element" in it }, mixed.errors.toString())
 
         val wrongExplicitType = Compiler().compile(
             """
             import std.container.array
 
             func main() {
-                fin values = arrayOf<String>(1, 2)
+                fin values: Array<String> = [1, 2]
             }
             """.trimIndent(),
             release = false,
@@ -132,7 +132,7 @@ class ArrayStdlibTest {
 
         assertIs<CompilationResult.Failure>(wrongExplicitType)
         assertTrue(
-            wrongExplicitType.errors.any { "must share a type" in it },
+            wrongExplicitType.errors.any { "collection element" in it },
             wrongExplicitType.errors.toString(),
         )
     }

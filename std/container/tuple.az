@@ -72,27 +72,25 @@ impl PrettyPrint for Tuple<...T> {
 
 test "() preserves heterogeneous values" {
     fin value = (1, "two", 3.0)
-    assert value.0 == 1 { "tuple first value changed" }
-    assert value.1 == "two" { "tuple second value changed" }
-    assert value.2 == 3.0 { "tuple third value changed" }
+    assert value.0 == 1 panic "tuple first value changed"
+    assert value.1 == "two" panic "tuple second value changed"
+    assert value.2 == 3.0 panic "tuple third value changed"
 }
 
 test "() supports nested tuples" {
     fin value = ((1, 2), "end")
-    assert value.0.0 == 1 && value.0.1 == 2 { "nested tuple values changed" }
-    assert value.1 == "end" { "outer tuple value changed" }
+    assert value.0.0 == 1 && value.0.1 == 2 panic "nested tuple values changed"
+    assert value.1 == "end" panic "outer tuple value changed"
 }
 
 test "tuple fields are fixed positional members" {
     fin value: Tuple<Int, String> = (7, "seven")
-    assert value.0 == 7 && value.1 == "seven" { "explicit Tuple type changed" }
+    assert value.0 == 7 && value.1 == "seven" panic "explicit Tuple type changed"
 }
 
 test "tuple string representation includes type and fields" {
     fin value = ("a", "b")
-    assert value as String == "Tuple<String, String>(\"a\", \"b\")" {
-        "tuple diagnostic representation changed"
-    }
+    assert value as String == "Tuple<String, String>(\"a\", \"b\")" panic "tuple diagnostic representation changed"
 }
 
 test .All "tuple"

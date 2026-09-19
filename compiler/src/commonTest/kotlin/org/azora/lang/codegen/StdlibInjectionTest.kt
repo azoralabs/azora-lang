@@ -264,9 +264,9 @@ class StdlibInjectionTest {
         assertEquals("3\n2\n2", run("""
             import std.io
             func main() {
-                var xs: List<Int> = @arr[1, 2, 3]
+                var xs: List<Int> = [1, 2, 3]
                 var entries: Map<String, Int> = ["a": 1, "b": 2]
-                var seen: Set<Int> = ![1, 2, 2]
+                var seen: Set<Int> = [1, 2, 2]
                 println(xs.size)
                 println(entries.size)
                 println(seen.size)

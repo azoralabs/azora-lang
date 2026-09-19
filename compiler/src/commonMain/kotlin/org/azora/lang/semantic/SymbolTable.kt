@@ -53,6 +53,8 @@ data class FunctionSymbol(
     val isBodyless: Boolean = false,
     /** Source return type retained for generic compile-time type-function evaluation. */
     val returnTypeRef: TypeRef? = null,
+    /** Source parameter types before owner type parameters are erased. */
+    val paramTypeRefs: List<TypeRef> = emptyList(),
     val isReactive: Boolean = false,
     /**
      * Indices of parameters declared `x!` - an exclusive borrow the callee may
@@ -100,6 +102,8 @@ data class VariableSymbol(
     val mutable: Boolean = true,
     val visibility: Visibility = Visibility.PUBLIC,
     val valueMutable: Boolean = true,
+    /** Lazy/reactive storage has observable access behavior, unlike a plain slot. */
+    val hasStorageEffects: Boolean = false,
 )
 
 /**

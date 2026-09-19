@@ -81,7 +81,7 @@ fin EPSILON: Double = 0.00000000000001
 @Experimental(since: "0.1")
 func<T> abs(x: T): T
 out {
-    assert it >= 0 { "abs must return non-negative" }
+    assert it >= 0 panic "abs must return non-negative"
 } scope {
     return if x < 0 { -x } else { x }
 }
@@ -121,7 +121,7 @@ func<T> max(a: T, b: T): T {
 @Experimental(since: "0.1")
 func<T> clamp(x: T, lo: T, hi: T): T
 in {
-    assert lo <= hi { "clamp lower bound must be <= upper bound" }
+    assert lo <= hi panic "clamp lower bound must be <= upper bound"
 } scope {
     return max<T>(lo, min<T>(x, hi))
 }
@@ -148,8 +148,8 @@ func<T> sign(x: T): Int {
 @Experimental(since: "0.1")
 func lerp(a: Double, b: Double, t: Double): Double
 in {
-    assert t >= 0.0 { "lerp factor must be >= 0.0" }
-    assert t <= 1.0 { "lerp factor must be <= 1.0" }
+    assert t >= 0.0 panic "lerp factor must be >= 0.0"
+    assert t <= 1.0 panic "lerp factor must be <= 1.0"
 } scope {
     return a + (b - a) * t
 }
@@ -213,7 +213,7 @@ func frac(x: Double): Double {
 @Experimental(since: "0.1")
 func mapRange(x: Double, inMin: Double, inMax: Double, outMin: Double, outMax: Double): Double
 in {
-    assert inMax != inMin { "Input range must not be zero-width" }
+    assert inMax != inMin panic "Input range must not be zero-width"
 } scope {
     return outMin + (x - inMin) * (outMax - outMin) / (inMax - inMin)
 }
@@ -229,7 +229,7 @@ in {
 @Experimental(since: "0.1")
 func approxEqual(a: Double, b: Double, epsilon: Double): Bool
 in {
-    assert epsilon > 0.0 { "epsilon must be positive" }
+    assert epsilon > 0.0 panic "epsilon must be positive"
 } scope {
     var diff = a - b
     if diff < 0.0 { diff = -diff }
@@ -246,7 +246,7 @@ in {
 @Experimental(since: "0.1")
 func<T> pow(value: T, exp: Int): T
 in {
-    assert exp >= 0 { "Exponent must be non-negative" }
+    assert exp >= 0 panic "Exponent must be non-negative"
 } scope {
     if exp == 0 { return 1 }
     var result = value
@@ -265,9 +265,9 @@ in {
 @Experimental(since: "0.1")
 func<T> factorial(n: T): T
 in {
-    assert n >= 0 { "Factorial requires non-negative input" }
+    assert n >= 0 panic "Factorial requires non-negative input"
 } out {
-    assert it >= 1 { "Factorial result must be >= 1" }
+    assert it >= 1 panic "Factorial result must be >= 1"
 } scope {
     if n <= 1 { return 1 }
     var result = 1
@@ -289,7 +289,7 @@ in {
 @Experimental(since: "0.1")
 func<T> gcd(a: T, b: T): T
 out {
-    assert it >= 0 { "GCD must be non-negative" }
+    assert it >= 0 panic "GCD must be non-negative"
 } scope {
     var x = a
     if x < 0 { x = -x }
@@ -313,7 +313,7 @@ out {
 @Experimental(since: "0.1")
 func<T> lcm(a: T, b: T): T
 out {
-    assert it >= 0 { "LCM must be non-negative" }
+    assert it >= 0 panic "LCM must be non-negative"
 } scope {
     if a == 0 || b == 0 { return 0 }
     var absA = a
@@ -404,9 +404,9 @@ func<T> product(arr: Array<T>): T {
 @Experimental(since: "0.1")
 func<T> fib(n: T): T
 in {
-    assert n >= 0 { "Fibonacci requires non-negative input" }
+    assert n >= 0 panic "Fibonacci requires non-negative input"
 } out {
-    assert it >= 0 { "Fibonacci result must be non-negative" }
+    assert it >= 0 panic "Fibonacci result must be non-negative"
 } scope {
     if n == 0 || n == 1 { return n }
     var a = 0
@@ -430,7 +430,7 @@ in {
 @Experimental(since: "0.1")
 func isPrime(n: Int): Bool
 in {
-    assert n >= 0 { "isPrime requires non-negative input" }
+    assert n >= 0 panic "isPrime requires non-negative input"
 } scope {
     if n < 2 { return false }
     if n < 4 { return true }
@@ -454,7 +454,7 @@ in {
 @Experimental(since: "0.1")
 func average(arr: Array<Int>): Double
 in {
-    assert arr.size > 0 { "Input must not be empty" }
+    assert arr.size > 0 panic "Input must not be empty"
 } scope {
     var total = 0
     for i in 0..<arr.size {
@@ -473,9 +473,9 @@ in {
 @Experimental(since: "0.1")
 func choose(n: Int, k: Int): Int
 in {
-    assert n >= 0 { "n must be non-negative" }
-    assert k >= 0 { "k must be non-negative" }
-    assert k <= n { "k must be <= n" }
+    assert n >= 0 panic "n must be non-negative"
+    assert k >= 0 panic "k must be non-negative"
+    assert k <= n panic "k must be <= n"
 } scope {
     if k == 0 || k == n { return 1 }
     var result = 1
@@ -498,9 +498,9 @@ in {
 @Experimental(since: "0.1")
 func isqrt(n: Int): Int
 in {
-    assert n >= 0 { "isqrt requires non-negative input" }
+    assert n >= 0 panic "isqrt requires non-negative input"
 } out {
-    assert it * it <= n { "isqrt result squared must be <= n" }
+    assert it * it <= n panic "isqrt result squared must be <= n"
 } scope {
     if n == 0 { return 0 }
     var x = n

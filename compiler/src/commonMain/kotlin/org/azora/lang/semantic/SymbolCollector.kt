@@ -522,6 +522,7 @@ class SymbolCollector {
                                 visibility = method.visibility,
                                 memberCallStyle = declaredStyle ?: method.memberCallStyle,
                                 returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
+                                paramTypeRefs = listOf(selfRef) + method.params.map { it.type },
                                 isBodyless = method.body.isEmpty(),
                                 contextualParams = method.contextualParams,
                             ))
@@ -585,6 +586,8 @@ class SymbolCollector {
                                     // satisfied by any number of arguments, none
                                     // included, exactly as a variadic `func` is.
                                     isVariadic = method.params.lastOrNull()?.variadic == true,
+                                    returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref ?: selfRef,
+                                    paramTypeRefs = method.params.map { it.type },
                                     visibility = method.visibility,
                                     contextualParams = method.contextualParams,
                                     // A ctor takes named arguments and fills what

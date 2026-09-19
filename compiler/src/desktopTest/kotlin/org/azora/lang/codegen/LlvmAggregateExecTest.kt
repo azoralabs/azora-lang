@@ -164,7 +164,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            fin x = @arr[1, 2, 3, 4]
+            fin x = [1, 2, 3, 4]
             println(x[2])
             println(x.size)
         }
@@ -176,7 +176,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var x = @arr[1, 2, 3]
+            var x = [1, 2, 3]
             x[1] = 9
             println(x[1])
         }
@@ -205,7 +205,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var nums = @arr[1, 2, 3, 4]
+            var nums = [1, 2, 3, 4]
             var sum = 0
             for n in nums {
                 sum = sum + n
@@ -220,7 +220,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var names = @arr["red", "green", "blue"]
+            var names = ["red", "green", "blue"]
             for name in names {
                 println(name)
             }
@@ -233,7 +233,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var x = @arr[10, 20, 30]
+            var x = [10, 20, 30]
             x.add(40)
             println(x.size)
             println(x[3])
@@ -246,7 +246,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var x = @arr[10, 20, 30]
+            var x = [10, 20, 30]
             x.add(x.size)
             println(x[3])
         }
@@ -261,7 +261,7 @@ class LlvmAggregateExecTest {
             var values: Array<Int>
         }
         func main() {
-            var bucket = Bucket(@arr[10, 20])
+            var bucket = Bucket([10, 20])
             bucket.values.add(30)
             println(bucket.values.size)
             println(bucket.values[2])
@@ -275,7 +275,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var x = @arr[1]
+            var x = [1]
             println(x.isEmpty)
             println(x.isNotEmpty)
         }
@@ -287,7 +287,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var nums = @arr[1, 2, 3]
+            var nums = [1, 2, 3]
             var words = ["one", "two"]
             println(nums.contains(2))
             println(nums.contains(9))
@@ -307,7 +307,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            var xs = @arr[10, 20, 30, 40]
+            var xs = [10, 20, 30, 40]
             xs.remove(1)
             var i = 0
             while i < xs.size {
@@ -331,7 +331,7 @@ class LlvmAggregateExecTest {
         import std.io
         import std.container.tuple
         func main() {
-            fin rows = @arr[tupleOf(1, "a"), tupleOf(2, "b")]
+            fin rows = [tupleOf(1, "a"), tupleOf(2, "b")]
             for [n, s] in rows {
                 println("${'$'}{n} ${'$'}{s}")
             }
@@ -367,8 +367,9 @@ class LlvmAggregateExecTest {
         "one\ntwo",
         """
         import std.io
+        import std.container.map
         func main() {
-            var values = @map[1: "one", 2: "two"]
+            var values: Map<Int, String> = [1: "one", 2: "two"]
             println(values[1])
             println(values[2])
         }
@@ -391,8 +392,9 @@ class LlvmAggregateExecTest {
         "3\n30",
         """
         import std.io
+        import std.container.map
         func main() {
-            var values = @map[1: 10, 2: 20]
+            var values: MutableMap<Int, Int> = [1: 10, 2: 20]
             values[3] = 30
             println(values[3] / 10)
             println(values[3])
@@ -418,7 +420,7 @@ class LlvmAggregateExecTest {
         import std.io
         import std.container.map
         func main() {
-            var values = @map!["a": 1, "b": 2]
+            var values: MutableMap<String, Int> = ["a": 1, "b": 2]
             println(values.size)
             println(values.isEmpty)
             values.clear()
@@ -449,7 +451,7 @@ class LlvmAggregateExecTest {
         "6",
         """
         import std.io
-        fin values = @arr[1, 2, 3]
+        fin values = [1, 2, 3]
         func main() {
             println(values[0] + values[1] + values[2])
         }
@@ -471,8 +473,9 @@ class LlvmAggregateExecTest {
         "3\ntrue\nfalse",
         """
         import std.io
+        import std.container.set
         func main() {
-            var values = ![1, 2, 2, 3, 1]
+            var values: MutableSet<Int> = [1, 2, 2, 3, 1]
             println(values.size)
             println(values.contains(2))
             println(values.contains(9))
@@ -484,8 +487,9 @@ class LlvmAggregateExecTest {
         "2",
         """
         import std.io
+        import std.container.set
         func main() {
-            var values: Set<Int> = ![10, 20]
+            var values: Set<Int> = [10, 20]
             println(values.size)
         }
         """.trimIndent()
@@ -495,9 +499,12 @@ class LlvmAggregateExecTest {
         "3\n2\n2",
         """
         import std.io
+        import std.container.list
+        import std.container.map
+        import std.container.set
         func main() {
-            var numbers: List<Int> = @arr[10, 20, 30]
-            var unique: Set<Int> = ![1, 2, 2]
+            var numbers: List<Int> = [10, 20, 30]
+            var unique: Set<Int> = [1, 2, 2]
             var names: Map<String, Int> = ["a": 1, "b": 2]
             println(numbers.size)
             println(unique.size)
@@ -510,8 +517,9 @@ class LlvmAggregateExecTest {
         "true\nfalse\n3",
         """
         import std.io
+        import std.container.set
         func main() {
-            var values = ![1, 2]
+            var values: MutableSet<Int> = [1, 2]
             println(values.add(3))
             println(values.add(2))
             println(values.size)
@@ -523,8 +531,9 @@ class LlvmAggregateExecTest {
         "true\nfalse\n2\n1\n3",
         """
         import std.io
+        import std.container.set
         func main() {
-            var values = ![1, 2, 3]
+            var values: MutableSet<Int> = [1, 2, 3]
             println(values.remove(2))
             println(values.remove(9))
             println(values.size)
@@ -541,7 +550,7 @@ class LlvmAggregateExecTest {
         import std.io
         import std.container.set
         func main() {
-            var values = @set![1, 2]
+            var values: MutableSet<Int> = [1, 2]
             println(values.isEmpty)
             values.clear()
             println(values.isEmpty)
@@ -554,8 +563,9 @@ class LlvmAggregateExecTest {
         "2\nfalse\ntrue",
         """
         import std.io
+        import std.container.set
         func main() {
-            var values = !["ab", "cd"]
+            var values: MutableSet<String> = ["ab", "cd"]
             let dynamic = "a" + "b"
             println(values.size)
             println(values.add(dynamic))
@@ -568,8 +578,9 @@ class LlvmAggregateExecTest {
         "6",
         """
         import std.io
+        import std.container.set
         func main() {
-            var values = ![1, 2, 3, 2]
+            var values: MutableSet<Int> = [1, 2, 3, 2]
             var total = 0
             for value in values {
                 total = total + value
@@ -583,13 +594,14 @@ class LlvmAggregateExecTest {
         "3\n4\n2\ntrue",
         """
         import std.io
+        import std.container.set
         func main() {
-            var array = @arr[Cent(1), Cent(2)]
+            var array = [Cent(1), Cent(2)]
             array.add(Cent(3))
             println(array[2])
             var map = ["value": Cent(4)]
             println(map["value"])
-            var set = ![Cent(1), Cent(1), Cent(2)]
+            var set: Set<Cent> = [Cent(1), Cent(1), Cent(2)]
             println(set.size)
             println(set.contains(Cent(2)))
         }
@@ -600,7 +612,8 @@ class LlvmAggregateExecTest {
         "3\ntrue",
         """
         import std.io
-        fin values = ![1, 2, 2, 3]
+        import std.container.set
+        fin values: Set<Int> = [1, 2, 2, 3]
         func main() {
             println(values.size)
             println(values.contains(3))
@@ -613,7 +626,7 @@ class LlvmAggregateExecTest {
         """
         import std.io
         func main() {
-            fin arr = @arr[0.5, 1.5, 2.5]
+            fin arr = [0.5, 1.5, 2.5]
             var sum = 0.0
             var i = 0
             while i < arr.size {

@@ -19,7 +19,7 @@ class FunctionReceiverSyntaxTest {
     private fun parse(source: String): Program = Parser(Lexer(source).tokenize()).parse()
 
     @Test
-    fun bracketReceiverIsAccepted() {
+    fun prefixReceiverIsAccepted() {
         val program = parse(
             """
             pack Language {

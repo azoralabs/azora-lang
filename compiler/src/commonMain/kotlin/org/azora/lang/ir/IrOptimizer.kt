@@ -79,10 +79,11 @@ class IrOptimizer {
         is IrStmt.Assert -> stmt.copy(condition = foldExpr(stmt.condition), message = foldExpr(stmt.message))
         is IrStmt.Trace -> stmt.copy(level = foldExpr(stmt.level), message = foldExpr(stmt.message))
         is IrStmt.While -> stmt.copy(condition = foldExpr(stmt.condition), body = stmt.body.map { foldStmt(it) })
-        is IrStmt.For -> stmt.copy(start = foldExpr(stmt.start), end = foldExpr(stmt.end), body = stmt.body.map { foldStmt(it) })
+        is IrStmt.For -> stmt.copy(start = foldExpr(stmt.start), end = foldExpr(stmt.end), step = stmt.step?.let(::foldExpr), body = stmt.body.map { foldStmt(it) })
         is IrStmt.Loop -> stmt.copy(body = stmt.body.map { foldStmt(it) })
         is IrStmt.Break -> stmt
         is IrStmt.Continue -> stmt
+        is IrStmt.Exchange -> stmt
         is IrStmt.IndexAssign -> stmt.copy(target = foldExpr(stmt.target), index = foldExpr(stmt.index), value = foldExpr(stmt.value))
         is IrStmt.MemberAssign -> stmt.copy(target = foldExpr(stmt.target), value = foldExpr(stmt.value))
         is IrStmt.Yield -> stmt.copy(value = foldExpr(stmt.value))
@@ -228,6 +229,11 @@ class IrOptimizer {
      */
     private fun propagateStmts(stmts: List<IrStmt>, constants: MutableMap<String, IrExpr>): List<IrStmt> {
         return stmts.map { stmt ->
+            // An increment can be nested in any expression, including a call
+            // argument or a loop condition. Its target remains a storage
+            // location, and reads of that binding cannot use an old constant.
+            forEachIncrement(stmt) { constants.remove(it.target.name) }
+            invalidate(constants, collectExchanged(stmt))
             // A closure that captures by reference may write the original binding
             // whenever it is called, which is not a write this pass can see. Its
             // referenced captures therefore stop being known constants here - a
@@ -326,13 +332,14 @@ class IrOptimizer {
                 }
                 is IrStmt.For -> {
                     // The counter and any body-assigned variables vary per iteration.
-                    val assigned = collectAssigned(stmt.body) + stmt.counter
+                    val assigned = collectAssigned(stmt.body) + stmt.counter + listOfNotNull(stmt.indexName)
                     val start = foldExpr(propagateExpr(stmt.start, constants))
                     val end = foldExpr(propagateExpr(stmt.end, constants))
                     val inner = constants.toMutableMap().also { invalidate(it, assigned) }
                     val result = stmt.copy(
                         start = start,
                         end = end,
+                        step = stmt.step?.let { foldExpr(propagateExpr(it, constants)) },
                         body = propagateStmts(stmt.body, inner)
                     )
                     invalidate(constants, assigned)
@@ -347,6 +354,7 @@ class IrOptimizer {
                 }
                 is IrStmt.Break -> stmt
                 is IrStmt.Continue -> stmt
+                is IrStmt.Exchange -> stmt
                 is IrStmt.IndexAssign -> stmt.copy(
                     target = foldExpr(propagateExpr(stmt.target, constants)),
                     index = foldExpr(propagateExpr(stmt.index, constants)),
@@ -445,6 +453,8 @@ class IrOptimizer {
             }
         }
         stmts.forEach(::visit)
+        stmts.forEach { assigned.addAll(collectExchanged(it)) }
+        stmts.forEach { stmt -> forEachIncrement(stmt) { assigned.add(it.target.name) } }
         return assigned
     }
 
@@ -467,6 +477,38 @@ class IrOptimizer {
     /** Set while [forEachLambda] is walking; notified for each lambda found. */
     private var lambdaSink: ((IrExpr.Lambda) -> Unit)? = null
 
+    private var exchangeSink: ((IrStmt.Exchange) -> Unit)? = null
+
+    private fun collectExchanged(stmt: IrStmt): Set<String> {
+        val names = mutableSetOf<String>()
+        fun root(place: IrExpr): String? = when (place) {
+            is IrExpr.Var -> place.name
+            is IrExpr.Member -> root(place.target)
+            is IrExpr.Index -> root(place.target)
+            else -> null
+        }
+        val saved = exchangeSink
+        exchangeSink = { exchange ->
+            root(exchange.left)?.let(names::add)
+            root(exchange.right)?.let(names::add)
+        }
+        try { collectReferencedNamesFromStmt(stmt, mutableSetOf()) }
+        finally { exchangeSink = saved }
+        return names
+    }
+
+    private var incrementSink: ((IrExpr.IncDec) -> Unit)? = null
+
+    private fun forEachIncrement(stmt: IrStmt, action: (IrExpr.IncDec) -> Unit) {
+        val saved = incrementSink
+        incrementSink = action
+        try {
+            collectReferencedNamesFromStmt(stmt, mutableSetOf())
+        } finally {
+            incrementSink = saved
+        }
+    }
+
     private fun propagateExpr(expr: IrExpr, constants: Map<String, IrExpr>): IrExpr = when (expr) {
         is IrExpr.Var -> constants[expr.name] ?: expr
         is IrExpr.Binary -> expr.copy(
@@ -474,7 +516,7 @@ class IrOptimizer {
             right = propagateExpr(expr.right, constants)
         )
         is IrExpr.Unary -> expr.copy(operand = propagateExpr(expr.operand, constants))
-        is IrExpr.IncDec -> expr.copy(target = propagateExpr(expr.target, constants) as IrExpr.Var)
+        is IrExpr.IncDec -> expr // a writable location must never become a literal
         is IrExpr.EnumToString -> expr.copy(value = propagateExpr(expr.value, constants))
         is IrExpr.Call -> expr.copy(args = expr.args.map { propagateExpr(it, constants) }, receiver = expr.receiver?.let { propagateExpr(it, constants) })
         is IrExpr.IfExpr -> expr.copy(
@@ -765,6 +807,7 @@ class IrOptimizer {
             is IrStmt.For -> {
                 collectReferencedNamesFromExpr(stmt.start, names)
                 collectReferencedNamesFromExpr(stmt.end, names)
+                stmt.step?.let { collectReferencedNamesFromExpr(it, names) }
                 stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
             }
             is IrStmt.ForEach -> {
@@ -774,6 +817,7 @@ class IrOptimizer {
             is IrStmt.Loop -> stmt.body.forEach { collectReferencedNamesFromStmt(it, names) }
             is IrStmt.Break -> {}
             is IrStmt.Continue -> {}
+            is IrStmt.Exchange -> { exchangeSink?.invoke(stmt); collectReferencedNamesFromExpr(stmt.left, names); collectReferencedNamesFromExpr(stmt.right, names) }
             is IrStmt.IndexAssign -> {
                 collectReferencedNamesFromExpr(stmt.target, names)
                 collectReferencedNamesFromExpr(stmt.index, names)
@@ -816,7 +860,10 @@ class IrOptimizer {
                 collectReferencedNamesFromExpr(expr.right, names)
             }
             is IrExpr.Unary -> collectReferencedNamesFromExpr(expr.operand, names)
-            is IrExpr.IncDec -> collectReferencedNamesFromExpr(expr.target, names)
+            is IrExpr.IncDec -> {
+                incrementSink?.invoke(expr)
+                collectReferencedNamesFromExpr(expr.target, names)
+            }
             is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
             is IrExpr.SetLit -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
             is IrExpr.Index -> {
@@ -902,6 +949,7 @@ class IrOptimizer {
             is IrStmt.For -> {
                 collectReferencedNamesFromExpr(stmt.start, names)
                 collectReferencedNamesFromExpr(stmt.end, names)
+                stmt.step?.let { collectReferencedNamesFromExpr(it, names) }
                 stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
             }
             is IrStmt.ForEach -> {
@@ -911,6 +959,7 @@ class IrOptimizer {
             is IrStmt.Loop -> stmt.body.forEach { collectReferencedVarNamesFromStmt(it, names) }
             is IrStmt.Break -> {}
             is IrStmt.Continue -> {}
+            is IrStmt.Exchange -> { exchangeSink?.invoke(stmt); collectReferencedNamesFromExpr(stmt.left, names); collectReferencedNamesFromExpr(stmt.right, names) }
             is IrStmt.IndexAssign -> {
                 collectReferencedNamesFromExpr(stmt.target, names)
                 collectReferencedNamesFromExpr(stmt.index, names)

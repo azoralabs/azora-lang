@@ -200,12 +200,14 @@ class AllocDropAnalyzer {
                 } else {
                     collectUsedVars(stmt.iterable, used)
                 }
+                stmt.step?.let { collectUsedVars(it, used) }
                 defined.add(stmt.name)
                 stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
             }
             is Stmt.Loop -> stmt.body.forEach { analyzeStmt(it, defined, used, errors) }
             is Stmt.Break -> {}
             is Stmt.Continue -> {}
+            is Stmt.Exchange -> { collectUsedVars(stmt.left, used); collectUsedVars(stmt.right, used) }
             is Stmt.IndexAssign -> {
                 collectUsedVars(stmt.target, used)
                 collectUsedVars(stmt.index, used)

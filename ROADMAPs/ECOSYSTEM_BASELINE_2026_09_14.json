@@ -1,0 +1,2764 @@
+{
+  "date": "2026-09-14",
+  "command": "./gradlew :compiler:desktopTest --offline --console=plain",
+  "scope": "Complete compiler suite after contextual arrays, global initializer validation, numeric classification/canonicalization and collection fixture migrations. List/Set/Map literal factories remain pending.",
+  "totals": {
+    "tests": 2280,
+    "failures": 205,
+    "errors": 0,
+    "skipped": 0
+  },
+  "classification_note": "Observed failures, not independent root causes. Diagnostics are limited to 3,000 characters; rerun the recorded command for full reports. Renamed or replaced tests are reported separately from previous failures now passing.",
+  "comparison_to_2026_09_10": {
+    "previous_failures_now_passing": [
+      {
+        "suite": "ArrayStdlibTest[desktop]",
+        "test": "arrayTypeSugarIsCanonicalAcrossFunctionBoundaries[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayAddGrows[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayAddThenRead[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayIndexRead[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayIndexWrite[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayIsEmpty[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayIsNotEmpty[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayIterationWithFor[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayLiteralAndLength[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayLoweredToAllBackends[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayOperationsSurviveOptimization[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayReturnedFromFunction[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "arrayTypedAnnotation[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "compoundIndexAssignment[desktop]"
+      },
+      {
+        "suite": "ArrayTest[desktop]",
+        "test": "nestedArrays[desktop]"
+      },
+      {
+        "suite": "BindingMutabilityTest[desktop]",
+        "test": "indexAssignmentFollowsTheValueAxis[desktop]"
+      },
+      {
+        "suite": "CodegenGoldenTest[desktop]",
+        "test": "wasmAggregateStructure[desktop]"
+      },
+      {
+        "suite": "ConstGenericArrayTest[desktop]",
+        "test": "literalInfersItsSize[desktop]"
+      },
+      {
+        "suite": "ConstGenericArrayTest[desktop]",
+        "test": "sizedArrayTypeHoldsCompileTimeSize[desktop]"
+      },
+      {
+        "suite": "ConstGenericArrayTest[desktop]",
+        "test": "unsizedSlotAcceptsSizedArray[desktop]"
+      },
+      {
+        "suite": "ForExpressionTest[desktop]",
+        "test": "anIterationMayAnswerFromEitherBranch[desktop]"
+      },
+      {
+        "suite": "ForExpressionTest[desktop]",
+        "test": "answeringEndsTheLoop[desktop]"
+      },
+      {
+        "suite": "ForExpressionTest[desktop]",
+        "test": "theAnswerIsTheValueAnIterationEndsIn[desktop]"
+      },
+      {
+        "suite": "ForExpressionTest[desktop]",
+        "test": "theElseIsTheAnswerWhenNoIterationProducesOne[desktop]"
+      },
+      {
+        "suite": "GpuStdlibTest[desktop]",
+        "test": "geometryAndComputeArtifactsRemainInspectable[desktop]"
+      },
+      {
+        "suite": "ImplMethodTest[desktop]",
+        "test": "methodOnStructInArray[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayAddEvaluatesArgumentBeforeGrowth[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayAddUpdatesLengthAndStoresElement[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayAddWritesGrownBufferBackToPackField[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayContainsScalarsAndStrings[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayForEachStrings[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayForEachSum[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayIndexAssignment[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayLiteralIndexAndLength[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "arrayRemoveDropsByIndexAndIgnoresOutOfRange[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "globalArrayInitializerRunsBeforeMain[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "realArraySumViaLoop[desktop]"
+      },
+      {
+        "suite": "LlvmRegressionExecTest[desktop]",
+        "test": "taskThreadsInitializeThreadLocalAggregates[desktop]"
+      },
+      {
+        "suite": "LoopTest[desktop]",
+        "test": "reverseFunctionCall[desktop]"
+      },
+      {
+        "suite": "MacroTest[desktop]",
+        "test": "allThreeDelimitersAreEquivalent[desktop]"
+      },
+      {
+        "suite": "MacroTest[desktop]",
+        "test": "expandedProgramContainsNoMacroNodes[desktop]"
+      },
+      {
+        "suite": "MacroTest[desktop]",
+        "test": "nestedMacroExpandsRecursively[desktop]"
+      },
+      {
+        "suite": "MacroTest[desktop]",
+        "test": "userMacroSplicesCaptureIntoMultiplePositions[desktop]"
+      },
+      {
+        "suite": "PackTest[desktop]",
+        "test": "structStoredInArray[desktop]"
+      },
+      {
+        "suite": "PlaygroundExamplesTest[desktop]",
+        "test": "arrays[desktop]"
+      },
+      {
+        "suite": "PlaygroundExamplesTest[desktop]",
+        "test": "structs[desktop]"
+      },
+      {
+        "suite": "SignatureAccessCheckerTest[desktop]",
+        "test": "aCallInsideABlockIsRejected[desktop]"
+      },
+      {
+        "suite": "StdlibMethodsTest[desktop]",
+        "test": "arrayContains[desktop]"
+      },
+      {
+        "suite": "StdlibMethodsTest[desktop]",
+        "test": "arrayInsertRemove[desktop]"
+      },
+      {
+        "suite": "StdlibMethodsTest[desktop]",
+        "test": "forInArraySum[desktop]"
+      },
+      {
+        "suite": "StdlibMethodsTest[desktop]",
+        "test": "forInArray[desktop]"
+      },
+      {
+        "suite": "StringInterpolationTest[desktop]",
+        "test": "interpolationWithArrayIndex[desktop]"
+      },
+      {
+        "suite": "Tier1PolishTest[desktop]",
+        "test": "mapLiteralWithIntKeys[desktop]"
+      },
+      {
+        "suite": "UnsafeFieldTest[desktop]",
+        "test": "aSafeMemberBesideItIsUnaffected[desktop]"
+      },
+      {
+        "suite": "VariadicGenericsTest[desktop]",
+        "test": "spreadOperatorInCall[desktop]"
+      },
+      {
+        "suite": "VariadicLambdaTest[desktop]",
+        "test": "regularLambdaForLocalScoping[desktop]"
+      },
+      {
+        "suite": "WasmCodegenExecTest[desktop]",
+        "test": "arrayIndexAndLength[desktop]"
+      },
+      {
+        "suite": "WebsiteExamplesTest[desktop]",
+        "test": "ch10_structs_in_array[desktop]"
+      },
+      {
+        "suite": "WebsiteExamplesTest[desktop]",
+        "test": "ch26_maps_int_keys[desktop]"
+      },
+      {
+        "suite": "WebsiteExamplesTest[desktop]",
+        "test": "ch6_interpolation[desktop]"
+      },
+      {
+        "suite": "WebsiteExamplesTest[desktop]",
+        "test": "ch7_arrays[desktop]"
+      },
+      {
+        "suite": "WebsiteExamplesTest[desktop]",
+        "test": "ch7_iteration[desktop]"
+      }
+    ],
+    "previous_failure_ids_no_longer_present": [
+      {
+        "suite": "ArrayStdlibExecTest[desktop]",
+        "test": "arrayOfRunsViaLlvm[desktop]"
+      },
+      {
+        "suite": "ArrayStdlibExecTest[desktop]",
+        "test": "arrayOfRunsViaWasm[desktop]"
+      },
+      {
+        "suite": "ArrayStdlibTest[desktop]",
+        "test": "arrayOfAndLiteralProduceEquivalentValues[desktop]"
+      },
+      {
+        "suite": "ArrayStdlibTest[desktop]",
+        "test": "arrayOfRejectsMixedElementTypes[desktop]"
+      },
+      {
+        "suite": "ArrayStdlibTest[desktop]",
+        "test": "arrayOfSupportsAnExplicitlyTypedEmptyArray[desktop]"
+      },
+      {
+        "suite": "ArrayStdlibTest[desktop]",
+        "test": "arrayOfSupportsNestedHomogeneousArrays[desktop]"
+      },
+      {
+        "suite": "MacroTest[desktop]",
+        "test": "setTupleArrMacrosExpandToConstructors[desktop]"
+      },
+      {
+        "suite": "MacroTest[desktop]",
+        "test": "vecMacroEmptyArmExpandsToEmptyList[desktop]"
+      },
+      {
+        "suite": "MacroTest[desktop]",
+        "test": "vecMacroExpandsToListOf[desktop]"
+      }
+    ],
+    "new_failing_ids": [
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "globalSetInitializerRunsBeforeMain[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "setAddReturnsWhetherInserted[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "setForEachSum[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "setLiteralDeduplicatesElements[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "setRemoveReturnsWhetherRemoved[desktop]"
+      },
+      {
+        "suite": "LlvmAggregateExecTest[desktop]",
+        "test": "setStringEqualityUsesContents[desktop]"
+      }
+    ]
+  },
+  "suites": [
+    {
+      "suite": "Binary128Test[desktop]",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WideIntTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "AiMlStdlibTest[desktop]",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ArgumentBindingTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ArrayStdlibExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ArrayStdlibTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ArrayTest[desktop]",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "AssertionNativeExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "AssertionSemanticsTest[desktop]",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "BindingMutabilityTest[desktop]",
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "BridgeForeignNameMacroTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CallArgumentTest[desktop]",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CastIsLambdaTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CastSpecTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CodegenGoldenTest[desktop]",
+      "tests": 4,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CollectionCtorTest[desktop]",
+      "tests": 12,
+      "failures": 7,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ComparisonOperatorTest[desktop]",
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CompoundAssignOperatorTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ConditionalEffectTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ConstGenericArrayTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ContainerStdlibTest[desktop]",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ContextualArrayLiteralExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ContextualArrayLiteralTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ContractsTest[desktop]",
+      "tests": 7,
+      "failures": 7,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ConvertSpecTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CtorOverloadTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DebugModeTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DecimalStdlibTest[desktop]",
+      "tests": 6,
+      "failures": 6,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DeferTypeAliasTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DelayExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DisplaySpecTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "EngineArchitectureSyntaxTest[desktop]",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "EnumWhenTest[desktop]",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ErrorHandlingTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ErrorTransportExecTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ExchangeExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ExchangeSemanticsTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Feature003SyntaxTest[desktop]",
+      "tests": 18,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "FileOnlyIrTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "tests": 15,
+      "failures": 15,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ForExpressionTest[desktop]",
+      "tests": 9,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "GenericRealTest[desktop]",
+      "tests": 8,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "GenericsTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "GpuStdlibTest[desktop]",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "IgnoredParameterTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ImplMethodTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "IncrementExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "IncrementSemanticsTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "InfixFunctionsTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "IrSymbolCanonicalizerTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "KeywordReservationTest[desktop]",
+      "tests": 7,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LambdaCaptureTest[desktop]",
+      "tests": 45,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LambdaTest[desktop]",
+      "tests": 36,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "tests": 43,
+      "failures": 15,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LlvmCaptureParityTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LlvmCodegenExecTest[desktop]",
+      "tests": 76,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LlvmLambdaExecTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LlvmOptimizedExecTest[desktop]",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LlvmRegressionExecTest[desktop]",
+      "tests": 21,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LlvmStdlibExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LlvmTypeOperationMatrixExecTest[desktop]",
+      "tests": 249,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LoopTest[desktop]",
+      "tests": 16,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "MacroTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "MemberSequenceSemanticsTest[desktop]",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "MetaprogrammingTest[desktop]",
+      "tests": 4,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ModulesTest[desktop]",
+      "tests": 17,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "MultiOperImplTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "NamedArgsTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "NestedCaptureTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "NullableTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ObjectModelTest[desktop]",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "OperatorFamilyTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "OperatorOverloadingTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "OsStdlibTest[desktop]",
+      "tests": 8,
+      "failures": 4,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "OwnershipTaskTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "OwnershipTest[desktop]",
+      "tests": 92,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "P6Test[desktop]",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PackTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PanicTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ParamModifiersTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PlaygroundExamplesTest[desktop]",
+      "tests": 18,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PolishTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PrimitiveTypeTest[desktop]",
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ProgramTest[desktop]",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PropCallTest[desktop]",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "QualifiedWhenPatternTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "QuantumStdlibTest[desktop]",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "RangeAndMemberExecTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "RangeBoundaryTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ReactivityTest[desktop]",
+      "tests": 25,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ReadmeSnippetTest[desktop]",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "RepeatedConstructionTest[desktop]",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ResultUnwrapOrTest[desktop]",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ReturnTypeDeclarationTest[desktop]",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "RoboticsEngineTest[desktop]",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ScopeQualifiedAccessTest[desktop]",
+      "tests": 12,
+      "failures": 6,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ScopeSymbolManglingTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ScopeTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SecurityStdlibTest[desktop]",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SlotsTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SmallBatchTest[desktop]",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SortStdlibTest[desktop]",
+      "tests": 6,
+      "failures": 6,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SourceSymbolNameTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StabilityDecoratorTest[desktop]",
+      "tests": 9,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StaticAccessTest[desktop]",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "tests": 53,
+      "failures": 12,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StdlibMethodsTest[desktop]",
+      "tests": 10,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StdlibParseDiagnosticTest[desktop]",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StringIndexTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StringInterpolationTest[desktop]",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SymbolTest[desktop]",
+      "tests": 34,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "tests": 31,
+      "failures": 13,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TestMethodTest[desktop]",
+      "tests": 9,
+      "failures": 6,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TestScopeTest[desktop]",
+      "tests": 6,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ThenMemberTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ThirdPartyFormatTest[desktop]",
+      "tests": 3,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ThreadLocalTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Tier1PolishTest[desktop]",
+      "tests": 38,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Tier2MetaprogrammingTest[desktop]",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Tier3DiTest[desktop]",
+      "tests": 9,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Tier3ErrorModelTest[desktop]",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Tier3FfiTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Tier3MemoryTest[desktop]",
+      "tests": 20,
+      "failures": 6,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "Tier4ConcurrencyTest[desktop]",
+      "tests": 7,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TimeStdlibTest[desktop]",
+      "tests": 4,
+      "failures": 4,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TraitsTest[desktop]",
+      "tests": 9,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TupleTest[desktop]",
+      "tests": 4,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TupleVariadicLlvmExecTest[desktop]",
+      "tests": 3,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "tests": 20,
+      "failures": 15,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TupleVariadicWasmExecTest[desktop]",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TypeFunctionTest[desktop]",
+      "tests": 27,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TypeRefTest[desktop]",
+      "tests": 16,
+      "failures": 7,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "UnaryOperatorTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "UnionExecTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "UnionTest[desktop]",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "UnitNothingExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "UnitNothingSemanticsTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "UnsafeFieldTest[desktop]",
+      "tests": 3,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "VariadicGenericsTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "VariadicLambdaTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WasmCodegenExecTest[desktop]",
+      "tests": 34,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WasmLambdaExecTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WasmWhenReturnExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WebsiteExamplesTest[desktop]",
+      "tests": 55,
+      "failures": 7,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WhenExpressionTest[desktop]",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WhenExpressionTypingTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WhenGuardExecTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WhenGuardSemanticsTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WideLiteralIrTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ImportEditPlannerTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StructuredDiagnosticsTest[desktop]",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "BareReflectTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "BridgeTargetTest[desktop]",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CallArgumentFormsTest[desktop]",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "CollectionLiteralSyntaxTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ContractScopeBodyTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DeclarationBodyTest[desktop]",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DeclaredPropertyTypeTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DescendingRangeTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "FunctionReceiverSyntaxTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "GenericDelimiterTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "GenericEnumDeclTest[desktop]",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "GroupBindingTest[desktop]",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "GroupedAssignTest[desktop]",
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "GroupingAsWrittenTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ImplAndDeriveFormsTest[desktop]",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ImplCtorFormRemovedTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ImportGrammarTest[desktop]",
+      "tests": 28,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ImportSpecTest[desktop]",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "IncrementTest[desktop]",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LexerEscapeTest[desktop]",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "LiteralWidthTest[desktop]",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "MacroFormTest[desktop]",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "OperatorReceiverSyntaxTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PropReceiverTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PurgeListTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ReceiverShorthandTest[desktop]",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "RepeatConstructionTest[desktop]",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ScopeNamespaceTest[desktop]",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SoloAndGraphLifetimeTest[desktop]",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SpliceArithmeticTest[desktop]",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TestScopedImportTest[desktop]",
+      "tests": 3,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ThenSyntaxTest[desktop]",
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TypeArgumentHoleTest[desktop]",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "TypeComputationWhenTest[desktop]",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "UsingContextTest[desktop]",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WideLiteralTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "WidthSuffixTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ConstGenericIdentityTest[desktop]",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ComparisonSpecTest[desktop]",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DecoratorConformanceTest[desktop]",
+      "tests": 13,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DecoratorReflectionTest[desktop]",
+      "tests": 23,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "DecoratorTargetTest[desktop]",
+      "tests": 11,
+      "failures": 4,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "PackSpecializationTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "ReflectDecoExpanderTest[desktop]",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SealDecoratorDefaultTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SelfQualificationTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SerializationDeriverTest[desktop]",
+      "tests": 10,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SignatureAccessCheckerTest[desktop]",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "SuppressionTest[desktop]",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "StdlibResolutionTest[desktop]",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "failures": [
+    {
+      "suite": "AiMlStdlibTest[desktop]",
+      "test": "structuredAiAndMlHelpersRemainBackendNeutral[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 7: undefined function 'conversation' - 'conversation' is provided by 'std.ai': add 'import std.ai::conversation', line 8: undefined value 'chat', line 9: undefined value 'chat', line 10: undefined value 'chat', line 146: cannot assign Double to 'total' of type Float, line 168: no member 'size' on pack CompilerTarget, line 181: no member 'size' on pack CompilerTarget, line 83: no method 'add' on ArrayList, line 88: no member 'size' on pack ArrayList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "CodegenGoldenTest[desktop]",
+      "test": "llvmFullOutputScalar[desktop]",
+      "message": "org.junit.ComparisonFailure: expected:<..., i8*, ...)\ndeclare [i8* @malloc(i64)\ndeclare i64 @strlen(i8*)\ndeclare i8* @strcpy(i8*, i8*)\ndeclare i8* @strcat(i8*, i8*)\n\ndefine i8* @classify(i32 %arg.n) {\nentry:\n  %0 = alloca i32\n  store i32 %arg.n, i32* %0\n  %1 = load i32, i32* %0\n  %2 = icmp slt i32 %1, 0\n  br i1 %2, label %then.0, label %else.1\nthen.0:\n  %3 = getelementptr [9 x i8], [9 x i8]* @.str.0, i64 0, i64 0\n  ret i8* %3\nelse.1:\n  %4 = load i32, i32* %0\n  %5 = icmp eq i32 %4, 0\n  br i1 %5, label %then.3, label %merge.5\nthen.3:\n  %6 = getelementptr [5 x i8], [5 x i8]* @.str.1, i64 0, i64 0\n  ret i8* %6\nmerge.5:\n  br label %merge.2\nmerge.2:\n  %7 = getelementptr [9 x i8], [9 x i8]* @.str.2, i64 0, i64 0\n  ret i8* %7\n}\n\ndefine i32 @main() {\nentry:\n  %loc0.sum = alloca i32\n  %loc1.total = alloca i32\n  %loc2.i = alloca i32\n  store i32 5, i32* %loc0.sum\n  %0 = getelementptr [7 x i8], [7 x i8]* @.str.3, i64 0, i64 0\n  %1 = load i32, i32* %loc0.sum\n  %2 = sext i32 %1 to i64\n  %3 = call i8* @__azora_int_to_str(i64 %2)\n  %4 = call i8* @__azora_str_concat(i8* %0, i8* %3)\n  %5 = call i32 @puts(i8* %4)\n  store i32 0, i32* %loc1.total\n  store i32 1, i32* %loc2.i\n  br label %for_cond.0\nfor_cond.0:\n  %6 = load i32, i32* %loc2.i\n  %7 = icmp sle i32 %6, 5\n  br i1 %7, label %for_body.1, label %for_end.3\nfor_body.1:\n  %8 = load i32, i32* %loc1.total\n  %9 = load i32, i32* %loc2.i\n  %10 = add i32 %8, %9\n  store i32 %10, i32* %loc1.total\n  br label %for_inc.2\nfor_inc.2:\n  %11 = load i32, i32* %loc2.i\n  %12 = add i32 %11, 1\n  store i32 %12, i32* %loc2.i\n  br label %for_cond.0\nfor_end.3:\n  %13 = load i32, i32* %loc1.total\n  %14 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0\n  %15 = call i32 (i8*, ...) @printf(i8* %14, i32 %13)\n  br label %while_cond.4\nwhile_cond.4:\n  %16 = load i32, i32* %loc1.total\n  %17 = icmp sgt i32 %16, 10\n  br i1 %17, label %while_body.5, label %while_end.6\nwhile_body.5:\n  %18 = load i32, i32* %loc1.total\n  %19 = sub i32 %18, 4\n  store i32 %19, i32* %loc1.total\n  br label %while_cond.4\nwhile_end.6:\n  %20 = load i32, i32* %loc1.total\n  %21 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0\n  %22 = call i32 (i8*, ...) @printf(i8* %21, i32 %20)\n  %23 = call i8* @classify(i32 5)\n  %24 = call i32 @puts(i8* %23)\n  %25 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0\n  %26 = call i32 (i8*, ...) @printf(i8* %25, i32 2)\n  ret i32 0\n}\n\n; runtime: string concatenation\ndefine i8* @__azora_str_concat(i8* %a, i8* %b) {\nentry:\n  %la = call i64 @strlen(i8* %a)\n  %lb = call i64 @strlen(i8* %b)\n  %sum = add i64 %la, %lb\n  %size = add i64 %sum, 1\n  %buf = call i8* @malloc(i64 %size)\n  %c1 = call i8* @strcpy(i8* %buf, i8* %a)\n  %c2 = call i8* @strcat(i8* %buf, i8* %b)\n  ret i8* %buf\n}\n\n; runtime: integer to string\ndefine i8* @__azora_int_to_str(i64 %v) {\nentry:\n  %buf = call i8* @m]alloc(i64 24)\n  %fmt...> but was:<..., i8*, ...)\ndeclare [void @abort() noreturn\ndeclare i8* @malloc(i64)\ndeclare void @free(i8*)\ndeclare i64 @strlen(i8*)\ndec [truncated]"
+    },
+    {
+      "suite": "CollectionCtorTest[desktop]",
+      "test": "mutable_map_pack_exists[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 417: arg 2 of '_mutate': expected Path, got CompilerTarget, line 417: arg 3 of '_mutate': expected Path, got CompilerTarget, line 385: array index must be Int, got CompilerTarget, line 386: cannot apply 'PLUS' to CompilerTarget and Int]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "CollectionCtorTest[desktop]",
+      "test": "var_when_matches_held_type[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 2: undefined type 'Var', line 11: type mismatch in 'a': declared Var<Int, Double, String> but initializer is Float]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "CollectionCtorTest[desktop]",
+      "test": "tup_ctor[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: undefined function 'tupleOf', line 5: undefined value 't', line 6: undefined value 't']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "CollectionCtorTest[desktop]",
+      "test": "mutable_list_pack_exists[desktop]",
+      "message": "java.lang.IndexOutOfBoundsException: Index 0 out of bounds for length 0"
+    },
+    {
+      "suite": "CollectionCtorTest[desktop]",
+      "test": "explicit_set_type[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 759: undefined value 'v', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "CollectionCtorTest[desktop]",
+      "test": "set_add_preserves_uniqueness[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 759: undefined value 'v', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "CollectionCtorTest[desktop]",
+      "test": "set_ctor[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 759: undefined value 'v', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ContainerStdlibTest[desktop]",
+      "test": "everyContainerSourceParsesAndIsSerializableMetadata[desktop]",
+      "message": "java.lang.AssertionError: expected:<11> but was:<0>"
+    },
+    {
+      "suite": "ContainerStdlibTest[desktop]",
+      "test": "coreContainersExecuteTogether[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 7: no method 'add' on List, line 11: no method 'add' on Set, line 24: undefined function 'Stack', line 25: undefined value 'stack', line 26: undefined value 'stack', line 27: undefined value 'stack', line 34: undefined function 'tupleOf', line 35: undefined value 'tuple', line 36: undefined value 'tuple', line 417: arg 2 of '_mutate': expected Path, got CompilerTarget, line 417: arg 3 of '_mutate': expected Path, got CompilerTarget, line 759: undefined value 'v', line 385: array index must be Int, got CompilerTarget, line 386: cannot apply 'PLUS' to CompilerTarget and Int, line 95: cannot mutate 'size' through an immutable 'self&' receiver (use 'self!'), line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ContractsTest[desktop]",
+      "test": "asyncFuncSupportsContracts[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ContractsTest[desktop]",
+      "test": "computedPropertiesSupportContracts[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 6]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ContractsTest[desktop]",
+      "test": "inOutScopeContractsRunOnSuccess[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 4]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ContractsTest[desktop]",
+      "test": "postconditionFailureSeesResultValue[desktop]",
+      "message": "java.lang.AssertionError: Expected an exception of class java.lang.IllegalStateException to be thrown, but was java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 4]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ContractsTest[desktop]",
+      "test": "postconditionRunsForNestedBranchReturns[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 4]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ContractsTest[desktop]",
+      "test": "preconditionFailureStopsBeforeBody[desktop]",
+      "message": "java.lang.AssertionError: Expected an exception of class java.lang.IllegalStateException to be thrown, but was java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 4]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ContractsTest[desktop]",
+      "test": "aFunctionHasAtMostOneInAndOneOutClause[desktop]",
+      "message": "java.lang.AssertionError: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 2]"
+    },
+    {
+      "suite": "DecimalStdlibTest[desktop]",
+      "test": "equalNumbersNeedNotBeIdenticalValues[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 143: arg 3 of 'strSlice': expected UInt, got Int, line 145: arg 3 of 'strSlice': expected UInt, got Int, line 152: arg 2 of 'strSlice': expected UInt, got Int, line 152: arg 3 of 'strSlice': expected UInt, got Int, line 153: arg 3 of 'strSlice': expected UInt, got Int, line 81: arg 2 of 'substring': expected Int, got UInt, line 81: arg 3 of 'substring': expected Int, got UInt, line 1: arg 3 of 'strSlice': expected UInt, got Int, line 1: arg 2 of 'strSlice': expected UInt, got Int, line 1: arg 3 of 'strSlice': expected UInt, got Int]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "DecimalStdlibTest[desktop]",
+      "test": "halfEvenSendsAnExactHalfToTheEvenNeighbour[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 143: arg 3 of 'strSlice': expected UInt, got Int, line 145: arg 3 of 'strSlice': expected UInt, got Int, line 152: arg 2 of 'strSlice': expected UInt, got Int, line 152: arg 3 of 'strSlice': expected UInt, got Int, line 153: arg 3 of 'strSlice': expected UInt, got Int, line 81: arg 2 of 'substring': expected Int, got UInt, line 81: arg 3 of 'substring': expected Int, got UInt, line 1: arg 3 of 'strSlice': expected UInt, got Int, line 1: arg 2 of 'strSlice': expected UInt, got Int, line 1: arg 3 of 'strSlice': expected UInt, got Int]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "DecimalStdlibTest[desktop]",
+      "test": "scalesAlignOnAddAndAddOnMultiply[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 143: arg 3 of 'strSlice': expected UInt, got Int, line 145: arg 3 of 'strSlice': expected UInt, got Int, line 152: arg 2 of 'strSlice': expected UInt, got Int, line 152: arg 3 of 'strSlice': expected UInt, got Int, line 153: arg 3 of 'strSlice': expected UInt, got Int, line 81: arg 2 of 'substring': expected Int, got UInt, line 81: arg 3 of 'substring': expected Int, got UInt, line 1: arg 3 of 'strSlice': expected UInt, got Int, line 1: arg 2 of 'strSlice': expected UInt, got Int, line 1: arg 3 of 'strSlice': expected UInt, got Int]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "DecimalStdlibTest[desktop]",
+      "test": "aTenthPlusTwoTenthsIsThreeTenths[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 143: arg 3 of 'strSlice': expected UInt, got Int, line 145: arg 3 of 'strSlice': expected UInt, got Int, line 152: arg 2 of 'strSlice': expected UInt, got Int, line 152: arg 3 of 'strSlice': expected UInt, got Int, line 153: arg 3 of 'strSlice': expected UInt, got Int, line 81: arg 2 of 'substring': expected Int, got UInt, line 81: arg 3 of 'substring': expected Int, got UInt, line 1: arg 3 of 'strSlice': expected UInt, got Int, line 1: arg 2 of 'strSlice': expected UInt, got Int, line 1: arg 3 of 'strSlice': expected UInt, got Int]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "DecimalStdlibTest[desktop]",
+      "test": "textRoundTripsThroughTheDigitsThatWereWritten[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 143: arg 3 of 'strSlice': expected UInt, got Int, line 145: arg 3 of 'strSlice': expected UInt, got Int, line 152: arg 2 of 'strSlice': expected UInt, got Int, line 152: arg 3 of 'strSlice': expected UInt, got Int, line 153: arg 3 of 'strSlice': expected UInt, got Int, line 81: arg 2 of 'substring': expected Int, got UInt, line 81: arg 3 of 'substring': expected Int, got UInt, line 1: arg 3 of 'strSlice': expected UInt, got Int, line 1: arg 2 of 'strSlice': expected UInt, got Int, line 1: arg 3 of 'strSlice': expected UInt, got Int]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "DecimalStdlibTest[desktop]",
+      "test": "divisionTakesTheScaleItIsGiven[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 143: arg 3 of 'strSlice': expected UInt, got Int, line 145: arg 3 of 'strSlice': expected UInt, got Int, line 152: arg 2 of 'strSlice': expected UInt, got Int, line 152: arg 3 of 'strSlice': expected UInt, got Int, line 153: arg 3 of 'strSlice': expected UInt, got Int, line 81: arg 2 of 'substring': expected Int, got UInt, line 81: arg 3 of 'substring': expected Int, got UInt, line 1: arg 3 of 'strSlice': expected UInt, got Int, line 1: arg 2 of 'strSlice': expected UInt, got Int, line 1: arg 3 of 'strSlice': expected UInt, got Int]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Feature003SyntaxTest[desktop]",
+      "test": "friendScopeAcceptsDoubleColonPath[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 9: undefined function 'abs' - 'abs' is provided by 'std.math': add 'import std.math::abs']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "directoryListingsAreFullPathsAndSorted[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 11: undefined function 'Array::fill', line 12: undefined value 'empty', line 13: undefined value 'entries', line 15: undefined value 'entries', line 16: undefined value 'entries', line 20: undefined value 'entries', line 372: no member 'text' on pack CompilerTarget, line 373: undefined value 'failure', line 405: arg 2 of '_mutate': expected Path, got CompilerTarget, line 405: arg 3 of '_mutate': expected Path, got CompilerTarget, line 394: no member 'text' on pack CompilerTarget, line 395: undefined value 'parts', line 396: undefined value 'parts', line 397: undefined value 'parts', line 397: cannot infer element type of empty sequence literal; provide Array<T> or another collection context, line 398: undefined value 'parts', line 398: undefined value 'entries', line 399: undefined value 'entries', line 423: arg 2 of '_mutate': expected Path, got CompilerTarget, line 423: arg 3 of '_mutate': expected Path, got CompilerTarget, line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "theSegmentsOfAPathAreReadable[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "textRoundTripsThroughAFile[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 372: no member 'text' on pack CompilerTarget, line 373: undefined value 'failure', line 472: no member 'text' on pack CompilerTarget, line 343: no member 'text' on pack CompilerTarget, line 344: undefined value 'raw', line 345: undefined value 'cut', line 346: undefined value 'raw', line 347: undefined value 'failure', line 348: undefined value 'raw', line 385: no member 'text' on pack CompilerTarget, line 386: undefined value 'failure', line 423: arg 2 of '_mutate': expected Path, got CompilerTarget, line 423: arg 3 of '_mutate': expected Path, got CompilerTarget, line 450: no member 'text' on pack CompilerTarget, line 451: undefined value 'parts', line 452: undefined value 'parts', line 453: undefined value 'parts', line 459: undefined value 'kind', line 459: undefined value 'kind', line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 759: undefined value 'v', line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 4: no method 'add' on ArrayList, line 5: no method 'add' on ArrayList, line 6: payload 1 of 'Object': expected List, got ArrayList, line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 34: undefined function 'std::serialAsLong', line 44: undefined function 'std::encodeSerialValue', line 48: undefined function 'std::decodeSerialValue', line 49: undefined value '__serialValue', line 692: payload 1 of 'Array': expected List, got ArrayList, line 695: no method 'add' on ArrayList, line 699: payload 1 of 'Array': expected List, got ArrayList, line 714: payload 1 of 'Object': expected List, got ArrayList, line 728: no member 'size' on pack ArrayList, line 729: arg 1 of 'serialFieldAt': expected List, got ArrayList, line 736: no method 'add' on ArrayList, line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "anAbsoluteSegmentReplacesThePath[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "copyAndRenameMoveContent[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 372: no member 'text' on pack CompilerTarget, line 373: undefined value 'failure', line 343: no member 'text' on pack CompilerTarget, line 344: undefined value 'raw', line 345: undefined value 'cut', line 346: undefined value 'raw', line 347: undefined value 'failure', line 348: undefined value 'raw', line 472: no member 'text' on pack CompilerTarget, line 423: arg 2 of '_mutate': expected Path, got CompilerTarget, line 423: arg 3 of '_mutate': expected Path, got CompilerTarget, line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "joiningInsertsExactlyOneSeparator[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "nestedDirectoriesAreCreatedInOneCall[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 405: arg 2 of '_mutate': expected Path, got CompilerTarget, line 405: arg 3 of '_mutate': expected Path, got CompilerTarget, line 411: arg 2 of '_mutate': expected Path, got CompilerTarget, line 411: arg 3 of '_mutate': expected Path, got CompilerTarget, line 423: arg 2 of '_mutate': expected Path, got CompilerTarget, line 423: arg 3 of '_mutate': expected Path, got CompilerTarget, line 450: no member 'text' on pack CompilerTarget, line 451: undefined value 'parts', line 452: undefined value 'parts', line 453: undefined value 'parts', line 459: undefined value 'kind', line 459: undefined value 'kind', line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 759: undefined value 'v', line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 4: no method 'add' on ArrayList, line 5: no method 'add' on ArrayList, line 6: payload 1 of 'Object': expected List, got ArrayList, line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 34: undefined function 'std::serialAsLong', line 44: undefined function 'std::encodeSerialValue', line 48: undefined function 'std::decodeSerialValue', line 49: undefined value '__serialValue', line 692: payload 1 of 'Array': expected List, got ArrayList, line 695: no method 'add' on ArrayList, line 699: payload 1 of 'Array': expected List, got ArrayList, line 714: payload 1 of 'Object': expected List, got ArrayList, line 728: no member 'size' on pack ArrayList, line 729: arg 1 of 'serialFieldAt': expected List, got ArrayList, line 736: no method 'add' on ArrayList, line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "removeRefusesANonEmptyDirectory[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 372: no member 'text' on pack CompilerTarget, line 373: undefined value 'failure', line 417: arg 2 of '_mutate': expected Path, got CompilerTarget, line 417: arg 3 of '_mutate': expected Path, got CompilerTarget, line 472: no member 'text' on pack CompilerTarget, line 423: arg 2 of '_mutate': expected Path, got CompilerTarget, line 423: arg 3 of '_mutate': expected Path, got CompilerTarget, line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "aMissingFileIsNotFoundRatherThanEmpty[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 343: no member 'text' on pack CompilerTarget, line 344: undefined value 'raw', line 345: undefined value 'cut', line 346: undefined value 'raw', line 347: undefined value 'failure', line 348: undefined value 'raw', line 372: no member 'text' on pack CompilerTarget, line 373: undefined value 'failure', line 423: arg 2 of '_mutate': expected Path, got CompilerTarget, line 423: arg 3 of '_mutate': expected Path, got CompilerTarget, line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "eachTemporaryDirectoryIsDistinct[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 472: no member 'text' on pack CompilerTarget, line 423: arg 2 of '_mutate': expected Path, got CompilerTarget, line 423: arg 3 of '_mutate': expected Path, got CompilerTarget, line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "normalizationResolvesDotsTextually[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "absolutenessIsRecognisedOnBothPlatforms[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "metadataReportsKindAndSize[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 372: no member 'text' on pack CompilerTarget, line 373: undefined value 'failure', line 450: no member 'text' on pack CompilerTarget, line 451: undefined value 'parts', line 452: undefined value 'parts', line 453: undefined value 'parts', line 459: undefined value 'kind', line 459: undefined value 'kind', line 423: arg 2 of '_mutate': expected Path, got CompilerTarget, line 423: arg 3 of '_mutate': expected Path, got CompilerTarget, line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 759: undefined value 'v', line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 4: no method 'add' on ArrayList, line 5: no method 'add' on ArrayList, line 6: payload 1 of 'Object': expected List, got ArrayList, line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 34: undefined function 'std::serialAsLong', line 44: undefined function 'std::encodeSerialValue', line 48: undefined function 'std::decodeSerialValue', line 49: undefined value '__serialValue', line 692: payload 1 of 'Array': expected List, got ArrayList, line 695: no method 'add' on ArrayList, line 699: payload 1 of 'Array': expected List, got ArrayList, line 714: payload 1 of 'Object': expected List, got ArrayList, line 728: no member 'size' on pack ArrayList, line 729: arg 1 of 'serialFieldAt': expected List, got ArrayList, line 736: no method 'add' on ArrayList, line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "aDotFileHasNoExtension[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "FilesystemStdlibTest[desktop]",
+      "test": "anExtensionCanBeReplacedOrAdded[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 447: no method 'add' on ArrayList, line 449: return type mismatch: expected MutableList but got ArrayList, line 233: no member 'size' on pack MutableList, line 171: type mismatch in 'renamed': declared Bool but initializer is String, line 172: field 'text' of 'Path': expected String, got Bool, line 172: field 'text' of 'Path': expected String, got Bool, line 173: arg 1 of 'join': expected String, got Bool, line 208: no member 'size' on pack MutableList, line 210: no method 'get' on MutableList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ForExpressionTest[desktop]",
+      "test": "itWalksWhateverForWalks[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected a capture name in a lambda bracket list, got '\"a\"' (STRING_LITERAL) at line 4]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ForExpressionTest[desktop]",
+      "test": "reverseStaysAFunctionWhereNoLoopFollows[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 5: collection element must have type Any, got Int, line 6: undefined value 'xs']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "GenericRealTest[desktop]",
+      "test": "aGenericPackNests[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 8: undefined function 'Array::fill', line 9: undefined value 'keys', line 10: undefined value 'keys', line 11: undefined value 'keys', line 12: undefined value 'keys', line 1: undefined value 'a', line 1: undefined value 'b']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "KeywordReservationTest[desktop]",
+      "test": "bareUsingIsRejected[desktop]",
+      "message": "java.lang.AssertionError: [Expected '{' after contextual values, got '\n' (NEWLINE) at line 2]"
+    },
+    {
+      "suite": "LambdaTest[desktop]",
+      "test": "callableKindsAreStorablePackFields[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected '}' after receiver group, got ':' (COLON) at line 9]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "LambdaTest[desktop]",
+      "test": "aReceiverIsSuppliedByUsingOrByAReceiverCall[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 11: no member 'add' on pack Left, line 11: no member 'add' on pack Right]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "packedCollectionsSupportWideValues[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 9: type mismatch in 'set': declared Set but initializer is Array<Cent, 3>"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "setStringEqualityUsesContents[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: type mismatch in 'values': declared MutableSet but initializer is Array<String, 2>\nline 6: no member 'size' on pack MutableSet\nline 8: no method 'contains' on MutableSet"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "typedStdlibCollectionLiteralsExposeSize[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 7: type mismatch in 'unique': declared Set but initializer is Array<Int, 3>\nline 8: associative literal target Map requires a collection literal factory; it cannot use structural map storage\nline 11: undefined value 'names'"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "arrayEmptyProperties[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: no member 'isEmpty' on Array<Int, 1>\nline 5: no member 'isNotEmpty' on Array<Int, 1>"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "setForEachSum[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: type mismatch in 'values': declared MutableSet but initializer is Array<Int, 4>\nline 6: for loop iterable must be a range, an array, or an iterator, got MutableSet"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "mapLengthAndEmptyProperties[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: associative literal target MutableMap requires a collection literal factory; it cannot use structural map storage\nline 5: undefined value 'values'\nline 6: undefined value 'values'\nline 7: undefined value 'values'\nline 8: undefined value 'values'\nline 9: undefined value 'values'"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "mapInsertsMissingEntry[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: associative literal target MutableMap requires a collection literal factory; it cannot use structural map storage\nline 5: undefined value 'values'\nline 6: undefined value 'values'\nline 7: undefined value 'values'"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "mapLiteralReadsIntegerKeys[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: associative literal target Map requires a collection literal factory; it cannot use structural map storage\nline 5: undefined value 'values'\nline 6: undefined value 'values'"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "setAddReturnsWhetherInserted[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: type mismatch in 'values': declared MutableSet but initializer is Array<Int, 2>\nline 7: no member 'size' on pack MutableSet"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "setRemoveReturnsWhetherRemoved[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: type mismatch in 'values': declared MutableSet but initializer is Array<Int, 3>\nline 7: no member 'size' on pack MutableSet\nline 8: for loop iterable must be a range, an array, or an iterator, got MutableSet"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "forInDestructuresATupleRow[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: undefined function 'tupleOf'\nline 5: undefined value 'rows'"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "setClearAndEmptyProperties[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: type mismatch in 'values': declared MutableSet but initializer is Array<Int, 2>\nline 5: no member 'isEmpty' on pack MutableSet\nline 7: no member 'isEmpty' on pack MutableSet\nline 8: no member 'size' on pack MutableSet"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "typedSetLiteral[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: type mismatch in 'values': declared Set but initializer is Array<Int, 2>"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "globalSetInitializerRunsBeforeMain[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 3: global initializer expects Set, got Array<Int, 4>"
+    },
+    {
+      "suite": "LlvmAggregateExecTest[desktop]",
+      "test": "setLiteralDeduplicatesElements[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: type mismatch in 'values': declared MutableSet but initializer is Array<Int, 5>\nline 5: no member 'size' on pack MutableSet\nline 6: no method 'contains' on MutableSet\nline 7: no method 'contains' on MutableSet"
+    },
+    {
+      "suite": "LlvmCodegenExecTest[desktop]",
+      "test": "assertPassProducesNoOutput[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nExpected 'panic' after assert condition, got '{' (L_BRACE) at line 3"
+    },
+    {
+      "suite": "LlvmRegressionExecTest[desktop]",
+      "test": "threadLocalStdlibCollectionsInitializeObjects[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\n'![...]' set syntax was removed at line 7; use a Set<T> context with '[...]'"
+    },
+    {
+      "suite": "LlvmRegressionExecTest[desktop]",
+      "test": "decimalCollectionsUseExplicitPackedAlignment[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 7: associative literal target Map requires a collection literal factory; it cannot use structural map storage\nline 8: type mismatch in 'set': declared Set but initializer is Array<Quad, 2>"
+    },
+    {
+      "suite": "LlvmRegressionExecTest[desktop]",
+      "test": "threadLocalAggregatesUseTlsAndRuntimeInitialization[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\n'![...]' set syntax was removed at line 4; use a Set<T> context with '[...]'"
+    },
+    {
+      "suite": "LoopTest[desktop]",
+      "test": "forArrayWithADeclaredRowType[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected a capture name in a lambda bracket list, got '1' (INT_LITERAL) at line 4]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "MetaprogrammingTest[desktop]",
+      "test": "fullMetaprogramming_allInlineRulesWithGlobals[desktop]",
+      "message": "org.junit.ComparisonFailure: expected:<...unc c(): Unit {\n    [std__println(\"Hello from C\")\n}\n\nfin e1: Int = 0\n\nfunc e(): Unit {\n    std__println(\"Hello from E\")\n}\n\nfunc main(): Unit {\n    scope {\n        std__println(\"Hello from A\")\n    }\n    scope {\n        std__println(\"Hello from B\")\n    }\n    c()\n    scope {\n        std__println(\"Hello from D\")\n    }\n    e()\n}]> but was:<...unc c(): Unit {\n    [println(\"Hello from C\")\n}\n\nfin e1: Int = 0\n\nfunc e(): Unit {\n    println(\"Hello from E\")\n}\n\nfunc main(): Unit {\n    scope {\n        println(\"Hello from A\")\n    }\n    scope {\n        println(\"Hello from B\")\n    }\n    c()\n    scope {\n        println(\"Hello from D\")\n    }\n    e()\n}\n\nfunc Int_rank(self: Int): Int {\n    return 2\n}\n\nfunc __Int_rank(): Int {\n    return 2\n}\n\nfunc UInt_rank(self: UInt): Int {\n    return 2\n}\n\nfunc __UInt_rank(): Int {\n    return 2\n}\n\nfunc UByte_rank(self: UByte): Int {\n    return 0\n}\n\nfunc UShort_rank(self: UShort): Int {\n    return 1\n}\n\nfunc ULong_rank(self: ULong): Int {\n    return 3\n}\n\nfunc UCent_rank(self: UCent): Int {\n    return 4\n}\n\nfunc Byte_rank(self: Byte): Int {\n    return 0\n}\n\nfunc Short_rank(self: Short): Int {\n    return 1\n}\n\nfunc Long_rank(self: Long): Int {\n    return 3\n}\n\nfunc Cent_rank(self: Cent): Int {\n    return 4\n}\n\nfunc Half_rank(self: Half): Int {\n    return 5\n}\n\nfunc __Half_rank(): Int {\n    return 5\n}\n\nfunc Float_rank(self: Float): Int {\n    return 6\n}\n\nfunc __Float_rank(): Int {\n    return 6\n}\n\nfunc Double_rank(self: Double): Int {\n    return 7\n}\n\nfunc __Double_rank(): Int {\n    return 7\n}\n\nfunc Quad_rank(self: Quad): Int {\n    return 8\n}\n\nfunc __Quad_rank(): Int {\n    return 8\n}\n\nenum Compare {\n    Less\n    Equal\n    Greater\n}\n\nfunc Compare_isLess(self: Compare): Bool {\n    return (self == Compare.Less)\n}\n\nfunc Compare_isLessOrEqual(self: Compare): Bool {\n    return (self != Compare.Greater)\n}\n\nfunc Compare_isGreater(self: Compare): Bool {\n    return (self == Compare.Greater)\n}\n\nfunc Compare_isGreaterOrEqual(self: Compare): Bool {\n    return (self != Compare.Less)\n}\n\nfunc Compare_reversed(self: Compare): Compare {\n    return (if (self == Compare.Less) { Compare.Greater } else { (if (self == Compare.Greater) { Compare.Less } else { Compare.Equal }) })\n}\n\nfunc Compare_then(self: Compare, next: Compare): Compare {\n    return (if (self == Compare.Equal) { next } else { self })\n}\n\nenum PartialCompare {\n    Less\n    Equal\n    Greater\n    Unordered\n}\n\nfunc PartialCompare_isLess(self: PartialCompare): Bool {\n    return (self == PartialCompare.Less)\n}\n\nfunc PartialCompare_isLessOrEqual(self: PartialCompare): Bool {\n    return ((self == PartialCompare.Less) || (self == PartialCompare.Equal))\n}\n\nfunc PartialCompare_isGreater(self: PartialCompare): Bool {\n    return (self == PartialCompare.Greater)\n}\n\nfunc PartialCompare_isGreaterOrEqual(self: PartialCompare): Bool {\n    return ((self == PartialCompare.Greater) || (self == PartialCompare.Equal))\n}\n\nfunc PartialCompare_isUnordered(self: PartialCompare): Bool {\n   [truncated]"
+    },
+    {
+      "suite": "MetaprogrammingTest[desktop]",
+      "test": "inlineFunc_bodySubstitutedAtCallSite[desktop]",
+      "message": "org.junit.ComparisonFailure: expected:<...unc b(): Unit {\n    [std__println(\"Hello from B\")\n}\n\nfunc main(): Unit {\n    scope {\n        std__println(\"Hello from A\")\n    }\n    b()\n}]> but was:<...unc b(): Unit {\n    [println(\"Hello from B\")\n}\n\nfunc main(): Unit {\n    scope {\n        println(\"Hello from A\")\n    }\n    b()\n}\n\nfunc Int_rank(self: Int): Int {\n    return 2\n}\n\nfunc __Int_rank(): Int {\n    return 2\n}\n\nfunc UInt_rank(self: UInt): Int {\n    return 2\n}\n\nfunc __UInt_rank(): Int {\n    return 2\n}\n\nfunc UByte_rank(self: UByte): Int {\n    return 0\n}\n\nfunc UShort_rank(self: UShort): Int {\n    return 1\n}\n\nfunc ULong_rank(self: ULong): Int {\n    return 3\n}\n\nfunc UCent_rank(self: UCent): Int {\n    return 4\n}\n\nfunc Byte_rank(self: Byte): Int {\n    return 0\n}\n\nfunc Short_rank(self: Short): Int {\n    return 1\n}\n\nfunc Long_rank(self: Long): Int {\n    return 3\n}\n\nfunc Cent_rank(self: Cent): Int {\n    return 4\n}\n\nfunc Half_rank(self: Half): Int {\n    return 5\n}\n\nfunc __Half_rank(): Int {\n    return 5\n}\n\nfunc Float_rank(self: Float): Int {\n    return 6\n}\n\nfunc __Float_rank(): Int {\n    return 6\n}\n\nfunc Double_rank(self: Double): Int {\n    return 7\n}\n\nfunc __Double_rank(): Int {\n    return 7\n}\n\nfunc Quad_rank(self: Quad): Int {\n    return 8\n}\n\nfunc __Quad_rank(): Int {\n    return 8\n}\n\nenum Compare {\n    Less\n    Equal\n    Greater\n}\n\nfunc Compare_isLess(self: Compare): Bool {\n    return (self == Compare.Less)\n}\n\nfunc Compare_isLessOrEqual(self: Compare): Bool {\n    return (self != Compare.Greater)\n}\n\nfunc Compare_isGreater(self: Compare): Bool {\n    return (self == Compare.Greater)\n}\n\nfunc Compare_isGreaterOrEqual(self: Compare): Bool {\n    return (self != Compare.Less)\n}\n\nfunc Compare_reversed(self: Compare): Compare {\n    return (if (self == Compare.Less) { Compare.Greater } else { (if (self == Compare.Greater) { Compare.Less } else { Compare.Equal }) })\n}\n\nfunc Compare_then(self: Compare, next: Compare): Compare {\n    return (if (self == Compare.Equal) { next } else { self })\n}\n\nenum PartialCompare {\n    Less\n    Equal\n    Greater\n    Unordered\n}\n\nfunc PartialCompare_isLess(self: PartialCompare): Bool {\n    return (self == PartialCompare.Less)\n}\n\nfunc PartialCompare_isLessOrEqual(self: PartialCompare): Bool {\n    return ((self == PartialCompare.Less) || (self == PartialCompare.Equal))\n}\n\nfunc PartialCompare_isGreater(self: PartialCompare): Bool {\n    return (self == PartialCompare.Greater)\n}\n\nfunc PartialCompare_isGreaterOrEqual(self: PartialCompare): Bool {\n    return ((self == PartialCompare.Greater) || (self == PartialCompare.Equal))\n}\n\nfunc PartialCompare_isUnordered(self: PartialCompare): Bool {\n    return (self == PartialCompare.Unordered)\n}\n\nfunc PartialCompare_reversed(self: PartialCompare): PartialCompare {\n    when self {\n        PartialCompare.Less -> {\n            return PartialCompare.Greater\n        }\n        PartialCompare.Greater -> {\n            return PartialCompare.Less\n        }\n        PartialCompare.Unordered -> {\n            return Pa [truncated]"
+    },
+    {
+      "suite": "ModulesTest[desktop]",
+      "test": "friendScopeMergesAcrossBlocks[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 11: undefined function 'triple', line 12: undefined value 'answer']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ModulesTest[desktop]",
+      "test": "scopeIsJustAnIdentifierNotANamespaceKeyword[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected variable name, got 'scope' (SCOPE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "OsStdlibTest[desktop]",
+      "test": "aCommandThatFailsIsNotReportedAsSuccess[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 183: undefined value 'value']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "OsStdlibTest[desktop]",
+      "test": "standardErrorIsFoldedIntoTheOutput[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 183: undefined value 'value']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "OsStdlibTest[desktop]",
+      "test": "runCommandReportsOutputAndExitCode[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 183: undefined value 'value']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "OsStdlibTest[desktop]",
+      "test": "aSetVariableIsVisibleToCommandsThisProcessStarts[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 183: undefined value 'value']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "OwnershipTest[desktop]",
+      "test": "severalRequirementsTakeAList[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'func', 'fin', 'var', 'let', 'test', 'typealias', 'pack', 'enum', 'spec', 'impl', 'inline', or 'deepinline' at top level, got 'requires' at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "OwnershipTest[desktop]",
+      "test": "aSingleRequirementIsWrittenWithoutBrackets[desktop]",
+      "message": "java.lang.AssertionError: [Expected 'func', 'fin', 'var', 'let', 'test', 'typealias', 'pack', 'enum', 'spec', 'impl', 'inline', or 'deepinline' at top level, got 'requires' at line 2]"
+    },
+    {
+      "suite": "PlaygroundExamplesTest[desktop]",
+      "test": "testing[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 7]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "PlaygroundExamplesTest[desktop]",
+      "test": "generators[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 456: no method 'add' on ArrayList, line 144: no member 'size' on pack ArrayList, line 153: no method 'forEach' on ArrayList, line 96: no method 'add' on ArrayList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "PlaygroundExamplesTest[desktop]",
+      "test": "pointers[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: sequence literal target Int requires a collection literal factory; it cannot use array storage, line 5: undefined value 'p', line 6: undefined value 'p', line 7: undefined value 'p', line 8: undefined value 'p']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "PropCallTest[desktop]",
+      "test": "anArrayEmptinessPropertyIsNotCallable[desktop]",
+      "message": "java.lang.AssertionError: [1] .isEmpty() -> [line 4: no method 'isEmpty' on array]"
+    },
+    {
+      "suite": "QuantumStdlibTest[desktop]",
+      "test": "circuitBuildersProduceInspectableGateSequences[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 11: no member 'size' on pack ArrayList, line 13: no member 'size' on pack ArrayList, line 14: no member 'size' on pack ArrayList, line 109: no method 'add' on ArrayList, line 114: field 'target' of 'Gate': expected Int, got CompilerTarget, line 118: field 'target' of 'Gate': expected Int, got CompilerTarget, line 122: field 'target' of 'Gate': expected Int, got CompilerTarget, line 126: field 'target' of 'Gate': expected Int, got CompilerTarget, line 130: field 'target' of 'Gate': expected Int, got CompilerTarget, line 134: field 'target' of 'Gate': expected Int, got CompilerTarget, line 138: field 'target' of 'Gate': expected Int, got CompilerTarget, line 143: cannot compare Int and CompilerTarget, line 144: field 'target' of 'Gate': expected Int, got CompilerTarget, line 149: cannot compare Int and CompilerTarget, line 150: field 'target' of 'Gate': expected Int, got CompilerTarget, line 161: field 'target' of 'Gate': expected Int, got CompilerTarget, line 161: field 'parameter' of 'Gate': expected Double, got Float, line 173: field 'target' of 'Gate': expected Int, got CompilerTarget, line 177: field 'target' of 'Gate': expected Int, got CompilerTarget]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ReactivityTest[desktop]",
+      "test": "stdStateObservationAndDisposalWork[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 164: no method 'add' on ArrayList, line 169: no member 'size' on pack ArrayList, line 170: no method 'get' on ArrayList, line 171: undefined value 'item', line 183: no member 'size' on pack ArrayList, line 184: undefined value 'count' - 'count' is provided by 'std.algorithm.search': add 'import std.algorithm.search::count', line 185: no method 'get' on ArrayList, line 186: undefined value 'item']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ReadmeSnippetTest[desktop]",
+      "test": "everyReadmeSnippetCompiles[desktop]",
+      "message": "java.lang.AssertionError: snippet #3 has no context entry in ReadmeSnippetTest; add one keyed on a line of it\nfin [oldKeys, oldValues] = using self { [keys, values] }  // read members of one value\n\nsnippet #6 does not compile:\n  1| pack Point {\n  2|     var x: Int\n  3|     var y: Int\n  4| }\n  5| spec Greet {\n  6|     func greet[self: Self&](): String\n  7| }\n  8| \n  9| impl Greet for Point {\n  10|     func greet[self: Self&](): String { return \"a point\" }\n  11| }\n  12| \n  13| func main() {}\n  errors: spec function receivers no longer use brackets; write 'func &.greet(\u2026)' at line 6\n\nsnippet #10 does not compile:\n  1| pack Point {\n  2|     var x: Int\n  3|     var y: Int\n  4| }\n  5| import std.format\n  6| \n  7| impl Display for Point {\n  8|     func display[self: Self&](formatter: Formatter!) {\n  9|         formatter.write(\"(\")\n  10|         formatter.write(\"${self.x}\")\n  11|         formatter.write(\")\")\n  12|     }\n  13| }\n  14| \n  15| func main() {}\n  errors: line 8: function receivers no longer use brackets; write 'func &.display(\u2026)' in an impl or 'func (self: Type&).display(\u2026)' for an extension\n\nsnippet #12 has no context entry in ReadmeSnippetTest; add one keyed on a line of it\nimpl Vec3 {\n\nsnippet #13 has no context entry in ReadmeSnippetTest; add one keyed on a line of it\nmacro @batch {\n\nsnippet #14 has no context entry in ReadmeSnippetTest; add one keyed on a line of it\nfin values = [1, 2, 3]             // defaults to Array<Int>\n\nsnippet #15 does not compile:\n  1| scope std { func<K, V> mapEntry(key: K, value: V): K { return key } }\n  2| macro $a @to $b => mapEntry($a, $b)\n  3| \n  4| func main() {\n  5|     \"key\" @to 42         // mapEntry(\"key\", 42)\n  6| \n  7| }\n  8| \n  errors: line 1220: undefined function 'mapEntry' - 'mapEntry' is provided by 'std.container.map': add 'import std.container.map::mapEntry'"
+    },
+    {
+      "suite": "ResultUnwrapOrTest[desktop]",
+      "test": "unwrapOrReturnsOkValue[desktop]",
+      "message": "java.lang.AssertionError: compile failed: [line 4: undefined function 'ok', line 5: undefined function 'unwrapOr']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ResultUnwrapOrTest[desktop]",
+      "test": "unwrapOrReturnsDefaultOnErr[desktop]",
+      "message": "java.lang.AssertionError: compile failed: [line 4: undefined function 'err', line 5: undefined function 'unwrapOr']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "RoboticsEngineTest[desktop]",
+      "test": "geometryLimitsAndTrajectoriesRemainInspectable[desktop]",
+      "message": "java.io.FileNotFoundException: ../azora-engine/robotics.az (No such file or directory)"
+    },
+    {
+      "suite": "ScopeQualifiedAccessTest[desktop]",
+      "test": "aScopedPackIsConstructedThroughItsScope[desktop]",
+      "message": "java.lang.AssertionError: compilation failed:\n  line 759: undefined value 'v'"
+    },
+    {
+      "suite": "ScopeQualifiedAccessTest[desktop]",
+      "test": "decoratorFieldTargetIsStillAFieldTarget[desktop]",
+      "message": "java.lang.AssertionError: compilation failed:\n  line 759: undefined value 'v'\n  line 258: undefined value 'text'\n  line 15: undefined function 'std::serialFieldAt'\n  line 16: undefined value '__serialField'\n  line 25: undefined function 'std::serialAsText'\n  line 34: undefined function 'std::encodeSerialValue'\n  line 38: undefined function 'std::decodeSerialValue'\n  line 39: undefined value '__serialValue'\n  line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError'"
+    },
+    {
+      "suite": "ScopeQualifiedAccessTest[desktop]",
+      "test": "reflectionIsQualifiedFromOutsideItsScope[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be of type <org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ScopeQualifiedAccessTest[desktop]",
+      "test": "wildcardFieldTargetIsStillAWildcard[desktop]",
+      "message": "java.lang.AssertionError: compilation failed:\n  line 759: undefined value 'v'\n  line 12: undefined function 'std::serialFieldAt'\n  line 27: undefined function 'std::encodeSerialValue'\n  line 31: undefined function 'std::decodeSerialValue'\n  line 32: undefined value '__serialValue'\n  line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError'"
+    },
+    {
+      "suite": "ScopeQualifiedAccessTest[desktop]",
+      "test": "qualifiedTypeArgumentIsAcceptedInAGenericCall[desktop]",
+      "message": "java.lang.AssertionError: compilation failed:\n  line 4: undefined function 'ArrayList' - 'ArrayList' is provided by 'std.container.list': add 'import std.container.list::ArrayList'\n  line 5: undefined value 'fields'\n  line 6: undefined value 'fields'"
+    },
+    {
+      "suite": "ScopeQualifiedAccessTest[desktop]",
+      "test": "aFieldNamedLikeATypeIsStillAFieldTarget[desktop]",
+      "message": "java.lang.AssertionError: compilation failed:\n  line 759: undefined value 'v'\n  line 12: undefined function 'std::serialFieldAt'\n  line 26: undefined function 'std::encodeSerialValue'\n  line 30: undefined function 'std::decodeSerialValue'\n  line 31: undefined value '__serialValue'\n  line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError'"
+    },
+    {
+      "suite": "SortStdlibTest[desktop]",
+      "test": "sortByAcceptsAKeyOfAnotherType[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 11: undefined function 'Array::fill', line 12: undefined value 'people', line 13: undefined value 'people', line 14: undefined value 'people', line 17: undefined value 'people', line 20: undefined value 'byAge', line 1: undefined value 'byAge', line 26: undefined value 'people', line 29: undefined value 'byName', line 30: undefined value 'byName']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "SortStdlibTest[desktop]",
+      "test": "sortDescendingReversesTheOrder[desktop]",
+      "message": "java.lang.IndexOutOfBoundsException: Index 5 out of bounds for length 5"
+    },
+    {
+      "suite": "SortStdlibTest[desktop]",
+      "test": "sortHandlesEmptyAndSingleElementArrays[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 6: undefined function 'Array::fill', line 7: undefined value 'empty']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "SortStdlibTest[desktop]",
+      "test": "sortIsStable[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 11: undefined function 'Array::fill', line 12: undefined value 'entries', line 13: undefined value 'entries', line 14: undefined value 'entries', line 15: undefined value 'entries', line 16: undefined value 'entries', line 19: undefined value 'entries', line 22: undefined value 'byRank', line 23: undefined value 'byRank']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "SortStdlibTest[desktop]",
+      "test": "sortOrdersAscendingAndLeavesTheInputAlone[desktop]",
+      "message": "java.lang.IndexOutOfBoundsException: Index 7 out of bounds for length 7"
+    },
+    {
+      "suite": "SortStdlibTest[desktop]",
+      "test": "sortMergesRunsForInputsLongerThanOneRun[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 7: undefined function 'Array::fill', line 9: undefined value 'values', line 11: undefined value 'values', line 12: undefined value 'sorted', line 13: undefined value 'sorted', line 14: undefined value 'sorted', line 15: undefined value 'sorted']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "StabilityDecoratorTest[desktop]",
+      "test": "unknownDecoratorIsRejected[desktop]",
+      "message": "java.lang.AssertionError: [Decorator names must start with an uppercase letter: use '@Experiemntal' at line 2]"
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "printlnIsDeclaredAsCompilerBridge[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be true."
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "importRejectsDoubleColonSyntax[desktop]",
+      "message": "java.lang.AssertionError: Expected an exception of class java.lang.IllegalStateException to be thrown, but was completed successfully with the result: <Success(wasm=(module\n  (import \"env\" \"print_i32\" (func $print_i32 (param i32)))\n  (import \"env\" \"print_i64\" (func $print_i64 (param i64)))\n  (import \"env\" \"print_f64\" (func $print_f64 (param f64)))\n  (import \"env\" \"print_f32\" (func $print_f32 (param f32)))\n  (import \"env\" \"print_bool\" (func $print_bool (param i32)))\n  (import \"env\" \"print_str\" (func $print_str (param i32)))\n  (import \"env\" \"write_i32\" (func $write_i32 (param i32)))\n  (import \"env\" \"write_i64\" (func $write_i64 (param i64)))\n  (import \"env\" \"write_f64\" (func $write_f64 (param f64)))\n  (import \"env\" \"write_f32\" (func $write_f32 (param f32)))\n  (import \"env\" \"write_bool\" (func $write_bool (param i32)))\n  (import \"env\" \"write_str\" (func $write_str (param i32)))\n  (memory (export \"memory\") 16)\n  (global $__heap (mut i32) (i32.const 1024))\n  (func $main\n    (drop (block (result i32) (call $print_i32 (call $abs (i32.const -5))) (i32.const 0)))\n  )\n  (func $abs (param $x i32) (result i32)\n    (local $it i32)\n    (if (i32.lt_s (local.get $x) (i32.const 0))\n      (then\n        (local.set $it (i32.sub (i32.const 0) (local.get $x)))\n        (if (i32.eqz (i32.ge_s (local.get $it) (i32.const 0))) (then unreachable))\n        (return (local.get $it))\n      )\n      (else\n        (local.set $it (local.get $x))\n        (if (i32.eqz (i32.ge_s (local.get $it) (i32.const 0))) (then unreachable))\n        (return (local.get $it))\n      ))\n    unreachable\n  )\n  (export \"main\" (func $main))\n  (export \"abs\" (func $abs))\n), llvm=; LLVM IR generated by Azora compiler\n\ndeclare i32 @puts(i8*)\ndeclare void @abort() noreturn\n\ndefine i32 @main() {\nentry:\n  %0 = inttoptr i32 -5 to i8*\n  %1 = call i8* @abs(i8* %0)\n  %2 = getelementptr [8 x i8], [8 x i8]* @.str.0, i64 0, i64 0\n  %3 = call i32 @puts(i8* %2)\n  ret i32 0\n}\n\ndefine i8* @abs(i8* %arg.x) {\nentry:\n  %0 = alloca i8*\n  store i8* %arg.x, i8** %0\n  %loc0.it = alloca i8*\n  %1 = load i8*, i8** %0\n  ; binary LT on Any - not lowered (nullable aggregate)\n  %2 = select i1 true, i1 false, i1 false\n  br i1 %2, label %then.0, label %else.1\nthen.0:\n  %3 = load i8*, i8** %0\n  ; negate on Any - not lowered (erased generic)\n  store i8* null, i8** %loc0.it\n  %5 = load i8*, i8** %loc0.it\n  ; binary GTE on Any - not lowered (nullable aggregate)\n  %6 = select i1 true, i1 false, i1 false\n  br i1 %6, label %assert_pass.4, label %assert_fail.3\nassert_fail.3:\n  %7 = getelementptr [29 x i8], [29 x i8]* @.str.1, i64 0, i64 0\n  %8 = call i32 @puts(i8* %7)\n  call void @abort()\n  unreachable\nassert_pass.4:\n  %9 = load i8*, i8** %loc0.it\n  ret i8* %9\nelse.1:\n  %10 = load i8*, i8** %0\n  store i8* %10, i8** %loc0.it\n  %11 = load i8*, i8** %loc0.it\n  ; binary GTE on Any - not lowered (nullable aggregate)\n  %12 = select i1 true, i1 false, i1 false\n  br i1 %12, label %assert_pass.6, label %assert_fail.5\nassert_fail.5:\n  %13 = getelementptr [29 [truncated]"
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "importedPackCarriesItsFieldDecoratorImplementations[desktop]",
+      "message": "java.lang.AssertionError: [line 6: hasAnnot receiver is not compile-time declaration metadata]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "stdlibIndexExposesCollectionPacks[desktop]",
+      "message": "org.junit.ComparisonFailure: expected:<std.container[]> but was:<std.container[.list]>"
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "importStdWildcardExposesAllModules[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [a '.' walks down the module path and '::' reaches inside a module, so write 'import std::*' at line 2]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "collectionTypeAnnotationsInjectPacksAndImpls[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 3: undefined type 'List' - 'List' is provided by 'std.container.list': add 'import std.container.list::List', line 4: undefined type 'Map' - 'Map' is provided by 'std.container.map': add 'import std.container.map::Map', line 5: undefined type 'Set' - 'Set' is provided by 'std.container.set': add 'import std.container.set::Set']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "rootModuleContainsCompilerPredefinedDeclarations[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be true."
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "importedScopeMemberRequiresQualifiedAccess[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be of type <org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "serializerImportSelectsDecoratorMarker[desktop]",
+      "message": "java.lang.AssertionError: [line 759: undefined value 'v', line 15: undefined function 'std::serialFieldAt', line 16: undefined value '__serialField', line 26: undefined function 'std::serialAsLong', line 35: undefined function 'std::encodeSerialValue', line 39: undefined function 'std::decodeSerialValue', line 40: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "bareStdlibAccessIsRejected[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be of type <org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "programsWithoutStdlibAreUntouched[desktop]",
+      "message": "java.lang.AssertionError: expected:<[main]> but was:<[main, Int_rank, __Int_rank, UInt_rank, __UInt_rank, UByte_rank, UShort_rank, ULong_rank, UCent_rank, Byte_rank, Short_rank, Long_rank, Cent_rank, Half_rank, __Half_rank, Float_rank, __Float_rank, Double_rank, __Double_rank, Quad_rank, __Quad_rank, Compare_isLess, Compare_isLessOrEqual, Compare_isGreater, Compare_isGreaterOrEqual, Compare_reversed, Compare_then, PartialCompare_isLess, PartialCompare_isLessOrEqual, PartialCompare_isGreater, PartialCompare_isGreaterOrEqual, PartialCompare_isUnordered, PartialCompare_reversed, PartialCompare_then]>"
+    },
+    {
+      "suite": "StdlibInjectionTest[desktop]",
+      "test": "importedSerializerDecoratorCanBeAppliedToPack[desktop]",
+      "message": "java.lang.AssertionError: [line 759: undefined value 'v', line 15: undefined function 'std::serialFieldAt', line 16: undefined value '__serialField', line 26: undefined function 'std::serialAsLong', line 35: undefined function 'std::encodeSerialValue', line 39: undefined function 'std::decodeSerialValue', line 40: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "StdlibMethodsTest[desktop]",
+      "test": "setOfDeduplicates[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 759: undefined value 'v', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "SymbolTest[desktop]",
+      "test": "scopeResolution_accessesUpperScope[desktop]",
+      "message": "java.lang.AssertionError: Should have 2 println calls, got: [] expected:<2> but was:<0>"
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "inlineAssert_passingCondition[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after inline assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "assert_llvmEmit[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "test_llvmEmit[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "test_carriesItsMethodIntoTheIr[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 2]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "assert_failingConditionThrows[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "test_basicDeclaration[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "assert_passingCondition[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "testAll_saysSoAndNamesWhatItGathered[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 2]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "inlineAssert_insideFunctionBody[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after inline assert condition, got '{' (L_BRACE) at line 4]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "assert_conditionMustBeBool[desktop]",
+      "message": "java.lang.AssertionError: Should require Bool condition, got: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]"
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "assert_messageMustBeString[desktop]",
+      "message": "java.lang.AssertionError: Should require String message, got: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]"
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "inlineAssert_failingCondition[desktop]",
+      "message": "java.lang.AssertionError: Should contain assertion message, got: [Expected 'panic' after inline assert condition, got '{' (L_BRACE) at line 3]"
+    },
+    {
+      "suite": "TestAssertTraceTest[desktop]",
+      "test": "inlineAssert_removedFromIr[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after inline assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestMethodTest[desktop]",
+      "test": "allLowersToOneSuiteWithScopedChildren[desktop]",
+      "message": "java.lang.IllegalStateException: Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3"
+    },
+    {
+      "suite": "TestMethodTest[desktop]",
+      "test": "filesWithoutAllKeepIndependentTests[desktop]",
+      "message": "java.lang.IllegalStateException: Expected 'panic' after assert condition, got '{' (L_BRACE) at line 1"
+    },
+    {
+      "suite": "TestMethodTest[desktop]",
+      "test": "explicitThisParses[desktop]",
+      "message": "java.lang.IllegalStateException: Expected 'panic' after assert condition, got '{' (L_BRACE) at line 1"
+    },
+    {
+      "suite": "TestMethodTest[desktop]",
+      "test": "allRunsEveryChildAsOnePassingResult[desktop]",
+      "message": "java.lang.IllegalStateException: Expected 'panic' after assert condition, got '{' (L_BRACE) at line 1"
+    },
+    {
+      "suite": "TestMethodTest[desktop]",
+      "test": "testDefaultsToThis[desktop]",
+      "message": "java.lang.IllegalStateException: Expected 'panic' after assert condition, got '{' (L_BRACE) at line 1"
+    },
+    {
+      "suite": "TestMethodTest[desktop]",
+      "test": "childFailureFailsTheAllSuite[desktop]",
+      "message": "java.lang.IllegalStateException: Expected 'panic' after assert condition, got '{' (L_BRACE) at line 1"
+    },
+    {
+      "suite": "TestScopeTest[desktop]",
+      "test": "aTestScopeMemberMayUseItsSiblings[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 7]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestScopeTest[desktop]",
+      "test": "aTestMayUseWhatATestScopeDeclares[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 6]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "ThirdPartyFormatTest[desktop]",
+      "test": "fieldDecoratorsApplyToAThirdPartyFormatToo[desktop]",
+      "message": "java.lang.AssertionError: compilation failed:\n  line 258: undefined value 'text'\n  line 759: undefined value 'v'\n  line 18: undefined function 'std::serialFieldAt'\n  line 19: undefined value '__serialField'\n  line 32: undefined function 'std::serialAsText'\n  line 43: undefined function 'std::encodeSerialValue'\n  line 47: undefined function 'std::decodeSerialValue'\n  line 48: undefined value '__serialValue'\n  line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError'"
+    },
+    {
+      "suite": "ThirdPartyFormatTest[desktop]",
+      "test": "aThirdPartyTextFormatRoundTripsAGeneratedCodec[desktop]",
+      "message": "java.lang.AssertionError: compilation failed:\n  line 258: undefined value 'text'\n  line 759: undefined value 'v'\n  line 18: undefined function 'std::serialFieldAt'\n  line 19: undefined value '__serialField'\n  line 33: undefined function 'std::serialAsText'\n  line 43: undefined function 'std::encodeSerialValue'\n  line 47: undefined function 'std::decodeSerialValue'\n  line 48: undefined value '__serialValue'\n  line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError'"
+    },
+    {
+      "suite": "ThirdPartyFormatTest[desktop]",
+      "test": "serializerSpecIsImplementableOutsideTheStandardLibrary[desktop]",
+      "message": "java.lang.AssertionError: compilation failed:\n  line 759: undefined value 'v'\n  line 13: undefined function 'ArrayList' - 'ArrayList' is provided by 'std.container.list': add 'import std.container.list::ArrayList'\n  line 14: undefined value 'fields'\n  line 15: undefined value 'fields'\n  line 16: undefined value 'fields'"
+    },
+    {
+      "suite": "Tier1PolishTest[desktop]",
+      "test": "operIndexGetAndSet[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: ['impl oper\u2026 for Type' was removed at line 5; declare the operator beside its type, as 'oper[] Type&.(index: Int): T { \u2026 }']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier1PolishTest[desktop]",
+      "test": "mapWithExplicitTypeAnnotation[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 3: undefined type 'Map' - 'Map' is provided by 'std.container.map': add 'import std.container.map::Map']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier3DiTest[desktop]",
+      "test": "everyProviderLifetimeAndGraphCompositionParse[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected a graph name after 'includes', got '[' (L_BRACKET) at line 13]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier3MemoryTest[desktop]",
+      "test": "pointerArithmeticDistance[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 3: sequence literal target Int requires a collection literal factory; it cannot use array storage, line 4: undefined value 'p', line 5: undefined value 'q']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier3MemoryTest[desktop]",
+      "test": "cloneProducesIndependentDeepCopy[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: no method 'clone' on array, line 5: undefined value 'b', line 7: undefined value 'b']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier3MemoryTest[desktop]",
+      "test": "pointerArithmeticWriteThroughOffset[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 3: sequence literal target Int requires a collection literal factory; it cannot use array storage, line 4: undefined value 'p', line 5: undefined value 'p']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier3MemoryTest[desktop]",
+      "test": "pointerArithmeticSubtract[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 3: sequence literal target Int requires a collection literal factory; it cannot use array storage, line 4: undefined value 'p', line 5: undefined value 'end', line 6: undefined value 'end', line 7: undefined value 'back']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier3MemoryTest[desktop]",
+      "test": "cloneOnAnArrayIsIndependentOfTheOriginal[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: no method 'clone' on array, line 5: undefined value 'copy', line 7: undefined value 'copy']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier3MemoryTest[desktop]",
+      "test": "pointerArithmeticOffsetAndDeref[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 3: sequence literal target Int requires a collection literal factory; it cannot use array storage, line 4: undefined value 'p', line 5: undefined value 'p', line 6: undefined value 'p1', line 7: undefined value 'p']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "Tier4ConcurrencyTest[desktop]",
+      "test": "channelWithProducerTask[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 2: undefined type 'Channel' - 'Channel' is provided by 'std.parallelism.channel': add 'import std.parallelism.channel::Channel']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TimeStdlibTest[desktop]",
+      "test": "timeSourceAndAllEmbeddedTestsParse[desktop]",
+      "message": "java.io.FileNotFoundException: ../Internal/Std/Time.az (No such file or directory)"
+    },
+    {
+      "suite": "TimeStdlibTest[desktop]",
+      "test": "interpreterExecutesCalendarOffsetAndIsoRoundTrip[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 759: undefined value 'v', line 21: undefined function 'std::serialFieldAt', line 22: undefined value '__serialField', line 55: undefined function 'std::encodeSerialValue', line 59: undefined function 'std::decodeSerialValue', line 60: undefined value '__serialValue', line 21: undefined function 'std::serialFieldAt', line 22: undefined value '__serialField', line 44: undefined function 'std::serialAsInt', line 55: undefined function 'std::encodeSerialValue', line 59: undefined function 'std::decodeSerialValue', line 60: undefined value '__serialValue', line 24: undefined function 'std::serialFieldAt', line 25: undefined value '__serialField', line 52: undefined function 'std::serialAsInt', line 64: undefined function 'std::encodeSerialValue', line 68: undefined function 'std::decodeSerialValue', line 69: undefined value '__serialValue', line 15: undefined function 'std::serialFieldAt', line 16: undefined value '__serialField', line 25: undefined function 'std::serialAsInt', line 34: undefined function 'std::encodeSerialValue', line 38: undefined function 'std::decodeSerialValue', line 39: undefined value '__serialValue', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 34: undefined function 'std::serialAsLong', line 44: undefined function 'std::encodeSerialValue', line 48: undefined function 'std::decodeSerialValue', line 49: undefined value '__serialValue', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TimeStdlibTest[desktop]",
+      "test": "timeModuleCompilesWithGeneratedSerializableImplementations[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 759: undefined value 'v', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 34: undefined function 'std::serialAsLong', line 44: undefined function 'std::encodeSerialValue', line 48: undefined function 'std::decodeSerialValue', line 49: undefined value '__serialValue', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 15: undefined function 'std::serialFieldAt', line 16: undefined value '__serialField', line 25: undefined function 'std::serialAsInt', line 34: undefined function 'std::encodeSerialValue', line 38: undefined function 'std::decodeSerialValue', line 39: undefined value '__serialValue', line 21: undefined function 'std::serialFieldAt', line 22: undefined value '__serialField', line 55: undefined function 'std::encodeSerialValue', line 59: undefined function 'std::decodeSerialValue', line 60: undefined value '__serialValue', line 21: undefined function 'std::serialFieldAt', line 22: undefined value '__serialField', line 44: undefined function 'std::serialAsInt', line 55: undefined function 'std::encodeSerialValue', line 59: undefined function 'std::decodeSerialValue', line 60: undefined value '__serialValue', line 24: undefined function 'std::serialFieldAt', line 25: undefined value '__serialField', line 52: undefined function 'std::serialAsInt', line 64: undefined function 'std::encodeSerialValue', line 68: undefined function 'std::decodeSerialValue', line 69: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TimeStdlibTest[desktop]",
+      "test": "invalidOffsetMinuteUsesTypedFailurePath[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 759: undefined value 'v', line 21: undefined function 'std::serialFieldAt', line 22: undefined value '__serialField', line 55: undefined function 'std::encodeSerialValue', line 59: undefined function 'std::decodeSerialValue', line 60: undefined value '__serialValue', line 21: undefined function 'std::serialFieldAt', line 22: undefined value '__serialField', line 44: undefined function 'std::serialAsInt', line 55: undefined function 'std::encodeSerialValue', line 59: undefined function 'std::decodeSerialValue', line 60: undefined value '__serialValue', line 24: undefined function 'std::serialFieldAt', line 25: undefined value '__serialField', line 52: undefined function 'std::serialAsInt', line 64: undefined function 'std::encodeSerialValue', line 68: undefined function 'std::decodeSerialValue', line 69: undefined value '__serialValue', line 15: undefined function 'std::serialFieldAt', line 16: undefined value '__serialField', line 25: undefined function 'std::serialAsInt', line 34: undefined function 'std::encodeSerialValue', line 38: undefined function 'std::decodeSerialValue', line 39: undefined value '__serialValue', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 34: undefined function 'std::serialAsLong', line 44: undefined function 'std::encodeSerialValue', line 48: undefined function 'std::decodeSerialValue', line 49: undefined value '__serialValue', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TraitsTest[desktop]",
+      "test": "specAndImplFor[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 11: undefined value 'self']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TraitsTest[desktop]",
+      "test": "specWithMultipleMethods[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 12: undefined value 'self', line 15: undefined value 'self']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleTest[desktop]",
+      "test": "tupleOfAndTupleTypeRemainSupported[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 6: undefined function 'tupleOf', line 10: undefined function 'tupleOf', line 11: undefined value 'result', line 12: undefined value 'result', line 759: undefined value 'v', line 18: undefined function 'std::serialFieldAt', line 19: undefined value '__serialField', line 33: undefined function 'std::serialAsLong', line 43: undefined function 'std::encodeSerialValue', line 47: undefined function 'std::decodeSerialValue', line 48: undefined value '__serialValue', line 741: undefined value 'SerializationError' - 'SerializationError' is provided by 'std.serializer': add 'import std.serializer::SerializationError']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleTest[desktop]",
+      "test": "tupleLiteralIsRejectedWithMigration[desktop]",
+      "message": "java.lang.AssertionError: [line 6: no member '0' on (Int, String)]"
+    },
+    {
+      "suite": "TupleTest[desktop]",
+      "test": "tupleTypeSyntaxIsRejectedWithMigration[desktop]",
+      "message": "java.lang.AssertionError: [line 2: undefined function 'tupleOf']"
+    },
+    {
+      "suite": "TupleVariadicLlvmExecTest[desktop]",
+      "test": "tupleOfInferredRunsViaLli[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: undefined function 'tupleOf'\nline 5: undefined value 'x'\nline 6: undefined value 'x'"
+    },
+    {
+      "suite": "TupleVariadicLlvmExecTest[desktop]",
+      "test": "tupleOfThreeElementsRunsViaLli[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: undefined function 'tupleOf'\nline 5: undefined value 't'\nline 6: undefined value 't'\nline 7: undefined value 't'"
+    },
+    {
+      "suite": "TupleVariadicLlvmExecTest[desktop]",
+      "test": "llvmEmitsMonomorphizedStruct[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: undefined function 'tupleOf'\nline 5: undefined value 'x'"
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleOfThreeElementsAndMutation[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: undefined function 'tupleOf', line 5: undefined value 't', line 6: undefined value 't', line 7: undefined value 't']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "nestedTuple[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: undefined function 'tupleOf', line 5: undefined value 'outer', line 6: undefined value 'outer', line 7: undefined value 'outer']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleOfExplicitTypeArgsBothForms[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: undefined function 'tupleOf', line 5: undefined value 'x', line 6: undefined value 'x']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleOfExplicitAnnotation[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: undefined function 'tupleOf', line 5: undefined value 'x', line 6: undefined value 'x']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleElementTypesInferFromArithmeticExpressions[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 5: undefined function 'tupleOf']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tuplePassedToAndReturnedFromFunction[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: undefined function 'tupleOf', line 7: undefined function 'tupleOf', line 8: undefined value 'r', line 9: undefined value 'r']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "qualifiedSymbolsUseCanonicalIrNames[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 5: undefined function 'tupleOf']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tuplePrettyUsesReflectedFields[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 6: undefined function 'tupleOf', line 7: undefined value 'value']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleElementIsCheckAndEquality[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: undefined function 'tupleOf', line 5: undefined value 'tup', line 6: undefined value 'tup', line 7: undefined value 'tup']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "qualifiedTupleModuleImportExposesTupleOf[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 17: undefined function 'tupleOf']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleOfInferredMonomorphizes[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: undefined function 'tupleOf', line 5: undefined value 'x', line 6: undefined value 'x']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleModuleImportExposesTuple[desktop]",
+      "message": "java.lang.AssertionError: import std failed: [line 4: undefined function 'tupleOf', line 5: undefined value 'x']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleTypeRequiresItsDeclaredScope[desktop]",
+      "message": "java.lang.AssertionError: expected:<[line 3: undefined type 'Tuple'; 'Tuple' is part of scope 'std', use 'Tuple' instead]> but was:<[line 4: undefined function 'tupleOf']>"
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleOutputIncludesItsFullScopeQualifiedSignature[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 5: undefined function 'tupleOf']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TupleVariadicTest[desktop]",
+      "test": "tupleLengthConstraintRejectsSingleElement[desktop]",
+      "message": "java.lang.AssertionError: expected a clear length message, got: [line 4: undefined function 'tupleOf']"
+    },
+    {
+      "suite": "TupleVariadicWasmExecTest[desktop]",
+      "test": "tupleOfThreeElementsRunsViaWasm[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: undefined function 'tupleOf'\nline 5: undefined value 't'\nline 6: undefined value 't'\nline 7: undefined value 't'"
+    },
+    {
+      "suite": "TupleVariadicWasmExecTest[desktop]",
+      "test": "tupleOfInferredRunsViaWasm[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed:\nline 4: undefined function 'tupleOf'\nline 5: undefined value 'x'\nline 6: undefined value 'x'"
+    },
+    {
+      "suite": "TypeFunctionTest[desktop]",
+      "test": "aConcreteInvalidSpecializationIsAnError[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be of type <org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TypeFunctionTest[desktop]",
+      "test": "stdlibPromoteRequiresTwoTypes[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be of type <org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TypeFunctionTest[desktop]",
+      "test": "variadicConstraintProducesDiagnostic[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be of type <org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TypeRefTest[desktop]",
+      "test": "arrayGenericNameRequiresExactlyOneTypeArgument[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be true."
+    },
+    {
+      "suite": "TypeRefTest[desktop]",
+      "test": "mutableCollectionTypeAnnotations[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 1: undefined type 'MutableList' - 'MutableList' is provided by 'std.container.list': add 'import std.container.list::MutableList']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TypeRefTest[desktop]",
+      "test": "nestedGenericNamedTypeAnnotation[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 1: undefined type 'List' - 'List' is provided by 'std.container.list': add 'import std.container.list::List']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TypeRefTest[desktop]",
+      "test": "genericNamedTypeAnnotation[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 1: undefined type 'List' - 'List' is provided by 'std.container.list': add 'import std.container.list::List']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TypeRefTest[desktop]",
+      "test": "removedCollectionTypeSpellingsAreRejected[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be true."
+    },
+    {
+      "suite": "TypeRefTest[desktop]",
+      "test": "removedTupleTypeAnnotationIsRejected[desktop]",
+      "message": "java.lang.AssertionError: Expected value to be of type <org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TypeRefTest[desktop]",
+      "test": "immutableCollectionTypeAnnotations[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 1: undefined type 'List' - 'List' is provided by 'std.container.list': add 'import std.container.list::List']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "UnsafeFieldTest[desktop]",
+      "test": "anUnsafeMemberIsReadableInsideAnUnsafeBlock[desktop]",
+      "message": "java.lang.AssertionError: an unsafe block must accept it: [line 5: no member 'data' on Array<Int, 2>]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "UnsafeFieldTest[desktop]",
+      "test": "anUnsafeMemberIsNotReadableFromSafeCode[desktop]",
+      "message": "java.lang.AssertionError: [line 4: no member 'data' on Array<Int, 2>]"
+    },
+    {
+      "suite": "WasmCodegenExecTest[desktop]",
+      "test": "vhaTrigIsMoreAccurateThanTheDefault[desktop]",
+      "message": "java.lang.AssertionError: wat2wasm failed:\n?[1m/var/folders/q3/8jdx94s166q91s5jbpr3_b780000gn/T/azora_wat_13782591381753947953/program.wat:343:4: ?[31merror: ?[0mredefinition of function \"$__vha_sin\"\n  (func $__vha_sin (param $x f64) (result f64)\n   ?[1m?[32m^^^^?[0m\n?[1m/var/folders/q3/8jdx94s166q91s5jbpr3_b780000gn/T/azora_wat_13782591381753947953/program.wat:345:4: ?[31merror: ?[0mredefinition of function \"$__vha_cos\"\n  (func $__vha_cos (param $x f64) (result f64)\n   ?[1m?[32m^^^^?[0m\n\n--- WAT ---\n(module\n  (import \"env\" \"print_i32\" (func $print_i32 (param i32)))\n  (import \"env\" \"print_i64\" (func $print_i64 (param i64)))\n  (import \"env\" \"print_f64\" (func $print_f64 (param f64)))\n  (import \"env\" \"print_f32\" (func $print_f32 (param f32)))\n  (import \"env\" \"print_bool\" (func $print_bool (param i32)))\n  (import \"env\" \"print_str\" (func $print_str (param i32)))\n  (import \"env\" \"write_i32\" (func $write_i32 (param i32)))\n  (import \"env\" \"write_i64\" (func $write_i64 (param i64)))\n  (import \"env\" \"write_f64\" (func $write_f64 (param f64)))\n  (import \"env\" \"write_f32\" (func $write_f32 (param f32)))\n  (import \"env\" \"write_bool\" (func $write_bool (param i32)))\n  (import \"env\" \"write_str\" (func $write_str (param i32)))\n  (func $sin (param $a0 f64) (result f64)\n    (call $__soft_sin (local.get $a0))\n  )\n  (func $__vha_sin (param $a0 f64) (result f64)\n    (call $__vha_sin (local.get $a0))\n  )\n  (func $cos (param $a0 f64) (result f64)\n    (call $__soft_cos (local.get $a0))\n  )\n  (func $__vha_cos (param $a0 f64) (result f64)\n    (call $__vha_cos (local.get $a0))\n  )\n  (memory (export \"memory\") 16)\n  (global $__heap (mut i32) (i32.const 1072))\n\n  (func $__alloc (param $size i32) (result i32)\n    (local $p i32)\n    (local.set $p (global.get $__heap))\n    (global.set $__heap (i32.and (i32.add (i32.add (global.get $__heap) (local.get $size)) (i32.const 3)) (i32.const -4)))\n    (local.get $p))\n\n  (func $__double_to_str (param $v f64) (result i32)\n    (local $neg i32) (local $ip i64) (local $frac f64) (local $fd i64)\n    (local $p i32) (local $q i32) (local $len i32) (local $i i32) (local $x i64)\n    (local.set $neg (f64.lt (local.get $v) (f64.const 0)))\n    (local.set $v (f64.abs (local.get $v)))\n    (local.set $ip (i64.trunc_f64_u (local.get $v)))\n    (local.set $frac (f64.sub (local.get $v) (f64.convert_i64_u (local.get $ip))))\n    ;; fifteen fractional digits, rounded, then trailing zeros trimmed below -\n    ;; enough to show the difference between the default and vha math tiers\n    (local.set $fd (i64.trunc_f64_u (f64.nearest (f64.mul (local.get $frac) (f64.const 1000000000000000)))))\n    (if (i64.ge_u (local.get $fd) (i64.const 1000000000000000))\n      (then\n        (local.set $fd (i64.const 0))\n        (local.set $ip (i64.add (local.get $ip) (i64.const 1)))))\n    ;; integer part digit count\n    (local.set $len (i32.const 0))\n    (local.set $x (local.get $ip))\n    (if (i64.eqz (local.get $x)) (then (local.set $len (i32.const 1))))\n    (block $c (loop $l\n      (br [truncated]"
+    },
+    {
+      "suite": "WebsiteExamplesTest[desktop]",
+      "test": "ch29_pointer_arithmetic[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 3: sequence literal target Int requires a collection literal factory; it cannot use array storage, line 4: undefined value 'p', line 5: undefined value 'p', line 6: undefined value 'p', line 7: undefined value 'p', line 8: undefined value 'p', line 9: undefined value 'q']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "WebsiteExamplesTest[desktop]",
+      "test": "ch13_inline_assert[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after inline assert condition, got '{' (L_BRACE) at line 4]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "WebsiteExamplesTest[desktop]",
+      "test": "ch13_divide_assert[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 3]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "WebsiteExamplesTest[desktop]",
+      "test": "ch13_test_assert[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [Expected 'panic' after assert condition, got '{' (L_BRACE) at line 5]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "WebsiteExamplesTest[desktop]",
+      "test": "ch31_channel[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 2: undefined type 'Channel' - 'Channel' is provided by 'std.parallelism.channel': add 'import std.parallelism.channel::Channel']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "WebsiteExamplesTest[desktop]",
+      "test": "ch31_flow[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 456: no method 'add' on ArrayList, line 144: no member 'size' on pack ArrayList, line 153: no method 'forEach' on ArrayList, line 96: no method 'add' on ArrayList]. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "WebsiteExamplesTest[desktop]",
+      "test": "ch29_clone[desktop]",
+      "message": "java.lang.AssertionError: Compilation failed: [line 4: no method 'clone' on array, line 5: undefined value 'copy']. Expected value to be of type <org.azora.lang.CompilationResult$Success (Kotlin reflection is not available)>, actual <class org.azora.lang.CompilationResult$Failure (Kotlin reflection is not available)>."
+    },
+    {
+      "suite": "TestScopedImportTest[desktop]",
+      "test": "aTestMayOpenWithItsOwnImports[desktop]",
+      "message": "java.lang.IllegalStateException: import selector groups use '::{' after the module path; write 'import std::{\u2026}' at line 2"
+    },
+    {
+      "suite": "DecoratorConformanceTest[desktop]",
+      "test": "decoratorImplDerivesEverySerializerContract[desktop]",
+      "message": "java.lang.IllegalStateException: Expected spec or decorator name after 'binds', got '[' (L_BRACKET) at line 3"
+    },
+    {
+      "suite": "DecoratorReflectionTest[desktop]",
+      "test": "decoratorImplSupportsFieldListsDecoratorListsAndWildcards[desktop]",
+      "message": "java.lang.IllegalStateException: Expected type or trait name after 'impl', got '[' (L_BRACKET) at line 8"
+    },
+    {
+      "suite": "DecoratorTargetTest[desktop]",
+      "test": "decoratorChainsAndMixedBindingsExpandTransitively[desktop]",
+      "message": "java.lang.IllegalStateException: Expected spec or decorator name after 'binds', got '[' (L_BRACKET) at line 6"
+    },
+    {
+      "suite": "DecoratorTargetTest[desktop]",
+      "test": "allRequestedBindingFormsParse[desktop]",
+      "message": "java.lang.IllegalStateException: Expected spec or decorator name after 'binds', got '[' (L_BRACKET) at line 1"
+    },
+    {
+      "suite": "DecoratorTargetTest[desktop]",
+      "test": "duplicateDecoratorReachedThroughDiamondIsRejected[desktop]",
+      "message": "java.lang.IllegalStateException: Expected spec or decorator name after 'binds', got '[' (L_BRACKET) at line 4"
+    },
+    {
+      "suite": "DecoratorTargetTest[desktop]",
+      "test": "duplicateTransitiveBindingsAreRejected[desktop]",
+      "message": "java.lang.IllegalStateException: Expected spec or decorator name after 'binds', got '[' (L_BRACKET) at line 4"
+    },
+    {
+      "suite": "SerializationDeriverTest[desktop]",
+      "test": "ignoreAndRequiredOnOneFieldAreRejected[desktop]",
+      "message": "java.lang.IllegalStateException: Expected type or trait name after 'impl', got '[' (L_BRACKET) at line 26"
+    },
+    {
+      "suite": "SerializationDeriverTest[desktop]",
+      "test": "generatedPrimitiveCodecBodiesPassSemanticAnalysis[desktop]",
+      "message": "java.lang.IllegalStateException: 'impl oper\u2026 for Type' was removed at line 44; declare the operator beside its type, as 'oper[] Type&.(index: Int): T { \u2026 }'"
+    }
+  ]
+}

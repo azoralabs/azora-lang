@@ -973,6 +973,7 @@ class StdlibInjector private constructor(
                         stmt.iterable?.let { expression(it, typeParams, currentScope) }
                         stmt.body.forEach { statement(it, typeParams, currentScope) }
                     }
+                    is Stmt.Exchange -> { expression(stmt.left, typeParams, currentScope); expression(stmt.right, typeParams, currentScope) }
                     is Stmt.IndexAssign -> {
                         expression(stmt.target, typeParams, currentScope)
                         expression(stmt.index, typeParams, currentScope)
@@ -1327,7 +1328,11 @@ class StdlibInjector private constructor(
         while (seeds.isNotEmpty()) {
             val (path, selected, without) = seeds.removeFirst()
             if (!visited.add("$path::${selected ?: "*"}::${without.sorted().joinToString(",")}")) continue
-            for (module in modulesForPath(path)) {
+            // A selected declaration retains its declaring module's impls.
+            // This does not make the module's other declarations visible.
+            val owner = resolveSelectedLibraryPath(path)?.first
+            val modules = if (owner != null) listOf(owner) else modulesForPath(path)
+            for (module in modules) {
                 reached.add(module)
                 seeds.addAll(index.exportedImportsByModule[module].orEmpty())
             }
@@ -1715,7 +1720,7 @@ class StdlibInjector private constructor(
                     impl.declaringModule == null ||
                     impl.declaringModule in reachableModules
             }?.forEach { impl ->
-                // Include the member names: a multi-operator impl (`oper[.. , reverse..]`)
+                // Include the member names: a multi-operator impl (`oper[.. , >..]`)
                 // expands to several impls sharing one source position, so position
                 // alone would collapse them into one.
                 val members = impl.methods.joinToString(",") { it.name }
@@ -1980,6 +1985,7 @@ class StdlibInjector private constructor(
             }
             is Stmt.Assignment -> collectNamesFromExpr(stmt.value, names)
             is Stmt.InlineAssignment -> collectNamesFromExpr(stmt.value, names)
+            is Stmt.Exchange -> { collectNamesFromExpr(stmt.left, names); collectNamesFromExpr(stmt.right, names) }
             is Stmt.IndexAssign -> {
                 collectNamesFromExpr(stmt.target, names)
                 collectNamesFromExpr(stmt.index, names)

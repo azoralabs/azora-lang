@@ -78,7 +78,7 @@ func main() {
         $$"""module playground
 import std.io
 func main() {
-    var nums = @arr[10, 20, 30]
+    var nums = [10, 20, 30]
     println(nums[0])
     println(nums.size)
     nums.add(40)
@@ -117,7 +117,7 @@ func main() {
     p.x = 10
     p.y += 1
     println("${p.x}, ${p.y}")
-    var points = @arr[Point(1, 1), Point(2, 2), Point(3, 3)]
+    var points = [Point(1, 1), Point(2, 2), Point(3, 3)]
     println("last = ${points[2].x}, ${points[2].y}")
 }"""
     ))
@@ -243,7 +243,7 @@ func main() {
     @Test fun pointers() = assertEquals("10\n20\n99", run("""module playground
 import std.io
 func main() {
-    var p: Int^ = alloc^ @arr[10, 20, 30]
+    var p: Int^ = alloc^ [10, 20, 30]
     println(*p)
     println(*(p + 1))
     *(p + 2) = 99

@@ -68,8 +68,8 @@ class ForExpressionTest {
                 }
 
                 func main() {
-                    println(anyEven(@arr[1, 4, 5]))
-                    println(anyEven(@arr[1, 3, 5]))
+                    println(anyEven([1, 4, 5]))
+                    println(anyEven([1, 3, 5]))
                 }
                 """,
             ),
@@ -93,8 +93,8 @@ class ForExpressionTest {
                 }
 
                 func main() {
-                    println(firstBig(@arr[1, 40, 5]))
-                    println(firstBig(@arr[1, 2, 3]))
+                    println(firstBig([1, 40, 5]))
+                    println(firstBig([1, 2, 3]))
                 }
                 """,
             ),
@@ -111,7 +111,7 @@ class ForExpressionTest {
                 import std.io
 
                 func main() {
-                    fin xs = @arr[4, 7, 9]
+                    fin xs = [4, 7, 9]
                     var seen = 0
                     fin answer = for i in 0..<xs.length {
                         seen = seen + 1
@@ -145,7 +145,7 @@ class ForExpressionTest {
                 }
 
                 func main() {
-                    println(classify(@arr[3]))
+                    println(classify([3]))
                 }
                 """,
             ),
@@ -160,7 +160,7 @@ class ForExpressionTest {
                 import std.io
 
                 func main() {
-                    fin names = @arr["a", "b"]
+                    fin names = ["a", "b"]
                     println(
                         for name in names {
                             if name == "b" {
@@ -230,7 +230,7 @@ class ForExpressionTest {
                 import std.algorithm.sort
 
                 func main() {
-                    fin xs = reverse(@arr[1, 2, 3])
+                    fin xs = reverse([1, 2, 3])
                     println(xs[0])
                 }
                 """,

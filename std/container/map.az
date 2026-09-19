@@ -1164,7 +1164,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         toKey: K&, toInclusive: Bool
     ): SortedMap<K, V>
     in {
-        assert !(toKey < fromKey) { "subMap start must not be greater than end" }
+        assert !(toKey < fromKey) panic "subMap start must not be greater than end"
     } scope {
         var result: TreeMap<K, V> = .()
         fin all = self._entrySnapshot()
@@ -1315,7 +1315,7 @@ oper[]= TreeMap<K, V>!.(key: K, value: V) {
 /** Slicing is over current iteration order and returns an ordered snapshot. */
 @Experimental(since: "0.1")
 oper[:] HashMap<K, V>&.(slice: MapSlice): Map<K, V> {
-    assert slice.step != 0 { "Map slice step cannot be zero" }
+    assert slice.step != 0 panic "Map slice step cannot be zero"
     fin all = self.entries()
     var result: LinkedHashMap<K, V> = .()
     var i = slice.start
@@ -1330,7 +1330,7 @@ oper[:] HashMap<K, V>&.(slice: MapSlice): Map<K, V> {
 
 @Experimental(since: "0.1")
 oper[:] LinkedHashMap<K, V>&.(slice: MapSlice): Map<K, V> {
-    assert slice.step != 0 { "Map slice step cannot be zero" }
+    assert slice.step != 0 panic "Map slice step cannot be zero"
     var result: LinkedHashMap<K, V> = .()
     var i = slice.start
     while (slice.step > 0 && i < slice.end) || (slice.step < 0 && i > slice.end) {
@@ -1344,7 +1344,7 @@ oper[:] LinkedHashMap<K, V>&.(slice: MapSlice): Map<K, V> {
 
 @Experimental(since: "0.1")
 oper[:] TreeMap<K, V>&.(slice: MapSlice): Map<K, V> {
-    assert slice.step != 0 { "Map slice step cannot be zero" }
+    assert slice.step != 0 panic "Map slice step cannot be zero"
     fin all = self.entries()
     var result: LinkedHashMap<K, V> = .()
     var i = slice.start
@@ -1500,16 +1500,16 @@ test "hash map stores and retrieves by key" {
     var m: HashMap<Int, String> = .()
     m.put(1, "a")
     m.put(2, "b")
-    assert m.size == 2 { "hash map size changed" }
-    assert m.get(1) == "a" && m.get(2) == "b" { "hash map retrieval changed" }
-    assert m.containsKey(2) && !m.containsKey(9) { "hash map containsKey changed" }
+    assert m.size == 2 panic "hash map size changed"
+    assert m.get(1) == "a" && m.get(2) == "b" panic "hash map retrieval changed"
+    assert m.containsKey(2) && !m.containsKey(9) panic "hash map containsKey changed"
 }
 
 test "hash map put replaces existing keys" {
     var m: HashMap<Int, String> = .()
     m.put(1, "a")
     m.put(1, "b")
-    assert m.size == 1 && m.get(1) == "b" { "put must replace, not insert" }
+    assert m.size == 1 && m.get(1) == "b" panic "put must replace, not insert"
 }
 
 test "hash map remove and clear purge entries" {
@@ -1517,24 +1517,24 @@ test "hash map remove and clear purge entries" {
     m.put(1, "a")
     m.put(2, "b")
     m.remove(1)
-    assert m.size == 1 && !m.containsKey(1) { "remove must purge the entry" }
+    assert m.size == 1 && !m.containsKey(1) panic "remove must purge the entry"
     m.clear()
-    assert m.isEmpty { "clear must empty the map" }
+    assert m.isEmpty panic "clear must empty the map"
 }
 
 test "hash map containsValue and getOrDefault" {
     var m: HashMap<Int, String> = .()
     m.put(1, "a")
-    assert m.containsValue("a") && !m.containsValue("z") { "containsValue changed" }
-    assert m.getOrDefault(1, "z") == "a" { "getOrDefault must return the stored value" }
-    assert m.getOrDefault(9, "z") == "z" { "getOrDefault must return the default" }
+    assert m.containsValue("a") && !m.containsValue("z") panic "containsValue changed"
+    assert m.getOrDefault(1, "z") == "a" panic "getOrDefault must return the stored value"
+    assert m.getOrDefault(9, "z") == "z" panic "getOrDefault must return the default"
 }
 
 test "hash map index operators read and write" {
     var m: HashMap<Int, String> = .()
     m[1] = "a"
     m[2] = "b"
-    assert m.size == 2 && m[1] == "a" && m[2] == "b" { "index operators changed" }
+    assert m.size == 2 && m[1] == "a" && m[2] == "b" panic "index operators changed"
 }
 
 test "linked hash map preserves insertion order" {
@@ -1543,7 +1543,7 @@ test "linked hash map preserves insertion order" {
     m.put(1, "a")
     m.put(2, "b")
     fin keys = m.keys()
-    assert keys.size == 3 && keys.get(0) == 3 && keys.get(1) == 1 && keys.get(2) == 2 { "linked hash map order changed" }
+    assert keys.size == 3 && keys.get(0) == 3 && keys.get(1) == 1 && keys.get(2) == 2 panic "linked hash map order changed"
 }
 
 test "tree map keeps keys sorted" {
@@ -1552,7 +1552,7 @@ test "tree map keeps keys sorted" {
     m.put(1, "a")
     m.put(2, "b")
     fin keys = m.keys()
-    assert keys.size == 3 && keys.get(0) == 1 && keys.get(1) == 2 && keys.get(2) == 3 { "tree map sort order changed" }
+    assert keys.size == 3 && keys.get(0) == 1 && keys.get(1) == 2 && keys.get(2) == 3 panic "tree map sort order changed"
 }
 
 test "tree map navigation finds neighbors" {
@@ -1560,11 +1560,11 @@ test "tree map navigation finds neighbors" {
     m.put(1, "a")
     m.put(3, "c")
     m.put(5, "e")
-    assert m.firstKey() == 1 && m.lastKey() == 5 { "tree map extrema changed" }
-    assert m.lowerKey(3) == 1 { "lowerKey changed" }
-    assert m.higherKey(3) == 5 { "higherKey changed" }
-    assert m.floorKey(3) == 3 { "floorKey changed" }
-    assert m.ceilingKey(3) == 3 { "ceilingKey changed" }
+    assert m.firstKey() == 1 && m.lastKey() == 5 panic "tree map extrema changed"
+    assert m.lowerKey(3) == 1 panic "lowerKey changed"
+    assert m.higherKey(3) == 5 panic "higherKey changed"
+    assert m.floorKey(3) == 3 panic "floorKey changed"
+    assert m.ceilingKey(3) == 3 panic "ceilingKey changed"
 }
 
 test "tree map polling removes the extremes" {
@@ -1574,28 +1574,28 @@ test "tree map polling removes the extremes" {
     m.put(3, "c")
     m.pollFirstEntry()
     m.pollLastEntry()
-    assert m.size == 1 && m.firstKey() == 2 { "polling must leave only the middle" }
+    assert m.size == 1 && m.firstKey() == 2 panic "polling must leave only the middle"
 }
 
 test "factories build maps from entries" {
     fin hm = hashMapOf(1 to "a", 2 to "b")
     fin lhm = linkedHashMapOf(1 to "a", 2 to "b")
     fin tm = treeMapOf(1 to "a", 2 to "b")
-    assert hm.size == 2 && lhm.size == 2 && tm.size == 2 { "factory sizes changed" }
-    assert hm.get(1) == "a" && lhm.get(2) == "b" && tm.get(1) == "a" { "factory retrieval changed" }
+    assert hm.size == 2 && lhm.size == 2 && tm.size == 2 panic "factory sizes changed"
+    assert hm.get(1) == "a" && lhm.get(2) == "b" && tm.get(1) == "a" panic "factory retrieval changed"
 }
 
 test "mapOf exposes a read-only Map" {
     fin m = mapOf(1 to "a", 2 to "b")
-    assert m.size == 2 { "mapOf size changed" }
-    assert m.containsKey(1) && m.get(1) == "a" { "mapOf must store entries read-only" }
+    assert m.size == 2 panic "mapOf size changed"
+    assert m.containsKey(1) && m.get(1) == "a" panic "mapOf must store entries read-only"
 }
 
 test "mutableMapOf allows in-place mutation" {
     var m = mutableMapOf(1 to "a")
     m.put(2, "b")
     m.remove(1)
-    assert m.size == 1 && m.get(2) == "b" { "mutableMapOf mutation changed" }
+    assert m.size == 1 && m.get(2) == "b" panic "mutableMapOf mutation changed"
 }
 
 test "map plus and minus derive new maps" {
@@ -1603,9 +1603,9 @@ test "map plus and minus derive new maps" {
     origin.put(1, "a")
     fin grown = origin + (2 to "b")
     fin shrunk = origin - 1
-    assert grown.size == 2 && grown.get(2) == "b" { "oper+ must add the entry" }
-    assert shrunk.size == 0 { "oper- must remove the key" }
-    assert origin.size == 1 { "derivation must not mutate the source" }
+    assert grown.size == 2 && grown.get(2) == "b" panic "oper+ must add the entry"
+    assert shrunk.size == 0 panic "oper- must remove the key"
+    assert origin.size == 1 panic "derivation must not mutate the source"
 }
 
 test "map equality compares entries not identity" {
@@ -1613,9 +1613,9 @@ test "map equality compares entries not identity" {
     a.put(1, "a")
     var b: HashMap<Int, String> = .()
     b.put(1, "a")
-    assert a == b { "maps with equal entries must be equal" }
+    assert a == b panic "maps with equal entries must be equal"
     b.put(2, "b")
-    assert a != b { "differing maps must be unequal" }
+    assert a != b panic "differing maps must be unequal"
 }
 
 test .All "map"

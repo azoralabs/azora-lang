@@ -414,6 +414,42 @@ class IrInterpreter {
         state().scopes.last()[name] = value
     }
 
+    private class ExchangeLocation(
+        val owner: Any,
+        val key: Any,
+        val read: () -> Any?,
+        val write: (Any?) -> Unit,
+    )
+
+    private suspend fun exchangeLocation(place: IrExpr): ExchangeLocation = when (place) {
+        is IrExpr.Var -> {
+            val st = state()
+            val scope = if (place.name.startsWith("__tl_") && place.name in st.threadLocals) st.threadLocals
+                else st.scopes.asReversed().firstOrNull { place.name in it }
+                    ?: error("undefined exchange location '${place.name}'")
+            val value = scope[place.name]
+            check(value !is ReactiveBinding && value !is LazyBinding) { "exchange of reactive/lazy storage is not supported" }
+            if (value is RefCell) ExchangeLocation(value, "value", { value.value }, { value.value = it })
+            else ExchangeLocation(scope, place.name, { scope[place.name] }, { scope[place.name] = it })
+        }
+        is IrExpr.Member -> {
+            @Suppress("UNCHECKED_CAST")
+            val owner = evalExpr(place.target) as? MutableMap<String, Any?>
+                ?: error("exchange field requires pack storage")
+            check(place.name in owner) { "unknown exchange field '${place.name}'" }
+            ExchangeLocation(owner, place.name, { owner[place.name] }, { owner[place.name] = it })
+        }
+        is IrExpr.Index -> {
+            @Suppress("UNCHECKED_CAST")
+            val owner = evalExpr(place.target) as? MutableList<Any?>
+                ?: error("exchange index requires array storage")
+            val index = evalExpr(place.index) as Long
+            check(index >= 0 && index < owner.size.toLong()) { "exchange array index $index out of bounds for size ${owner.size}" }
+            ExchangeLocation(owner, index, { owner[index.toInt()] }, { owner[index.toInt()] = it })
+        }
+        else -> error("unsupported exchange location")
+    }
+
     private suspend fun assignVar(name: String, value: Any?) {
         // Thread-local variables: store in the per-ExecState map.
         if (name.startsWith("__tl_") && name in state().threadLocals) {
@@ -617,15 +653,12 @@ class IrInterpreter {
                 val start = evalExpr(stmt.start) as Long
                 val end = evalExpr(stmt.end) as Long
                 val step = (stmt.step?.let { evalExpr(it) as Long } ?: 1L)
-                // Reverse starts at the last value the forward loop would visit:
-                // the largest reachable value (≤ end inclusive, < end exclusive).
-                fun floorMod(a: Long, b: Long): Long = ((a % b) + b) % b
-                var i = if (stmt.reverse) {
-                    if (stmt.inclusive) end - floorMod(end - start, step)
-                    else end - 1 - floorMod(end - 1 - start, step)
-                } else start
+                check(step > 0) { "range step must be positive" }
+                // Int bounds are widened to Long before subtracting, so even
+                // an empty range at Int.MIN_VALUE cannot wrap into a valid row.
+                var i = if (stmt.descending) start - 1 else start
                 var ordinal = 0L
-                while (if (stmt.reverse) i >= start else if (stmt.inclusive) i <= end else i < end) {
+                while (if (stmt.descending) i >= end else if (stmt.inclusive) i <= end else i < end) {
                     pushScope()
                     defineVar(stmt.counter, i)
                     stmt.indexName?.let { defineVar(it, ordinal) }
@@ -642,7 +675,7 @@ class IrInterpreter {
                         }
                     }
                     ordinal++
-                    i = if (stmt.reverse) i - step else i + step
+                    i = if (stmt.descending) i - step else i + step
                 }
             }
             is IrStmt.ForEach -> {
@@ -711,6 +744,16 @@ class IrInterpreter {
                 val value = evalExpr(stmt.value)
                 if (channel != null) channel.send(value) // lazy flow: suspend until received
                 else st.yieldAccumulators.lastOrNull()?.add(value) // eager fallback
+            }
+            is IrStmt.Exchange -> {
+                val left = exchangeLocation(stmt.left)
+                val right = exchangeLocation(stmt.right)
+                if (left.owner !== right.owner || left.key != right.key) {
+                    val a = left.read()
+                    val b = right.read()
+                    left.write(b)
+                    right.write(a)
+                }
             }
             is IrStmt.IndexAssign -> {
                 val target = evalExpr(stmt.target)

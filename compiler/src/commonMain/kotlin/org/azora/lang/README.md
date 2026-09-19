@@ -118,7 +118,7 @@ not reference kinds in the grammar.
 ### Control flow
 
 `if`/`else if`/`else`; `while`; `for x in a..b`, `for x in a..<b`, `for x in array`;
-`for x in a..b by N` (step); `reverse for`; `loop { }`; `loop { } while cond`
+`for x in a..b by N` (step); `for x in a>..b` (descending, exclusive start); `loop { }`; `loop { } while cond`
 (do-while); `for/while/loop … else { }` (else runs unless `break`); labeled loops
 `lbl: for`, `break:lbl` / `continue:lbl`; `when expr { patterns -> { } else -> { } }`
 pattern matching (enums, slots with destructuring, literals) with exhaustiveness
@@ -459,13 +459,18 @@ can't be resolved in one pass, so the core runs as a **fixed-point loop**
 (type resolution ⇄ CTCE) until the AST stabilizes. Orchestrated by
 `SemanticPipeline.kt`.
 
+`Compiler` resolves and injects library dependencies through `StdlibInjector`
+before entering this pipeline. Direct semantic callers must supply their own
+resolved declarations. Lexical imports are not yet correctly isolated by that
+injection path; an additional no-op semantic pass cannot establish visibility.
+
 1. **Top-level CTCE** (`CtfeEvaluator.kt`) - flattens conditional declarations
    before symbol collection so `SymbolCollector` can see them.
 2. **Symbol Collection** (`SymbolCollector.kt`) - registers all signatures
    (functions, packs, enums, slots, nodes, …) so forward references work.
    Built-ins (`println`, `channel`, …) are registered here.
-3. **Import Resolution** (`ImportResolver.kt`) - resolves cross-module/stdlib
-   references (largely handled by `StdlibInjector` + `QualifiedStdRewriter`).
+3. **Signature Access** (`SignatureAccessChecker.kt`) - checks access rules
+   before compile-time evaluation can erase the original call sites.
 4. **Type Resolution ⇄ CTCE fixed point** (`TypeResolver.kt`,
    `CtfeEvaluator.kt`) - resolve/infer types, fold compile-time constructs back
    into the AST, repeat until stable. Any `inline` node that survives is an error.
@@ -585,7 +590,7 @@ compiler/src/commonMain/kotlin/org/azora/lang/
 ├── semantic/
 │   ├── SymbolTable.kt           Function/variable symbols + scoped lookup + registries
 │   ├── SymbolCollector.kt       Pass 1: signatures + builtins
-│   ├── ImportResolver.kt        Cross-module/stdlib resolution
+│   ├── SignatureAccessChecker.kt Signature-only access validation
 │   ├── CtfeEvaluator.kt         CTCE: top-level (Pass 0) + fixed-point body folding
 │   ├── TypeResolver.kt          Type resolution + inference + checking
 │   ├── AllocDropAnalyzer.kt     Liveness / use-before-init / unused locals

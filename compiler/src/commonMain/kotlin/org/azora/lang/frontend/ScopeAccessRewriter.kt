@@ -165,6 +165,7 @@ internal object ScopeAccessRewriter {
             is Stmt.LetDecl -> { names.add(s.name); collectExprNames(s.initializer, names) }
             is Stmt.FinDecl -> { names.add(s.name); collectExprNames(s.initializer, names) }
             is Stmt.Assignment -> collectExprNames(s.value, names)
+            is Stmt.Exchange -> { collectExprNames(s.left, names); collectExprNames(s.right, names) }
             is Stmt.IndexAssign -> { collectExprNames(s.target, names); collectExprNames(s.index, names); collectExprNames(s.value, names) }
             is Stmt.MemberAssign -> { collectExprNames(s.target, names); collectExprNames(s.value, names) }
             is Stmt.DerefAssign -> { collectExprNames(s.target, names); collectExprNames(s.value, names) }
@@ -280,6 +281,7 @@ internal object ScopeAccessRewriter {
         is Stmt.LetDecl -> s.copy(initializer = expr(s.initializer, prefix, mangled, shadowed))
         is Stmt.FinDecl -> s.copy(initializer = expr(s.initializer, prefix, mangled, shadowed))
         is Stmt.Assignment -> s.copy(value = expr(s.value, prefix, mangled, shadowed))
+        is Stmt.Exchange -> s.copy(left = expr(s.left, prefix, mangled, shadowed), right = expr(s.right, prefix, mangled, shadowed))
         is Stmt.IndexAssign -> s.copy(target = expr(s.target, prefix, mangled, shadowed), index = expr(s.index, prefix, mangled, shadowed), value = expr(s.value, prefix, mangled, shadowed))
         is Stmt.MemberAssign -> s.copy(target = expr(s.target, prefix, mangled, shadowed), value = expr(s.value, prefix, mangled, shadowed))
         is Stmt.DerefAssign -> s.copy(target = expr(s.target, prefix, mangled, shadowed), value = expr(s.value, prefix, mangled, shadowed))

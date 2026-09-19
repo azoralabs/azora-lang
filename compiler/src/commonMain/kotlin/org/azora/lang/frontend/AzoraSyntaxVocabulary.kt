@@ -43,7 +43,6 @@ object AzoraSyntaxVocabulary {
         "continue" to TokenType.CONTINUE,
         "then" to TokenType.THEN,
         "by" to TokenType.BY,
-        "reverse" to TokenType.REVERSE,
         "with" to TokenType.WITH,
         "without" to TokenType.WITHOUT,
         "oper" to TokenType.OPER,

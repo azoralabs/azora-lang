@@ -5,7 +5,7 @@ import org.azora.lang.frontend.Parser
 import java.io.File
 import kotlin.test.Test
 
-/** Diagnostic: parse every stdlib .az file and report the first that fails (loadPrograms swallows these). */
+/** Parse every stdlib source and collect its first failure, so one file cannot hide the others. */
 class StdlibParseDiagnosticTest {
     @Test fun `all stdlib files parse`() {
         val root = File("../std").canonicalFile

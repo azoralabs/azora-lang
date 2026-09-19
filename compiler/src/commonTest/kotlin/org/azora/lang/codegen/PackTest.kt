@@ -131,7 +131,7 @@ class PackTest {
                 var y: Int
             }
             func main() {
-                var points = @arr[Point(10, 20), Point(30, 40)]
+                var points = [Point(10, 20), Point(30, 40)]
                 println(points[0].x + points[1].x)
             }
         """.trimIndent()))

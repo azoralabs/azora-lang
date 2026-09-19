@@ -119,7 +119,7 @@ One more rule must be, in a public module like "module a" we can have "exposed f
 * remove fill function from array from compiler and arrayOf, we will use .() * 10 - it will fill 10 elements with 0 or .(5) * 10, it will fill 10 elements with value 5
 * we will always have alloc T*() instead of alloc T(), because we need to allocate a pointer or alloc T^() and when we write fin x: T* = alloc .() it will infer to alloc T*()
 * pack ArrayList<T> derives Clone binds ::data by capacity { - "binds ::data" wil bind the data field to the constructor, when we have this what the compiler should do, it must allow us to allocate through data, ofc without using alloc keyword, because alloc keyword will allocate multiple lists. ::data must be mandatory a pointer, and the result will be .() * 8 will allocate 8 positions inside data ;; by capacity means that when we say *() * 8 - it will allocate 8 elements in pointer and capacity will equal to 8
-* no more impl oper reverse.. - we will keep only oper.. which will mean both normal and reverse
+* Superseded 2026-09-09: remove the reverse keyword; `oper..` covers ascending ranges and `oper>..` covers descending, exclusive-start ranges.
 * no more "impl Number for Ty::" ;; impl Number for Ty { ... } and factory spec Number {  prop rank: Int } that is how we know we have type-side implementation  Make sure a macro like this works even if we do not use it, just add a test for this case: macro @applyKey => { // this should be automatically deepinline because we are in a macro
 *     fin key = reflect<Scope>.find("key")
 *
@@ -852,12 +852,12 @@ to say, or relaxing a list to separate its elements as every other list does:
 - **Note** measure the stdlib cost before committing:
   `grep -cE '^impl [A-Z][A-Za-z0-9_<>, ]*\{' std/**/*.az`
 
-### S5.10 `[DROP]` `oper..` covers both directions
-- **Touch** `Parser.kt:518-519,597,789-791`, `OperatorFamilyTest`
-- **Do** Delete the `reverse..` operator name. A single `oper..` implementation serves
-  forward and reverse iteration; the reverse direction is derived.
-- **Accept** `MultiOperImplTest`: one `oper..` drives `for x in a..b` and
-  `reverse for x in a..b`.
+### S5.10 — superseded by the 2026-09-09 range instruction
+
+The former direction-unification proposal is superseded. `for i in a>..b`
+excludes `a`, includes `b`, and descends from `a - 1`. The reverse keyword and
+old range operator are removed; `oper>..` declares the new direction. See
+`DIPs/CONTROL_FLOW_DIP.MD` and the ecosystem delivery plan, step 006.
 
 ---
 

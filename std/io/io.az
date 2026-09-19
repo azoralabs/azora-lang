@@ -30,15 +30,15 @@ module std.io
 scope fmt {
     /** A newline character. */
     @Since("0.1")
-    fin newline = "\n"
+    inline fin newline: String = "\n"
 
     /** A tab character. */
     @Since("0.1")
-    fin tab = "\t"
+    inline fin tab: String = "\t"
 
     /** A single space character. */
     @Since("0.1")
-    fin space = " "
+    inline fin space: String = " "
 }
 
 /**
@@ -72,9 +72,7 @@ bridge func println(value: Any): Unit
  * @return A string of the given character repeated length times.
  */
 @Experimental(since: "0.1")
-func separator(char: String, length: Int): String {
-    return char * length
-}
+func separator(char: String, length: Int): String = char * length
 
 /**
  * Prints a formatted section header with surrounding separator lines.
@@ -85,7 +83,7 @@ func separator(char: String, length: Int): String {
  */
 @Experimental(since: "0.1")
 func header(title: String, width: Int): String {
-    var line = separator("-", width)
+    var line: String = separator("-", width)
     println(line)
     println(title)
     println(line)

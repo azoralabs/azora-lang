@@ -103,9 +103,9 @@ enum class TokenType {
     // Operators
     PLUS, MINUS, STAR, SLASH, PERCENT,
     EQUAL, EQUAL_EQUAL, BANG_EQUAL,
-    LESS, LESS_EQUAL, GREATER, GREATER_EQUAL, SPACESHIP,
+    LESS, LESS_EQUAL, GREATER, GREATER_EQUAL, SPACESHIP, EXCHANGE,
     AND_AND, OR_OR, BANG,
-    DOT, DOT_DOT, DOT_DOT_LESS,
+    DOT, DOT_DOT, DOT_DOT_LESS, GREATER_DOT_DOT,
     PLUS_EQUAL, MINUS_EQUAL, STAR_EQUAL, SLASH_EQUAL, PERCENT_EQUAL,
     AMP_EQUAL, PIPE_EQUAL, CARET_EQUAL, SHIFT_LEFT_EQUAL, SHIFT_RIGHT_EQUAL,
     PLUS_PLUS, MINUS_MINUS,
@@ -121,9 +121,8 @@ enum class TokenType {
     // Contextual callable receivers: `using value { ... }` /
     // `using (a, b) { ... }`. It may also be a macro name after `@`.
     USING,
-    // `for x by N in ...` (step) and `reverse for` / `for x in reverse ...`
+    // Range step: `for x in a>..b by N`.
     BY,
-    REVERSE,
     // Decorators and macro declarations/invocations.
     AT,
     // Type-filter composition, `inline for ... with index`, and macro grammar.

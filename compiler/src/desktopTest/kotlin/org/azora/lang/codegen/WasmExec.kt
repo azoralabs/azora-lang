@@ -91,10 +91,12 @@ object WasmExec {
         return WasmCodegen().generate(result.ir)
     }
 
-    fun run(source: String): String {
+    fun run(source: String): String = runWat(compile(source))
+
+    /** Execute emitted WAT independently of standard-library loading. */
+    fun runWat(wat: String): String {
         val nodeTool = node ?: error("node not available")
         val npxTool = npx ?: error("npx not available")
-        val wat = compile(source)
         val dir = File.createTempFile("azora_wat_", "").let { it.delete(); it.mkdirs(); it }
         try {
             val watFile = File(dir, "program.wat")

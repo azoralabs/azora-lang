@@ -65,7 +65,7 @@ class VariadicLambdaTest {
                     for x in xs { total = total + x }
                     total
                 }
-                println(f(@arr[1, 2, 3]))
+                println(f([1, 2, 3]))
             }
         """.trimIndent()))
     }

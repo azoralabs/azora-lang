@@ -306,6 +306,7 @@ class AstValidator {
             is Stmt.Break -> {}
             is Stmt.Yield -> {}
             is Stmt.Continue -> {}
+            is Stmt.Exchange -> {} // locations and ownership checked by TypeResolver
             is Stmt.IndexAssign -> {}
             is Stmt.MemberAssign -> {}
             is Stmt.DerefAssign -> {}

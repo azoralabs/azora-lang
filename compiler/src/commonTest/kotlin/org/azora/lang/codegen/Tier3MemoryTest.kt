@@ -185,7 +185,7 @@ class Tier3MemoryTest {
         assertEquals("[1, 2, 3]\n[1, 2, 3, 99]", run("""
             import std.io
             func main() {
-                var a = @arr[1, 2, 3]
+                var a = [1, 2, 3]
                 var b = a.clone()
                 b.add(99)
                 println(a)
@@ -200,7 +200,7 @@ class Tier3MemoryTest {
         assertEquals("1\n99", run("""
             import std.io
             func main() {
-                var original = @arr[1, 2, 3]
+                var original = [1, 2, 3]
                 var copy = original.clone()
                 copy[0] = 99
                 println(original[0])
@@ -241,7 +241,7 @@ class Tier3MemoryTest {
         assertEquals("10\n20\n30", run("""
             import std.io
             func main() {
-                var p: Int^ = alloc^ @arr[10, 20, 30]
+                var p: Int^ = alloc^ [10, 20, 30]
                 println(*p)
                 var p1 = p + 1
                 println(*p1)
@@ -254,7 +254,7 @@ class Tier3MemoryTest {
         assertEquals("30\n20", run("""
             import std.io
             func main() {
-                var p: Int^ = alloc^ @arr[10, 20, 30]
+                var p: Int^ = alloc^ [10, 20, 30]
                 var end = p + 2
                 println(*end)
                 var back = end - 1
@@ -267,7 +267,7 @@ class Tier3MemoryTest {
         assertEquals("99", run("""
             import std.io
             func main() {
-                var p: Int^ = alloc^ @arr[10, 20, 30]
+                var p: Int^ = alloc^ [10, 20, 30]
                 *(p + 1) = 99
                 println(*(p + 1))
             }
@@ -278,7 +278,7 @@ class Tier3MemoryTest {
         assertEquals("3", run("""
             import std.io
             func main() {
-                var p: Int^ = alloc^ @arr[10, 20, 30, 40]
+                var p: Int^ = alloc^ [10, 20, 30, 40]
                 var q = p + 3
                 println(q - p)
             }

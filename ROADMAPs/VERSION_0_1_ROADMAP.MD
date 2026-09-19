@@ -141,7 +141,7 @@ lines).
 - ✅ `inline func`, trailing lambdas, implicit `it`
 - ✅ `if` / `while` / `for` / `loop`, do-while (`loop { } while cond`),
   loop-else, and `loop <iterable> { }` over `reset`/`hasNext`
-- ✅ `for x in a..b by N`, `reverse for`
+- ✅ `for x in a..b by N`, `for x in a>..b` (descending, exclusive start)
 - ✅ Labeled loops with `break @lbl` / `continue @lbl`
 - ✅ `when` with destructuring
 

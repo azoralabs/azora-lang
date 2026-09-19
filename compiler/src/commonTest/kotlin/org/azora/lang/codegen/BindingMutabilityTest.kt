@@ -110,7 +110,7 @@ class BindingMutabilityTest {
 
     @Test fun indexAssignmentFollowsTheValueAxis() = rejects("""
         func main() {
-            val xs = @arr[1, 2, 3]
+            val xs = [1, 2, 3]
             xs[0] = 9
         }
     """, "cannot assign by index through 'xs'")

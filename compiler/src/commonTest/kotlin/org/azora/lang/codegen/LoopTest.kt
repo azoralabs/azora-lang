@@ -188,7 +188,7 @@ class LoopTest {
         assertEquals("4\n3\n2\n1\n0", run("""
             import std.io
             func main() {
-                reverse for i in 0..<5 {
+                for i in 5>..0 {
                     println(i)
                 }
             }
@@ -200,7 +200,7 @@ class LoopTest {
         assertEquals("5\n4\n3\n2\n1", run("""
             import std.io
             func main() {
-                reverse for i in 1..5 {
+                for i in 6>..1 {
                     println(i)
                 }
             }
@@ -209,12 +209,12 @@ class LoopTest {
 
     @Test
     fun reverseFunctionCall() {
-        // `reverse` is a soft keyword usable as a stdlib function name in call position.
+        // `reverse` is an ordinary identifier naming a library function.
         assertEquals("5\n4\n3\n2\n1", run("""
             import std.io
             import std.algorithm.sort
             func main() {
-                fin r = reverse<Int>(@arr[1, 2, 3, 4, 5])
+                fin r = reverse<Int>([1, 2, 3, 4, 5])
                 for x in r { println(x) }
             }
         """.trimIndent()))
@@ -241,7 +241,7 @@ class LoopTest {
             import std.io
             func main() {
                 var sum = 0
-                for value: Int in @arr[1, 2, 3] {
+                for value: Int in [1, 2, 3] {
                     sum = sum + value
                 }
                 println(sum)

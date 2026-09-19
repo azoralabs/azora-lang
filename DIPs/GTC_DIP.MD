@@ -1194,6 +1194,22 @@ substituted for written tuple syntax.
 
 ## 8. Native collection literals with `[]`
 
+> **Implementation profile (2026-09-15):** Non-empty sequence literals default to
+> `Array`, per the user's decision. Contextual arrays propagate element types
+> through global/local bindings, assignments, arguments, returns, branches, pack construction
+> and nested literals; fixed nested shapes and numeric constant ranges are checked.
+> Empty arrays require an element context. Native array storage preserves the
+> resolved element width. The grammar accepts multiline/trailing-comma sequence
+> and associative literals, including `[:]`; the old `![...]` form is removed.
+> Standard `arr`, `vec`, `map` and `set` construction macros are absent.
+>
+> Target-owned List/Set/Map/custom literal factories described below are still
+> pending. The compiler diagnoses these contextual targets rather than assigning
+> array storage to a different collection type. Implicit collection conversion
+> is not inferred from short type names. This profile does not qualify
+> generic/spec boxing, all ownership models, arbitrary-width numeric ABI layout,
+> or whole-program inference. Parsing `[:]` is not completed Map allocation.
+
 ### 8.1 Sequence literals
 
 The sequence form is:
@@ -1278,10 +1294,11 @@ Without an expected target type, a non-empty literal uses these defaults:
 
 | Literal shape | Inferred public type | Standard backing implementation |
 |---|---|---|
-| `[e0, e1, ...]` | `List<E>` | `ArrayList<E>` |
+| `[e0, e1, ...]` | `Array<E>` | Native contiguous array |
 | `[k0: v0, ...]` | `Map<K, V>` | `LinkedHashMap<K, V>` |
 
-The public type is the collection spec, not the backing pack. Code may request a
+Sequence literals default to `Array` (user decision, 2026-09-10). Explicit list,
+set and map contexts select the appropriate collection implementation. Code may request a
 specific implementation through an annotation:
 
 ```azora
@@ -2793,7 +2810,7 @@ At minimum, tests must cover:
 
 This proposal settles the following points:
 
-1. Bare non-empty `[...]` defaults to `List<E>`.
+1. Bare non-empty `[...]` defaults to `Array<E>` (user decision, 2026-09-10).
 2. Bare keyed `[...]` defaults to `Map<K,V>`.
 3. `[:]` is the empty associative literal.
 4. Set literals use the same sequence shape and require set context.
@@ -3098,6 +3115,30 @@ container operation when inter-thread atomicity is required.
 `<>` is not a general expression and produces `Unit` only as a statement. It
 cannot be overloaded because custom implementations could accidentally clone,
 drop, or partially exchange unique owners.
+
+#### Current implementation profile (2026-09-14)
+
+The compiler represents exchange as dedicated AST and IR statements. The
+interpreter, LLVM and WASM implementations support mutable ordinary bindings,
+stored pack fields and built-in array elements of identical static types. Both
+locations, including checked indices, are evaluated before either value is
+written. The primitive adds no clone, retain, release or destructor calls.
+Optimizer passes preserve storage identity and invalidate affected value facts.
+
+This is a restricted implementation of the contract above. Until location loans
+and address-preserving borrow lowering are available, the frontend rejects raw
+dereferences, borrowed binding exchange, call-bearing locations (including
+overloaded index arithmetic), lazy/reactive storage, custom accessors and known
+owner/projection overlap. Index arithmetic must use built-in integer operations.
+Existing mutability and conflicting-borrow checks apply to both operands.
+
+WASM array allocation, indexing, stores and exchange now carry element widths
+(including Double and Long); wide pack fields still require a typed aggregate
+layout and are rejected. LLVM rejects erased generic fields whose physical and
+resolved types differ. Ordinary scalar Double bindings can be exchanged. Exact-once destruction
+of all move-only ownership models, general pointer provenance, reactive
+notifications and arbitrary exclusive-borrow locations remain acceptance work;
+the handle and aliasing tests do not certify those broader ownership facilities.
 
 ### 23.3 Typed compiler holes with `???`
 

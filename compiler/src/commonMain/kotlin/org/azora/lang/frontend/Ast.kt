@@ -254,14 +254,29 @@ sealed class Expr {
      * @property to the end bound expression
      * @property inclusive whether the end is included (`..` vs `..<`)
      */
-    data class Range(val from: Expr, val to: Expr, val inclusive: Boolean, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    data class Range(val from: Expr, val to: Expr, val inclusive: Boolean, override val line: Int, override val column: Int = 0, override val length: Int = 0, val descending: Boolean = false) : Expr() {
+        /** Constant range values; check emptiness before subtracting a bound. */
+        fun constantProgression(from: Long, to: Long): LongProgression = when {
+            descending && from <= to -> LongRange.EMPTY
+            descending -> (from - 1) downTo to
+            inclusive -> from..to
+            else -> from until to
+        }
+    }
 
     /**
      * Array literal `[a, b, c]` (or empty `[]`).
      *
      * @property elements the element expressions
      */
-    data class ArrayLiteral(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    data class ArrayLiteral(
+        val elements: List<Expr>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        /** Semantic target carried through AST copies into storage lowering. */
+        var contextualType: TypeRef? = null,
+    ) : Expr()
 
     /** Set literal `![a, b, c]`. */
     data class SetLiteral(val elements: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
@@ -500,7 +515,13 @@ sealed class Expr {
     ) : Expr()
 
     /** Map literal `["k": v, "k2": v2]`. */
-    data class MapLit(val entries: List<Pair<Expr, Expr>>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    data class MapLit(
+        val entries: List<Pair<Expr, Expr>>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        var contextualType: TypeRef? = null,
+    ) : Expr()
 
     /** `alloc <expr>` - heap-allocate a value and return a pointer to it. */
     /** `alloc* value` → `T*` (read-only), `alloc^ value` → `T^` (mutable). */
@@ -583,6 +604,15 @@ fun asRepeatedConstruction(expr: Expr.Binary): Pair<Expr, Expr>? {
 }
 
 sealed class Stmt {
+    /** Ownership-preserving exchange of two mutable storage locations. */
+    data class Exchange(
+        val left: Expr,
+        val right: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 2,
+    ) : Stmt()
+
     /** 1-based line number where this statement starts. */
     abstract val line: Int
     /** 1-based column number where this statement starts. */
@@ -1077,8 +1107,6 @@ sealed class Stmt {
         override val length: Int = 0,
         /** Optional step for integer-range loops: `for x by N in a..b`. Null means step 1. */
         val step: Expr? = null,
-        /** Iterate the range downwards: `reverse for x in a..b`. */
-        val reverse: Boolean = false,
         /** Optional source label for `break:label`/`continue:label`. */
         val label: String? = null,
         /**

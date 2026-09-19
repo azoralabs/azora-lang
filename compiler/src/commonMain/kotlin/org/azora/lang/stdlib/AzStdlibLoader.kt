@@ -131,11 +131,13 @@ object AzStdlib {
     // Resolution
     // ------------------------------------------------------------------
 
-    private fun resolve(): StdlibTree {
-        val candidates = buildList {
+    /** Resolve a supplied search path as well as the platform's default path. */
+    internal fun resolve(
+        candidates: List<StdlibRoot> = buildList {
             overrideRoot?.let { add(StdlibRoot(it, "explicit override", explicit = true)) }
             addAll(stdlibDiskRoots())
-        }
+        },
+    ): StdlibTree {
         for (candidate in candidates) {
             val files = readStdlibTree(candidate.path) ?: continue
             if (files.isEmpty()) continue
@@ -197,7 +199,7 @@ object AzStdlib {
      * is rebuilt from empty on each parse so a re-resolved standard library
      * cannot inherit bindings from the one it replaced.
      */
-    private fun parse(tree: StdlibTree, strict: Boolean): List<Program> {
+    internal fun parse(tree: StdlibTree, strict: Boolean): List<Program> {
         comptimeLists.clear()
         declaredEnums.clear()
         comptimeListScopes.clear()

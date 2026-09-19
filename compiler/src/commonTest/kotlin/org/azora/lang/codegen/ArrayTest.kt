@@ -23,7 +23,7 @@ class ArrayTest {
         assertEquals("3", run("""
             import std.io
             func main() {
-                var a = @arr[10, 20, 30]
+                var a = [10, 20, 30]
                 println(a.size)
             }
         """.trimIndent()))
@@ -34,7 +34,7 @@ class ArrayTest {
         assertEquals("20", run("""
             import std.io
             func main() {
-                var a = @arr[10, 20, 30]
+                var a = [10, 20, 30]
                 println(a[1])
             }
         """.trimIndent()))
@@ -45,7 +45,7 @@ class ArrayTest {
         assertEquals("99", run("""
             import std.io
             func main() {
-                var a = @arr[10, 20, 30]
+                var a = [10, 20, 30]
                 a[0] = 99
                 println(a[0])
             }
@@ -57,7 +57,7 @@ class ArrayTest {
         assertEquals("42", run("""
             import std.io
             func main() {
-                var a: Array<Int> = @arr[7, 42, 13]
+                var a: Array<Int> = [7, 42, 13]
                 println(a[1])
             }
         """.trimIndent()))
@@ -69,7 +69,7 @@ class ArrayTest {
         assertEquals("60", run("""
             import std.io
             func main() {
-                var a = @arr[10, 20, 30]
+                var a = [10, 20, 30]
                 var sum = 0
                 for i in 0..<a.size {
                     sum = sum + a[i]
@@ -84,7 +84,7 @@ class ArrayTest {
         assertEquals("4", run("""
             import std.io
             func main() {
-                var a = @arr[1, 2, 3]
+                var a = [1, 2, 3]
                 a.add(4)
                 println(a.size)
             }
@@ -96,7 +96,7 @@ class ArrayTest {
         assertEquals("40", run("""
             import std.io
             func main() {
-                var a = @arr[10, 20, 30]
+                var a = [10, 20, 30]
                 a.add(40)
                 println(a[3])
             }
@@ -107,8 +107,9 @@ class ArrayTest {
     fun arrayIsEmpty() {
         assertEquals("false", run("""
             import std.io
+            import std.container.array
             func main() {
-                var a = @arr[1]
+                var a = [1]
                 println(a.isEmpty)
             }
         """.trimIndent()))
@@ -118,8 +119,9 @@ class ArrayTest {
     fun arrayIsNotEmpty() {
         assertEquals("true", run("""
             import std.io
+            import std.container.array
             func main() {
-                var a = @arr[1]
+                var a = [1]
                 println(a.isNotEmpty)
             }
         """.trimIndent()))
@@ -131,7 +133,7 @@ class ArrayTest {
         assertEquals("25", run("""
             import std.io
             func main() {
-                var a = @arr[10, 20, 30]
+                var a = [10, 20, 30]
                 a[1] += 5
                 println(a[1])
             }
@@ -143,7 +145,7 @@ class ArrayTest {
         assertEquals("2", run("""
             import std.io
             func main() {
-                var m = @arr[@arr[1, 2], @arr[3, 4]]
+                var m = [[1, 2], [3, 4]]
                 println(m[0][1])
             }
         """.trimIndent()))
@@ -164,7 +166,7 @@ class ArrayTest {
         assertEquals("30", run("""
             import std.io
             func makeThree(): Array<Int> {
-                return @arr[10, 20, 30]
+                return [10, 20, 30]
             }
             func main() {
                 var a = makeThree()
@@ -178,7 +180,7 @@ class ArrayTest {
         assertEquals("60", run("""
             import std.io
             func main() {
-                var a = @arr[10, 20, 30]
+                var a = [10, 20, 30]
                 var sum = 0
                 for i in 0..<a.size {
                     sum = sum + a[i]
@@ -193,7 +195,7 @@ class ArrayTest {
         val result = Compiler().compile("""
             import std.io
             func main() {
-                var a = @arr[1, 2, 3]
+                var a = [1, 2, 3]
                 println(a[0])
             }
         """.trimIndent())

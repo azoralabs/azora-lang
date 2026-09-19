@@ -519,6 +519,7 @@ internal object MacroExpander {
             message = rewriteExpr(stmt.message, macros, depth),
             level = stmt.level?.let { rewriteExpr(it, macros, depth) },
         )
+        is Stmt.Exchange -> stmt.copy(left = rewriteExpr(stmt.left, macros, depth), right = rewriteExpr(stmt.right, macros, depth))
         is Stmt.IndexAssign -> stmt.copy(
             target = rewriteExpr(stmt.target, macros, depth),
             index = rewriteExpr(stmt.index, macros, depth),
@@ -965,6 +966,7 @@ internal object MacroExpander {
             message = substitute(stmt.message, bindings, invokeLine),
             level = stmt.level?.let { substitute(it, bindings, invokeLine) },
         )
+        is Stmt.Exchange -> stmt.copy(left = substitute(stmt.left, bindings, invokeLine), right = substitute(stmt.right, bindings, invokeLine))
         is Stmt.IndexAssign -> stmt.copy(
             target = substitute(stmt.target, bindings, invokeLine),
             index = substitute(stmt.index, bindings, invokeLine),

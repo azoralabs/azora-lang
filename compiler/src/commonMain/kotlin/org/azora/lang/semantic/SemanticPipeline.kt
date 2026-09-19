@@ -67,8 +67,8 @@ data class SemanticRedundantVariantQualifier(
  *   Pass 1 - [SymbolCollector]: Walk all declarations, register function
  *            signatures in the symbol table. No type resolution yet - just names.
  *
- *   Pass 2 - [ImportResolver]: Resolve cross-module references. Build dependency
- *            graph. Merge imported symbols into the symbol table.
+ *   Pass 2 - [SignatureAccessChecker]: Check signature-only access before
+ *            compile-time evaluation can erase the original call sites.
  *
  *   Pass 3 - Fixed-point stabilization loop:
  *            ```
@@ -87,6 +87,9 @@ data class SemanticRedundantVariantQualifier(
  *            propagation. Post-CTCE because generated functions carry effects too.
  *
  * Key design decisions:
+ *  - This pipeline consumes an AST with library dependencies already resolved
+ *    by Compiler/StdlibInjector. It does not load modules or establish import
+ *    visibility; direct callers must provide the declarations they need.
  *  - Separate "declaration semantic" (Pass 1) from "body semantic" (Pass 3).
  *    A function's signature is resolved before its body, so other code can
  *    depend on it without waiting for the body to be analyzed.
@@ -104,8 +107,8 @@ class SemanticPipeline(
     /**
      * Runs the complete multi-pass semantic analysis on the given program.
      *
-     * Executes all passes in order: top-level CTCE, symbol collection, import
-     * resolution, CTCE fixed-point loop with type resolution, alloc/drop analysis,
+     * Executes all passes in order: top-level CTCE, symbol collection, signature
+     * access checks, CTCE fixed-point loop with type resolution, alloc/drop analysis,
      * and effect checking.
      *
      * @param program the parsed AST (output of [Parser] and [AstValidator])
@@ -160,18 +163,7 @@ class SemanticPipeline(
         }
 
         // ---------------------------------------------------------------
-        // Pass 2: Import / Dependency Resolution
-        // Resolve cross-module references. In single-file mode this is
-        // a no-op, but the pass slot exists for when modules are added.
-        // ---------------------------------------------------------------
-        val importErrors = ImportResolver().resolve(currentProgram.moduleName, table)
-        allErrors.addAll(importErrors)
-        if (importErrors.isNotEmpty()) {
-            return SemanticResult(currentProgram, table, emptyList(), allErrors)
-        }
-
-        // ---------------------------------------------------------------
-        // Pass 2b: Signature-Only Access
+        // Pass 2: Signature-Only Access
         // A `@SignatureOnly` function may not be reached from a body whose
         // decorator is `@DeclaresAccess`. Checked here rather than with the
         // later passes: such a function is usually `inline`, and once the loop

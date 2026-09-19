@@ -39,6 +39,7 @@ import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.semantic.ComparisonPlan
+import org.azora.lang.semantic.instantiateMember
 import org.azora.lang.semantic.StructType
 import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.semantic.TypeFunctionEvaluator
@@ -290,14 +291,19 @@ class IrGenerator(private val table: SymbolTable) {
         val supplied = bindTrailingLambda(rawArgs, func.params, offset = 1)
         val named = supplied.any { it is Expr.NamedArg }
         if (!named && (supplied.size == declared || func.defaults.isEmpty() || func.isVariadic)) {
-            return supplied.map { lowerExpr(it) }
+            return supplied.mapIndexed { i, argument ->
+                val value = lowerExpr(argument)
+                func.params.getOrNull(i + 1)?.second?.let { coerceToFloat(value, it) } ?: value
+            }
         }
         val slots = if (named) {
             mapNamedArguments(supplied, func.params.drop(1).map { it.first })
         } else {
             supplied + List((declared - supplied.size).coerceAtLeast(0)) { null }
         }
-        return fillArgumentGaps(slots, func, mangled, selfOffset = 1)
+        return fillArgumentGaps(slots, func, mangled, selfOffset = 1).mapIndexed { i, value ->
+            func.params.getOrNull(i + 1)?.second?.let { coerceToFloat(value, it) } ?: value
+        }
     }
 
     /**
@@ -370,6 +376,7 @@ class IrGenerator(private val table: SymbolTable) {
             is IrStmt.FinDecl -> collectReferencedNames(stmt.initializer, names)
             is IrStmt.LetDecl -> collectReferencedNames(stmt.initializer, names)
             is IrStmt.Assignment -> collectReferencedNames(stmt.value, names)
+            is IrStmt.Exchange -> { collectReferencedNames(stmt.left, names); collectReferencedNames(stmt.right, names) }
             is IrStmt.IndexAssign -> {
                 collectReferencedNames(stmt.target, names)
                 collectReferencedNames(stmt.index, names)
@@ -1247,6 +1254,12 @@ class IrGenerator(private val table: SymbolTable) {
                 knownEnumValues.remove(name)
                 IrStmt.Assignment(name, value)
             }
+            is Stmt.Exchange -> {
+                val left = lowerExpr(stmt.left)
+                val right = lowerExpr(stmt.right)
+                for (place in listOf(left, right)) if (place is IrExpr.Var) knownEnumValues.remove(place.name)
+                IrStmt.Exchange(left, right)
+            }
             is Stmt.IndexAssign -> {
                 // `p.*[i] = v` writes the i-th slot; see [bufferPointerTarget].
                 val target = lowerExpr(bufferPointerTarget(stmt.target) ?: stmt.target)
@@ -1261,7 +1274,13 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                 }
                 val index = lowerExpr(stmt.index)
-                val value = lowerExpr(stmt.value)
+                val element = when (tt) {
+                    is IrType.Array -> tt.element
+                    is IrType.Pointer -> tt.inner
+                    is IrType.Map -> tt.value
+                    else -> IrType.Any
+                }
+                val value = coerceToFloat(lowerExpr(stmt.value), element)
                 IrStmt.IndexAssign(target, index, value)
             }
             is Stmt.DerefAssign -> {
@@ -1337,9 +1356,9 @@ class IrGenerator(private val table: SymbolTable) {
                     // Range iteration requires the bound type to declare the range operator
                     // (e.g. `bridge impl oper .. for Int`); otherwise it is rejected.
                     val rangeTypeName = start.type.toString()
-                    val operName = if (stmt.reverse) "operreverse.." else "oper.."
+                    val operName = if (range.descending) "oper>.." else "oper.."
                     if (table.lookupMethod(rangeTypeName, operName) == null) {
-                        val sym = if (stmt.reverse) "reverse.." else ".."
+                        val sym = if (range.descending) ">.." else ".."
                         error("type '$rangeTypeName' does not support the range operator '$sym' (declare 'impl oper $sym for $rangeTypeName')")
                     }
                     val step = stmt.step?.let { lowerExpr(it) }
@@ -1362,7 +1381,7 @@ class IrGenerator(private val table: SymbolTable) {
                         range.inclusive,
                         body,
                         step = step,
-                        reverse = stmt.reverse,
+                        descending = range.descending,
                         label = stmt.label,
                         indexName = index,
                     )
@@ -2015,8 +2034,7 @@ class IrGenerator(private val table: SymbolTable) {
                 // types for FFI (`window as Long`); native backends lower these
                 // to ptrtoint/inttoptr. All other casts (interface upcasts,
                 // Any) are representation-preserving no-ops.
-                val numeric = IrType.integerTypes + IrType.floatTypes
-                fun isNumericish(t: IrType) = t in numeric || t == IrType.Char
+                fun isNumericish(t: IrType) = IrType.isNumeric(t) || t == IrType.Char
                 fun isPointerish(t: IrType) =
                     t == IrType.String || t == IrType.Any || t is IrType.Array || t is IrType.Map || t is IrType.Set ||
                         t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
@@ -2190,12 +2208,12 @@ class IrGenerator(private val table: SymbolTable) {
                 var left = lowerExpr(expr.left)
                 var right = lowerExpr(expr.right)
                 // Pointer arithmetic: ptr + n, ptr - n, ptr - ptr
-                if (left.type is IrType.Pointer && right.type in IrType.integerTypes &&
+                if (left.type is IrType.Pointer && IrType.isInteger(right.type) &&
                     (expr.op == TokenType.PLUS || expr.op == TokenType.MINUS)) {
                     val fn = if (expr.op == TokenType.PLUS) "__ptrAdd" else "__ptrSub"
                     return IrExpr.Call(fn, listOf(left, right), left.type)
                 }
-                if (left.type in IrType.integerTypes && right.type is IrType.Pointer && expr.op == TokenType.PLUS) {
+                if (IrType.isInteger(left.type) && right.type is IrType.Pointer && expr.op == TokenType.PLUS) {
                     return IrExpr.Call("__ptrAdd", listOf(right, left), right.type)
                 }
                 if (left.type is IrType.Pointer && right.type is IrType.Pointer && expr.op == TokenType.MINUS) {
@@ -2203,7 +2221,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 // A primitive left operand may still have a declared operator, but only
                 // one that names its operand - see the resolver for why.
-                if (left.type !is IrType.Named && left.type in IrType.numericTypes) {
+                if (left.type !is IrType.Named && IrType.isNumeric(left.type)) {
                     operOverloadName(expr.op)?.let { operName ->
                         val key = operandKeyOf(right.type)
                         if (key != null && key != left.type.toString()) {
@@ -2408,7 +2426,13 @@ class IrGenerator(private val table: SymbolTable) {
                             ctorFactoryName(actualCallee, it.paramNames.size - it.contextualParams),
                         ) ?: it
                     }
-                    if (declaredCtor != null) {
+                    val ownerType = IrType.Named(actualCallee,
+                        expr.typeArgs.map { resolveType(it, currentGenericTypeParams) },
+                        expr.typeArgs.map { (it as? TypeRef.Const)?.value })
+                    val typedCtor = declaredCtor?.let { instantiateMember(table, ownerType, it) }
+                    if (typedCtor != null) {
+                        val physicalCtor = declaredCtor!!
+                        val declaredCtor = typedCtor
                         // A ctor that names receivers beyond its own takes them
                         // ahead of the written arguments, read from the scope the
                         // call sits in.
@@ -2448,20 +2472,24 @@ class IrGenerator(private val table: SymbolTable) {
                             // parameters take theirs and the rest become the one
                             // array the variadic slot holds, exactly as a variadic
                             // function call packs its own.
-                            if (declaredCtor.isVariadic && slots.size > written.size) {
-                                val fixed = slots.take(written.size - 1).map { argument ->
-                                    val slot = declaredCtor.params.getOrNull(
-                                        declaredCtor.contextualParams + slots.indexOf(argument),
-                                    )?.second
-                                    val value = argument ?: error("'$actualCallee' has no value for a fixed parameter")
-                                    slot?.let { coerceToFloat(lowerExpr(value), it) } ?: lowerExpr(value)
+                            if (declaredCtor.isVariadic) {
+                                val fixed = slots.take(written.size - 1).mapIndexed { i, argument ->
+                                    val parameterIndex = declaredCtor.contextualParams + i
+                                    val slot = declaredCtor.params[parameterIndex].second
+                                    val value = argument ?: declaredCtor.defaults[parameterIndex]
+                                        ?: error("'$actualCallee' has no value for a fixed parameter")
+                                    coerceToFloat(lowerExpr(value), slot)
                                 }
-                                val rest = slots.drop(written.size - 1).filterNotNull().map { lowerExpr(it) }
-                                val element = (declaredCtor.params.lastOrNull()?.second as? IrType.Array)?.element
-                                    ?: rest.firstOrNull()?.type ?: IrType.Any
+                                val logicalElement = (declaredCtor.params.last().second as IrType.Array).element
+                                val rest = slots.drop(written.size - 1).filterNotNull().map {
+                                    coerceToFloat(lowerExpr(it), logicalElement)
+                                }
+                                // Pack the callee's physical slots. A generic ctor
+                                // reads erased elements even when the caller knows T.
+                                val element = (physicalCtor.params.last().second as IrType.Array).element
                                 val packed = IrExpr.ArrayLiteral(rest, IrType.Array(element, rest.size.toLong()))
                                 return IrExpr.Call(
-                                    ctorFactoryName(actualCallee, written.size),
+                                    declaredCtor.name,
                                     scopeArgs.filterNotNull() + fixed + packed,
                                     declaredCtor.returnType,
                                 )
@@ -2470,19 +2498,6 @@ class IrGenerator(private val table: SymbolTable) {
                                 val slot = declaredCtor.params.getOrNull(declaredCtor.contextualParams + i)?.second
                                 val value = argument ?: declaredCtor.defaults[declaredCtor.contextualParams + i]
                                 if (value == null) {
-                                    // A variadic parameter takes however many
-                                    // arguments are left - and when none are, it
-                                    // takes an empty run rather than nothing at
-                                    // all: the callee still has a slot to bind.
-                                    if (declaredCtor.isVariadic && i == written.lastIndex) {
-                                        val element =
-                                            (declaredCtor.params.lastOrNull()?.second as? IrType.Array)?.element
-                                                ?: IrType.Any
-                                        return@mapIndexedNotNull IrExpr.ArrayLiteral(
-                                            emptyList(),
-                                            IrType.Array(element, 0L),
-                                        )
-                                    }
                                     error("'$actualCallee' has no value for '${written[i]}'")
                                 }
                                 slot?.let { coerceToFloat(lowerExpr(value), it) } ?: lowerExpr(value)
@@ -2661,10 +2676,14 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.Grouping -> lowerExpr(expr.expr)
             is Expr.Range -> error("range expressions can only be used as for-loop iterables")
             is Expr.ArrayLiteral -> {
-                val elems = expr.elements.map { lowerExpr(it) }
-                val elemType = if (elems.isEmpty()) IrType.Any else elems.first().type
+                val target = expr.contextualType?.let(::resolveType) as? IrType.Array
+                val elems = expr.elements.map { value ->
+                    val lowered = lowerExpr(value)
+                    target?.let { coerceToFloat(lowered, it.element) } ?: lowered
+                }
+                val elemType = target?.element ?: if (elems.isEmpty()) IrType.Any else elems.first().type
                 // A literal carries its compile-time element count as the array's size.
-                val size: kotlin.Long? = if (elems.isEmpty()) null else elems.size.toLong()
+                val size = elems.size.toLong()
                 IrExpr.ArrayLiteral(elems, IrType.Array(elemType, size))
             }
             is Expr.SetLiteral -> {
@@ -2673,9 +2692,15 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.SetLit(elems, IrType.Set(elemType))
             }
             is Expr.MapLit -> {
-                val entries = expr.entries.map { lowerExpr(it.first) to lowerExpr(it.second) }
-                val keyType = entries.firstOrNull()?.first?.type ?: IrType.Any
-                val valType = entries.firstOrNull()?.second?.type ?: IrType.Any
+                val target = expr.contextualType?.let(::resolveType) as? IrType.Map
+                val entries = expr.entries.map { (key, value) ->
+                    val k = lowerExpr(key)
+                    val v = lowerExpr(value)
+                    (target?.let { coerceToFloat(k, it.key) } ?: k) to
+                        (target?.let { coerceToFloat(v, it.value) } ?: v)
+                }
+                val keyType = target?.key ?: entries.firstOrNull()?.first?.type ?: IrType.Any
+                val valType = target?.value ?: entries.firstOrNull()?.second?.type ?: IrType.Any
                 IrExpr.MapLit(entries, IrType.Map(keyType, valType))
             }
             is Expr.Alloc -> {
@@ -2936,7 +2961,7 @@ class IrGenerator(private val table: SymbolTable) {
                 if (tt is IrType.Named) {
                     val mangled = table.lookupMethod(tt.name, expr.name)
                     if (mangled != null) {
-                        val func = table.lookupFunction(mangled)!!
+                        val func = instantiateMember(table, tt, table.lookupFunction(mangled)!!)
                         if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
                             error("property '${expr.name}' must be accessed without parentheses")
                         }
@@ -3371,11 +3396,20 @@ class IrGenerator(private val table: SymbolTable) {
         (ann as? TypeAnnotation.Explicit)?.let { runCatching { resolveType(it.ref) }.getOrNull() } ?: IrType.Any
 
     private fun coerceToFloat(expr: IrExpr, target: IrType): IrExpr =
-        if (target in IrType.numericTypes && target != expr.type &&
-            (expr.type in IrType.integerTypes || expr.type in IrType.floatTypes) &&
+        if (IrType.isNumeric(target) && target != expr.type &&
+            (IrType.isInteger(expr.type) || expr.type in IrType.floatTypes) &&
             isUntypedIntConstant(expr)
         ) {
-            IrExpr.NumCast(expr, target)
+            when {
+                // Context selects the literal's representation before emission.
+                // Casting an i32 constant afterwards would already truncate a
+                // value such as 4294967296 intended for a Long element.
+                expr is IrExpr.IntLiteral && IrType.isInteger(target) -> expr.copy(type = target)
+                expr is IrExpr.DoubleLiteral && target in IrType.floatTypes -> expr.copy(type = target)
+                expr is IrExpr.Unary && expr.op == IrUnaryOp.NEG ->
+                    expr.copy(operand = coerceToFloat(expr.operand, target), type = target)
+                else -> IrExpr.NumCast(expr, target)
+            }
         } else {
             expr
         }
@@ -3396,19 +3430,15 @@ class IrGenerator(private val table: SymbolTable) {
 
     private fun numericResultType(a: IrType, b: IrType): IrType {
         if (a == b) return a
-        if (a !in IrType.numericTypes || b !in IrType.numericTypes) return a
+        if (!IrType.isNumeric(a) || !IrType.isNumeric(b)) return a
         if (a in IrType.floatTypes || b in IrType.floatTypes) {
             if (a == IrType.Quad || b == IrType.Quad) return IrType.Quad
             if (a == IrType.Double || b == IrType.Double) return IrType.Double
             return IrType.Float
         }
-        val rank = mapOf(
-            IrType.Byte to 1, IrType.UByte to 1, IrType.Short to 2, IrType.UShort to 2,
-            IrType.Int to 3, IrType.UInt to 3, IrType.Long to 4, IrType.ULong to 4,
-            IrType.ISize to 4, IrType.USize to 4,
-            IrType.Cent to 5, IrType.UCent to 5,
-        )
-        return if ((rank[a] ?: 0) >= (rank[b] ?: 0)) a else b
+        val aBits = (a as? IrType.Integer)?.bits ?: 64
+        val bBits = (b as? IrType.Integer)?.bits ?: 64
+        return if (aBits >= bBits) a else b
     }
 
     private fun lowerBinaryOp(op: TokenType): IrBinaryOp = when (op) {
@@ -3433,30 +3463,8 @@ class IrGenerator(private val table: SymbolTable) {
         else -> error("Unknown binary op: $op")
     }
 
-    private companion object {
-        /** std collection packs a literal may be annotated with. */
-        val COLLECTION_PACK_NAMES = setOf(
-            "List", "MutableList", "Set", "MutableSet", "Map", "MutableMap",
-        )
-    }
-
     private fun resolveTypeAnnotation(ann: TypeAnnotation, init: IrExpr): IrType = when (ann) {
-        is TypeAnnotation.Explicit -> {
-            val declared = resolveType(ann.ref)
-            // `var xs: List<Int> = @arr[1, 2, 3]` - the checker accepts
-            // a collection literal against the matching std pack name, but the
-            // value is still the literal's own representation. Taking the
-            // declared name here would leave the *type* saying `List` while the
-            // bytes are an array, and a member read would take the pack's field
-            // offsets against them - `.size` came out 0 rather than 3.
-            if (declared is IrType.Named && declared.name in COLLECTION_PACK_NAMES &&
-                (init.type is IrType.Array || init.type is IrType.Set || init.type is IrType.Map)
-            ) {
-                init.type
-            } else {
-                declared
-            }
-        }
+        is TypeAnnotation.Explicit -> resolveType(ann.ref)
         is TypeAnnotation.Inferred -> init.type
     }
 
@@ -3585,7 +3593,7 @@ class IrGenerator(private val table: SymbolTable) {
     private fun literalAtDeclaredType(expr: Expr, declared: IrType?): IrExpr? {
         val type = declared ?: return null
         return when {
-            expr is Expr.IntLiteral && type in IrType.integerTypes ->
+            expr is Expr.IntLiteral && IrType.isInteger(type) ->
                 IrExpr.IntLiteral(expr.value, type, expr.text)
             expr is Expr.DoubleLiteral && type in IrType.floatTypes ->
                 IrExpr.DoubleLiteral(expr.value, type, expr.text)

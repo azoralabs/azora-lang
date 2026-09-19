@@ -209,7 +209,7 @@ class Tier1PolishTest {
         assertEquals("4\n3\n2\n1", run("""
             import std.io
             func main() {
-                reverse for x in 1..4 {
+                for x in 5>..1 {
                     println(x)
                 }
             }
@@ -220,7 +220,7 @@ class Tier1PolishTest {
         assertEquals("6\n4\n2\n0", run("""
             import std.io
             func main() {
-                reverse for x in 0..6 by 2 {
+                for x in 7>..0 by 2 {
                     println(x)
                 }
             }
@@ -501,7 +501,7 @@ class Tier1PolishTest {
                 self.data[i] = v
             }
             func main() {
-                var b = IntBag(@arr[10, 20, 30])
+                var b = IntBag([10, 20, 30])
                 println(b[1])
                 b[1] = 99
                 println(b[1])
@@ -554,7 +554,7 @@ class Tier1PolishTest {
         assertEquals("one\ntwo", run("""
             import std.io
             func main() {
-                var m = @map[1: "one", 2: "two"]
+                var m = [1: "one", 2: "two"]
                 println(m[1])
                 println(m[2])
             }
@@ -565,7 +565,7 @@ class Tier1PolishTest {
         assertEquals("red", run("""
             import std.io
             func main() {
-                var colors: Map<Int, String> = @map[1: "red", 2: "green"]
+                var colors: Map<Int, String> = [1: "red", 2: "green"]
                 println(colors[1])
             }
         """.trimIndent()))

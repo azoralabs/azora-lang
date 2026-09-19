@@ -150,8 +150,8 @@ test "queue is FIFO" {
 
 test "queue grows without losing order" {
     var value: Queue<Int> = .()
-    for i: Int = 0..<20 then value.enqueue(i)
-    for i: Int = 0..<20 then assert value.dequeue() == i panic "queue growth reordered an element"
+    for i: Int in 0..<20 then value.enqueue(i)
+    for i: Int in 0..<20 then assert value.dequeue() == i panic "queue growth reordered an element"
 }
 
 test "queue clear permits reuse" {
@@ -161,7 +161,7 @@ test "queue clear permits reuse" {
 }
 
 test "queue serialization metadata is declared" {
-    import std.{reflection::reflect, serializer::Serializable}
+    import std::{reflection::reflect, serializer::Serializable}
     inline assert reflect<Queue>.hasAnnot<Serializable> panic "Queue must carry Serializable metadata"
 }
 

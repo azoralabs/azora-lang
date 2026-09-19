@@ -63,6 +63,9 @@ inline for Ty in Numbers {
     /** Ascending range over [Ty], stepping by one. */
     bridge oper.. Ty&.(rhs: Ty&) by 1
 
+    /** Descending range, excluding the left bound and including the right. */
+    bridge oper>.. Ty&.(rhs: Ty&) by 1
+
     /**
      * Every numeric type clones and copies: they are small immutable
      * values, so duplicating one is a register move and cannot alias.

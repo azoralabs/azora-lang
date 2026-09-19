@@ -86,7 +86,7 @@ class CodegenGoldenTest {
             let p = Point(3, 4)
             p.x = p.x + 1
             println(p.x)
-            let nums = @arr[10, 20, 30]
+            let nums = [10, 20, 30]
             nums[1] = 25
             println(nums[1])
             let grade = 2

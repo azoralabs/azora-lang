@@ -28,14 +28,14 @@ import kotlin.test.assertTrue
  * ```
  * ctor .(capacity: Int)
  * in {
- *     assert capacity > 0 { "capacity must be positive" }
+ *     assert capacity > 0 panic "capacity must be positive"
  * } scope {
  *     self.capacity = capacity
  * }
  * ```
  *
- * The receiver is declared in brackets on the signature, where every other member
- * declares one. `scope { self! -> … }` named it in the one place that is not a
+ * Instance lifecycle ownership is declared by `ctor .` or `dtor .` in the
+ * signature. `scope { self! -> … }` named it in the one place that is not a
  * declaration, so that spelling is an error naming its replacement rather than a
  * second form that still works.
  *
@@ -61,7 +61,7 @@ class ContractScopeBodyTest {
             impl Arena {
                 ctor .(capacity: Int)
                 in {
-                    assert capacity > 0 { "Arena capacity must be positive" }
+                    assert capacity > 0 panic "Arena capacity must be positive"
                 } scope {
                     self.capacity = capacity
                 }
@@ -110,7 +110,7 @@ class ContractScopeBodyTest {
             impl Arena {
                 prop &.remaining: Int
                 in {
-                    assert self.capacity > 0 { "capacity must be positive" }
+                    assert self.capacity > 0 panic "capacity must be positive"
                 } scope {
                     return self.capacity - self.offset
                 }
@@ -126,7 +126,7 @@ class ContractScopeBodyTest {
             """
             func allocate(size: Int): Int
             in {
-                assert size > 0 { "Allocation size must be positive" }
+                assert size > 0 panic "Allocation size must be positive"
             } scope {
                 return size
             }
@@ -152,7 +152,7 @@ class ContractScopeBodyTest {
         assertTrue(
             "in-brace receiver is not a declaration" in e.message.orEmpty() &&
                 "ctor ." in e.message.orEmpty(),
-            "expected the message to name the bracket spelling, got: ${e.message}",
+            "expected the message to name the lifecycle receiver spelling, got: ${e.message}",
         )
     }
 

@@ -18,7 +18,7 @@ class StdlibMethodsTest {
         assertEquals("apple\nbanana\ncherry", run("""
             import std.io
             func main() {
-                var fruits = @arr["apple", "banana", "cherry"]
+                var fruits = ["apple", "banana", "cherry"]
                 for fruit in fruits {
                     println(fruit)
                 }
@@ -30,7 +30,7 @@ class StdlibMethodsTest {
         assertEquals("6", run("""
             import std.io
             func main() {
-                var nums = @arr[1, 2, 3]
+                var nums = [1, 2, 3]
                 var sum = 0
                 for n in nums {
                     sum = sum + n
@@ -91,7 +91,7 @@ class StdlibMethodsTest {
         assertEquals("[b, x, c]", run("""
             import std.io
             func main() {
-                var items = @arr["a", "b", "c"]
+                var items = ["a", "b", "c"]
                 items.insert(2, "x")
                 items.remove(0)
                 var result = ""
@@ -108,7 +108,7 @@ class StdlibMethodsTest {
         assertEquals("true\nfalse", run("""
             import std.io
             func main() {
-                var nums = @arr[1, 2, 3]
+                var nums = [1, 2, 3]
                 println(nums.contains(2))
                 println(nums.contains(9))
             }

@@ -13,7 +13,6 @@ IMPORT_CLAUSE ::= DOTTED.PATH
                 | DOTTED.PATH "::" IMPORT_GROUP
 
 IMPORT_GROUP ::= "{" GROUP_MEMBERS "}"
-               | "[" GROUP_MEMBERS "]"
 
 GROUP_MEMBERS ::= IMPORT_CLAUSE (SEPARATOR IMPORT_CLAUSE)*
                 | "*" (SEPARATOR IMPORT_EXCLUSION)*
@@ -48,7 +47,7 @@ resident module app.shared  // public, autoimported in package, all symbols resi
 ```azora
 import std.io::*                              // every exported symbol from std.io
 import std.container::*                       // every exported symbol under std.container
-import std.container.[list::*, map::*]        // grouped module clauses
+import std.container::{list::*, map::*}       // grouped module clauses
 import std.math::abs                          // one selected symbol
 
 import a.b::{*, without x}

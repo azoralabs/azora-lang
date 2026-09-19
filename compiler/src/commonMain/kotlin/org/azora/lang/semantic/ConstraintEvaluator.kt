@@ -148,7 +148,7 @@ internal object ConstraintEvaluator {
             val range = rangeOf(expr.collection, env)
             when {
                 subject == null || range == null -> Outcome.Unknown("membership constraint")
-                (subject in range) != expr.negated -> Outcome.Satisfied
+                (!range.isEmpty() && subject >= minOf(range.first, range.last) && subject <= maxOf(range.first, range.last)) != expr.negated -> Outcome.Satisfied
                 else -> Outcome.Violated(
                     "'${render(expr.value)} in ${range.first}..${range.last}': " +
                         "${render(expr.value)} is $subject",
@@ -238,11 +238,11 @@ internal object ConstraintEvaluator {
     }
 
     /** The inclusive bounds of a literal range expression, or null. */
-    private fun rangeOf(expr: Expr, env: Map<String, Binding>): LongRange? {
+    private fun rangeOf(expr: Expr, env: Map<String, Binding>): LongProgression? {
         val range = expr as? Expr.Range ?: return null
         val from = constOf(range.from, env) ?: return null
         val to = constOf(range.to, env) ?: return null
-        return if (range.inclusive) from..to else from until to
+        return range.constantProgression(from, to)
     }
 
     /** The identifier an expression names, seeing through `(...)` grouping. */

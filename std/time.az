@@ -876,8 +876,8 @@ test "invalid month is rejected" {
 test "local date validates leap day" {
     fin valid = localDate(2024, 2, 29) catch LocalDate(0, 1, 1)
     fin invalid = localDate(2023, 2, 29) catch LocalDate(-1, 1, 1)
-    assert valid.year == 2024 && valid.day == 29 { "2024-02-29 must be valid" }
-    assert invalid.year == -1 { "2023-02-29 must fail validation" }
+    assert valid.year == 2024 && valid.day == 29 panic "2024-02-29 must be valid"
+    assert invalid.year == -1 panic "2023-02-29 must fail validation"
 }
 
 test "local time validates every boundary" {
@@ -997,7 +997,7 @@ test "duration serializer preserves normalized fields" {
     fin original = duration(-2, 250000000)
     fin tree = serializer.toSerialValue(original) catch SerialValue.Null
     fin restored = serializer.fromSerialValue(tree) catch Duration(0)
-    assert restored.seconds == original.seconds { "Duration serializer must preserve seconds" }
+    assert restored.seconds == original.seconds panic "Duration serializer must preserve seconds"
     assert restored.nanosecondAdjustment == original.nanosecondAdjustment panic "Duration serializer must preserve nanoseconds"
 }
 
@@ -1011,9 +1011,7 @@ test "serializable metadata is present on portable time values" {
 }
 
 test "monotonic readings are intentionally not serializable" {
-    inline assert !reflect<MonotonicInstant>.hasAnnot<Serializable> {
-        "process-local monotonic readings must never become persisted timestamps"
-    }
+    inline assert !reflect<MonotonicInstant>.hasAnnot<Serializable> panic "process-local monotonic readings must never become persisted timestamps"
 }
 
 test .All "time"

@@ -378,6 +378,11 @@ private fun dumpStmt(sb: StringBuilder, stmt: Stmt, indent: String) {
             }
         }
         is Stmt.Continue -> sb.appendLine("${indent}Continue")
+        is Stmt.Exchange -> {
+            sb.appendLine("${indent}Exchange")
+            dumpExpr(sb, stmt.left, "$indent    ")
+            dumpExpr(sb, stmt.right, "$indent    ")
+        }
         is Stmt.IndexAssign -> {
             sb.appendLine("${indent}IndexAssign")
             sb.appendLine("$indent    target:")
@@ -494,7 +499,7 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
             dumpExpr(sb, expr.expr, "$indent    ")
         }
         is Expr.Range -> {
-            val op = if (expr.inclusive) ".." else "..<"
+            val op = if (expr.descending) ">.." else if (expr.inclusive) ".." else "..<"
             sb.appendLine("${indent}Range($op)")
             dumpExpr(sb, expr.from, "$indent    ")
             dumpExpr(sb, expr.to, "$indent    ")

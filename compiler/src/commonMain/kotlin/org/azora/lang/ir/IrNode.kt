@@ -254,12 +254,17 @@ sealed class IrType {
             Int to "Int", UInt to "UInt", Long to "Long", ULong to "ULong",
             Cent to "Cent", UCent to "UCent",
         )
-        /** The set of all numeric types (integer + floating-point). */
+        /** Named numeric types; use [isNumeric] to classify arbitrary integer widths. */
         val numericTypes: kotlin.collections.Set<IrType> get() = integerTypes + floatTypes
 
-        /** The set of all integer numeric types. */
+        /** Named integer types; use [isInteger] to include Int<N> and UInt<N>. */
         val integerTypes: kotlin.collections.Set<IrType>
             get() = NAMED_WIDTHS.keys + setOf(ISize, USize)
+
+        fun isInteger(type: IrType?): kotlin.Boolean =
+            type is Integer || type == ISize || type == USize
+
+        fun isNumeric(type: IrType?): kotlin.Boolean = isInteger(type) || type in floatTypes
 
         /** The set of all floating-point numeric types. */
         val floatTypes: kotlin.collections.Set<IrType> = setOf(Half, Float, Double, Quad)
@@ -872,6 +877,16 @@ sealed class IrExpr {
  * and all compile-time constructs already eliminated by CTCE.
  */
 sealed class IrStmt {
+    /** Resolve both typed locations before loading/storing either value. */
+    data class Exchange(val left: IrExpr, val right: IrExpr) : IrStmt() {
+        init {
+            require(left.type == right.type) { "exchange locations must have the same type" }
+            require(listOf(left, right).all { it is IrExpr.Var || it is IrExpr.Member || it is IrExpr.Index }) {
+                "exchange requires variable, field, or array-element locations"
+            }
+        }
+    }
+
     /** Runtime lifetime of a binding owned by a `react` declaration. */
     enum class ReactiveLifetime(val spelling: String) {
         REMEMBER("remember"),
@@ -1024,10 +1039,10 @@ sealed class IrStmt {
     data class While(val condition: IrExpr, val body: List<IrStmt>, val label: String? = null) : IrStmt()
 
     /**
-     * Integer `for` loop lowered from `for name in start..end` / `..<`.
+     * Integer `for` loop lowered from `..`, `..<`, or `>..`.
      *
      * @property counter the loop counter variable name
-     * @property start the inclusive start bound
+     * @property start the source's left bound (exclusive when descending)
      * @property end the end bound
      * @property inclusive whether [end] is included (`..` vs `..<`)
      * @property body the statements executed each iteration
@@ -1038,10 +1053,10 @@ sealed class IrStmt {
         val end: IrExpr,
         val inclusive: Boolean,
         val body: List<IrStmt>,
-        /** Step for the counter; null means 1. */
+        /** Positive Int step, evaluated once with the bounds; null means 1. */
         val step: IrExpr? = null,
-        /** Iterate downwards from [end] to [start]. */
-        val reverse: Boolean = false,
+        /** `start>..end`: exclude start, descend to inclusive end. */
+        val descending: Boolean = false,
         /** Optional source label for a labeled break or continue. */
         val label: String? = null,
         /** Optional zero-based ordinal binding from `with index`. */
@@ -1121,6 +1136,7 @@ sealed class IrStmt {
             is FinDecl -> binding(listOfNotNull(if (lazy) "lazy" else null, reactiveLifetime?.spelling, "fin").joinToString(" "), name, type, initializer)
             is LetDecl -> binding(listOfNotNull(if (lazy) "lazy" else null, reactiveLifetime?.spelling, "let").joinToString(" "), name, type, initializer)
             is Assignment -> sb.appendLine("${pad}$name = ${value.prettyPrint()}")
+            is Exchange -> sb.appendLine("${pad}${left.prettyPrint()} <> ${right.prettyPrint()}")
             is IndexAssign -> sb.appendLine("${pad}${target.prettyPrint()}[${index.prettyPrint()}] = ${value.prettyPrint()}")
             is MemberAssign -> sb.appendLine("${pad}${target.prettyPrint()}.$name = ${value.prettyPrint()}")
             is Return -> if (value != null) sb.appendLine("${pad}return ${value.prettyPrint()}") else sb.appendLine("${pad}return")
@@ -1155,11 +1171,10 @@ sealed class IrStmt {
                 sb.appendLine("${pad}}")
             }
             is For -> {
-                val op = if (inclusive) ".." else "..<"
+                val op = if (descending) ">.." else if (inclusive) ".." else "..<"
                 val stepPart = if (step != null) " by ${step.prettyPrint()}" else ""
-                val revPart = if (reverse) "reverse " else ""
                 val indexPart = indexName?.let { " with $it" }.orEmpty()
-                sb.appendLine("${pad}for $revPart$counter in ${start.prettyPrint()}$op${end.prettyPrint()}$stepPart$indexPart {")
+                sb.appendLine("${pad}for $counter in ${start.prettyPrint()}$op${end.prettyPrint()}$stepPart$indexPart {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -1533,6 +1548,11 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             sb.appendLine("$indent    value:")
             dumpIrExprTree(sb, stmt.value, "$indent        ")
         }
+        is IrStmt.Exchange -> {
+            sb.appendLine("${indent}IrExchange")
+            dumpIrExprTree(sb, stmt.left, "$indent    ")
+            dumpIrExprTree(sb, stmt.right, "$indent    ")
+        }
         is IrStmt.IndexAssign -> {
             sb.appendLine("${indent}IrIndexAssign")
             sb.appendLine("$indent    target:")
@@ -1594,7 +1614,7 @@ private fun dumpIrStmtTree(sb: StringBuilder, stmt: IrStmt, indent: String) {
             for (s in stmt.body) dumpIrStmtTree(sb, s, "$indent        ")
         }
         is IrStmt.For -> {
-            sb.appendLine("${indent}IrFor(counter=${stmt.counter}, inclusive=${stmt.inclusive}, reverse=${stmt.reverse}, index=${stmt.indexName})")
+            sb.appendLine("${indent}IrFor(counter=${stmt.counter}, inclusive=${stmt.inclusive}, descending=${stmt.descending}, index=${stmt.indexName})")
             sb.appendLine("$indent    start:")
             dumpIrExprTree(sb, stmt.start, "$indent        ")
             sb.appendLine("$indent    end:")

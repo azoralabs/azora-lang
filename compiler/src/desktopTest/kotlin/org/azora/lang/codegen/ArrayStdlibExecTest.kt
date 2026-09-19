@@ -9,7 +9,7 @@ class ArrayStdlibExecTest {
         import std.io
 
         func main() {
-            fin values: Array<Int> = arrayOf(5, 8, 13)
+            fin values: Array<Int> = [5, 8, 13]
             println(values.size)
             println(values[1])
             unsafe { println(values.data[1]) }
@@ -17,14 +17,14 @@ class ArrayStdlibExecTest {
     """.trimIndent()
 
     @Test
-    fun arrayOfRunsViaLlvm() {
+    fun literalRunsViaLlvm() {
         if (!LlvmExec.available) return
         assertEquals("3\n8\n8", LlvmExec.run(source))
         assertEquals("3\n8\n8", LlvmExec.run(source, optimized = true))
     }
 
     @Test
-    fun arrayOfRunsViaWasm() {
+    fun literalRunsViaWasm() {
         if (!WasmExec.available) return
         assertEquals("3\n8\n8", WasmExec.run(source))
     }

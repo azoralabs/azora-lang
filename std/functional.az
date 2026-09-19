@@ -141,7 +141,7 @@ func<T> none(arr: Array<T>, pred: (T) -> Bool): Bool {
 @Experimental(since: "0.1")
 func<T> take(arr: Array<T>, n: Int): Array<T>
 in {
-    assert n >= 0 { "take count must be non-negative" }
+    assert n >= 0 panic "take count must be non-negative"
 } scope {
     fin len: Int = if n < arr.size then n else arr.size
     var result: Array<T> = .() * len
@@ -159,7 +159,7 @@ in {
 @Experimental(since: "0.1")
 func<T> drop(arr: Array<T>, n: Int): Array<T>
 in {
-    assert n >= 0 { "purge count must be non-negative" }
+    assert n >= 0 panic "purge count must be non-negative"
 } scope {
     fin start = if n < arr.size then n else arr.size
     var result: Array<T> = .() * arr.size - start
@@ -192,7 +192,7 @@ func<T> zip(a: Array<T>, b: Array<T>): Array<T> {
 @Experimental(since: "0.1")
 func<T> fill(value: T, count: Int): Array<T>
 in {
-    assert count >= 0 { "fill count must be non-negative" }
+    assert count >= 0 panic "fill count must be non-negative"
 } scope {
     var result: Array<T> = .() * count
     for i: Int in 0..<count then result[i] = value

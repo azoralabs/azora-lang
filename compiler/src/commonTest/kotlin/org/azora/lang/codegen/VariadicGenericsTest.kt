@@ -52,7 +52,7 @@ class VariadicGenericsTest {
                 return a + b + c
             }
             func main() {
-                var nums = @arr[1, 2, 3]
+                var nums = [1, 2, 3]
                 println(sum3(...nums))
             }
         """.trimIndent()))

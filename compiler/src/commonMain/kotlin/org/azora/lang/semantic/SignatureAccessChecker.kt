@@ -173,10 +173,11 @@ object SignatureAccessChecker {
             is Stmt.RemDecl -> walkExpr(s.initializer, out)
             is Stmt.Assignment -> walkExpr(s.value, out)
             is Stmt.MemberAssign -> { walkExpr(s.target, out); walkExpr(s.value, out) }
+            is Stmt.Exchange -> { walkExpr(s.left, out); walkExpr(s.right, out) }
             is Stmt.IndexAssign -> { walkExpr(s.target, out); walkExpr(s.index, out); walkExpr(s.value, out) }
             is Stmt.If -> { walkExpr(s.condition, out); walkStmts(s.thenBranch, out); s.elseBranch?.let { walkStmts(it, out) } }
             is Stmt.While -> { walkExpr(s.condition, out); walkStmts(s.body, out) }
-            is Stmt.For -> { walkExpr(s.iterable, out); walkStmts(s.body, out) }
+            is Stmt.For -> { walkExpr(s.iterable, out); s.step?.let { walkExpr(it, out) }; walkStmts(s.body, out) }
             is Stmt.Loop -> walkStmts(s.body, out)
             is Stmt.Scope -> walkStmts(s.body, out)
             is Stmt.UsingContext -> { s.values.forEach { walkExpr(it, out) }; walkStmts(s.body, out) }

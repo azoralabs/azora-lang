@@ -548,9 +548,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Stmt.For -> {
                 val (newIter, iterChanged) = foldExpr(stmt.iterable, program)
+                val (newStep, stepChanged) = stmt.step?.let { foldExpr(it, program) } ?: (null to false)
                 val (newBody, bodyChanged) = foldScopedBody(stmt.body, program, errors)
-                val changed = iterChanged || bodyChanged
-                Pair(listOf(if (changed) stmt.copy(iterable = newIter, body = newBody) else stmt), changed)
+                val changed = iterChanged || stepChanged || bodyChanged
+                Pair(listOf(if (changed) stmt.copy(iterable = newIter, step = newStep, body = newBody) else stmt), changed)
             }
             is Stmt.Loop -> {
                 val (newBody, changed) = foldScopedBody(stmt.body, program, errors)
@@ -558,6 +559,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
             is Stmt.Break -> Pair(listOf(stmt), false)
             is Stmt.Continue -> Pair(listOf(stmt), false)
+            is Stmt.Exchange -> Pair(listOf(stmt), false) // runtime storage, never fold a location into a value
             is Stmt.IndexAssign -> {
                 val (newTarget, tc) = foldExpr(stmt.target, program)
                 val (newIndex, ic) = foldExpr(stmt.index, program)
@@ -908,6 +910,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
     }
 
     private fun substituteInStmt(stmt: Stmt, paramMap: Map<String, Expr>): Stmt = when (stmt) {
+        is Stmt.Exchange -> stmt.copy(left = substituteInExpr(stmt.left, paramMap), right = substituteInExpr(stmt.right, paramMap))
         is Stmt.VarDecl -> stmt.copy(initializer = substituteInExpr(stmt.initializer, paramMap))
         is Stmt.FinDecl -> stmt.copy(initializer = substituteInExpr(stmt.initializer, paramMap))
         is Stmt.LetDecl -> stmt.copy(initializer = substituteInExpr(stmt.initializer, paramMap))
@@ -1059,12 +1062,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val savedEnv = inlineEnv.toMap()
         val savedReflectionTypes = reflectionTypes.toMap()
         val result = mutableListOf<Stmt>()
-        var i = start
-        while (if (range.inclusive) i <= end else i < end) {
+        for (i in range.constantProgression(start, end)) {
             inlineEnv[stmt.name] = Expr.IntLiteral(i, stmt.line)
             val (folded, _) = foldBody(stmt.body, program, errors)
             result.addAll(folded)
-            i++
         }
         // Restore the CTCE environment: drop the loop variable and any inline
         // bindings local to the body so they don't leak past the unrolled loop.
@@ -1151,9 +1152,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val range = iterable as? Expr.Range ?: return null
         val from = (foldExpr(range.from, program).first as? Expr.IntLiteral)?.value ?: return null
         val to = (foldExpr(range.to, program).first as? Expr.IntLiteral)?.value ?: return null
-        val last = if (range.inclusive) to else to - 1
-        if (last < from) return emptyList()
-        return (from..last).toList()
+        return range.constantProgression(from, to).toList()
     }
 
     /**
@@ -1801,6 +1800,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val value = evalExpr(stmt.initializer, env, program) ?: return null
                     env[stmt.name] = value
                 }
+                is Stmt.Exchange -> return null // runtime storage exchange is not a CTFE value
                 is Stmt.RemDecl -> return null // reactive state, not CTCE-evaluable
                 is Stmt.Effect -> return null // effects are not CTCE-evaluable
                 is Stmt.UsingContext -> return null // contextual dispatch is resolved semantically
@@ -1839,12 +1839,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     val range = stmt.iterable as? Expr.Range ?: return null
                     val s = (evalExpr(range.from, env, program) as? Expr.IntLiteral)?.value ?: return null
                     val e = (evalExpr(range.to, env, program) as? Expr.IntLiteral)?.value ?: return null
-                    var i = s
-                    while (if (range.inclusive) i <= e else i < e) {
+                    for (i in range.constantProgression(s, e)) {
                         env[stmt.name] = Expr.IntLiteral(i, stmt.line)
                         val result = interpretBody(stmt.body, env, program, line)
                         if (result != null) return result
-                        i++
                     }
                 }
                 is Stmt.DeepInlineIf -> {

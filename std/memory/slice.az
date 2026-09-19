@@ -23,13 +23,13 @@ pack Slice<T> {
 
 @Experimental(since: "0.1")
 oper[] Slice<T>&.(index: Int): T {
-    assert index >= 0 && index < self.count { "Slice index out of bounds" }
+    assert index >= 0 && index < self.count panic "Slice index out of bounds"
     return self._raw[index]
 }
 
 @Experimental(since: "0.1")
 oper[]= Slice<T>!.(index: Int, value: T) {
-    assert index >= 0 && index < self.count { "Slice index out of bounds" }
+    assert index >= 0 && index < self.count panic "Slice index out of bounds"
     self._raw[index] = value
 }
 
@@ -49,9 +49,9 @@ impl Slice<T> {
     /** Returns a sub-slice `[start, start+count)`; asserts bounds. */
     @Experimental(since: "0.1")
     func &.sub(start: Int, count: Int): Slice<T> {
-        assert start >= 0 { "Slice start must be non-negative" }
-        assert count >= 0 { "Slice count must be non-negative" }
-        assert start + count <= self.count { "Slice range out of bounds" }
+        assert start >= 0 panic "Slice start must be non-negative"
+        assert count >= 0 panic "Slice count must be non-negative"
+        assert start + count <= self.count panic "Slice range out of bounds"
         return Slice(self._raw + start, count)
     }
 }

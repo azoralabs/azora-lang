@@ -42,7 +42,9 @@ IMPL_CAPABILITY ::= '&' | '!'                          (inside impl/spec; means 
 RETURN_TYPE  ::= Type | (nothing → Unit; never inferred - see §1.4)
 FAILS        ::= E | [E1, E2]                           (error sets; optional)
 CLAUSE       ::= (...T).length >= N  |  T is Spec       (joined with &&; optional)
-BODY         ::= { statements }  |  = expression  |  in {…} out {r -> …} scope {…}
+BODY         ::= { statements } | = expression | scope BLOCK_OR_STATEMENT | CONTRACTS scope BLOCK_OR_STATEMENT
+CONTRACTS    ::= [in BLOCK_OR_STATEMENT] [out BLOCK_OR_STATEMENT]
+BLOCK_OR_STATEMENT ::= { statements } | STATEMENT
 ```
 
 Every part except `func`/`NAME`/`()` is optional. A receiver-free declaration
@@ -391,7 +393,11 @@ in {
 - `in { … }` runs before the body; each `assert cond { "msg" }` is checked.
 - `out { result -> … }` binds the return value as `result` and checks
   postconditions after the body.
-- When contracts are present, the body is introduced by `scope { … }`.
+- A contracted body can use a `scope` clause or an `= expression` body.
+- A single-statement contract or body omits its braces: `in assert n >= 0 panic "negative"`
+  and `scope return n`. Constructors, destructors, and properties share the body
+  form; receiver and ownership semantics are unchanged. Newlines may precede the
+  body. Named postcondition results still use `out { result -> … }`.
 
 ---
 

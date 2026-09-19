@@ -78,14 +78,20 @@ clause, in the order written; a second `in` or `out` is a parse error. Splitting
 one requirement across two clauses would say nothing the single clause cannot,
 and would raise a question about ordering that has no good answer.
 
-A clause opens at the declaration's own indentation rather than under the
-signature, and each closing brace carries the next keyword: `} out {`,
-`} scope {`. The body is the last clause in that chain, so a contracted
-function reads as one list of clauses rather than a signature with decoration
-hanging off it.
+A clause contains either an ordinary block or one statement. `assert` is the
+usual statement, but is not required. A block can contain several statements;
+a single-statement clause does not include the next declaration or clause.
+Newlines may separate a clause keyword from its body.
 
-A clause body is an ordinary block. `assert` is the usual thing to put in one,
-but nothing requires it.
+```azora
+func identity(n: Int): Int
+in assert n >= 0 panic "negative input"
+out assert it == n panic "changed result"
+scope return n
+```
+
+Braced and single-statement clauses use the same entry/return checks. A named
+result uses the braced `out { result -> … }` form; a single statement uses `it`.
 
 ### 2.1 `it`, and naming the result
 
@@ -135,14 +141,17 @@ same way where a generator's contract applies.
 
 A bare `return` with no value is left alone: there is nothing to bind.
 
-### 2.3 The body is a `scope { }` clause
+### 2.3 The body is a `scope` clause
 
 `scope { }` closes the chain. It is the function's ordinary body - the keyword
 is there so the body sits in the same list as the clauses before it, rather
 than being a brace that happens to follow them.
 
-A function with no contracts writes its body as a plain block, as usual. The
-`scope` spelling is what the contracted form uses.
+A function can also write one statement after `scope`. Constructors,
+destructors, and properties use the same body forms without changing their
+receiver or lifecycle ownership. A plain block remains available. An explicit
+`scope` is required for a single-statement declaration body, and may place its
+opening brace or statement on the next line.
 
 ---
 
@@ -163,8 +172,8 @@ failing to compile. Nothing warns.
 - ⬜ Decide whether a non-folding `inline assert` should be an error. Silently
   becoming a runtime check defeats the point of writing `inline`
 
-Unlike a runtime `assert`, the message is **required**. It may be written as a
-brace expression or as a single expression after `else`.
+As for a runtime `assert`, a message after `panic` is **required**. The message
+expression may start on the next line. Brace and `else` message forms are invalid.
 
 Inside a `deepinline` block, an ordinary `assert` is treated as an
 `inline assert` - the whole block is compile-time, so its assertions are too.

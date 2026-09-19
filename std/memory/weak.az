@@ -23,7 +23,7 @@ pack Weak<T> {
 
 @Experimental(since: "0.1")
 oper.* Weak<T>&.(): T { // here we need to implement mandatory deref...
-    assert self._raw != null { "Weak pointer is null" }
+    assert self._raw != null panic "Weak pointer is null"
     return self._raw.*
 }
 
@@ -42,7 +42,7 @@ impl Weak<T> {
     /** Returns the referenced value (panics if the pointer is null). */
     @Experimental(since: "0.1")
     prop &.get: T {
-        assert self._raw != null { "Weak pointer is null" }
+        assert self._raw != null panic "Weak pointer is null"
         return self._raw.*
     }
 

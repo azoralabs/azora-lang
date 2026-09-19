@@ -32,8 +32,8 @@ class PropCallTest {
     }
 
     @Test fun anArrayEmptinessPropertyIsNotCallable() {
-        refusesCallForm("@arr[1]", "isEmpty")
-        refusesCallForm("@arr[1]", "isNotEmpty")
+        refusesCallForm("[1]", "isEmpty")
+        refusesCallForm("[1]", "isNotEmpty")
     }
 
 }

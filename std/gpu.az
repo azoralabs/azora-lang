@@ -246,26 +246,22 @@ bridge pack GpuMatrixTile<T>
 /** Creates and validates a local invocation shape. */
 @Experimental(since: "0.1")
 func workgroup(x: Int, y: Int, z: Int): WorkgroupSize {
-    assert x > 0 && y > 0 && z > 0 {
-        "workgroup dimensions must be positive"
-    }
+    assert x > 0 && y > 0 && z > 0 panic "workgroup dimensions must be positive"
     return WorkgroupSize(x, y, z)
 }
 
 /** Creates and validates a dispatch shape. Zero work is a valid no-op. */
 @Experimental(since: "0.1")
 func dispatch(x: Int, y: Int, z: Int): DispatchSize {
-    assert x >= 0 && y >= 0 && z >= 0 {
-        "dispatch dimensions cannot be negative"
-    }
+    assert x >= 0 && y >= 0 && z >= 0 panic "dispatch dimensions cannot be negative"
     return DispatchSize(x, y, z)
 }
 
 /** Converts element count into one-dimensional workgroup count. */
 @Experimental(since: "0.1")
 func dispatchFor(elements: Int, workgroupSize: Int): DispatchSize {
-    assert elements >= 0 { "element count cannot be negative" }
-    assert workgroupSize > 0 { "workgroup size must be positive" }
+    assert elements >= 0 panic "element count cannot be negative"
+    assert workgroupSize > 0 panic "workgroup size must be positive"
     fin groups = if elements == 0 {
         0
     } else {
@@ -292,17 +288,17 @@ func launch(
     sharedBytes: Int,
     cooperative: Bool,
 ): LaunchConfig {
-    assert sharedBytes >= 0 { "shared-memory request cannot be negative" }
+    assert sharedBytes >= 0 panic "shared-memory request cannot be negative"
     return LaunchConfig(groups, workgroup, sharedBytes, cooperative)
 }
 
 /** Creates a row-major layout without copying the underlying values. */
 @Experimental(since: "0.1")
 func rowMajor(shape: Array<Int>): GpuLayout {
-    assert shape.size > 0 { "a GPU layout needs at least one dimension" }
+    assert shape.size > 0 panic "a GPU layout needs at least one dimension"
     var total = 1
     for i in 0..<shape.size {
-        assert shape[i] > 0 { "layout dimensions must be positive" }
+        assert shape[i] > 0 panic "layout dimensions must be positive"
         total = total * shape[i]
     }
     var strides: Array<Int> = .() * shape.size
@@ -317,11 +313,11 @@ func rowMajor(shape: Array<Int>): GpuLayout {
 /** Creates a column-major layout without copying the underlying values. */
 @Experimental(since: "0.1")
 func columnMajor(shape: Array<Int>): GpuLayout {
-    assert shape.size > 0 { "a GPU layout needs at least one dimension" }
+    assert shape.size > 0 panic "a GPU layout needs at least one dimension"
     var strides: Array<Int> = .() * shape.size
     var stride = 1
     for i in 0..<shape.size {
-        assert shape[i] > 0 { "layout dimensions must be positive" }
+        assert shape[i] > 0 panic "layout dimensions must be positive"
         strides[i] = stride
         stride = stride * shape[i]
     }
@@ -331,9 +327,7 @@ func columnMajor(shape: Array<Int>): GpuLayout {
 /** Creates a tiled view descriptor over a row-major shape. */
 @Experimental(since: "0.1")
 func tiled(shape: Array<Int>, tileX: Int, tileY: Int, tileZ: Int): GpuLayout {
-    assert tileX > 0 && tileY > 0 && tileZ > 0 {
-        "tile dimensions must be positive"
-    }
+    assert tileX > 0 && tileY > 0 && tileZ > 0 panic "tile dimensions must be positive"
     fin base = rowMajor(shape)
     return GpuLayout(shape, base.strides, LayoutKind.Tiled, tileX, tileY, tileZ)
 }
@@ -341,14 +335,10 @@ func tiled(shape: Array<Int>, tileX: Int, tileY: Int, tileZ: Int): GpuLayout {
 /** Computes a linear offset through a validated layout descriptor. */
 @Experimental(since: "0.1")
 func linearIndex(layout: GpuLayout&, coordinates: Array<Int>): Int {
-    assert coordinates.size == layout.shape.size {
-        "coordinate rank does not match layout rank"
-    }
+    assert coordinates.size == layout.shape.size panic "coordinate rank does not match layout rank"
     var result = 0
     for i in 0..<coordinates.size {
-        assert coordinates[i] >= 0 && coordinates[i] < layout.shape[i] {
-            "coordinate is outside the layout"
-        }
+        assert coordinates[i] >= 0 && coordinates[i] < layout.shape[i] panic "coordinate is outside the layout"
         result = result + coordinates[i] * layout.strides[i]
     }
     return result
@@ -362,8 +352,8 @@ func shader(
     code: String,
     workgroup: WorkgroupSize,
 ): ShaderSource {
-    assert entry.size > 0 { "shader entry point cannot be empty" }
-    assert code.size > 0 { "shader source cannot be empty" }
+    assert entry.size > 0 panic "shader entry point cannot be empty"
+    assert code.size > 0 panic "shader source cannot be empty"
     return ShaderSource(stage, entry, code, workgroup)
 }
 

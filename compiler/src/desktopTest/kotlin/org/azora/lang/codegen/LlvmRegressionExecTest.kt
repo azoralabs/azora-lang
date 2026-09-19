@@ -104,7 +104,7 @@ class LlvmRegressionExecTest {
         "42",
         """
         import std.io
-        threadlocal var numbers = @arr[41]
+        threadlocal var numbers = [41]
         async func read(): Int { return numbers[0] + 1 }
         async func main() {
             println(await read())
@@ -208,7 +208,7 @@ class LlvmRegressionExecTest {
     @Test fun threadLocalAggregatesUseTlsAndRuntimeInitialization() {
         val source = """
             import std.io
-            threadlocal var numbers = @arr[1, 2, 3]
+            threadlocal var numbers = [1, 2, 3]
             threadlocal var names = ["first": 10, "second": 20]
             threadlocal var unique = ![1, 2, 2, 3]
             func main() {
@@ -235,7 +235,10 @@ class LlvmRegressionExecTest {
         "3\n2\n3",
         """
         import std.io
-        threadlocal var numbers: List<Int> = @arr[1, 2, 3]
+        import std.container.list
+        import std.container.map
+        import std.container.set
+        threadlocal var numbers: List<Int> = [1, 2, 3]
         threadlocal var names: Map<String, Int> = ["first": 10, "second": 20]
         threadlocal var unique: Set<Int> = ![1, 2, 2, 3]
         func main() {
@@ -250,11 +253,13 @@ class LlvmRegressionExecTest {
         val ir = LlvmExec.compile(
             """
             import std.io
+            import std.container.map
+            import std.container.set
             import std.container.core
             func main() {
-                var array = @arr[Quad(1.5), Quad(2.5)]
-                var map = @map["value": Quad(3.5)]
-                var set = @set[Quad(1.5), Quad(2.5)]
+                var array = [Quad(1.5), Quad(2.5)]
+                var map: Map<String, Quad> = ["value": Quad(3.5)]
+                var set: Set<Quad> = [Quad(1.5), Quad(2.5)]
             }
             """.trimIndent()
         )

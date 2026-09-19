@@ -48,19 +48,19 @@ class RoboticsEngineTest {
                     fin command = boundedPositionCommand("arm", 5.0, 100L, limit)
                     println(command.value)
 
-                    fin names: Array<String> = @arr["arm"]
-                    fin positions: Array<Double> = @arr[0.0]
-                    fin velocities: Array<Double> = @arr[0.0]
+                    fin names: Array<String> = ["arm"]
+                    fin positions: Array<Double> = [0.0]
+                    fin velocities: Array<Double> = [0.0]
                     fin point0 = TrajectoryPoint(0.0, positions, velocities)
-      fin points: Array<TrajectoryPoint> = @arr[take point0]
+      fin points: Array<TrajectoryPoint> = [take point0]
                     fin trajectory = Trajectory(names, points)
                     println(validTrajectory(trajectory))
 
-      fin badNames: Array<String> = @arr["arm"]
-      fin badPositions: Array<Double> = @arr[0.0]
-      fin badVelocities: Array<Double> = @arr[0.0]
+      fin badNames: Array<String> = ["arm"]
+      fin badPositions: Array<Double> = [0.0]
+      fin badVelocities: Array<Double> = [0.0]
       fin badPoint = TrajectoryPoint(-1.0, badPositions, badVelocities)
-      fin badPoints: Array<TrajectoryPoint> = @arr[take badPoint]
+      fin badPoints: Array<TrajectoryPoint> = [take badPoint]
       fin badTrajectory = Trajectory(badNames, badPoints)
                     println(validTrajectory(badTrajectory))
                 }

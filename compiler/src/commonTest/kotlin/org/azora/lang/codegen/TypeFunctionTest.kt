@@ -188,7 +188,7 @@ class TypeFunctionTest {
 
     @Test
     fun genericFunctionCallUsesTypePropertyForItsResult() {
-        assertIs<CompilationResult.Success>(compile("""
+        val result = compile("""
             import std.traits
             func<T, U> greater(a: T, b: U): promote<T, U> {
                 return a + b
@@ -196,7 +196,8 @@ class TypeFunctionTest {
             func main() {
                 fin result: Float = greater(1, 2.5)
             }
-        """))
+        """)
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
     }
 
     @Test

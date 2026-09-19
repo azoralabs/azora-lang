@@ -11,7 +11,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * Covers `impl oper @arr[spec, spec, ...] for Type` expansion and the oper.. range gate
+ * Covers `impl oper [spec, spec, ...] for Type` expansion and the oper.. range gate
  * introduced so range iteration works only where `impl oper .. for T` is declared.
  */
 class MultiOperImplTest {
@@ -31,20 +31,20 @@ class MultiOperImplTest {
         // its default step. A compiler-provided one says `bridge` rather than
         // leaving it to be inferred from the missing body.
         val src = "bridge oper.. Int&.(rhs: Int&) by 1\n" +
-            "bridge oper reverse.. Int&.(rhs: Int&) by 1\n"
+            "bridge oper >.. Int&.(rhs: Int&) by 1\n"
         val program = Parser(Lexer(src).tokenize()).parse()
         val operImpls = program.items.filterIsInstance<TopLevel.Impl>()
         assertEquals(2, operImpls.size, "expected one impl per oper declaration")
         val methodNames = operImpls.flatMap { it.methods.map { m -> m.name } }.toSet()
-        assertEquals(setOf("oper..", "operreverse.."), methodNames)
+        assertEquals(setOf("oper..", "oper>.."), methodNames)
         assertTrue(operImpls.all { it.isBridge }, "a 'bridge oper' declaration is a bridge marker")
         assertTrue(operImpls.all { it.typeName == "Int" })
     }
 
     @Test
     fun theBracketEnumerationFormIsRejected() {
-        // `impl oper [.. , reverse..] for T` was replaced by one declaration each.
-        val src = "bridge impl oper [.. by 1, reverse.. by 1] for Int\n"
+        // `impl oper [.. , >..] for T` was replaced by one declaration each.
+        val src = "bridge impl oper [.. by 1, >.. by 1] for Int\n"
         val failure = runCatching { Parser(Lexer(src).tokenize()).parse() }.exceptionOrNull()
         assertTrue(failure != null, "the bracket enumeration form must no longer parse")
     }

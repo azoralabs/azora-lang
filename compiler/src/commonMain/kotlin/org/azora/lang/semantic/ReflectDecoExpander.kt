@@ -155,10 +155,11 @@ object ReflectDecoExpander {
             is Stmt.LetDecl -> stmt.copy(type = type(stmt.type), initializer = expr(stmt.initializer))
             is Stmt.Assignment -> stmt.copy(value = expr(stmt.value))
             is Stmt.MemberAssign -> stmt.copy(target = expr(stmt.target), value = expr(stmt.value))
+            is Stmt.Exchange -> stmt.copy(left = expr(stmt.left), right = expr(stmt.right))
             is Stmt.IndexAssign -> stmt.copy(target = expr(stmt.target), index = expr(stmt.index), value = expr(stmt.value))
             is Stmt.If -> stmt.copy(condition = expr(stmt.condition), thenBranch = stmts(stmt.thenBranch), elseBranch = stmt.elseBranch?.let { stmts(it) })
             is Stmt.While -> stmt.copy(condition = expr(stmt.condition), body = stmts(stmt.body))
-            is Stmt.For -> stmt.copy(iterable = expr(stmt.iterable), body = stmts(stmt.body))
+            is Stmt.For -> stmt.copy(iterable = expr(stmt.iterable), step = stmt.step?.let(::expr), body = stmts(stmt.body))
             is Stmt.Loop -> stmt.copy(body = stmts(stmt.body))
             is Stmt.Scope -> stmt.copy(body = stmts(stmt.body))
             is Stmt.When -> stmt.copy(
@@ -372,7 +373,7 @@ object ReflectDecoExpander {
             is Stmt.MemberAssign -> s.copy(target = expr(s.target), value = expr(s.value))
             is Stmt.If -> s.copy(condition = expr(s.condition), thenBranch = stmts(s.thenBranch), elseBranch = s.elseBranch?.let { stmts(it) })
             is Stmt.While -> s.copy(condition = expr(s.condition), body = stmts(s.body))
-            is Stmt.For -> s.copy(iterable = expr(s.iterable), body = stmts(s.body))
+            is Stmt.For -> s.copy(iterable = expr(s.iterable), step = s.step?.let(::expr), body = stmts(s.body))
             is Stmt.Loop -> s.copy(body = stmts(s.body))
             is Stmt.Scope -> s.copy(body = stmts(s.body))
             is Stmt.When -> s.copy(

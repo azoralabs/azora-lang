@@ -125,7 +125,7 @@ func main() { println("Hello, Azora!") }"""))
             var x = 3
             var y = 4
             println("${'$'}x + ${'$'}y = ${'$'}{x + y}")
-            var items = @arr[10, 20, 30]
+            var items = [10, 20, 30]
             println("first is ${'$'}{items[0]}")
             println("count is ${'$'}{items.size}")
         }
@@ -145,7 +145,7 @@ func main() { println("Hello, Azora!") }"""))
     @Test fun ch7_arrays() = assertEquals("5\n5", run("""
         import std.io
         func main() {
-            var a = @arr[1, 2, 3]
+            var a = [1, 2, 3]
             a.add(4)
             a.add(5)
             println(a.size)
@@ -156,7 +156,7 @@ func main() { println("Hello, Azora!") }"""))
     @Test fun ch7_iteration() = assertEquals("apple\nbanana\ncherry\nate 3 fruits", run("""
         import std.io
         func main() {
-            var fruits = @arr["apple", "banana", "cherry"]
+            var fruits = ["apple", "banana", "cherry"]
             var total = 0
             for i in 0..<fruits.size {
                 println(fruits[i])
@@ -247,7 +247,7 @@ func main() { println("Hello, Azora!") }"""))
             return Point(0, 0)
         }
         func main() {
-            var points = @arr[Point(1, 2), Point(3, 4), origin()]
+            var points = [Point(1, 2), Point(3, 4), origin()]
             println(points[1].x)
             println(points[2].y)
         }
@@ -431,7 +431,7 @@ func main() { println("Hello, Azora!") }"""))
     @Test fun ch26_maps_int_keys() = assertEquals("30\n40", run("""
         import std.io
         func main() {
-            var scores = @map[10: 10, 20: 20, 30: 30]
+            var scores = [10: 10, 20: 20, 30: 30]
             scores[40] = 40
             println(scores[30])
             println(scores[40])
@@ -483,7 +483,7 @@ func main() { println("Hello, Azora!") }"""))
     @Test fun ch29_pointer_arithmetic() = assertEquals("10\n20\n99\n3", run("""
         import std.io
         func main() {
-            var p: Int^ = alloc^ @arr[10, 20, 30]
+            var p: Int^ = alloc^ [10, 20, 30]
             println(*p)
             println(*(p + 1))
             *(p + 2) = 99
@@ -496,7 +496,7 @@ func main() { println("Hello, Azora!") }"""))
     @Test fun ch29_clone() = assertEquals("1", run("""
         import std.io
         func main() {
-            var original = @arr[1, 2, 3]
+            var original = [1, 2, 3]
             var copy = original.clone()
             copy[0] = 99
             println(original[0])

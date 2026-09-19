@@ -86,7 +86,7 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "panic") || rangeIs(source, start, end, "macro") ||
         rangeIs(source, start, end, "for") || rangeIs(source, start, end, "while") ||
         rangeIs(source, start, end, "loop") || rangeIs(source, start, end, "in") ||
-        rangeIs(source, start, end, "by") || rangeIs(source, start, end, "reverse") ||
+        rangeIs(source, start, end, "by") ||
         rangeIs(source, start, end, "break") || rangeIs(source, start, end, "continue") ||
         rangeIs(source, start, end, "pack") || rangeIs(source, start, end, "enum") ||
         rangeIs(source, start, end, "when") || rangeIs(source, start, end, "throw") ||

@@ -169,8 +169,8 @@ impl Set<T> for LinkedHashSet<T> {
     prop &.isNotEmpty: Bool = self.size > 0
 
     func &.get(index: Int): T {
-        assert index >= 0 { "Set index must be non-negative" }
-        assert index < self.size { "Set index out of bounds" }
+        assert index >= 0 panic "Set index must be non-negative"
+        assert index < self.size panic "Set index out of bounds"
         return self.data[index]
     }
 
@@ -386,8 +386,8 @@ impl Set<T> for HashSet<T> {
     prop &.isNotEmpty: Bool = self.size > 0
 
     func &.get(index: Int): T {
-        assert index >= 0 { "Set index must be non-negative" }
-        assert index < self.size { "Set index out of bounds" }
+        assert index >= 0 panic "Set index must be non-negative"
+        assert index < self.size panic "Set index out of bounds"
         return self.data[index]
     }
 
@@ -494,9 +494,7 @@ impl MutableSet<T> for HashSet<T> {
 
 @Experimental(since: "0.1")
 oper[] HashSet<T>&.(index: Int): T {
-    assert index >= 0 && index < self.size {
-        "Set index out of bounds"
-    }
+    assert index >= 0 && index < self.size panic "Set index out of bounds"
     return self.data[index]
 }
 
@@ -585,8 +583,8 @@ impl Set<T> for TreeSet<T> {
     prop &.isNotEmpty: Bool = self.size > 0
 
     func &.get(index: Int): T {
-        assert index >= 0 { "Set index must be non-negative" }
-        assert index < self.size { "Set index out of bounds" }
+        assert index >= 0 panic "Set index must be non-negative"
+        assert index < self.size panic "Set index out of bounds"
         return self.data[index]
     }
 
@@ -693,9 +691,7 @@ impl MutableSet<T> for TreeSet<T> {
 
 @Experimental(since: "0.1")
 oper[] TreeSet<T>&.(index: Int): T {
-    assert index >= 0 && index < self.size {
-        "Set index out of bounds"
-    }
+    assert index >= 0 && index < self.size panic "Set index out of bounds"
     return self.data[index]
 }
 
@@ -742,9 +738,7 @@ impl TreeSet<T> {
 
 @Experimental(since: "0.1")
 oper[] LinkedHashSet<T>&.(index: Int): T {
-    assert index >= 0 && index < self.size {
-        "Set index out of bounds"
-    }
+    assert index >= 0 && index < self.size panic "Set index out of bounds"
     return self.data[index]
 }
 
@@ -787,32 +781,32 @@ impl LinkedHashSet<T> {
 
 test "set starts empty" {
     fin value: TreeSet<Int> = .()
-    assert value.size == 0 && value.isEmpty { "emptySet must contain no values" }
+    assert value.size == 0 && value.isEmpty panic "emptySet must contain no values"
 }
 
 test "setOf removes duplicates" {
     fin value = setOf(1, 2, 1, 3, 2)
-    assert value.size == 3 { "setOf must retain unique values only" }
-    assert value.get(0) == 1 && value.get(1) == 2 && value.get(2) == 3 { "set insertion order changed" }
+    assert value.size == 3 panic "setOf must retain unique values only"
+    assert value.get(0) == 1 && value.get(1) == 2 && value.get(2) == 3 panic "set insertion order changed"
 }
 
 test "mutableSetOf removes duplicates" {
     fin value = mutableSetOf(1, 2, 1)
-    assert value.size == 2 && value.contains(1) && value.contains(2) { "mutableSetOf uniqueness changed" }
+    assert value.size == 2 && value.contains(1) && value.contains(2) panic "mutableSetOf uniqueness changed"
 }
 
 test "set add reports whether membership changed" {
     var value = mutableSetOf(1)
-    assert !value.add(1) { "adding a duplicate must be a no-op" }
-    assert value.add(2) { "adding a new value must report a change" }
-    assert value.size == 2 { "set size must count unique values" }
+    assert !value.add(1) panic "adding a duplicate must be a no-op"
+    assert value.add(2) panic "adding a new value must report a change"
+    assert value.size == 2 panic "set size must count unique values"
 }
 
 test "set remove preserves remaining membership" {
     var value = mutableSetOf(1, 2, 3)
-    assert value.remove(2) { "remove must report an existing value" }
-    assert !value.remove(9) { "remove must report a missing value" }
-    assert value.size == 2 && !value.contains(2) { "removed values must disappear" }
+    assert value.remove(2) panic "remove must report an existing value"
+    assert !value.remove(9) panic "remove must report a missing value"
+    assert value.size == 2 && !value.contains(2) panic "removed values must disappear"
 }
 
 test "set algebra produces unique results" {
@@ -821,9 +815,9 @@ test "set algebra produces unique results" {
     fin combined = left.union(right)
     fin common = left.intersect(right)
     fin difference = left.difference(right)
-    assert combined.size == 4 && combined.contains(4) { "union must contain both memberships" }
-    assert common.size == 1 && common.contains(3) { "intersection must contain shared values" }
-    assert difference.size == 2 && difference.contains(1) && difference.contains(2) { "difference must exclude right values" }
+    assert combined.size == 4 && combined.contains(4) panic "union must contain both memberships"
+    assert common.size == 1 && common.contains(3) panic "intersection must contain shared values"
+    assert difference.size == 2 && difference.contains(1) && difference.contains(2) panic "difference must exclude right values"
 }
 
 test "set grows without losing uniqueness" {
@@ -831,18 +825,18 @@ test "set grows without losing uniqueness" {
     for i in 0..<20 {
         value.add(i % 10)
     }
-    assert value.size == 10 && value.contains(9) { "growth must preserve ten unique values" }
+    assert value.size == 10 && value.contains(9) panic "growth must preserve ten unique values"
 }
 
 test "set clear permits reuse" {
     var value = mutableSetOf(1, 2)
     value.clear()
     value.add(7)
-    assert value.size == 1 && value.contains(7) { "cleared sets must remain reusable" }
+    assert value.size == 1 && value.contains(7) panic "cleared sets must remain reusable"
 }
 
 test "set serialization metadata is declared" {
-    inline assert reflect<LinkedHashSet>.hasAnnot<Serializable> { "LinkedHashSet must carry Serializable metadata" }
+    inline assert reflect<LinkedHashSet>.hasAnnot<Serializable> panic "LinkedHashSet must carry Serializable metadata"
 }
 
 test .All "set"

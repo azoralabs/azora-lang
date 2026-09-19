@@ -88,7 +88,7 @@ class EffectChecker {
         for (func in program.functions) {
             val calls = collectCalls(func.body)
             val hasExternalCall = calls.any { it !in knownFunctions }
-            effectMap[func.name] = if (hasExternalCall) Effect.IMPURE else Effect.PURE
+            effectMap[func.name] = if (hasExternalCall || exchangesStorage) Effect.IMPURE else Effect.PURE
         }
 
         // Second pass: propagate impurity - if a pure function calls an impure one,
@@ -110,7 +110,10 @@ class EffectChecker {
         return EffectResult(effects, errors)
     }
 
+    private var exchangesStorage = false
+
     private fun collectCalls(body: List<Stmt>): Set<String> {
+        exchangesStorage = false
         val calls = mutableSetOf<String>()
         for (stmt in body) {
             collectCallsFromStmt(stmt, calls)
@@ -191,11 +194,13 @@ class EffectChecker {
                 } else {
                     collectCallsFromExpr(stmt.iterable, calls)
                 }
+                stmt.step?.let { collectCallsFromExpr(it, calls) }
                 stmt.body.forEach { collectCallsFromStmt(it, calls) }
             }
             is Stmt.Loop -> stmt.body.forEach { collectCallsFromStmt(it, calls) }
             is Stmt.Break -> {}
             is Stmt.Continue -> {}
+            is Stmt.Exchange -> { exchangesStorage = true; collectCallsFromExpr(stmt.left, calls); collectCallsFromExpr(stmt.right, calls) }
             is Stmt.IndexAssign -> {
                 collectCallsFromExpr(stmt.target, calls)
                 collectCallsFromExpr(stmt.index, calls)

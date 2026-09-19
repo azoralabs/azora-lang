@@ -1,0 +1,804 @@
+# Azora ecosystem execution log
+
+Plan: [150-step delivery plan](ECOSYSTEM_DELIVERY_PLAN.md).
+Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
+
+## Current status — 2026-09-15
+
+- Completed: 001–006 and 009; strict disk and bundled standard-library loading pass.
+- Completed substeps: 010.C1–C2, bracket grammar and contextual array execution.
+- Completed: 010.C3.1–C3.2, selected-import implementation reachability and
+  removal of implicit collection storage reinterpretation.
+- In progress: 010.C3.3. Direct generic constructor/method calls retain owner
+  types; interpreter and LLVM scalar/list execution are covered. Generic
+  properties, indexing, aggregate ABI and WASM qualification remain open.
+- Next: complete generic call coverage and buffer allocation/lifetime lowering
+  before real List/Set/Map literal construction and qualification.
+- 007 lexical imports, the remaining 008 fixture review and 010 failure triage
+  remain open. Older entries below preserve the evidence at each stage.
+- Engine/Studio build and release qualification remain open.
+
+## 004 — assertion migration completed
+
+The parser and current assertion DIP agree on `assert condition panic message`.
+Migrated 172 literal-message brace forms and one `then` message in 18 library
+files. The condition and message text were preserved and compared against a
+reviewed before/after inventory. Existing edits in `std/quantum.az` were preserved.
+
+Updated directly related contract/repeated-construction/test-scope fixtures and
+stale comments. Assertions about the actual contracts were retained. Runtime
+assertion parsing now restores trailing-lambda parser state on exceptions, like
+the inline forms already do.
+
+Added isolated tests through AST validation, semantic analysis, IR generation,
+optimization, and interpreter execution. They cover condition evaluation count,
+lazy messages, computed failure messages, Bool/String requirements, rejected old
+forms, compile-time assertions, and pre/postconditions. Added real LLVM execution
+of the stateful condition and lazy-message example, optimized and unoptimized.
+The LLVM harness can execute already-emitted IR so stage tests need no stdlib.
+These tests do not replace the full compiler/import integration suite.
+
+Validation:
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests '*AssertionSemanticsTest' --tests '*AssertionNativeExecTest' \
+  --tests '*ContractScopeBodyTest' --tests '*RepeatConstructionTest' \
+  --tests '*GenericDelimiterTest'
+```
+
+Result: **42 passed, 0 failed, 0 skipped**. Native tests executed with LLVM `lli`.
+The broader run resolved six stale frontend failures: **14 remain** from the
+earlier 20. Standard-library files with parse failures fell from **26 to 11**;
+the entire library still does not load. The full 2,204-test baseline has not been
+rerun because library loading still blocks its interpretation.
+
+Historical library parse blockers observed after step 004:
+
+| Source | First blocking construct |
+|---|---|
+| `algorithm/search.az` | `arr.size>..0` range spelling |
+| `algorithm/sort.az` | call used as a condition in a `when` expression |
+| `allocator/allocator.az` | single-statement destructor `scope` body |
+| `char.az` | single-statement contract clause and `scope` body |
+| `container/array.az` | single-statement `unsafe` body |
+| `container/queue.az` | loop variable initialized with `=` |
+| `core.az` | function named with the reserved `then` token |
+| `filesystem.az` | newline before `then` in returned if-expression |
+| `os.az` | grouped if-expression using `then` |
+| `quantum.az` | single-statement contract clause and `scope` body |
+| `serializer.az` | newline after an assertion's `panic` introducer |
+
+## 005 — lifecycle and multiline body repair completed
+
+Constructors, destructors, and properties now share a body parser accepting a
+block or one statement after `scope`. Function `scope` bodies also permit a
+newline before the body. Existing receiver modes, contract rewriting, and
+rejection of receivers moved inside bodies are retained.
+
+Contract clauses accept one statement or a block, including a newline before
+the block. Duplicate `in`/`out` clauses remain errors; named results still use
+the braced form and single-statement postconditions use `it`. Runtime and inline
+assertion messages may continue after a newline following `panic`.
+
+Fixed newline handling before `then` in statement, expression, and returned
+conditionals. Grouped conditional bindings accept `then {a, b} else {c, d}`,
+retain arity validation, and use the existing single condition temporary.
+Single-statement `unsafe` bodies lower to the existing explicit unsafe scope;
+the following statement remains outside that boundary.
+
+Corrected malformed library bodies: removed the premature opening brace before
+the contracts of `groverIterations`, removed two extra allocator property closing
+braces, and removed `return` from an allocator expression body. Pre-existing user
+edits remain preserved. Updated the related DIPs to describe the implemented
+forms and existing assertion message requirements.
+
+Evidence:
+
+- Ten initial declaration regressions failed before the repair; two grouped
+  conditional regressions failed before that extension. All 12 now pass.
+- Interpreter tests execute optimized and unoptimized IR, covering successful
+  and failing single-statement pre/postconditions, constructor contracts and
+  property access, both grouped branches, and condition evaluation count.
+- Semantic checks reject an unsafe call immediately outside a single-statement
+  unsafe body. Native LLVM executes the contract, constructor/property, grouped
+  conditional, and lazy assertion programs in both optimization modes.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests '*AssertionSemanticsTest' --tests '*AssertionNativeExecTest' \
+  --tests '*ContractScopeBodyTest' --tests '*RepeatConstructionTest' \
+  --tests '*GenericDelimiterTest' --tests '*DeclarationBodyTest' \
+  --tests '*StdlibParseDiagnosticTest'
+```
+
+Result: **59 passed, 1 failed, 0 skipped**; the failure is the aggregate library
+parse check. The broader frontend plus semantic/native/library run had **363
+tests, 15 failures**: the same 14 previously observed frontend failures and that
+library check. After the last allocator source correction, rerunning the library
+check confirmed **five files** still fail (down from 11 after step 004 and 26 at
+the initial baseline). These are first errors per file, not necessarily all errors:
+
+| Source | First remaining blocker | Follow-up |
+|---|---|---|
+| `algorithm/search.az` | `arr.size>..0` unsupported range spelling | 006; validate empty, singleton, and descending boundaries before migration |
+| `algorithm/sort.az` | guard `when` misclassifies a call condition as payload destructuring | 008–009; distinguish guards from patterns without relaxing pattern safety |
+| `container/queue.az` | loop uses `=` instead of `in` | 006–007; inspect remaining scoped imports too |
+| `core.az` | comparison member named `then`, which is a reserved token | 006; reconcile member naming with operator DIP and callers |
+| `quantum.az` | grouped method-name shorthand `result.{h,x}(j)` | 008–009; inspect intended evaluation and existing grouped-operation semantics |
+
+Historical inspection before the latest instruction found that the language used `reverse for` with
+`..`/`..<`, while the search source alone uses `>..`. The operator DIP explicitly
+proposes comparison chaining named `then`, so that collision is a design conflict
+to resolve from naming rules and member-call behavior. The 2026-09-09 instruction
+below supersedes the initial reverse-loop migration idea.
+
+Full stdlib loading, the full compiler suite, WASM parity, lifecycle destruction
+ordering, and Engine/Studio integration remain open. Parser body support is not
+a claim that every operation inside the library is semantically implemented.
+
+## 006 — descending ranges and member-name conflicts completed
+
+The user's latest instruction explicitly removes the reverse keyword and loop
+modifier in favor of `>..`. Implemented `for i in size>..0`, which visits
+`size - 1` through `0`. Equal or inverted bounds are empty; `5>..0 by 2`
+visits `4, 2, 0`. `reverse` now lexes as an ordinary identifier and remains usable
+as a library function or local name. The old modifier and old operator declaration
+are rejected, including when a variable named `reverse` exists.
+
+The range AST carries direction in source-bound order, and the IR carries the
+same boundary contract. The three backends now evaluate bounds and step once,
+in source order; reject nonpositive steps even on empty ranges; and use widened
+progression so iteration terminates correctly at Int limits. LLVM no longer
+reevaluates the bound inside the loop. Compile-time loop expansion, argument
+expansion, and generic constraints share descending constant progression.
+
+The header regressions exposed passes that ignored the existing `by` expression.
+Repaired step type checking, usage/effect/access analysis, relevant transformations,
+and optimizer reference collection/folding. Functions referenced only from a step
+are retained. Header state changes do not change an already-started range. Tests
+cover ordinary and labeled continue, ordinal indices, and returned-loop break/else.
+
+Kept `.then()` as the comparison API. `then` is allowed in explicit member-name
+positions and still rejected as an unqualified local/function name. Its runtime
+branch meaning is unchanged. The real comparison implementation executes in
+interpreter, LLVM, and WASM with and without optimization.
+
+Migrated the existing loop/operator tests without changing their intended output;
+added the descending operator declaration beside the ascending one in the library;
+corrected the queue's two `for … =` headers. The original search `size>..0` source
+now parses without a workaround. Updated the controlling DIPs and superseded the
+contradictory older upgrade-plan direction proposal.
+
+Tooling source changes:
+
+- AZLS no longer classifies `reverse` as a keyword.
+- Studio's vendored lexer/parser/AST and source printer preserve `>..`. Node
+  conversion uses its existing source fallback for unsupported structured range
+  forms, preserving the operator instead of silently turning it into an ascending
+  visual node. Full compiler-API consolidation remains step 131.
+- The IDE lexer recognizes `>..` as one token, treats `reverse` as an identifier,
+  and offers a descending-range snippet. Its range/member lexer probe passed
+  against locally installed IntelliJ platform libraries.
+- The playground's CodeMirror and Prism source definitions recognize `>..` and
+  no longer reserve `reverse`; local Node checks passed. Existing generated and
+  published AZLS binaries/snapshots were preserved; rebuilding installed artifacts
+  remains an integration/release gate after the library loads.
+- The Engine math range declaration uses the new operator spelling; this does
+  not claim that generic vector iteration or the Engine build is complete.
+
+Validation:
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests 'org.azora.lang.frontend.*' \
+  --tests '*RangeBoundaryTest' --tests '*ThenMemberTest' \
+  --tests '*RangeAndMemberExecTest' \
+  --tests '*AssertionSemanticsTest' --tests '*AssertionNativeExecTest' \
+  --tests '*StdlibParseDiagnosticTest'
+```
+
+**376 tests: 361 passed, 15 failed, 0 skipped.** The failure names are unchanged
+from step 005: 14 frontend failures plus the aggregate library parse diagnostic.
+All 13 new range/member cases pass. Combined with the prior focused cases this
+gives 72 passing focused checks. LLVM `lli` and Node/WASM actually executed,
+including expected invalid-step failures, optimized and unoptimized.
+
+Studio and IDE-plugin Gradle builds could not configure offline: the cached
+artifacts lack Kotlin DSL plugin 6.5.2 and Kotlin JVM plugin 2.1.10 respectively.
+Isolated Kotlin compilation of Studio's frontend/printer and the IDE lexer uses
+real local dependencies, not stubs; this is not full application qualification.
+Both committed Studio range round-trip tests passed under the local Kotlin/JUnit
+runtime, including rejection of the former modifier. Prism and CodeMirror token
+checks also verify that `..<` and `...` retain their complete token boundaries.
+
+First library parse errors at the end of step 006 (superseded below):
+
+| Source | Remaining blocker |
+|---|---|
+| `algorithm/sort.az` | call condition in guard `when` treated as payload destructuring |
+| `container/queue.az` | stale `import std.{…}` selector spelling |
+| `quantum.az` | grouped method-name shorthand `result.{h,x}(j)` |
+
+Current executable numeric ranges require Int bounds. Other widths, general
+user-defined iterators, and general compile-time membership assertions remain
+separate completion work. Constraint-range membership was verified through the
+constraint evaluator; inline assertions currently do not evaluate general `in`
+expressions, including ascending ones.
+
+## 007 — grammar repairs verified; import scope remains open
+
+Updated five stale import fixtures from `path.{…}` to `path::{…}` without changing
+path/selector expectations. Corrected receiver fixtures to use explicit prefix
+receivers and compare genuinely distinct shorthand/long forms. The removed
+body-receiver diagnostic now recommends the current `func &.name(...)` spelling.
+Import groups now require a comma or physical newline between members, including
+nested groups and multiline comments. The module DIP no longer advertises square
+selector groups. The initial focused run reproduced the separator and diagnostic
+bugs: **50 tests, 2 failed** before the fixes.
+
+A verified scope defect remains: `Parser.parseStmt` appends block imports to
+`pendingTopLevels`, replacing the local statement with an empty scope. The
+resolver therefore sees a file-wide import. `TestScopedImportTest` even asserts
+that hoisted shape in two cases; passing those tests does not prove correctness.
+Its remaining obsolete bracket fixture was not simply migrated to make this
+incorrect contract pass. The next import repair must preserve lexical scope in
+both the AST and name resolution, with tests for sibling tests/functions,
+shadowing, imported types, and nested scopes. This brings the necessary portion
+of 014 forward; 007 is deliberately not marked complete.
+
+A separate receiver discrepancy also needs reconciliation: FUNCTIONS_DIP §5.2
+requires an explicit type for owned receivers (`Self.member`), while the parser
+and a shorthand fixture still accept `func .member`. No owned-receiver removal
+or lifecycle change is claimed in this iteration.
+
+## 009 — library unblocking and cross-stage guard repairs
+
+The subjectless `when` form and `when true` now treat their arms as Boolean guards
+rather than classifying every call with arguments as payload destructuring.
+They require `else`; previously the last guard was discarded and its value
+returned even when false. Guard order, comma-arm short circuiting, fallback, and
+lazy branch values are exercised through AST validation, semantic analysis,
+IR generation, optional optimization, and all three execution backends.
+
+Those tests exposed and repaired two underlying defects:
+
+- `TypeResolver` resolved an if-expression condition without requiring Bool.
+  It now enforces the same requirement as an if-statement, including lowered guards.
+- WASM implemented logical AND/OR using eager integer instructions. It now emits
+  conditional expressions; bitwise `&` and `|` retain their integer instructions.
+  Tests cover both taken/skipped RHS paths with stateful calls in both optimization modes.
+
+Before the guard repair, **4 of 5 new guard tests failed**. After the parser
+repair, tests caught the missing Bool check and WASM's eager evaluation rather
+than weakening their assertions. All five now pass.
+
+Library migrations preserve the intended operations:
+
+- Queue's local selector uses `std::{…}` (lexical import scope remains unresolved).
+- Sorting's obsolete `if condition -> return` uses `then return`.
+- Quantum's final loop uses `in` rather than `=`.
+- Grover's grouped method names use the documented GTC §7.4 call sequence:
+  `result.{h(j), x(j)}` and `result.{x(j), h(j)}`. `h`/`x` receive Int by value;
+  neither changes the loop binding, so repeating that read preserves the argument.
+  Their mutable calls retain written order on the same receiver. A dedicated
+  regression executes both sequences inside single-statement loops on the
+  interpreter, LLVM, and WASM. This migration does not introduce a general
+  `receiver.{methodNames}(args)` feature or assert quantum simulation correctness.
+
+The new sequence harness initially omitted the primitive range bridge required
+by the language, and failed at IR generation. It now supplies the same explicit
+bridge used by the existing isolated range harness; no production range bypass
+was added to satisfy the test.
+
+Final validation:
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests 'org.azora.lang.frontend.*' \
+  --tests '*RangeBoundaryTest' --tests '*ThenMemberTest' \
+  --tests '*RangeAndMemberExecTest' \
+  --tests '*AssertionSemanticsTest' --tests '*AssertionNativeExecTest' \
+  --tests '*WhenGuardSemanticsTest' --tests '*WhenGuardExecTest' \
+  --tests '*MemberSequenceSemanticsTest' --tests '*StdlibParseDiagnosticTest'
+```
+
+Result: **384 tests, 377 passed, 7 failed, 0 skipped**, versus step 006's
+376 tests / 15 failures. All eight added tests pass; eight old failures are
+resolved and no new failure remains. Remaining failures: five increment AST/
+expression fixtures, one obsolete scoped-import fixture, and the aggregate
+stdlib parse gate. Logs: `/tmp/azora-step007-final.log` and
+`/tmp/azora-step007-results.json`. `git diff --check` passes.
+
+Only **one library source** now fails parsing: `algorithm/sort.az:246`,
+`result[i] <> result[j]`. GTC §23.2 requires evaluating both mutable locations
+once before moving either value, alias/borrow checks, and no cloning or extra
+destruction. Implement the exchange through typed locations and all backends;
+do not replace it with ordinary assignments that can duplicate move-only owners.
+This is the next library gate dependency, not a completed swap implementation.
+Full disk/bundled loading and the full compiler suite remain blocked and have
+not been claimed as passing. Studio's vendored frontend and published tooling
+artifacts were not rebuilt in this iteration.
+
+Other match work remains under 042: subject-based when expressions currently
+reuse the scrutinee across conditions and assume an omitted final test is
+exhaustive without proof. The guard-only repair does not certify those forms.
+
+## 007 follow-up — full-compiler scope leak confirmed
+
+A controlled desktop probe used `Compiler` with a test-owned minimal stdlib
+manifest (the bundled version), an empty `std.core` module, and an additional
+`helpers` library containing `func answer(): Int { return 42 }`. This isolates
+import resolution from the unrelated sorting parser blocker without changing
+production loading rules.
+
+| User source | Required result | Observed result |
+|---|---|---|
+| `main` calls `answer()` without an import | Reject | Rejected |
+| `main` imports `helpers` and calls `answer()` | Accept | Accepted |
+| `allowed` imports `helpers`; unrelated `main` calls `answer()` | Reject | **Accepted: leak** |
+| A test imports `helpers`; unrelated `main` calls `answer()` | Reject | **Accepted: leak** |
+
+The exact probe and output are archived at
+`/tmp/azora-step008-ScopedImportProbeTest.kt` and
+`/tmp/azora-step008-import-probe.log`. The investigation probe was removed from
+the regression suite: a test that merely reports acceptance is not a passing
+isolation regression. It restores the previous stdlib override and invalidates
+the cache in `finally`; production strict loading remains unchanged.
+
+Removed the unused semantic `ImportResolver` class and its pipeline invocation.
+It stored a module map but never read it, never received a Program, and always
+returned an empty error list. No compiler, AZLS, Engine, or Studio caller used
+its registration API. Pipeline documentation now accurately identifies
+`Compiler`/`StdlibInjector` as the current import implementation and documents
+the unresolved lexical-scope defect. Removing that placeholder is not a scope fix.
+
+Required resolution work, before closing 007:
+
+1. Preserve lexical import declarations and their enclosing scope in the AST;
+   do not append block imports to `pendingTopLevels`.
+2. Separate declaration identity `(module, namespace, declaration)` from the
+   source spelling visible in each lexical scope. The current single map of
+   imported short names cannot represent two scopes importing different modules'
+   same-named declarations.
+3. Resolve values, functions, types, extensions, annotations, and macros against
+   that scope's bindings; local declarations and parameters retain shadowing.
+4. Carry resolved identities through injection, macro/CTCE rewriting, semantics,
+   and lowering. Injecting a dependency must not grant source-level access to it.
+5. Turn the two failing probe scenarios into negative compiler regressions and
+   add sibling-test, nested-scope, same-name-provider, and imported-type cases.
+   Correct `TestScopedImportTest`'s hoisting assertions as part of that repair.
+
+This brings 014's binding/identity foundation forward. A parser-only change
+would leave the injection leak in place, so no such partial support is claimed.
+Independent work on 008 proceeded while 007 remains open.
+
+## 008 — increment fixtures and execution repaired
+
+Five frontend failures assumed local increments were assignments and that
+`counts[i++]` had to be rejected because the backends lacked a value-producing
+node. The current AST, semantic resolver, and all three IR backends already
+have variable `IncDec` support. Corrected those fixtures to retain postfix/prefix
+metadata and distinguish increments from compound-assignment overload dispatch.
+Added an explicit prefix/postfix parser test.
+
+Execution tests exposed real defects rather than merely blessing the existing AST:
+
+- WASM postfix increments/decrements emitted a read after the write and therefore
+  returned the new value. Lowering now saves the old value and the updated value,
+  writes once, and returns the correct one for the written form.
+- WASM also unconditionally declared the target as a local. Reads and writes now
+  use the existing local/global/boxed-storage rules; assignment and increment
+  share the storage-write helper. Thread-local global mutation is executed in
+  the tests; cross-thread TLS behavior and reactive notification are not certified.
+- Constant propagation attempted to replace an increment target with a literal,
+  then cast it back to `IrExpr.Var`, crashing optimized compilation. Targets now
+  remain locations. Expression-nested increments invalidate old constant facts,
+  including those in loop headers, call arguments, branches, and nested scopes.
+  Assigned-name collection also recognizes these mutations at control-flow joins.
+
+Four new semantic/backend tests initially produced **three failures** (two
+optimizer crashes and the WASM postfix failure). They now pass optimized and
+unoptimized, covering old/new values, both directions, Int and Double examples,
+left-to-right call arguments, short-circuit skipping, conditional branches,
+while-header increments, scope/branch exits, and thread-local global storage.
+Immutable/non-numeric targets are rejected. During test development, corrected
+a reserved `scoped` variable name and changed an invalid unrestricted global to
+`threadlocal var`; no language restrictions were weakened for the tests.
+
+The non-variable statement tests still describe the existing assignment
+lowering. They are explicitly not proof of one-time evaluation for complex
+receivers, indices, or pointers. General lvalue increments, numeric overflow,
+reactive notification, and escaping-capture mutation remain under 032–034/041/056.
+
+Final broad command is the step-007 command plus `--tests '*IncrementSemanticsTest'`
+and `--tests '*IncrementExecTest'`. Result: **389 tests, 387 passed, 2 failed,
+0 skipped**. All five added tests pass; the five stale increment failures are
+resolved. The remaining failures are `TestScopedImportTest.aTestMayOpenWithItsOwnImports`
+and the aggregate stdlib parse gate (`algorithm/sort.az:246`, `<>`). Logs:
+`/tmp/azora-step008-final.log`, `/tmp/azora-step008-results.json`.
+`git diff --check` passes. The full suite remains blocked by strict library
+loading; the isolated backend checks do not replace it.
+
+## Finding to retain: primitive mutable-borrow lowering
+
+An initial assertion-condition test exposed this separate reproducer:
+
+```azora
+func increment(value: Int!) { value = value + 1 }
+func main() {
+    var count = 0
+    increment(count)
+    assert count == 1 panic "the caller must observe the write"
+}
+```
+
+Through `SemanticPipeline` → `IrGenerator`, the parameter is emitted as an
+ordinary value parameter (`i32 %arg.value`), so the caller's value does not change
+in LLVM execution. The initial report also implicated the interpreter; the
+2026-09-10 full baseline corrects that: all `ParamModifiersTest` interpreter cases
+pass, including caller mutation. Its RefCell/copy-back path is separate from
+native address passing. LLVM and WASM do not consume `IrFunction.refParams`;
+backend parity and alias-preserving borrow lowering remain unverified.
+No borrow-lowering repair is claimed here; follow up under 032–034 and 053–054,
+including a full-compiler reproducer once the library loads.
+
+The assertion evaluation test uses an explicit Counter pack to test its own
+evaluation-order contract independently. This does not waive the primitive
+borrow failure. WASM assertion-message loss also remains open under 043/056.
+
+
+## 2026-09-10 — Step 009 complete; first useful full baseline under 010
+
+The final parse blocker, `algorithm/sort.az`'s `<>`, is now a dedicated exchange
+operation through the lexer, statement AST, semantic analysis, typed IR,
+optimizer and all three execution backends. It is not desugared into ordinary
+assignments, which could introduce ownership copies/drops or repeat location
+evaluation. Relevant AST/IR walkers, macro/substitution paths, symbol validation,
+stdlib name discovery and effect analysis now account for both operands.
+
+The supported storage forms are mutable ordinary bindings, stored pack fields
+and built-in array elements with the same static type. Each backend captures the
+left location, then the right, before reading and writing the values. Array
+indices are checked before writes. Identical complete locations preserve their
+value after both expressions have run. Optimizer constant propagation keeps
+locations intact and invalidates exchanged roots through scopes and control flow.
+Exchange is conservatively effectful and is not compile-time evaluated yet.
+
+Safety restrictions are explicit in GTC §23.2. Shared/conflicting borrows,
+immutable storage, type mismatches and known owner/projection overlap are
+rejected. Calls, overloaded index arithmetic, raw dereferences, borrowed binding
+exchange, lazy/reactive storage and custom accessors require further location
+loan work. LLVM rejects physical/resolved generic field type mismatches; WASM
+rejects aggregate elements wider than its current four-byte slot layout.
+Ordinary Double variable exchange works. These tests do not establish general
+move-only destruction, pointer provenance, reactive notifications or all capture
+and borrow forms. Packages 032–034/041/053–056 remain open.
+
+Verification:
+
+- **19 focused compiler tests passed, 0 skipped**, using
+  `./gradlew :compiler:desktopTest --offline --console=plain --tests '*ExchangeSemanticsTest' --tests '*ExchangeExecTest' --tests '*StdlibResolutionTest' --tests '*StdlibParseDiagnosticTest'`.
+  Log: `/tmp/azora-step009-public.log`. Eight exchange tests cover raw/optimized
+  execution on interpreter/LLVM/WASM, variable and field/array storage, handle
+  preservation, mixed/identical locations, side-effect order, scope/loop
+  invalidation, bounds traps and semantic rejection. A simple exchange also runs
+  through the public `Compiler` API and real stdlib injection on all backends.
+- All **49 library source files** parse. Strict production loading succeeds for
+  both the explicit disk root and the actual bundled fallback, preserving the
+  `Numbers` compile-time environment. Version/manifest/root-switch tests pass.
+  The old bundled test was misleading: clearing the explicit override still
+  found the checkout. Resolution now accepts an internal explicit search path;
+  an empty path tests fallback and verifies its origin before strict parsing.
+- Studio preserves exchange statements when parsing/printing variables, fields
+  and indices. **Four Studio range/exchange tests passed** in isolated compilation
+  of its real vendored frontend, helper files and source printer. Its older
+  parser still rejects `i++` inside an index; that separate expression-parity gap
+  is recorded rather than obscured by the round-trip fixture. Full Studio Gradle
+  qualification remains blocked by the previously recorded offline dependency.
+  Log: `/tmp/azora-step009-studio.log`.
+- The actual IDE lexer compiles against installed IDE platform jars and passes
+  exchange/range/comparison checks; its checked-in lexer regression now covers
+  atomic `<>` and `<=>`. This is not a full plugin build.
+  Log: `/tmp/azora-step009-ide.log`.
+- Playground CodeMirror and Prism recognize atomic exchange, spaceship and
+  descending-range operators, including CodeMirror interpolation. The durable
+  command `npm run test:lexer` passes. Published AZLS artifacts were not rebuilt.
+
+Test development exposed an unrelated repeated-construction issue in the
+isolated pipeline (`.(0) * 3` became array-literal multiplication); the storage
+regressions use explicit `Array(0, 0, 0)` so they measure exchange. Native borrow
+limitations and the interpreter correction are recorded above. No tests were
+skipped or weakened to certify unsupported ownership semantics.
+
+### Full compiler baseline
+
+Command: `./gradlew :compiler:desktopTest --offline --console=plain`.
+Result: **2,271 tests, 2,001 passed, 270 failed, 0 skipped**, in 3m39s.
+This snapshot precedes the additional strict disk-loader and public-pipeline
+exchange tests; their later focused result is reported separately above.
+Log: `/tmp/azora-step009-full.log`; original XML snapshot:
+`/tmp/azora-step009-full-xml`. A durable per-suite/per-failure inventory, with
+explicitly truncated long diagnostic excerpts, is checked in as
+[ECOSYSTEM_BASELINE_2026_09_10.json](ECOSYSTEM_BASELINE_2026_09_10.json).
+
+| Test source area | Tests | Passed | Failed |
+| --- | ---: | ---: | ---: |
+| Frontend | 356 | 355 | 1 |
+| Semantic | 112 | 103 | 9 |
+| IR | 6 | 6 | 0 |
+| Backend | 20 | 20 | 0 |
+| Codegen / full compiler / execution | 1,752 | 1,492 | 260 |
+| Diagnostics | 16 | 16 | 0 |
+| Library resolution | 9 | 9 | 0 |
+
+These are test-directory groupings, not proof that every compiler stage is
+complete. Initial diagnostic groups are: 79 unresolved `arr` macros; 28 removed
+assertion-message syntax cases; 113 other compilation failures; 7 expected
+rejections that were accepted; 9 parser/runtime exceptions; 34 other assertions
+or execution failures. Several failures in one group can share a cause, while a
+single test can hide additional defects. Some negative tests fail before their
+intended invariant is reached (for example signature access is masked by `arr`).
+
+The frontend's remaining failure is the scoped-import fixture already tracked
+under 007. Semantic test failures include old decorator binding/impl forms and
+an old operator declaration; each needs comparison with current design before
+fixture changes. Collection/serialization injection, numeric argument typing,
+namespace visibility, metaprogramming constraints and backend execution have
+independent work remaining. Sorting execution is still masked by `arr` failures;
+loading its source does not certify sorting's runtime behavior.
+
+**Next:** continue 010 triage with the 28 assertion fixtures and 79 `arr` failures,
+reviewing intended invariants before changes. Keep 007/014's lexical imports and
+identity redesign open. The full baseline is now reproducible, but 010 is not
+marked complete until independent causes and cascades are sufficiently resolved.
+
+## 2026-09-14 — Contextual array literals and collection migration (010.C1–C2)
+
+The user's collection decision supersedes older macro and List-default designs:
+`[]` supplies sequence syntax for arrays/lists/sets, `[:]` is the empty map shape,
+and a non-empty sequence without a target defaults to `Array`. Standard `arr`,
+`vec`, `map` and `set` construction macros are absent; user-defined macros remain
+supported. DIPs are design intent: GTC §8.4/§20 now record the Array default, and
+§8 distinguishes implemented array behavior from the pending factory protocol.
+
+### Completed changes
+
+- Bracket parsing accepts multiline contents and trailing commas, distinguishes
+  keyed entries from elements, and recognizes `[:]`. Literal member/index access
+  no longer conflicts with removed receiver-list call syntax or capture headers.
+  The removed `![...]` set form has a targeted diagnostic. Studio's vendored
+  parser and source-printer round-trip tests follow the same literal shapes.
+- Expected array types survive AST copies and propagate to elements, nested
+  literals, global/local bindings, assignments, function arguments/returns, conditional
+  branches and pack-construction fields. Context-free non-empty sequences infer
+  Array; empty sequences require an element context. Fixed nested lengths,
+  incompatible primitive elements and out-of-range integer constants are checked.
+  Unsupported boxing/spec targets are not silently admitted as array storage.
+- IR lowering retains contextual numeric widths, including literal constants
+  beyond Int's range, and converts indexed-assignment literals consistently.
+  WASM array allocation, element addressing, loads, stores and exchange use the
+  resolved element width instead of an unconditional four-byte i32 slot.
+- The Int<7> regression exposed finite named-width sets being used as numeric
+  predicates. Classification now recognizes all IrType.Integer values in the
+  affected semantic/IR/native paths. Promotion uses actual integer bit widths;
+  LLVM integer casts compare bits, avoiding missing sext/trunc between Int<7>
+  and Byte. Named widths retain their canonical source names when reconstructed
+  for type functions; unnamed widths retain structured Int<N>/UInt<N> arguments.
+  Full-suite comparison caught and verified this distinction in generic promote
+  resolution. This does not certify every arbitrary-width arithmetic/ABI path.
+- Migrated 110 obsolete arr invocations in 31 test files, plus stale map uses and
+  removed arrayOf fixtures. The macro suite defines its own `batch` macro and
+  checks that standard collection macros are unavailable. Two array-property
+  tests now explicitly import their declared std extensions. No compiler-only
+  property shortcuts or blanket skips were added to satisfy those fixtures.
+- Migrated the remaining native map macros and retired ![...] set fixtures to
+  contextual Map/MutableMap and Set/MutableSet forms. Their deduplication,
+  insertion/removal, string equality, iteration and global-initialization
+  assertions remain intact; failures still expose unfinished collection factories.
+  Six of these set checks passed with the old intrinsic punctuation and now fail
+  under the required contextual syntax. This is a recorded implementation gap,
+  not evidence that removing the old spelling completes its replacement.
+
+### Validation and remaining work
+
+Focused command: `./gradlew :compiler:desktopTest --offline --tests
+'*ContextualArrayLiteral*' --tests '*CollectionLiteralSyntaxTest' --tests
+'*MacroTest' --tests '*Exchange*' --tests '*ArrayTest' --tests '*ArrayStdlib*'
+--tests '*WideInt*' --tests '*Numeric*'`.
+Result: **70 tests, 70 passed, 0 skipped**. Log:
+`/tmp/azora-collections-width-final.log`. Public-Compiler regressions execute the
+same array program with and without optimization on interpreter, LLVM and WASM.
+They cover Byte/Double/Long/Int<7>, same-byte-width casts, nested fixed-size arrays,
+empty returns, context propagation and typed indexed writes/exchange.
+
+**Six Studio tests passed** using isolated compilation of the real vendored
+frontend, helpers and source printer: range, exchange and collection round trips.
+Log: `/tmp/azora-collections-studio-final.log`. Full Studio/IDE Gradle qualification
+remains subject to the previously recorded offline dependency limitations.
+
+List/Set/Map/custom target-owned factory registration and allocation are **not
+implemented**. Those contextual literals receive a diagnostic rather than a
+mismatched physical representation. Next: 010.C3 canonical target/factory
+resolution and generic substitution, then 010.C4 actual standard implementation
+construction, then 010.C5 backend/ownership/tooling qualification. The existing
+ordinary listOf/setOf/mapOf functions are not proof of those requirements: they
+rely on generic/spec layout and module dependency handling that remain open.
+
+A migrated global Set fixture revealed that non-lambda top-level initializers
+were seeded but never semantically resolved. This allowed a declared Set to
+receive array storage and print the wrong runtime result. Global initializers
+now run expression resolution and declared-type validation, with callable context
+preserved for lambdas. New negative tests cover invalid global element ranges,
+fixed lengths, heterogeneous/untyped-empty literals, unsupported targets and a
+scalar type mismatch. A valid global Byte array executes on all three backends.
+The global Set fixture now fails compilation instead of emitting incorrect code.
+Focused global/type-function/native validation passed all five contextual-array
+tests; its 21 remaining failures are the existing type-function constraint and
+native collection/aggregate cases. Log: `/tmp/azora-collections-globals.log`.
+
+Remaining baseline failures now expose actual sorting index-out-of-bounds errors
+and removed Array::fill fixtures that were previously hidden by arr failures.
+Lexical imports (007/014), generic identity, complete ownership/boxing, wide WASM
+pack fields, arbitrary-width native layout and Engine integration remain open.
+
+### Final compiler baseline for this change
+
+Command: `./gradlew :compiler:desktopTest --offline --console=plain`.
+Result: **2,280 tests, 2,075 passed, 205 failed, 0 skipped**.
+Log: `/tmp/azora-collections-full-final.log`; XML snapshot:
+`/tmp/azora-collections-full-final-xml`. The durable
+[2026-09-14 inventory](ECOSYSTEM_BASELINE_2026_09_14.json) records suite totals,
+individual failures and the comparison with September 10.
+
+Compared with the earlier 270-failure baseline, **62 previously failing test
+identities now pass**, 9 old failing identities were replaced/renamed, and
+6 newly failing identities remain. Renamed tests are not counted as fixed bugs.
+The contextual Set migration retains six formerly passing old-syntax checks as
+acceptance tests for real set factories; their behavior assertions are unchanged.
+No tests were skipped to obtain this result. Full-suite failures still mean the
+compiler and ecosystem are not release-qualified.
+
+The final full run also passes all **70 tests** selected by the focused array,
+collection syntax, macro, exchange and numeric suite patterns, including the new
+global-initializer regression. Studio's six round-trip tests remain separately
+verified; no full Studio/Engine build claim is made.
+
+## 2026-09-15 — Collection factory prerequisites (010.C3.1–C3.2)
+
+The implementation audit found independent blockers beneath contextual factory
+syntax. The work below repairs those foundations; it does not mark List/Set/Map
+literal construction complete or add a parser-only literal-factory declaration.
+
+### Selected declarations retain their implementations
+
+`import std.container.list::ArrayList` injected the pack but omitted its impls,
+while a whole-module import included them. Declaration selection resolved the
+full path, but implementation reachability only recognized module/folder paths.
+The reachability pass now resolves a selected declaration's owning module. This
+change affects the dependency closure, not which unrelated names are imported.
+
+Three regressions cover a selected type's own methods, a selected factory's
+result methods, and rejection of unrelated declarations/other-module extensions.
+They execute through the public compiler and interpreter. Full lexical import
+scope and canonical identity work under 007/014 remains open.
+
+### Collection storage identity
+
+Removed six implicit compatibility shortcuts between intrinsic Array/Map/Set
+storage and named List/MutableList/Map/MutableMap/Set/MutableSet declarations.
+Those checks only examined the short type name and performed no construction or
+conversion. IR lowering also stopped overriding explicit named collection types
+with the initializer's unrelated storage type. Named expected types reconstructed
+for contexts now retain generic and const arguments.
+
+Regressions use independent user-defined packs named List/MutableList/Map rather
+than relying on standard-library injection. They reject storage mismatches in
+bindings, assignments, arguments and returns, and verify explicit pack
+construction still works. Broader generic nominal identity is still open.
+
+### Real ArrayList growth
+
+The default list has capacity zero; grow previously computed zero times two and
+then insertion wrote to an empty buffer. Growth now allocates an initial capacity
+of eight, matching clear's reusable capacity, and subsequent growth doubles it.
+Capacity checks reject negative capacity and Int overflow before multiplication.
+The existing mutable-list test now passes. A new interpreter regression covers
+first insertion, multiple growth boundaries, order preservation, insertion at the
+front, clear and reuse, with and without optimization.
+
+The native counterpart remains enabled as acceptance work. Actual execution found:
+
+- LLVM emits a generic get result as i8* and then compares it directly with an
+  integer literal. The owner type arguments and physical return ABI must remain
+  distinct and be converted explicitly. The module is rejected by lli.
+- WASM emits undefined __allocBuffer and __purge calls and an undefined __null
+  local. Buffer allocation and lifetime lowering are not implemented there.
+- Source inspection also confirms LLVM's raw-pointer purge currently emits only
+  an advisory comment. Passing scalar behavior alone would not qualify ownership
+  or reclamation. Some repeated-constructor allocation expressions also lower to
+  unsupported pointer multiplication; those constructors require separate repair.
+
+No native test is disabled, and no no-op purge was added to make a test pass.
+The next work is generic method/constructor type preservation and real allocation
+and deallocation across targets, followed by the target-owned factory protocol.
+
+Focused command: `./gradlew :compiler:desktopTest --offline --tests
+'*CollectionTargetSafetyTest' --tests '*SelectedImportImplementationTest' --tests
+'*ListConstructionTest' --tests '*ContextualArrayLiteral*' --tests
+'*TypeFunctionTest.genericFunctionCallUsesTypePropertyForItsResult'`.
+Result: **14 passed, 0 failed, 0 skipped**. Log:
+`/tmp/azora-collection-target-safety.log`. Earlier native reproducers:
+`/tmp/azora-list-selected-imports.log` (6 tests, 4 passed, 2 failed).
+
+### Full compiler validation
+
+`./gradlew :compiler:desktopTest --offline --console=plain` completed with
+**2,290 tests: 2,084 passed, 206 failed, 0 skipped**.
+Log: `/tmp/azora-collection-foundations-full.log`; raw XML:
+`/tmp/azora-collection-foundations-full-xml`. The
+[durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json) compares test identities
+with the preceding 2,280-test/205-failure snapshot. It separates formerly passing
+regressions from newly added native acceptance failures; it does not count a
+new failing test as a previously supported behavior regression.
+
+This run fixes the existing `CollectionCtorTest.mutable_list_pack_exists` failure.
+**No previously passing test now fails.** The two new failures are the enabled
+LLVM/WASM list-execution regressions documented above; all eight other new tests
+pass. No prior tests were removed or skipped.
+
+
+## 010.C3.3 — generic constructor and direct method signatures (partial)
+
+Constructor results now retain explicit owner type/const arguments. Source
+parameter and return type references are retained on member symbols, and a shared
+substitution helper supplies call-site types to semantic analysis and IR lowering.
+The registered function retains its physical signature. LLVM calls use that
+physical return type and explicitly convert the result into the call-site type.
+This fixes `ArrayList<Int>().get(...)` returning a pointer-shaped value that was
+previously compared directly with an integer.
+
+Constructor checking now validates fixed and every variadic argument against the
+instantiated parameter type. Variadic construction always packs its tail, including
+zero and one element, and uses the callee's physical element slots. This avoids
+passing `Array<Int>`'s four-byte slots to a generic constructor reading erased
+pointer-sized slots. Numeric literals take their logical parameter type before
+packing or boxing; direct and named method arguments follow the same rule.
+
+New tests exercise declared generic constructors, mutable methods and results for
+Int, Double and String, rejection of mismatched constructor/method arguments and
+results, and all positions in a variadic tail. The native regression exposed a
+separate missing literal conversion: passing 2.5 to a Double member had boxed its
+Float bits and then read them as Double. Method argument lowering now preserves
+the expected representation before crossing the erased boundary.
+
+The list lifecycle test additionally checks one-element and multi-element Int
+construction and multi-element Double construction. Interpreter and LLVM execute
+these and the existing growth/insert/clear/reuse checks, both optimized and
+unoptimized. The WASM acceptance test remains enabled and failing on undefined
+`__allocBuffer`, `__purge` and `__null` references. No WASM allocation/lifetime
+implementation is claimed here; LLVM raw-pointer purge also remains advisory.
+Generic property/index/spec-dispatch paths, aggregate parameters/results and
+values wider than the erased slot still require ABI work. List/Set/Map literals
+are not yet connected to real target-owned factories.
+
+
+### Broader regression check and correction
+
+The first full run exposed six LLVM async regressions introduced by looking up
+body return types at the call boundary. An async function's public symbol returns
+a task handle, while its body returns the payload. The return-type index now
+records the spawner ABI for those symbols. All six existing regressions pass in
+the follow-up focused run; no async tests were changed.
+
+The new extra-argument test initially required constructor-specific wording even
+though the resolver correctly rejected the call with a field-count diagnostic.
+Its assertion now checks rejection and the reported extra count. This is a test
+expectation correction, not a relaxed acceptance rule.
+
+Focused follow-up command covered `GenericMemberSignature*`, `ListConstruction*`
+and the six affected async tests: **14 tests, 13 passed, 1 failed, 0 skipped**.
+The sole failure is the documented WASM list acceptance test. Log:
+`/tmp/azora-generic-member-async-focused.log`. The earlier array/generic/list run
+was **12 tests, 11 passed, 1 failed, 0 skipped**; log:
+`/tmp/azora-generic-member-focused.log`.

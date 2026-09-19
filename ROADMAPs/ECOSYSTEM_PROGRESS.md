@@ -9,16 +9,15 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed substeps: 010.C1–C2, bracket grammar and contextual array execution.
 - Completed: 010.C3.1–C3.2, selected-import implementation reachability and
   removal of implicit collection storage reinterpretation.
-- In progress: 010.C3.3. Direct generic constructor/method calls retain owner
-  types; interpreter and LLVM scalar/list execution are covered. WASM has a
-  freeing heap allocator, raw-pointer lowering, eight-byte erased generic slots
-  and width-aware pack layout. Remaining: `ArrayList.hash` reads `.hash` on an
-  unconstrained `T` (blocks the WASM list test), generic-call inference with
-  lambda arguments, generic property/index/spec dispatch, LLVM purge and
-  array-allocation ownership, and aggregate ABI.
-- Next: decide how member access on an unconstrained type parameter is checked
-  (019/022), then make LLVM purge release memory, before real List/Set/Map
-  literal construction and qualification.
+- In progress: 010.C3.3. ArrayList construction, growth, insertion, clearing
+  and equality now execute on the interpreter, LLVM and WASM. WASM has a freeing
+  heap allocator, raw-pointer lowering, eight-byte erased generic slots,
+  width-aware pack layout and spec dispatch. `ArrayList.hash` is parked.
+  Remaining: LLVM purge and array-allocation ownership, 128-bit values in
+  erased slots, generic-call inference with lambda arguments, and the same
+  unconstrained `.hash` reads in Set and Map.
+- Next: make LLVM purge release memory (with fresh-buffer array allocation),
+  then real List/Set/Map literal construction and qualification.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -980,4 +979,58 @@ identity changed.
 ./gradlew :compiler:desktopTest --offline --console=plain \
   --tests '*ErasedGenericExecTest' --tests '*RawPointerExecTest' \
   --tests '*WasmAllocatorExecTest' --tests '*ListConstructionExecTest'
+```
+
+
+## 2026-09-19 — `ArrayList.hash` parked; WASM spec dispatch; list runs on WASM
+
+The eight-byte slot work is committed as `923047bd`.
+
+### `ArrayList.hash` parked (user decision)
+
+`ArrayList.hash` summed `self._data[i].hash` although `T` carries no `Hash`
+requirement. The type checker accepted the read; LLVM compiled it to zero and
+WASM could not lower it. The user chose to remove it until a `Hash` bound can be
+required and called through a generic slot (019/022/044), rather than keep an
+implementation that is wrong on LLVM. It was an inherent property, not a `Hash`
+conformance; no derive, test or caller used it. `list.az` notes the absence.
+Set (three `hash` properties) and Map (three aggregate `hash` properties and the
+`key.hash` reads its lookup and insertion depend on) have the same unconstrained
+reads. They are not changed here and will block those containers on WASM.
+
+### Spec dispatch on WASM
+
+With the member access removed, the next WASM error exposed another silent
+miscompile. `ArrayList ==` reads its right side, a `List<T>`, through
+`rhs.size` and `rhs.get(i)`. WASM lowered every `MethodCall` by returning the
+receiver, so the equality compared elements with the list pointer. Under
+four-byte erased slots this assembled; the eight-byte slots made it a type error.
+A `size` member on a spec value also loaded the box's first word.
+
+WASM now follows LLVM's design:
+
+- A pack converted to a spec it implements is boxed as `[type id, pack pointer]`.
+  The conversion lives in `coerceWasm`, so every destination boxes.
+- Each spec method or property used gets a `__dyn_Spec_member` dispatcher. It
+  switches on the type id and calls the implementer's function, converting
+  arguments and results at the erased boundary. An unknown id traps; LLVM's
+  dispatcher instead returns a default zero.
+- A method call on any other receiver is an explicit WASM codegen error instead
+  of evaluating to the receiver. No existing test depended on the old behavior.
+
+### Evidence
+
+- `SpecDispatchExecTest` (2 tests): a user spec with two implementers, a method
+  and a property, with upcasts at a call and a declaration. The second test
+  covers `ArrayList ==` and `!=` over equal, different and shorter lists.
+  Interpreter, LLVM and WASM agree, optimized and unoptimized.
+- `ListConstructionExecTest.concreteListRunsOnWasm` now passes, optimized and
+  unoptimized. The 176 other WASM-executing or WAT-inspecting tests kept their status.
+- Full run: **2,318 tests, 2,114 passed, 204 failed, 0 skipped**. The only change
+  in failure identities is the list test now passing.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests '*SpecDispatchExecTest' --tests '*ListConstructionExecTest' \
+  --tests '*ErasedGenericExecTest'
 ```

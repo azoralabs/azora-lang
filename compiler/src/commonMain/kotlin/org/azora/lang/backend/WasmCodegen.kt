@@ -22,6 +22,8 @@ import org.azora.lang.ir.IrExpr
 import org.azora.lang.ir.IrField
 import org.azora.lang.ir.IrFunction
 import org.azora.lang.ir.IrProgram
+import org.azora.lang.ir.IrSpecMethod
+import org.azora.lang.ir.IrSpecTable
 import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrType
@@ -116,6 +118,10 @@ class WasmCodegen {
     private val externs = LinkedHashMap<String, IrTopLevel.Extern>()
     private val functionParams = HashMap<String, List<IrType>>()
     private val functionResults = HashMap<String, IrType>()
+    private val specTables = HashMap<String, IrSpecTable>()
+    /** Runtime type id of each spec implementer; 0 is never assigned. */
+    private val specTypeIds = HashMap<String, Int>()
+    private val neededDispatchers = LinkedHashMap<String, Pair<IrSpecTable, IrSpecMethod>>()
     private val neededExterns = LinkedHashSet<String>()
     private val closureTypes = LinkedHashMap<IrType.Function, String>()
     private val closureFunctions = mutableListOf<ClosureFunction>()
@@ -241,6 +247,10 @@ class WasmCodegen {
         val funcs = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }
             .filter { it.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS }
         functionParams.clear(); functionResults.clear()
+        specTables.clear(); specTypeIds.clear(); neededDispatchers.clear()
+        for (table in program.specTables) specTables[table.specName] = table
+        program.specTables.flatMap { table -> table.impls.map { it.typeName } }.distinct().sorted()
+            .forEachIndexed { index, name -> specTypeIds[name] = index + 1 }
         for (func in funcs) {
             functionParams[func.name] = func.params.map { it.second }
             functionResults[func.name] = func.returnType
@@ -263,6 +273,7 @@ class WasmCodegen {
         while (closureIndex < closureFunctions.size) {
             funcText.append(emitClosureFunction(closureFunctions[closureIndex++]))
         }
+        for ((name, dispatch) in neededDispatchers) funcText.append(renderDispatcher(name, dispatch.first, dispatch.second))
 
         val sb = StringBuilder()
         sb.appendLine("(module")
@@ -842,13 +853,12 @@ class WasmCodegen {
                 val field = fieldSlot(expr.target, expr.name)
                 coerceWasm("(${wasmLoad(field.type)} ${fieldAddr(expr.target, expr.name)})", field.type, expr.type)
             }
+            specMember(expr.target.type, expr.name) != null -> emitDispatch(expr.target, expr.name, emptyList(), expr.type)
             expr.name == "length" || expr.name == "size" -> "(i32.load ${emitExpr(expr.target)})"
             expr.name == "data" -> "(i32.add ${emitExpr(expr.target)} (i32.const 4))"
             else -> error("no WebAssembly storage for member '${expr.name}' of ${expr.target.type}")
         }
-        is IrExpr.MethodCall -> when (expr.name) {
-            else -> emitExpr(expr.target) // unsupported methods degrade to the receiver
-        }
+        is IrExpr.MethodCall -> emitMethodCall(expr)
         is IrExpr.StructCtor -> emitStructCtor(expr)
         is IrExpr.ArrayLiteral -> emitArrayLiteral(expr)
         is IrExpr.NumCast -> emitNumCast(expr)
@@ -946,6 +956,9 @@ class WasmCodegen {
 
     /** Emits a Wasm numeric conversion of [value] from [from] to [to] (no-op when the Wasm type is unchanged). */
     private fun coerceWasm(value: String, from: IrType, to: IrType): String {
+        if (to is IrType.Named && to.name in specTables && from is IrType.Named &&
+            from.name in specTypeIds && from.name !in specTables
+        ) return boxForSpec(value, from.name)
         val ft = wasmType(from); val tt = wasmType(to)
         if (ft == tt) return value
         // Crossing an erased boundary keeps the value's bits rather than
@@ -986,6 +999,71 @@ class WasmCodegen {
         "f64" -> "(f64.reinterpret_i64 $value)"
         "f32" -> "(f32.reinterpret_i32 (i32.wrap_i64 $value))"
         else -> "(i32.wrap_i64 $value)"
+    }
+
+    /**
+     * A pack seen through a spec it implements: `[type id, pack pointer]`, which
+     * is what the spec's dispatchers switch on. A spec value passed on as a
+     * spec keeps its box.
+     */
+    private fun boxForSpec(value: String, implementer: String): String {
+        usesAlloc = true
+        val box = newTemp("i32")
+        return "(block (result i32) (local.set $box (call \$__alloc (i32.const 8))) " +
+            "(i32.store (local.get $box) (i32.const ${specTypeIds.getValue(implementer)})) " +
+            "(i32.store offset=4 (local.get $box) $value) (local.get $box))"
+    }
+
+    private fun specMember(type: IrType, name: String): Pair<IrSpecTable, IrSpecMethod>? {
+        val table = (type as? IrType.Named)?.name?.let { specTables[it] } ?: return null
+        return table.methods.firstOrNull { it.name == name }?.let { table to it }
+    }
+
+    private fun emitMethodCall(expr: IrExpr.MethodCall): String {
+        check(specMember(expr.target.type, expr.name) != null) {
+            "method '${expr.name}' of ${expr.target.type} is not supported by the WebAssembly target"
+        }
+        return emitDispatch(expr.target, expr.name, expr.args, expr.type)
+    }
+
+    /** A spec member called on a boxed receiver, through that member's dispatcher. */
+    private fun emitDispatch(target: IrExpr, name: String, args: List<IrExpr>, type: IrType): String {
+        val (table, method) = specMember(target.type, name)!!
+        val dispatcher = "__dyn_${table.specName}_$name"
+        neededDispatchers.getOrPut(dispatcher) { table to method }
+        val operands = listOf(emitExpr(target)) + args.withIndex().map { (i, arg) ->
+            method.paramTypes.getOrNull(i)?.let { emitAs(arg, it) } ?: emitExpr(arg)
+        }
+        val call = "(call \$$dispatcher ${operands.joinToString(" ")})"
+        return wrapCallResult(type, callResult(call, method.returnType, type))
+    }
+
+    /**
+     * Calls the implementer's own function for the box's type id. An id no
+     * implementer owns traps: there is no value to invent for it.
+     */
+    private fun renderDispatcher(name: String, table: IrSpecTable, method: IrSpecMethod): String {
+        val params = method.paramTypes.withIndex().joinToString("") { (i, type) -> " (param \$a$i ${wasmType(type)})" }
+        val result = if (hasFunctionResult(method.returnType)) " (result ${wasmType(method.returnType)})" else ""
+        val sb = StringBuilder("  (func \$$name (param \$box i32)$params$result\n")
+        for (impl in table.impls) {
+            val function = impl.methodFuncs[method.name] ?: continue
+            val declared = functionParams[function]
+                ?: error("${table.specName}.${method.name} implementation '$function' is not in the WebAssembly module")
+            val args = listOf("(i32.load offset=4 (local.get \$box))") + method.paramTypes.indices.map { i ->
+                coerceWasm("(local.get \$a$i)", method.paramTypes[i], declared.getOrElse(i + 1) { method.paramTypes[i] })
+            }
+            val call = "(call \$$function ${args.joinToString(" ")})"
+            val physical = functionResults.getValue(function)
+            val body = when {
+                hasFunctionResult(method.returnType) -> "(return ${coerceWasm(call, physical, method.returnType)})"
+                hasFunctionResult(physical) -> "(drop $call) (return)"
+                else -> "$call (return)"
+            }
+            sb.append("    (if (i32.eq (i32.load (local.get \$box)) (i32.const ${specTypeIds.getValue(impl.typeName)})) (then $body))\n")
+        }
+        sb.append("    unreachable)\n")
+        return sb.toString()
     }
 
     /** [expr] as a value of [type], converting at an erased or numeric boundary. */

@@ -504,16 +504,8 @@ oper!= ArrayList<T>&.(rhs: List<T>): Bool {
     return !(self == rhs)
 }
 
-@Experimental(since: "0.1")
-impl ArrayList<T> {
-    prop &.hash: ULong {
-        var result = 0 as ULong
-        for i in 0..<self._size {
-            result += self._data[i].hash
-        }
-        return result
-    }
-}
+// A list has no `hash` until an element's `Hash` can be required and called
+// through a generic slot; `.hash` on an unconstrained `T` has no implementation.
 
 test "list starts empty" {
     fin value: ArrayList<Int> = .()

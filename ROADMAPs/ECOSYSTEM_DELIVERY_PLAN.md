@@ -49,15 +49,17 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,375 tests: 2,172 passed,
-203 failed, 0 skipped** (021.1 on `f7b26292`). No previously passing test
-fails, and the 007/014 acceptance tests in `FactoryDependencyTest` pass. The
+The latest full compiler run has **2,385 tests: 2,193 passed,
+192 failed, 0 skipped** (010.C4.1–C4.3 with 021.1, on `f7b26292`). No previously
+passing test fails, and the 007/014 acceptance tests in `FactoryDependencyTest` pass. The
 [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
 records the 2,290-test baseline. Packs and specs declare sequence and
 associative `literal` factories, and importing the target brings in the factory
 and what it builds. Library declarations carry canonical identities, and a
-program's block imports bind lexically. **010** remains open for the standard
-List/Set/Map factories (C4) and their qualification (C5).
+program's block imports bind lexically. List and Set literals build the standard
+collections on every target; Map literals are correct on the interpreter. **010**
+remains open for native maps (C4.3), untyped associative literals (C4.4, needs a
+decision) and qualification (C5).
 
 **007**, the complete **008** review and **014** remain open. The progress log
 lists what is left of each. Engine and full Studio build/run qualification also
@@ -101,6 +103,10 @@ selected `Array` as the default for a non-empty sequence without context.
     - [x] **010.C3.4.4. Constraints, failure and ownership.** A factory takes a `where` clause, decided at selection for the target's type arguments (undecidable clauses and arguments are accepted, as for any declaration). A failable factory makes the literal fail as a call to it would, and elements are arguments: `take` moves an element and a later use is rejected. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest`. Borrowed elements and their lifetimes follow the argument rules and move with 033/035; partial-construction cleanup is 037.
   - [x] **010.C3.5. Discover selected factory dependencies before specialization/lowering.** Use canonical declarations and avoid unrelated short-name matches. Importing a spec or pack brings its literal factories and what their bodies build. Library declarations the program cannot name carry canonical identities (`lib__seq__Vector`) and resolve in their own module's scope, so an injected dependency is not nameable and a program's own declaration cannot capture it. Evidence: `FactoryDependencyTest` 6/6 (closed 2026-09-19 with the 007/014 identity work).
 - [ ] **010.C4. Connect real standard List/Set/Map implementations.** Lower literals through the selected constructor/factory and preserve source order, exactly-once key/value evaluation, duplicate rules, failure behavior and ownership.
+  - [x] **010.C4.1. List literals.** `List<T>` and `MutableList<T>` own factories that build an `ArrayList<T>`; `ArrayList<T>` builds itself. Elements run once, left to right, in bindings, arguments, returns, globals and nested literals, and empty literals take their context. A member inherited from a parent spec and an `oper[]` result are now typed by the receiver's arguments. Evidence: `StdCollectionLiteralTest`, `StdCollectionLiteralExecTest`, `GenericMemberSignature*` (interpreter, LLVM, WASM, optimized and unoptimized).
+  - [x] **010.C4.2. Set literals.** `Set<T>` and `MutableSet<T>` build a `LinkedHashSet<T>`, the deterministic default GTC §8.4 asks for (insertion order, as `setOf` already chose). `HashSet`, `LinkedHashSet` and `TreeSet` build themselves. A repeated element is kept once, at its first position. The three unconstrained set `hash` properties are parked as `ArrayList.hash` was. Evidence: the same suites; six `LlvmAggregateExecTest` tests that build sets now pass.
+  - [ ] **010.C4.3. Map literals.** `Map<K, V>` and `MutableMap<K, V>` build a `LinkedHashMap<K, V>`; `HashMap`, `LinkedHashMap` and `TreeMap` build themselves. Each key runs before its value, entries left to right, and a repeated key keeps its last value. Correct on the interpreter (`StdCollectionLiteralTest`). Open natively: `key.hash` on an unconstrained `K` (019/022/044; WASM cannot lower it); a pack's explicit `ctor .()` does not run on LLVM or WASM, so `LinkedHashMap`'s buckets stay zero and insertion does not end; LLVM prints a nullable as `<value>`.
+  - [ ] **010.C4.4. Untyped associative literals.** GTC §8.4 infers `Map<K, V>` backed by `LinkedHashMap`; today an untyped `[k: v]` is the compiler's structural `IrType.Map`, and existing programs mutate it (`values["b"] = 99`), which a read-only `Map<K, V>` does not allow. Needs a decision.
 - [ ] **010.C5. Qualify factory construction across backends and tooling.** Test nested/empty literals, overloaded/generic contexts, lifetimes, native representation and Studio/compiler diagnostics together.
 
 ## Phase 2: Establish core language invariants (011–020)

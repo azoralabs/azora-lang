@@ -37,14 +37,14 @@ internal fun instantiateMember(
 /**
  * A spec member's signature where the receiver is [receiver]: `Stack<Double>`
  * reads `top(): T` as returning Double. A member inherited from a parent spec
- * names that parent's parameters, which the receiver does not bind directly, so
- * it keeps its erased signature.
+ * names that parent's parameters, so it is read where the receiver is seen as
+ * that parent: `MutableList<String>` is `List<String>` to `List`'s `get(): T`.
  */
 internal fun instantiateSpecMember(table: SymbolTable, receiver: IrType.Named, sig: SpecMethodSig): SpecMethodSig {
-    if (sig.owner != receiver.name) return sig
+    val owner = asAncestorSpec(table, receiver, sig.owner, mutableSetOf()) ?: return sig
     val typed = instantiateMember(
         table,
-        receiver,
+        owner,
         FunctionSymbol(
             name = sig.owner,
             params = sig.paramTypes.mapIndexed { i, type -> "p$i" to type },
@@ -54,6 +54,21 @@ internal fun instantiateSpecMember(table: SymbolTable, receiver: IrType.Named, s
         ),
     )
     return sig.copy(paramTypes = typed.params.map { it.second }, returnType = typed.returnType)
+}
+
+/** [receiver] seen as its ancestor spec [owner], its arguments passed along each parent. */
+private fun asAncestorSpec(table: SymbolTable, receiver: IrType.Named, owner: String, seen: MutableSet<String>): IrType.Named? {
+    if (receiver.name == owner) return receiver
+    if (!seen.add(receiver.name)) return null
+    val spec = table.lookupSpec(receiver.name) ?: return null
+    if (receiver.args.size != spec.typeParams.size) return null
+    val bindings = spec.typeParams.zip(receiver.args).associate { (name, argument) -> name to typeRefOf(argument) }
+    for (parent in spec.parents) {
+        val passed = substituteMemberType(parent, bindings) as? TypeRef.Named ?: continue
+        val seenAs = IrType.resolve(passed, emptySet()) as? IrType.Named ?: continue
+        asAncestorSpec(table, seenAs, owner, seen)?.let { return it }
+    }
+    return null
 }
 
 /**

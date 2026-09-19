@@ -20,6 +20,7 @@ import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
+import org.azora.lang.frontend.localNamesDeclaredIn
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
@@ -151,6 +152,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 if (defaultChanged) changed = true
                 param.copy(defaultValue = foldedDefault)
             }
+            shadowConstants(decl.params.map { it.name } + listOf(decl.receiverName), decl.body)
             val (newBody, bodyChanged) = foldBody(decl.body, program, errors)
             if (bodyChanged) changed = true
             return decl.copy(params = newParams, body = newBody)
@@ -188,6 +190,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                         param.copy(defaultValue = foldedDefault)
                     }
                 }
+                shadowConstants(item.decl.params.map { it.name } + listOf(item.decl.receiverName), item.decl.body)
                 val (newBody, bodyChanged) = foldBody(item.decl.body, program, errors)
                 if (bodyChanged) changed = true
                 TopLevel.Func(item.decl.copy(params = newParams, body = newBody))
@@ -199,6 +202,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 inlineEnv.putAll(seedConstants)
                 inlineEnv.putAll(topLevelEnv)
                 reflectionTypes.clear()
+                shadowConstants(emptyList(), item.body)
                 val (newBody, bodyChanged) = foldBody(item.body, program, errors)
                 if (bodyChanged) changed = true
                 item.copy(body = newBody)
@@ -210,6 +214,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
             changed,
             errors
         )
+    }
+
+    /**
+     * A body's parameters and locals shadow the constants of the same name for
+     * the whole body: `var target = 0` is not the compiler's `target`.
+     */
+    private fun shadowConstants(params: List<String>, body: List<Stmt>) {
+        (params + localNamesDeclaredIn(body)).forEach { inlineEnv.remove(it) }
     }
 
     // -- Top-level inline resolution ----------------------------------------

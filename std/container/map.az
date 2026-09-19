@@ -100,6 +100,14 @@ spec Map<K, V> {
 
     /** Invokes `action` once for every entry in iteration order. */
     func &.forEach(action: (K&, V&) -> Unit)
+
+    /**
+     * `[k: v, …]` where a `Map<K, V>` is expected: a `LinkedHashMap<K, V>`, so
+     * iteration follows the literal. A repeated key keeps its last value.
+     */
+    literal [...entries: (K, V)]: Self {
+        return _linkedHashMapOf(entries)
+    }
 }
 
 /**
@@ -135,6 +143,11 @@ spec MutableMap<K, V> : Map<K, V> {
 
     /** Returns the existing value or inserts and returns `defaultValue()`. */
     func &.getOrPut(key: K, defaultValue: () -> V): V
+
+    /** `[k: v, …]` where a `MutableMap<K, V>` is expected: a `LinkedHashMap<K, V>`, as for `Map<K, V>`. */
+    literal [...entries: (K, V)]: Self {
+        return _linkedHashMapOf(entries)
+    }
 }
 
 /**
@@ -273,6 +286,15 @@ impl Clone for HashMap {
 }
 
 impl HashMap<K, V> {
+    /** `[k: v, …]` where a `HashMap<K, V>` is expected. A repeated key keeps its last value. */
+    literal [...entries: (K, V)]: HashMap<K, V> {
+        var result: HashMap<K, V> = .()
+        for i in 0..<entries.size {
+            result.put(entries[i].0, entries[i].1)
+        }
+        return result
+    }
+
     ctor .() {
         for i in 0..<self.capacity {
             self.occupied[i] = false
@@ -427,18 +449,18 @@ impl Map<K, V> for HashMap<K, V> {
 
     func &.keys(): List<K> {
         fin all = self.entries()
-        var result: Array<K> = .() * all.size
+        var result: ArrayList<K> = .()
         for i in 0..<all.size {
-            result[i] = all[i].key
+            result.add(all[i].key)
         }
         return result
     }
 
     func &.values(): List<V> {
         fin all = self._entrySnapshot()
-        var result: Array<V> = .() * all.size
+        var result: ArrayList<V> = .()
         for i in 0..<all.size {
-            result[i] = all[i].value
+            result.add(all[i].value)
         }
         return result
     }
@@ -491,6 +513,11 @@ impl MutableMap<K, V> for HashMap<K, V> {
 // ---------------------------------------------------------------------
 
 impl LinkedHashMap<K, V> {
+    /** `[k: v, …]` where a `LinkedHashMap<K, V>` is expected, in literal order; a repeated key keeps its last value. */
+    literal [...entries: (K, V)]: LinkedHashMap<K, V> {
+        return _linkedHashMapOf(entries)
+    }
+
     ctor .() {
         for i in 0..<self.bucketCapacity {
             self.buckets[i] = -1
@@ -650,17 +677,17 @@ impl Map<K, V> for LinkedHashMap<K, V> {
     }
 
     func &.keys(): List<K> {
-        var result: Array<K> = .() * self._size
+        var result: ArrayList<K> = .()
         for i in 0..<self._size {
-            result[i] = self.keys[i]
+            result.add(self.keys[i])
         }
         return result
     }
 
     func &.values(): List<V> {
-        var result: Array<V> = .() * self._size
+        var result: ArrayList<V> = .()
         for i in 0..<self._size {
-            result[i] = self.values[i]
+            result.add(self.values[i])
         }
         return result
     }
@@ -711,6 +738,15 @@ impl MutableMap<K, V> for LinkedHashMap<K, V> {
 // ---------------------------------------------------------------------
 
 impl TreeMap<K, V> {
+    /** `[k: v, …]` where a `TreeMap<K, V>` is expected. A repeated key keeps its last value. */
+    literal [...entries: (K, V)]: TreeMap<K, V> {
+        var result: TreeMap<K, V> = .()
+        for i in 0..<entries.size {
+            result.put(entries[i].0, entries[i].1)
+        }
+        return result
+    }
+
     dtor .() {
         using self { purge [keys, values, left, right, parent, heights, freeNext] }
     }
@@ -794,7 +830,7 @@ impl TreeMap<K, V> {
     }
 
     func !._rotateLeft(elem: Int): Int {
-        fin {pivot, oldParent}: Bool = {self.right[elem], self.parent[elem]}
+        fin {pivot, oldParent}: Int = {self.right[elem], self.parent[elem]}
         self.right[elem] = self.left[pivot]
         if self.right[elem] >= 0 {
             self.parent[self.right[elem]] = elem
@@ -807,7 +843,7 @@ impl TreeMap<K, V> {
     }
 
     func !._rotateRight(elem: Int): Int {
-        fin {pivot, oldParent}: Bool = {self.left[elem], self.parent[elem]}
+        fin {pivot, oldParent}: Int = {self.left[elem], self.parent[elem]}
         self.left[elem] = self.right[pivot]
         if self.left[elem] >= 0 {
             self.parent[self.left[elem]] = elem
@@ -995,18 +1031,18 @@ impl Map<K, V> for TreeMap<K, V> {
 
     func &.keys(): List<K> {
         fin all = self.entries()
-        var result: Array<K> = .() * all.size
+        var result: ArrayList<K> = .()
         for i in 0..<all.size {
-            result[i] = all[i].key
+            result.add(all[i].key)
         }
         return result
     }
 
     func &.values(): List<V> {
         fin all = self._entrySnapshot()
-        var result: Array<V> = .() * all.size
+        var result: ArrayList<V> = .()
         for i in 0..<all.size {
-            result[i] = all[i].value
+            result.add(all[i].value)
         }
         return result
     }
@@ -1204,6 +1240,15 @@ impl MutableSortedMap<K, V> for TreeMap<K, V> {
 // ---------------------------------------------------------------------
 // Factories
 // ---------------------------------------------------------------------
+
+/** What `Map` and `MutableMap` literals build: the entries in order, a repeated key keeping its last value. */
+func<K, V> _linkedHashMapOf(entries: Array<(K, V)>): LinkedHashMap<K, V> {
+    var result: LinkedHashMap<K, V> = .()
+    for i in 0..<entries.size {
+        result.put(entries[i].0, entries[i].1)
+    }
+    return result
+}
 
 @Experimental(since: "0.1")
 func<K, V> mapEntry(key: K, value: V): MapEntry<K, V> {

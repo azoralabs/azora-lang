@@ -20,6 +20,7 @@ import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.WasmCodegen
 import java.io.File
+import java.util.concurrent.TimeUnit
 import kotlin.test.fail
 
 /**
@@ -130,12 +131,19 @@ object WasmExec {
             // `14` into `\u001b[33m14\u001b[39m` and fails a comparison that is
             // about the program, not about node. The driver prints strings, and
             // this says so a second time for anything that slips through.
+            val outFile = File(dir, "stdout.txt")
+            val errFile = File(dir, "stderr.txt")
             val runProc = ProcessBuilder(nodeTool, driverFile.absolutePath, wasmFile.absolutePath)
                 .apply { environment()["NO_COLOR"] = "1"; environment()["FORCE_COLOR"] = "0" }
+                .redirectOutput(outFile)
+                .redirectError(errFile)
                 .start()
-            val stdout = runProc.inputStream.bufferedReader().readText()
-            val stderr = runProc.errorStream.bufferedReader().readText()
-            return outcome(runProc.waitFor(), stdout.trimEnd('\n'), stderr)
+            // A program that never ends fails its own test rather than the suite.
+            if (!runProc.waitFor(LlvmExec.RUN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                runProc.destroyForcibly().waitFor()
+                fail("node did not finish within ${LlvmExec.RUN_TIMEOUT_SECONDS} s\n--- stdout ---\n${outFile.readText()}")
+            }
+            return outcome(runProc.exitValue(), outFile.readText().trimEnd('\n'), errFile.readText())
         } finally {
             dir.deleteRecursively()
         }

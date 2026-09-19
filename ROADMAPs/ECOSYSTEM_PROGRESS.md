@@ -22,8 +22,13 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
   block imports, receiver syntax, scope members and unknown-module imports remain.
 - Completed substep: 021.1. A generic call with inferred type arguments is typed
   by them in IR, so its value is no longer erased on LLVM and WASM.
-- The remaining 008 fixture review and 010 (C4–C5) remain open. Older entries
-  below preserve the evidence at each stage.
+- Completed substeps: 010.C4.1–C4.2. List and Set literals build the standard
+  collections on the interpreter, LLVM and WASM.
+- In progress: 010.C4.3. Map literals are correct on the interpreter; native maps
+  wait on `Hash` through a generic slot and on zero-argument ctors. 010.C4.4
+  (untyped `[k: v]`) needs a decision.
+- The remaining 008 fixture review and 010.C5 remain open. Older entries below
+  preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
 
 ## 004 — assertion migration completed
@@ -1509,4 +1514,143 @@ and `1024` for the string on WASM. `GenericMemberSignature*`,
   --tests '*InferredGenericCall*' --tests '*ErasedGenericExecTest'
 ./gradlew :compiler:desktopTest --offline --console=plain
 ./gradlew :azls:test --offline --console=plain
+```
+
+## 2026-09-19 — 010.C4.1–C4.3: standard collection literals
+
+The 007/014 identity work is committed as `f7b26292`. This entry was written in
+the same working tree as 021.1 above, which is also uncommitted; each lists its
+own files.
+
+**Factories.** GTC §8.4 and Phase 4 name the defaults; each is a `literal` on
+the spec, with a module-private builder so the spec and its default pack share
+one body. Spread arguments are not implemented, so the builder takes the
+factory's variadic `Array<T>`.
+
+| Expected type | Builds | Duplicates |
+|---|---|---|
+| `List<T>`, `MutableList<T>`, `ArrayList<T>` | `ArrayList<T>` | kept |
+| `Set<T>`, `MutableSet<T>`, `LinkedHashSet<T>` | `LinkedHashSet<T>` | first kept |
+| `HashSet<T>`, `TreeSet<T>` | themselves | first kept |
+| `Map<K, V>`, `MutableMap<K, V>`, `LinkedHashMap<K, V>` | `LinkedHashMap<K, V>` | last value wins |
+| `HashMap<K, V>`, `TreeMap<K, V>` | themselves | last value wins |
+
+`Set<T>` defaults to `LinkedHashSet<T>`: §8.4 asks for a deterministic default,
+and insertion order is what `setOf` already chose. Duplicates collapse through
+each pack's own `add`, and repeated map keys through `put`.
+
+**Compiler defects found and repaired on the way:**
+
+- *Inherited spec members were erased.* `MutableList<String>.get` is declared on
+  `List<T>`, so it kept the erased `T` and printed `<value>` on LLVM and a pointer
+  on WASM. Specs now record their parents with arguments
+  (`SpecSymbol.parents`), and a member is read where the receiver is seen as its
+  declaring spec (`MutableList<String>` as `List<String>`).
+- *`oper[]` results were erased* in both the resolver and IR generation; they are
+  now instantiated like a method call's.
+- *The interpreter ran a global initializer before later functions existed.*
+  `fin primes: List<Int> = [2, 3, 5]` failed there alone (`Undefined function`),
+  and so did `fin xs = listOf(…)`. Every function is now registered before any
+  initializer runs.
+- *A type's own impls did not follow it into a library.* An impl was attached
+  only if the program imported its module, so a program that reached
+  `ArrayList` through the serializer got it without `add`, `size` or `get`. This
+  was the pre-existing "no method 'add' on ArrayList" in the filesystem,
+  reactive, generator and quantum tests. Impls declared in the type's own module
+  now come with it; other modules' impls still need the program to import them.
+- *A library reference fell back to the global flat index.* A name missing from a
+  library's scope (a member name the collector gathered, say) pulled in any
+  module's top-level declaration of that spelling. That is why using a map
+  injected `std.filesystem`. Library references now resolve only in their
+  module's scope, plus compiler-known declarations (`Copy`, bridges). This
+  exposed `std.filesystem` using `mutableListOf` without importing it; it now
+  imports `std.container.list::{MutableList, mutableListOf}`.
+- *Parameters and locals did not shadow compile-time constants.* CTFE replaced
+  every identifier named like a seeded `std.config` constant, so `var target = 0`
+  read the compiler target (`CompilerTarget`). That was the pre-existing error
+  in the map, filesystem and quantum tests. A body's parameters and locals now
+  shadow them for the whole body (`localNamesDeclaredIn`, now shared with the
+  renamer). `std.filesystem`'s `fileInfo` then reached `fin kind = when … { … ->
+  .File }` with nothing stating the type; it is annotated `FileKind`.
+- *A bridge function lost its declaration under the identity rename.* Quantum's
+  `sqrt` reference became `std__math__sqrt` while `bridge func sqrt` kept its
+  name, a regression from `f7b26292` hidden inside an already-failing test. A
+  bridge function is called by its foreign symbol, which is also its source name,
+  so it is compiler-known and keeps it. An injected bridge function remains
+  nameable (014).
+
+**Standard library repairs.** The map module did not compile on any backend:
+`keys()`/`values()` returned an `Array` where `List` is declared (implicit
+conversion was removed in C3.2), and `TreeMap`'s rotations declared their node
+indices `Bool`. Both are fixed. The three set `hash` properties read `.hash` on an
+unconstrained `T`, as `ArrayList.hash` did; they are parked by the same decision,
+which the C3.3 entry anticipated would otherwise block sets on WASM.
+
+**Harness.** `LlvmExec` and `WasmExec` wait at most 60 s for a program and fail
+its test with what it printed. Before, a program that did not end hung the suite.
+
+**Maps natively (C4.3, open).** Measured with `HashMap`, `LinkedHashMap` and
+`TreeMap` programs:
+
+- WASM cannot lower `key.hash` on an unconstrained `K` (019/022/044). The `Map`
+  factory designates `LinkedHashMap`, so every program that reaches `Map` meets
+  it.
+- An explicit `ctor .()` never runs on LLVM or WASM, only in the interpreter,
+  which calls `Type_ctor` implicitly after construction. `LinkedHashMap`'s
+  buckets therefore stay zero, and `_insertBucket` does not end. A separate
+  session is repairing this.
+- `HashMap` and `TreeMap` insert and look up on LLVM, but `get` returns `V?` and
+  LLVM prints a nullable as `<value>`.
+
+Three `LlvmAggregateExecTest` map tests now time out at 60 s instead of stopping
+at "does not define a factory". `mapInsertsMissingEntry` stops at `values[3] = 30`
+on a `MutableMap`: the spec declares no `oper[]=`.
+
+**Not changed, recorded:**
+
+- *for-in over a collection.* `for x in set` is rejected: `List` and `Set` offer
+  no iteration protocol (`setForEachSum`, `setRemoveReturnsWhetherRemoved`).
+- *TreeSet is not sorted.* It keeps insertion order despite its documentation.
+- *Spec-typed elements.* `List<Shape> = [Square(2), Rect(2, 3)]` upcasts and runs
+  on the interpreter. An `ArrayList<Shape>` segfaults on LLVM even when built by
+  `add` (044/053).
+- *Stale fixtures.* `ContainerStdlibTest` calls `add` on a read-only `List`/`Set`.
+  `FilesystemStdlibTest.metadataReportsKindAndSize` calls `Instant(…)` without
+  importing `std.time`, which the injected dependency used to allow.
+
+**Untyped associative literals (C4.4, decision needed).** GTC §8.4 infers
+`Map<K, V>` backed by `LinkedHashMap` for `["a": 1]`. The compiler makes it the
+structural `IrType.Map`, which programs mutate (`values["b"] = 99`,
+`LlvmAggregateExecTest.mapUpdatesExistingEntry` and others pass that way). A
+read-only `Map<K, V>` would reject those writes.
+
+### Evidence
+
+- `StdCollectionLiteralTest` (5), new: list, set and map literals in every
+  context, element and entry checks, spec element upcast, empty literal without
+  context. `StdCollectionLiteralExecTest` (2), new: the list and set programs on
+  LLVM and WASM, optimized and unoptimized.
+- `GenericMemberSignatureTest.inheritedMembersAndIndexingUseTheReceiversArguments`
+  and two exec tests (LLVM, WASM). With the fix stashed, both exec tests fail.
+- Full compiler run: **2,385 tests, 2,193 passed, 192 failed, 0 skipped**, with
+  021.1's changes in the tree. Against the C4.1-stage run (2,376 / 203), no test
+  newly fails, and 11 now pass: five `LlvmAggregateExecTest` set tests and
+  its `packedCollectionsSupportWideValues` (which builds a set),
+  `decimalCollectionsUseExplicitPackedAlignment`,
+  `CollectionCtorTest.mutable_map_pack_exists`, `PlaygroundExamplesTest.generators`,
+  `WebsiteExamplesTest.ch31_flow` and `ReactivityTest.stdStateObservationAndDisposalWork`.
+- Every failure message was compared error by error with a full run of the
+  pre-identity commit `813ee22d` in a separate worktree. Errors new inside an
+  already-failing test are:
+  - compilation reaching further (the for-in and `oper[]=` items above);
+  - the generated `std::serialAsInt` call, of the existing `std::serial*` family;
+  - `metadataReportsKindAndSize`'s missing `std.time` import and its cascade.
+
+  This comparison is what found the `sqrt` regression.
+- AZLS: 91/91.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*StdCollectionLiteral*' --tests '*GenericMemberSignature*'
+./gradlew :compiler:desktopTest --offline --console=plain
+./gradlew :azls:test --offline
 ```

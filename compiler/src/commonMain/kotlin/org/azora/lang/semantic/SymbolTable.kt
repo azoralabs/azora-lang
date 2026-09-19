@@ -175,6 +175,8 @@ data class SpecSymbol(
     val methodSigs: Map<String, SpecMethodSig> = emptyMap(),
     /** Parent spec inherited from (`spec Mutable: Read`), resolved at query time. */
     val parentNames: List<String> = emptyList(),
+    /** The parents as written, with the arguments this spec passes them (`List<T>`). */
+    val parents: List<org.azora.lang.frontend.TypeRef> = emptyList(),
     /** Specs an implementor must also implement; see `TopLevel.Spec.requires`. */
     val requiredSpecs: List<String> = emptyList(),
     val isBridge: Boolean = false,
@@ -431,8 +433,9 @@ class SymbolTable {
         parentNames: List<String> = emptyList(),
         requiredSpecs: List<String> = emptyList(),
         isBridge: Boolean = false,
+        parents: List<org.azora.lang.frontend.TypeRef> = emptyList(),
     ) {
-        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs, parentNames = parentNames, requiredSpecs = requiredSpecs, isBridge = isBridge)
+        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs, parentNames = parentNames, parents = parents, requiredSpecs = requiredSpecs, isBridge = isBridge)
     }
 
     /**

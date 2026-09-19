@@ -2894,7 +2894,8 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = table.lookupMethod(targetType.name, "index")
                     if (mangled != null) {
                         resolveExpr(expr.index) ?: return null
-                        return table.lookupFunction(mangled)?.returnType ?: IrType.Any
+                        return table.lookupFunction(mangled)?.let { instantiateMember(table, targetType, it).returnType }
+                            ?: IrType.Any
                     }
                 }
                 // Map indexing: `map[key]` - key may be any type.

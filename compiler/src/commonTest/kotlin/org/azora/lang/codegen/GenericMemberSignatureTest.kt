@@ -41,6 +41,50 @@ class GenericMemberSignatureTest {
         fun compile(optimized: Boolean) = Compiler().compile(program, release = optimized).let {
             assertIs<CompilationResult.Success>(it, (it as? CompilationResult.Failure)?.errors.toString()).ir
         }
+
+        /**
+         * A member inherited from a parent spec, and an index operator, typed by
+         * the receiver's arguments. `println` chooses by the argument's type, so
+         * an erased result prints as a placeholder or a pointer.
+         */
+        val inherited = """
+            import std.io
+            spec Source<T> {
+                func &.read(): T
+            }
+            spec Sink<T> : Source<T> {
+                func !.write(value: T)
+            }
+            pack Slot<T> { var value: T }
+            impl Source<T> for Slot<T> {
+                func &.read(): T { return self.value }
+            }
+            impl Sink<T> for Slot<T> {
+                func !.write(value: T) { self.value = value }
+            }
+            oper[] Slot<T>&.(index: Int): T { return self.value }
+            func main() {
+                var text: Sink<String> = Slot<String>("hi")
+                println(text.read())
+                text.write("bye")
+                println(text.read())
+                fin number = Slot<Double>(2.5)
+                println(number[0])
+                fin word = Slot<String>("indexed")
+                println(word[0])
+            }
+        """.trimIndent()
+        const val inheritedOutput = "hi\nbye\n2.5\nindexed"
+
+        fun compileInherited(optimized: Boolean) = Compiler().compile(inherited, release = optimized).let {
+            assertIs<CompilationResult.Success>(it, (it as? CompilationResult.Failure)?.errors.toString()).ir
+        }
+    }
+
+    @Test fun inheritedMembersAndIndexingUseTheReceiversArguments() {
+        for (optimized in listOf(false, true)) {
+            assertEquals(inheritedOutput, IrInterpreter().interpret(compileInherited(optimized)).trim())
+        }
     }
 
     @Test fun genericOwnerTypesSurviveConstructionAndCalls() {

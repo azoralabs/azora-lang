@@ -649,7 +649,7 @@ class SymbolCollector {
                 // not write it inherits the spec's, so requiring it would reject
                 // exactly the implementations the body exists to serve.
                 val methodNames = item.methods.filter { it.body.isEmpty() }.map { it.name }
-                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, ownPropTypes, ownMethodSigs, parentNames, requiredSpecs, item.isBridge)
+                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, ownPropTypes, ownMethodSigs, parentNames, requiredSpecs, item.isBridge, item.parents)
             }
         }
         for (item in program.items.filterIsInstance<TopLevel.Deco>()) {

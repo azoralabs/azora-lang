@@ -87,6 +87,14 @@ spec Set<T> {
 
     /** Returns a new set with elements here that are absent from `other`. */
     func &.difference(other: Set<T>): Set<T>
+
+    /**
+     * `[a, b, c]` where a `Set<T>` is expected: a `LinkedHashSet<T>`, so
+     * iteration follows the literal. A repeated element is kept once.
+     */
+    literal [...elements: T]: Self {
+        return _linkedHashSetOf(elements)
+    }
 }
 
 /**
@@ -115,6 +123,11 @@ spec MutableSet<T> : Set<T> {
 
     /** Removes every element while retaining reusable internal capacity. */
     func &.clear()
+
+    /** `[a, b, c]` where a `MutableSet<T>` is expected: a `LinkedHashSet<T>`, as for `Set<T>`. */
+    literal [...elements: T]: Self {
+        return _linkedHashSetOf(elements)
+    }
 }
 
 /**
@@ -139,6 +152,11 @@ pack LinkedHashSet<T> {
 // ---------------------------------------------------------------------
 
 impl LinkedHashSet<T> {
+    /** `[a, b, c]` where a `LinkedHashSet<T>` is expected, in literal order without repeats. */
+    literal [...elements: T]: LinkedHashSet<T> {
+        return _linkedHashSetOf(elements)
+    }
+
     /** Doubles the backing buffer, copying existing elements. */
     @Experimental(since: "0.1")
     func !.growSet() {
@@ -275,6 +293,15 @@ impl MutableSet<T> for LinkedHashSet<T> {
 // Factories
 // ---------------------------------------------------------------------
 
+/** What `Set` and `MutableSet` literals build: the elements in order, each once. */
+func<T> _linkedHashSetOf(elements: Array<T>): LinkedHashSet<T> {
+    var result = LinkedHashSet<T>()
+    for i in 0..<elements.size {
+        result.add(elements[i])
+    }
+    return result
+}
+
 @Experimental(since: "0.1")
 func<T> emptySet(): Set<T> {
     return LinkedHashSet<T>()
@@ -358,6 +385,15 @@ impl Clone for HashSet {
 }
 
 impl HashSet<T> {
+    /** `[a, b, c]` where a `HashSet<T>` is expected. A repeated element is kept once. */
+    literal [...elements: T]: HashSet<T> {
+        var result = HashSet<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
     @Experimental(since: "0.1")
     func !.growSet() {
         fin newCap = self.capacity * 2
@@ -524,16 +560,8 @@ oper!= HashSet<T>&.(rhs: Set<T>): Bool {
     return !(self == rhs)
 }
 
-@Experimental(since: "0.1")
-impl HashSet<T> {
-    prop &.hash: ULong {
-        var result = 0 as ULong
-        for i in 0..<self.size {
-            result = result + self.data[i].hash
-        }
-        return result
-    }
-}
+// A HashSet has no `hash` until an element's `Hash` can be required and called
+// through a generic slot; `.hash` on an unconstrained `T` has no implementation.
 
 // --- TreeSet (sorted via oper<; T requires oper<) ---
 
@@ -555,6 +583,15 @@ func<T> treeSetOf(...elements: T): TreeSet<T> {
 }
 
 impl TreeSet<T> {
+    /** `[a, b, c]` where a `TreeSet<T>` is expected. A repeated element is kept once. */
+    literal [...elements: T]: TreeSet<T> {
+        var result = TreeSet<T>()
+        for i in 0..<elements.size {
+            result.add(elements[i])
+        }
+        return result
+    }
+
     @Experimental(since: "0.1")
     func !.growSet() {
         fin newCap = self.capacity * 2
@@ -721,16 +758,8 @@ oper!= TreeSet<T>&.(rhs: Set<T>): Bool {
     return !(self == rhs)
 }
 
-@Experimental(since: "0.1")
-impl TreeSet<T> {
-    prop &.hash: ULong {
-        var result = 0 as ULong
-        for i in 0..<self.size {
-            result = result + self.data[i].hash
-        }
-        return result
-    }
-}
+// A TreeSet has no `hash` until an element's `Hash` can be required and called
+// through a generic slot; `.hash` on an unconstrained `T` has no implementation.
 
 // ---------------------------------------------------------------------
 // Operators
@@ -768,16 +797,8 @@ oper!= LinkedHashSet<T>&.(rhs: Set<T>): Bool {
     return !(self == rhs)
 }
 
-@Experimental(since: "0.1")
-impl LinkedHashSet<T> {
-    prop &.hash: ULong {
-        var result = 0 as ULong
-        for i in 0..<self.size {
-            result = result + self.data[i].hash
-        }
-        return result
-    }
-}
+// A LinkedHashSet has no `hash` until an element's `Hash` can be required and called
+// through a generic slot; `.hash` on an unconstrained `T` has no implementation.
 
 test "set starts empty" {
     fin value: TreeSet<Int> = .()

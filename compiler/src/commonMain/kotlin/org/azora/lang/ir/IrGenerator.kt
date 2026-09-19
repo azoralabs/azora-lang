@@ -2826,7 +2826,7 @@ class IrGenerator(private val table: SymbolTable) {
                 if (tt is IrType.Named) {
                     val mangled = table.lookupMethod(tt.name, "index")
                     if (mangled != null) {
-                        val func = table.lookupFunction(mangled)!!
+                        val func = instantiateMember(table, tt, table.lookupFunction(mangled)!!)
                         val index = lowerExpr(expr.index)
                         return IrExpr.Call(mangled, listOf(target, index), func.returnType)
                     }

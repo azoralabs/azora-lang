@@ -100,6 +100,11 @@ spec List<T> {
 
     /** Returns a half-open `[from, to)` snapshot of this list. */
     func &.subList(from: Int, to: Int): List<T>
+
+    /** `[a, b, c]` where a `List<T>` is expected: an `ArrayList<T>` in source order. */
+    literal [...elements: T]: Self {
+        return _arrayListOf(elements)
+    }
 }
 
 /**
@@ -140,6 +145,11 @@ spec MutableList<T> : List<T> {
 
     /** Removes every element while retaining reusable internal capacity. */
     func &.clear()
+
+    /** `[a, b, c]` where a `MutableList<T>` is expected: an `ArrayList<T>` in source order. */
+    literal [...elements: T]: Self {
+        return _arrayListOf(elements)
+    }
 }
 
 /**
@@ -179,6 +189,11 @@ impl ArrayList<T> {
         self._data = alloc .(fill) * count
         self._size = count
         self._capacity = count
+    }
+
+    /** `[a, b, c]` where an `ArrayList<T>` is expected, in source order. */
+    literal [...elements: T]: ArrayList<T> {
+        return _arrayListOf(elements)
     }
 }
 
@@ -432,6 +447,15 @@ impl MutableList<T> for ArrayList<T> {
 // ---------------------------------------------------------------------
 // Factories
 // ---------------------------------------------------------------------
+
+/** What every list literal builds: the elements, in order, sized for them. */
+func<T> _arrayListOf(elements: Array<T>): ArrayList<T> {
+    var result: ArrayList<T> = .()
+    for i in 0..<elements.size {
+        result.add(elements[i])
+    }
+    return result
+}
 
 @Experimental(since: "0.1")
 func<T> listOf(...elements: T): List<T> {

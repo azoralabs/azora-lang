@@ -294,6 +294,7 @@ class IrInterpreter {
     private suspend fun kotlinx.coroutines.CoroutineScope.runTestBlocks(program: IrProgram): List<TestResult> {
         coroutineScope = this
         val tests = mutableListOf<IrTopLevel.Test>()
+        registerFunctions(program)
         for (item in program.items) {
             when (item) {
                 is IrTopLevel.Global -> executeStmt(item.stmt)
@@ -339,9 +340,21 @@ class IrInterpreter {
      * `launch` tasks, and finally runs lifecycle `hook`s. Must run inside the coroutine context seeded
      * by [interpret] / [interpretSuspend] so [state] resolves the main [ExecState].
      */
+    /**
+     * Every function is callable before any global initializer runs, wherever
+     * it is declared: an initializer may call one declared after it, and the
+     * library functions a program uses are placed after the program's own items.
+     */
+    private fun registerFunctions(program: IrProgram) {
+        for (item in program.items) {
+            if (item is IrTopLevel.Func) functions[item.function.name] = item.function
+        }
+    }
+
     private suspend fun runProgramBody(program: IrProgram) {
         // Collect tests
         val tests = mutableListOf<IrTopLevel.Test>()
+        registerFunctions(program)
 
         // Process top-level items in source order
         for (item in program.items) {

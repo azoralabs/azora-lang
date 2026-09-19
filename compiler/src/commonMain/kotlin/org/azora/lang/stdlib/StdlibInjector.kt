@@ -1628,7 +1628,15 @@ class StdlibInjector private constructor(
                 if (!walk.seen.add(ref)) continue
                 val (name, scopeModule) = ref
                 if (scopeModule == null && name in shadowed) continue
-                val item = scopeModule?.let { libraryScope(it)[name] } ?: visible[name] ?: index.items[name]
+                // A library names only what its scope binds, and what the compiler
+                // itself knows (`Copy`, bridges). Its other collected names (members,
+                // locals) are no request for an unrelated module's declaration of
+                // the same spelling.
+                val item = if (scopeModule != null) {
+                    libraryScope(scopeModule)[name] ?: index.items[name]?.takeIf { isCompilerKnown(it, name) }
+                } else {
+                    visible[name] ?: index.items[name]
+                }
                 if (item != null) {
                     val module = declaringModule(item, name)
                     val key = identityKey(module, name)
@@ -1908,7 +1916,10 @@ class StdlibInjector private constructor(
      * and annotations onto, and the types its derivers and runtime synthesize.
      */
     private fun isCompilerKnown(item: TopLevel, name: String): Boolean =
-        (item is TopLevel.Pack && item.isBridge) ||
+        // A bridge function is called by its foreign symbol, which is also its
+        // source name: renaming the Azora side would leave that symbol callable.
+        item is TopLevel.Bridge ||
+            (item is TopLevel.Pack && item.isBridge) ||
             (item is TopLevel.Spec && item.isBridge) ||
             (item is TopLevel.Deco && item.isBridge) ||
             name in implicitCollectionTypes ||
@@ -1945,6 +1956,9 @@ class StdlibInjector private constructor(
      */
     private fun attachImplsForType(type: TopLevel?, typeName: String, walk: Walk, next: MutableList<Ref>) {
         val keys = linkedSetOf(typeName, normalizedTypeName(typeName))
+        // The type's own module implements it wherever the type goes, including
+        // when a library, not the program, is what brought it in.
+        val home = type?.let { declaringModule(it, typeName) }
         for (keyName in keys) {
             index.implsByType[keyName]?.filter { impl ->
                 // An impl on a widely-used type (`Int`, `String`) must not arrive
@@ -1952,7 +1966,7 @@ class StdlibInjector private constructor(
                 // extension in an unimported module would otherwise drag its whole
                 // module's transitive closure into every program. A module the
                 // program cannot see contributes nothing it could have called.
-                (impl.declaringModule == null || impl.declaringModule in walk.reachable) &&
+                (impl.declaringModule == null || impl.declaringModule in walk.reachable || impl.declaringModule == home) &&
                     (type == null || implTarget(impl)?.let { it === type } ?: true)
             }?.forEach { impl ->
                 // Include the member names: a multi-operator impl (`oper[.. , >..]`)

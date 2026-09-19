@@ -26,6 +26,7 @@ import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.frontend.localNamesDeclaredIn
 
 /**
  * Every import the program writes: at file scope, and opening any of its blocks.
@@ -409,37 +410,5 @@ internal class DeclarationRenamer(
      * declaration rather than per block, as for scope siblings: a local that
      * shares a hidden declaration's name keeps its own meaning throughout.
      */
-    private fun localNames(body: List<Stmt>): Set<String> {
-        val names = mutableSetOf<String>()
-        fun visit(s: Stmt) {
-            when (s) {
-                is Stmt.VarDecl -> names.add(s.name)
-                is Stmt.FinDecl -> names.add(s.name)
-                is Stmt.LetDecl -> names.add(s.name)
-                is Stmt.InlineFin -> names.add(s.name)
-                is Stmt.InlineLet -> names.add(s.name)
-                is Stmt.InlineVar -> names.add(s.name)
-                is Stmt.RemDecl -> names.add(s.name)
-                is Stmt.For -> { names.add(s.name); s.indexName?.let(names::add); s.body.forEach(::visit) }
-                is Stmt.InlineFor -> { names.add(s.name); s.indexName?.let(names::add); s.body.forEach(::visit) }
-                is Stmt.Try -> { s.catchName?.let(names::add); s.body.forEach(::visit); s.catchBody?.forEach(::visit) }
-                is Stmt.If -> { s.thenBranch.forEach(::visit); s.elseBranch?.forEach(::visit) }
-                is Stmt.InlineIf -> { s.thenBranch.forEach(::visit); s.elseBranch?.forEach(::visit) }
-                is Stmt.DeepInlineIf -> { s.thenBranch.forEach(::visit); s.elseBranch?.forEach(::visit) }
-                is Stmt.While -> s.body.forEach(::visit)
-                is Stmt.Loop -> s.body.forEach(::visit)
-                is Stmt.Scope -> s.body.forEach(::visit)
-                is Stmt.InlineBlock -> s.body.forEach(::visit)
-                is Stmt.DeepInlineBlock -> s.body.forEach(::visit)
-                is Stmt.Defer -> s.body.forEach(::visit)
-                is Stmt.Effect -> s.body.forEach(::visit)
-                is Stmt.UsingContext -> s.body.forEach(::visit)
-                is Stmt.When -> { s.branches.forEach { it.body.forEach(::visit) }; s.elseBranch?.forEach(::visit) }
-                is Stmt.NoInline -> visit(s.stmt)
-                else -> {}
-            }
-        }
-        body.forEach(::visit)
-        return names
-    }
+    private fun localNames(body: List<Stmt>): Set<String> = localNamesDeclaredIn(body)
 }

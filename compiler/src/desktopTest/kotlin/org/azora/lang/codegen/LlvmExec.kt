@@ -20,6 +20,7 @@ import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.backend.LlvmCodegen
 import java.io.File
+import java.util.concurrent.TimeUnit
 import kotlin.test.fail
 
 /**
@@ -84,6 +85,9 @@ object LlvmExec {
         return runIr(compile(source, optimized))
     }
 
+    /** How long one program may run before its test fails. */
+    const val RUN_TIMEOUT_SECONDS = 60L
+
     /** Executes emitted IR, including isolated stage tests that need no stdlib. */
     fun runIr(ir: String): String {
         val tool = lli ?: error("lli not available")
@@ -97,7 +101,12 @@ object LlvmExec {
                 .redirectOutput(outFile)
                 .redirectError(errFile)
                 .start()
-            val code = proc.waitFor()
+            // A program that never ends fails its own test rather than the suite.
+            if (!proc.waitFor(RUN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                proc.destroyForcibly().waitFor()
+                fail("lli did not finish within $RUN_TIMEOUT_SECONDS s\n--- stdout ---\n${outFile.readText()}")
+            }
+            val code = proc.exitValue()
             val stdout = outFile.readText()
             if (code != 0) {
                 fail(

@@ -37,6 +37,7 @@
 module std.filesystem
 
 import std.container.array::*
+import std.container.list::{MutableList, mutableListOf}
 import std.time::*
 
 /** The separator this module writes. Both are accepted when reading a path. */
@@ -450,7 +451,7 @@ func fileInfo(target: Path): FileInfo ?! FileError {
     fin parts: Array<String> = _fsStat(target.text)
     if parts.size < 5 { return .ReadFailed }
     if stringLength(parts[0]) > 0 { try _fail(parts[0]) }
-    fin kind = when parts[1] {
+    fin kind: FileKind = when parts[1] {
         "File" -> .File
         "Directory" -> .Directory
         "Symlink" -> .Symlink

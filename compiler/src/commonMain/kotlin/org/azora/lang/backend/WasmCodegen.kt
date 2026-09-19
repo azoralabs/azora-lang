@@ -34,16 +34,18 @@ import org.azora.lang.ir.IrUnaryOp
  * Value representation (single WASM value per Azora value):
  *  - `Int`/`Bool`/`Char`/sized ints ≤ 32-bit → `i32`
  *  - `Long`/`ULong`/`Cent`/`UCent` → `i64`     `Double`/`Quad` → `f64`   `Float` → `f32`
+ *  - an erased generic value (`Any`) → `i64` holding the value's bits
  *  - `String`/`arr[T]`/pack → `i32` pointer into linear memory. Strings and arrays
- *    are laid out as `[len: i32][payload…]`; packs as packed `i32` fields.
+ *    are laid out as `[len: i32][payload…]` with elements at their own width;
+ *    a pack's fields each sit at an offset aligned to their width.
  *
  * Printing and string handling go through host imports (`print_i32`, `print_str`,
  * …) and a small linear-memory runtime (`__alloc`/`__free`, `__str_concat`, `__str_eq`,
  * `__str_repeat`, `__int_to_str`). Structured control flow lowers to
  * `block`/`loop`/`br_if`.
  *
- * NOTE: this is an MVP-level target - packs/arrays assume 4-byte (`i32`) fields
- * and elements; exceptions lower to `unreachable`; tasks are synchronous.
+ * NOTE: this is an MVP-level target - exceptions lower to `unreachable`; tasks
+ * are synchronous.
  */
 class WasmCodegen {
 
@@ -91,6 +93,7 @@ class WasmCodegen {
 
     // Module state.
     private val structs = HashMap<String, List<IrField>>()
+    private val layouts = HashMap<String, PackLayout>()
     /** Names of the `union` types: every member of one sits at offset 0. */
     private val unions = HashSet<String>()
     private val globalTypes = LinkedHashMap<String, IrType>()
@@ -111,6 +114,8 @@ class WasmCodegen {
     private var usesIsCheck = false
     private val neededIntrinsics = mutableSetOf<String>()
     private val externs = LinkedHashMap<String, IrTopLevel.Extern>()
+    private val functionParams = HashMap<String, List<IrType>>()
+    private val functionResults = HashMap<String, IrType>()
     private val neededExterns = LinkedHashSet<String>()
     private val closureTypes = LinkedHashMap<IrType.Function, String>()
     private val closureFunctions = mutableListOf<ClosureFunction>()
@@ -132,6 +137,9 @@ class WasmCodegen {
         internal const val WASM_FREE_LIST_BYTES = (WASM_MAX_CLASS + 2) * 4
         internal const val WASM_BLOCK_LIVE = 0x417A6F41 // "AzoA"
         internal const val WASM_BLOCK_FREE = 0x417A6F46 // "AzoF"
+
+        /** A closure's captured environment: a linear-memory address. */
+        private val CLOSURE_ENVIRONMENT = IrType.Pointer(IrType.Unit)
 
         /** The allocator's globals: the free-list table at [heapBase], then the first block. */
         internal fun heapGlobals(heapBase: Int): String =
@@ -210,7 +218,7 @@ class WasmCodegen {
      */
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
-        structs.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
+        structs.clear(); layouts.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
         usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         reactiveStorage.clear(); reactiveAliases.clear()
@@ -232,6 +240,15 @@ class WasmCodegen {
 
         val funcs = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }
             .filter { it.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS }
+        functionParams.clear(); functionResults.clear()
+        for (func in funcs) {
+            functionParams[func.name] = func.params.map { it.second }
+            functionResults[func.name] = func.returnType
+        }
+        for ((name, extern) in externs) {
+            functionParams[name] = extern.params.map { it.second }
+            functionResults[name] = extern.returnType
+        }
         for (func in funcs) collectReactiveStorage(func.name, func.body)
         for (storage in reactiveStorage.values.distinctBy { it.valueGlobal }) {
             globalTypes[storage.valueGlobal] = storage.type
@@ -291,7 +308,8 @@ class WasmCodegen {
             sb.appendLine("  )")
         }
         for ((callable, name) in closureTypes) {
-            val params = (callable.params + callable.receivers + IrType.Any)
+            // The trailing parameter is the closure's environment address.
+            val params = (callable.params + callable.receivers + CLOSURE_ENVIRONMENT)
                 .joinToString("") { " (param ${wasmType(it)})" }
             val result = if (hasFunctionResult(callable.ret)) " (result ${wasmType(callable.ret)})" else ""
             sb.appendLine("  (type \$$name (func$params$result))")
@@ -355,9 +373,9 @@ class WasmCodegen {
         out.clear(); indent = 2
         for (stmt in globals) {
             when (stmt) {
-                is IrStmt.VarDecl -> line("(global.set \$${stmt.name} ${emitExpr(stmt.initializer)})")
-                is IrStmt.FinDecl -> line("(global.set \$${stmt.name} ${emitExpr(stmt.initializer)})")
-                is IrStmt.LetDecl -> line("(global.set \$${stmt.name} ${emitExpr(stmt.initializer)})")
+                is IrStmt.VarDecl -> line("(global.set \$${stmt.name} ${emitAs(stmt.initializer, stmt.type)})")
+                is IrStmt.FinDecl -> line("(global.set \$${stmt.name} ${emitAs(stmt.initializer, stmt.type)})")
+                is IrStmt.LetDecl -> line("(global.set \$${stmt.name} ${emitAs(stmt.initializer, stmt.type)})")
                 else -> emitStmt(stmt)
             }
         }
@@ -434,7 +452,8 @@ class WasmCodegen {
             is IrStmt.LetDecl -> if (stmt.reactiveLifetime != null) emitReactiveDecl(stmt.name, stmt.type, stmt.initializer)
                 else emitLocalDecl(stmt.name, stmt.type, stmt.initializer, stmt.lazy)
             is IrStmt.Assignment -> {
-                line(storeVariable(stmt.name, stmt.value.type, emitExpr(stmt.value)))
+                val type = variableType(stmt.name) ?: stmt.value.type
+                line(storeVariable(stmt.name, type, emitAs(stmt.value, type)))
                 if (!emittingReactiveEffect) {
                     val changed = invalidateLazyDependents(stmt.name) + stmt.name
                     for (effect in activeReactiveEffects.filter { effect ->
@@ -445,8 +464,14 @@ class WasmCodegen {
                 }
             }
             is IrStmt.Exchange -> emitExchange(stmt)
-            is IrStmt.IndexAssign -> line("(${wasmStore(stmt.value.type)} ${elemAddr(stmt.target, stmt.index)} ${emitExpr(stmt.value)})")
-            is IrStmt.MemberAssign -> line("(i32.store ${fieldAddr(stmt.target, stmt.name)} ${emitExpr(stmt.value)})")
+            is IrStmt.IndexAssign -> {
+                val element = elementType(stmt.target)
+                line("(${wasmStore(element)} ${elemAddr(stmt.target, stmt.index)} ${emitAs(stmt.value, element)})")
+            }
+            is IrStmt.MemberAssign -> {
+                val field = fieldSlot(stmt.target, stmt.name)
+                line("(${wasmStore(field.type)} ${fieldAddr(stmt.target, stmt.name)} ${emitAs(stmt.value, field.type)})")
+            }
             is IrStmt.ExprStmt -> {
                 val e = emitExpr(stmt.expr)
                 // Every expression lowering yields a private runtime value;
@@ -462,7 +487,7 @@ class WasmCodegen {
                         line("(drop ${emitExpr(value)})")
                         line("(return)")
                     }
-                    else -> line("(return ${emitExpr(value)})")
+                    else -> line("(return ${emitAs(value, currentReturnType)})")
                 }
             }
             is IrStmt.If -> emitIf(stmt)
@@ -509,10 +534,16 @@ class WasmCodegen {
         return "($storage.set \$$target $value)"
     }
 
+    /** The declared type of the storage an assignment to [name] writes. */
+    private fun variableType(name: String): IrType? {
+        val target = reactiveAliases[name]?.valueGlobal ?: name
+        return localIrTypes[target] ?: globalTypes[target]
+    }
+
     private fun emitLocalDecl(name: String, type: IrType, initializer: IrExpr, lazy: Boolean) {
         declareLocal(name, type)
         if (!lazy) {
-            line("(local.set \$$name ${emitExpr(initializer)})")
+            line("(local.set \$$name ${emitAs(initializer, type)})")
             return
         }
         val flagName = "__lazy_init_$name"
@@ -567,7 +598,7 @@ class WasmCodegen {
         indent++
         line("(then")
         indent++
-        line("(global.set \$${storage.valueGlobal} ${emitExpr(initializer)})")
+        line("(global.set \$${storage.valueGlobal} ${emitAs(initializer, type)})")
         line("(global.set \$${storage.initGlobal} (i32.const 1))")
         indent--
         line("))")
@@ -580,7 +611,7 @@ class WasmCodegen {
         indent++
         line("(then")
         indent++
-        line("(local.set \$$name ${emitExpr(lazy.initializer)})")
+        line("(local.set \$$name ${emitAs(lazy.initializer, lazy.type)})")
         line("(local.set \$${lazy.flagName} (i32.const 1))")
         indent--
         line("))")
@@ -648,7 +679,7 @@ class WasmCodegen {
                     usesIsCheck = true
                     "(call \$__isCheck (local.get $tmp) (i32.const ${internString(p.variantName)}))"
                 } else {
-                    "(i32.eq (local.get $tmp) ${emitExpr(p)})"
+                    "(${numPrefix(stmt.scrutinee.type)}.eq (local.get $tmp) ${emitAs(p, stmt.scrutinee.type)})"
                 }
             }.reduce { a, c -> "(i32.or $a $c)" }
             line("(if $cond")
@@ -658,8 +689,10 @@ class WasmCodegen {
             // Bind slot payloads: cell (index+1) of the tagged block.
             (b.patterns.firstOrNull { it is IrExpr.SlotPattern } as? IrExpr.SlotPattern)?.let { sp ->
                 sp.bindings.forEachIndexed { bi, name ->
-                    declareLocal(name, sp.bindingTypes.getOrElse(bi) { IrType.Any })
-                    line("(local.set \$$name (i32.load (i32.add (local.get $tmp) (i32.const ${(bi + 1) * 4}))))")
+                    val type = sp.bindingTypes.getOrElse(bi) { IrType.Any }
+                    declareLocal(name, type)
+                    val cell = "(i32.load (i32.add (local.get $tmp) (i32.const ${(bi + 1) * 4})))"
+                    line("(local.set \$$name ${coerceWasm(cell, IrType.Int, type)})")
                 }
             }
             for (s in b.body) emitStmt(s)
@@ -760,8 +793,9 @@ class WasmCodegen {
         is IrExpr.EnumLiteral -> "(i32.const ${internString(expr.variant)})"
         is IrExpr.EnumToString -> emitExpr(expr.value)
         // The null reference. No object lives at address 0: string data and
-        // the heap both start above STRING_BASE.
-        is IrExpr.Var -> if (expr.name == "__null") "(i32.const 0)" else {
+        // the heap both start above STRING_BASE. It is typed `Any`, so each
+        // destination narrows it to its own slot.
+        is IrExpr.Var -> if (expr.name == "__null") "(i64.const 0)" else {
             ensureLazyInitialized(expr.name)
             val alias = reactiveAliases[expr.name]
             val target = alias?.valueGlobal ?: expr.name
@@ -799,11 +833,18 @@ class WasmCodegen {
         is IrExpr.Call -> emitCall(expr)
         is IrExpr.Await -> emitExpr(expr.value)
         is IrExpr.Spread -> emitExpr(expr.array)
-        is IrExpr.Index -> "(${wasmLoad(expr.type)} ${elemAddr(expr.target, expr.index)})"
-        is IrExpr.Member -> when (expr.name) {
-            "length", "size" -> "(i32.load ${emitExpr(expr.target)})"
-            "data" -> "(i32.add ${emitExpr(expr.target)} (i32.const 4))"
-            else -> "(i32.load ${fieldAddr(expr.target, expr.name)})"
+        is IrExpr.Index -> {
+            val element = elementType(expr.target)
+            coerceWasm("(${wasmLoad(element)} ${elemAddr(expr.target, expr.index)})", element, expr.type)
+        }
+        is IrExpr.Member -> when {
+            isPackTarget(expr.target) -> {
+                val field = fieldSlot(expr.target, expr.name)
+                coerceWasm("(${wasmLoad(field.type)} ${fieldAddr(expr.target, expr.name)})", field.type, expr.type)
+            }
+            expr.name == "length" || expr.name == "size" -> "(i32.load ${emitExpr(expr.target)})"
+            expr.name == "data" -> "(i32.add ${emitExpr(expr.target)} (i32.const 4))"
+            else -> error("no WebAssembly storage for member '${expr.name}' of ${expr.target.type}")
         }
         is IrExpr.MethodCall -> when (expr.name) {
             else -> emitExpr(expr.target) // unsupported methods degrade to the receiver
@@ -813,16 +854,29 @@ class WasmCodegen {
         is IrExpr.NumCast -> emitNumCast(expr)
         is IrExpr.IfExpr -> {
             val t = wasmType(expr.type)
-            "(if (result $t) ${emitExpr(expr.condition)} (then ${emitExpr(expr.thenExpr)}) (else ${emitExpr(expr.elseExpr)}))"
+            "(if (result $t) ${emitExpr(expr.condition)} (then ${emitAs(expr.thenExpr, expr.type)}) (else ${emitAs(expr.elseExpr, expr.type)}))"
         }
         is IrExpr.StringTemplate -> emitTemplate(expr)
-        is IrExpr.CatchExpr -> emitExpr(expr.expr) // no exception support - evaluate the primary expression
+        is IrExpr.CatchExpr -> emitAs(expr.expr, expr.type) // no exception support - evaluate the primary expression
         is IrExpr.Lambda -> emitClosure(expr)
         is IrExpr.SetLit, is IrExpr.MapLit, is IrExpr.TupleLit, is IrExpr.TupleAccess,
         is IrExpr.VariantLit, is IrExpr.SlotPattern -> "(i32.const 0)" // unsupported by the MVP target
     }
 
     private fun emitBinary(expr: IrExpr.Binary): String {
+        // An erased operand meets a concrete one as the concrete type, which is
+        // what it holds; comparing `T` with `null` reads the reference width.
+        if ((expr.left.type == IrType.Any) != (expr.right.type == IrType.Any)) {
+            val concrete = if (expr.left.type == IrType.Any) expr.right.type else expr.left.type
+            fun narrow(side: IrExpr) = if (side.type == IrType.Any) IrExpr.NumCast(side, concrete) else side
+            // An erased result (`x + 1` for `x: T`) is computed as the concrete type and erased again.
+            val narrowed = expr.copy(
+                left = narrow(expr.left),
+                right = narrow(expr.right),
+                type = if (expr.type == IrType.Any) concrete else expr.type,
+            )
+            return coerceWasm(emitBinary(narrowed), narrowed.type, expr.type)
+        }
         val l = expr.left; val r = expr.right
         // Logical operators evaluate the right operand only when needed.
         // Wasm's integer and/or instructions eagerly evaluate both operands;
@@ -894,6 +948,10 @@ class WasmCodegen {
     private fun coerceWasm(value: String, from: IrType, to: IrType): String {
         val ft = wasmType(from); val tt = wasmType(to)
         if (ft == tt) return value
+        // Crossing an erased boundary keeps the value's bits rather than
+        // converting its number: a Double travels as its IEEE pattern.
+        if (from == IrType.Any) return unerase(value, to)
+        if (to == IrType.Any) return erase(value, from)
         val su = if (isUnsigned(from)) "u" else "s"
         val tu = if (isUnsigned(to)) "u" else "s"
         val op = when ("$ft-$tt") {
@@ -914,6 +972,25 @@ class WasmCodegen {
         return "($op $value)"
     }
 
+    /** [value] of type [from] as the eight-byte bits of an erased slot. */
+    private fun erase(value: String, from: IrType): String = when (wasmType(from)) {
+        "i64" -> value
+        "f64" -> "(i64.reinterpret_f64 $value)"
+        "f32" -> "(i64.extend_i32_u (i32.reinterpret_f32 $value))"
+        else -> "(i64.extend_i32_${if (isUnsigned(from)) "u" else "s"} $value)"
+    }
+
+    /** The erased bits [value] read back as a value of [to]. */
+    private fun unerase(value: String, to: IrType): String = when (wasmType(to)) {
+        "i64" -> value
+        "f64" -> "(f64.reinterpret_i64 $value)"
+        "f32" -> "(f32.reinterpret_i32 (i32.wrap_i64 $value))"
+        else -> "(i32.wrap_i64 $value)"
+    }
+
+    /** [expr] as a value of [type], converting at an erased or numeric boundary. */
+    private fun emitAs(expr: IrExpr, type: IrType): String = coerceWasm(emitExpr(expr), expr.type, type)
+
     private fun emitCall(expr: IrExpr.Call): String {
         // The MVP target has no host clock to sleep against, so `delay` degrades
         // to a no-op here rather than a call to a function that does not exist.
@@ -929,7 +1006,11 @@ class WasmCodegen {
         when (expr.name) {
             "__alloc" -> return emitPointerAlloc(expr)
             "__allocBuffer" -> return emitPointerBufferAlloc(expr)
-            "__deref" -> return "(${wasmLoad(expr.type)} ${emitExpr(expr.args.single())})"
+            "__deref" -> {
+                val pointer = expr.args.single()
+                val pointee = (pointer.type as? IrType.Pointer)?.inner ?: expr.type
+                return coerceWasm("(${wasmLoad(pointee)} ${emitExpr(pointer)})", pointee, expr.type)
+            }
             "__derefAssign" -> {
                 val (pointer, value) = expr.args
                 val pointee = (pointer.type as? IrType.Pointer)?.inner ?: value.type
@@ -943,15 +1024,18 @@ class WasmCodegen {
                 ?: error("indirect call receiver is not a callable type")
             val closure = newTemp("i32")
             val typeName = closureTypeName(callable)
-            val args = expr.args.joinToString(" ") { emitExpr(it) }
+            val declared = callable.params + callable.receivers
+            val args = expr.args.withIndex().joinToString(" ") { (i, arg) ->
+                declared.getOrNull(i)?.let { emitAs(arg, it) } ?: emitExpr(arg)
+            }
             val environment = "(i32.load (i32.add (local.get $closure) (i32.const 4)))"
             val tableIndex = "(i32.load (local.get $closure))"
             val operands = listOf(args, environment, tableIndex).filter { it.isNotEmpty() }.joinToString(" ")
-            val result = if (hasFunctionResult(expr.type)) " (result ${wasmType(expr.type)})" else ""
+            val result = if (hasFunctionResult(callable.ret)) " (result ${wasmType(callable.ret)})" else ""
             val call = "(block$result " +
                 "(local.set $closure ${emitExpr(expr.receiver)}) " +
                 "(call_indirect (type \$$typeName) $operands))"
-            return wrapCallResult(expr.type, call)
+            return wrapCallResult(expr.type, callResult(call, callable.ret, expr.type))
         }
         if ((symbolDenotes(expr.name, "println") || symbolDenotes(expr.name, "print")) && expr.args.size == 1) {
             val arg = expr.args.single()
@@ -986,12 +1070,19 @@ class WasmCodegen {
         }
         if (expr.name in stringIntrinsics) neededIntrinsics.add(expr.name)
         if (expr.name in externs && expr.name !in stringIntrinsics) neededExterns.add(expr.name)
-        val args = expr.args.joinToString(" ") { emitExpr(it) }
-        return wrapCallResult(
-            expr.type,
-            "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})",
-        )
+        // Arguments take the callee's declared parameter types and the result
+        // leaves its physical return type: a generic callee's are erased.
+        val declared = functionParams[expr.name]
+        val args = expr.args.withIndex().joinToString(" ") { (i, arg) ->
+            declared?.getOrNull(i)?.let { emitAs(arg, it) } ?: emitExpr(arg)
+        }
+        val call = "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})"
+        return wrapCallResult(expr.type, callResult(call, functionResults[expr.name] ?: expr.type, expr.type))
     }
+
+    /** A call's result converted from the callee's [physical] return type to the call site's [expected] one. */
+    private fun callResult(call: String, physical: IrType, expected: IrType): String =
+        if (hasFunctionResult(physical) && hasFunctionResult(expected)) coerceWasm(call, physical, expected) else call
 
     /** Turns an erased Unit/Nothing call into a value-shaped Wasm expression. */
     private fun wrapCallResult(type: IrType, call: String): String = when (type) {
@@ -1024,10 +1115,12 @@ class WasmCodegen {
                 "(i32.mul (i32.load (local.get $source)) (i32.const $stride))) " +
                 "(local.get $block))"
         }
-        val slot = newTemp(wasmType(valueExpr.type))
-        return "(block (result i32) (local.set $slot $value) " +
-            "(local.set $block (call \$__alloc (i32.const ${wasmSize(valueExpr.type)}))) " +
-            "(${wasmStore(valueExpr.type)} (local.get $block) (local.get $slot)) " +
+        // The block holds the pointee type, which is erased behind a `T*`.
+        val pointee = (expr.type as? IrType.Pointer)?.inner ?: valueExpr.type
+        val slot = newTemp(wasmType(pointee))
+        return "(block (result i32) (local.set $slot ${coerceWasm(value, valueExpr.type, pointee)}) " +
+            "(local.set $block (call \$__alloc (i32.const ${wasmSize(pointee)}))) " +
+            "(${wasmStore(pointee)} (local.get $block) (local.get $slot)) " +
             "(local.get $block))"
     }
 
@@ -1068,13 +1161,15 @@ class WasmCodegen {
         val t = newTemp("i32")
         val sb = StringBuilder("(block (result i32)\n")
         val pad = "  ".repeat(indent + 1)
-        // A union is one slot wide and its single named member initializes it.
-        val isUnion = expr.name in unions
-        val slots = if (isUnion) 1 else expr.args.size
-        sb.append("$pad(local.set $t (call \$__alloc (i32.const ${slots * 4})))\n")
+        val layout = layoutOf(expr.name)
+        val fields = structs.getValue(expr.name)
+        sb.append("$pad(local.set $t (call \$__alloc (i32.const ${layout.size})))\n")
         for ((i, a) in expr.args.withIndex()) {
-            if (isUnion && i > 0) break
-            sb.append("$pad(i32.store (i32.add (local.get $t) (i32.const ${i * 4})) ${emitExpr(a)})\n")
+            // A union's single named member initializes its one shared slot.
+            if (expr.name in unions && i > 0) break
+            val name = expr.fieldNames.getOrNull(i) ?: fields[i].name
+            val slot = layout.fields[name] ?: error("pack ${expr.name} has no field '$name'")
+            sb.append("$pad(${wasmStore(slot.type)} (i32.add (local.get $t) (i32.const ${slot.offset})) ${emitAs(a, slot.type)})\n")
         }
         sb.append("$pad(local.get $t))")
         return sb.toString()
@@ -1091,7 +1186,7 @@ class WasmCodegen {
         sb.append("$pad(local.set $t (call \$__alloc (i32.const ${4 + n * stride})))\n")
         sb.append("$pad(i32.store (local.get $t) (i32.const $n))\n")
         for ((i, e) in expr.elements.withIndex()) {
-            sb.append("$pad(${wasmStore(element)} (i32.add (local.get $t) (i32.const ${4 + i * stride})) ${emitExpr(e)})\n")
+            sb.append("$pad(${wasmStore(element)} (i32.add (local.get $t) (i32.const ${4 + i * stride})) ${emitAs(e, element)})\n")
         }
         sb.append("$pad(local.get $t))")
         return sb.toString()
@@ -1131,7 +1226,7 @@ class WasmCodegen {
                     sb.append("$pad(i32.store $address (local.get \$$box))\n")
                 } else {
                     val boxed = boxedLocals[capture.name]
-                    val value = lambda.captureInitializers[capture.name]?.let(::emitExpr) ?: if (boxed != null) {
+                    val value = lambda.captureInitializers[capture.name]?.let { emitAs(it, capture.type) } ?: if (boxed != null) {
                         "(${wasmLoad(capture.type)} (local.get \$$boxed))"
                     } else {
                         "(local.get \$${capture.name})"
@@ -1152,7 +1247,7 @@ class WasmCodegen {
         loopStack.clear(); labelTargets.clear()
         params = closure.lambda.params.map { it.first }.toSet() + "__env"
         localIrTypes.putAll(closure.lambda.params)
-        localIrTypes["__env"] = IrType.Any
+        localIrTypes["__env"] = CLOSURE_ENVIRONMENT
         currentReturnType = (closure.lambda.type as IrType.Function).ret
 
         out.clear(); indent = 2
@@ -1237,6 +1332,8 @@ class WasmCodegen {
     }
 
     private fun emitNumCast(expr: IrExpr.NumCast): String {
+        // Casting an erased value names the type it already holds.
+        if (expr.value.type == IrType.Any || expr.type == IrType.Any) return emitAs(expr.value, expr.type)
         val from = numPrefix(expr.value.type)
         val to = numPrefix(expr.type)
         val v = emitExpr(expr.value)
@@ -1263,18 +1360,18 @@ class WasmCodegen {
     // ── Address helpers ───────────────────────────────────────────────────
 
     /** Address of `array[index]` or raw `pointer[index]`. */
-    private class ExchangeLocation(val read: String, val write: (String) -> String)
+    private class ExchangeLocation(val type: IrType, val read: String, val write: (String) -> String)
 
     private fun emitExchange(stmt: IrStmt.Exchange) {
         fun location(place: IrExpr): ExchangeLocation = when (place) {
             is IrExpr.Var -> {
                 check(place.name !in lazyLocals && place.name !in reactiveAliases) { "exchange of reactive/lazy storage is not supported" }
-                ExchangeLocation(emitExpr(place)) { storeVariable(place.name, place.type, it) }
+                ExchangeLocation(place.type, emitExpr(place)) { storeVariable(place.name, place.type, it) }
             }
             is IrExpr.Member, is IrExpr.Index -> {
-                // Existing WASM aggregate storage has four-byte slots. Do not
-                // corrupt adjacent values when a wider layout is required.
-                check(place is IrExpr.Index || wasmSize(place.type) == 4) { "exchange of wide WASM pack fields requires typed aggregate layout" }
+                // The stored type, which is erased for a generic field or element.
+                val stored = if (place is IrExpr.Member) fieldSlot(place.target, place.name).type
+                    else elementType((place as IrExpr.Index).target)
                 val address = newTemp("i32")
                 if (place is IrExpr.Member) {
                     line("(local.set $address ${fieldAddr(place.target, place.name)})")
@@ -1287,44 +1384,71 @@ class WasmCodegen {
                     check(place.index.type == IrType.Int) { "WASM exchange index must be Int" }
                     line("(local.set $index ${emitExpr(place.index)})")
                     line("(if (i32.ge_u (local.get $index) (i32.load (local.get $base))) (then unreachable))")
-                    line("(local.set $address (i32.add (i32.add (local.get $base) (i32.const 4)) (i32.mul (local.get $index) (i32.const ${wasmSize(place.type)}))))")
+                    line("(local.set $address (i32.add (i32.add (local.get $base) (i32.const 4)) (i32.mul (local.get $index) (i32.const ${wasmSize(stored)}))))")
                 }
-                ExchangeLocation("(${wasmLoad(place.type)} (local.get $address))") {
-                    "(${wasmStore(place.type)} (local.get $address) $it)"
+                ExchangeLocation(stored, "(${wasmLoad(stored)} (local.get $address))") {
+                    "(${wasmStore(stored)} (local.get $address) $it)"
                 }
             }
             else -> error("unsupported exchange location")
         }
         val left = location(stmt.left)
         val right = location(stmt.right)
-        val a = newTemp(wasmType(stmt.left.type))
-        val b = newTemp(wasmType(stmt.right.type))
+        val a = newTemp(wasmType(left.type))
+        val b = newTemp(wasmType(right.type))
         line("(local.set $a ${left.read})")
         line("(local.set $b ${right.read})")
-        line(left.write("(local.get $b)"))
-        line(right.write("(local.get $a)"))
+        line(left.write(coerceWasm("(local.get $b)", right.type, left.type)))
+        line(right.write(coerceWasm("(local.get $a)", left.type, right.type)))
     }
 
     private fun elemAddr(target: IrExpr, index: IrExpr): String {
         val base = if (target.type is IrType.Pointer) emitExpr(target)
             else "(i32.add ${emitExpr(target)} (i32.const 4))"
-        val element = when (val type = target.type) {
-            is IrType.Array -> type.element
-            is IrType.Pointer -> type.inner
-            else -> error("indexed storage must have an element type")
-        }
-        return "(i32.add $base (i32.mul ${emitExpr(index)} (i32.const ${wasmSize(element)})))"
+        return "(i32.add $base (i32.mul ${emitExpr(index)} (i32.const ${wasmSize(elementType(target))})))"
     }
 
-    /** Address of `target.field` - `ptr + fieldIndex*4`, or `ptr` for a union. */
-    private fun fieldAddr(target: IrExpr, field: String): String {
-        val structName = (target.type as? IrType.Named)?.name
-        // A union's members share one slot, so every one of them is at offset 0.
-        val idx = when {
-            structName in unions -> 0
-            else -> structName?.let { structs[it]?.indexOfFirst { f -> f.name == field } } ?: 0
+    /** The stored element type of an array or raw buffer - erased for a generic one. */
+    private fun elementType(target: IrExpr): IrType = when (val type = target.type) {
+        is IrType.Array -> type.element
+        is IrType.Pointer -> type.inner
+        else -> error("indexed storage must have an element type")
+    }
+
+    /** Address of `target.field`: the pack pointer plus the field's offset. */
+    private fun fieldAddr(target: IrExpr, field: String): String =
+        "(i32.add ${emitExpr(target)} (i32.const ${fieldSlot(target, field).offset}))"
+
+    private class FieldSlot(val offset: Int, val type: IrType)
+    private class PackLayout(val fields: Map<String, FieldSlot>, val size: Int)
+
+    private fun isPackTarget(target: IrExpr): Boolean =
+        (target.type as? IrType.Named)?.name in structs
+
+    private fun fieldSlot(target: IrExpr, field: String): FieldSlot {
+        val pack = (target.type as? IrType.Named)?.name
+            ?: error("field '$field' of ${target.type} has no WebAssembly pack layout")
+        return layoutOf(pack).fields[field] ?: error("pack $pack has no field '$field'")
+    }
+
+    /**
+     * Each field sits at the next offset aligned to its own width, so erased
+     * and 64-bit fields take eight bytes and the rest four. A union's members
+     * share offset 0 and its size is its widest member.
+     */
+    private fun layoutOf(pack: String): PackLayout = layouts.getOrPut(pack) {
+        val fields = structs[pack] ?: error("no WebAssembly layout for pack '$pack'")
+        val slots = LinkedHashMap<String, FieldSlot>()
+        var end = 0
+        var alignment = 4
+        for (field in fields) {
+            val width = wasmSize(field.type)
+            val offset = if (pack in unions) 0 else alignTo(end, width)
+            slots[field.name] = FieldSlot(offset, field.type)
+            end = maxOf(end, offset + width)
+            alignment = maxOf(alignment, width)
         }
-        return "(i32.add ${emitExpr(target)} (i32.const ${idx * 4}))"
+        PackLayout(slots, alignTo(end, alignment))
     }
 
     private fun wasmSize(type: IrType): Int = when (wasmType(type)) {
@@ -1620,6 +1744,9 @@ class WasmCodegen {
 
     private fun wasmType(type: IrType): String = when (type) {
         IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> "i64"
+        // An erased generic value is eight bytes, like LLVM's pointer-sized slot,
+        // so any value's bits fit; see [coerceWasm] for crossing into and out of it.
+        IrType.Any -> "i64"
         IrType.Double, IrType.Quad -> "f64"
         IrType.Float -> "f32"
         is IrType.Task -> wasmType(type.result)

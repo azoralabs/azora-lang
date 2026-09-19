@@ -10,13 +10,15 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.1–C3.2, selected-import implementation reachability and
   removal of implicit collection storage reinterpretation.
 - In progress: 010.C3.3. Direct generic constructor/method calls retain owner
-  types; interpreter and LLVM scalar/list execution are covered. WASM now has a
-  freeing heap allocator and lowers raw-pointer allocation, dereference, purge
-  and null. Remaining: WASM representation of wide values in erased generic
-  slots (a 021 architecture decision), generic property/index/spec dispatch,
-  LLVM purge and array-allocation ownership, and aggregate ABI.
-- Next: decide the WASM erased-generic representation, then make LLVM purge
-  release memory, before real List/Set/Map literal construction and qualification.
+  types; interpreter and LLVM scalar/list execution are covered. WASM has a
+  freeing heap allocator, raw-pointer lowering, eight-byte erased generic slots
+  and width-aware pack layout. Remaining: `ArrayList.hash` reads `.hash` on an
+  unconstrained `T` (blocks the WASM list test), generic-call inference with
+  lambda arguments, generic property/index/spec dispatch, LLVM purge and
+  array-allocation ownership, and aggregate ABI.
+- Next: decide how member access on an unconstrained type parameter is checked
+  (019/022), then make LLVM purge release memory, before real List/Set/Map
+  literal construction and qualification.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -902,4 +904,80 @@ allocator defects:
 ./gradlew :compiler:desktopTest --offline --console=plain \
   --tests '*WasmAllocatorExecTest' --tests '*RawPointerExecTest' \
   --tests '*ListConstructionExecTest'
+```
+
+
+## 2026-09-19 — Eight-byte erased generic slots on WASM (021 decision)
+
+The user chose eight-byte erased generic slots for WASM over boxing wide values.
+This matches LLVM, where an erased slot is a pointer-sized `i8*`, and needs no
+per-value heap lifetime. The allocator work above is committed as `24b01472`.
+
+### Representation
+
+- `Any`, the IR type of an erased type parameter, is an `i64` value and an
+  eight-byte slot in arrays, buffers and pack fields.
+- Crossing into or out of `Any` preserves bits rather than converting a number.
+  `f64` uses `reinterpret`, `f32` goes through its 32-bit pattern, and 32-bit
+  values are extended and wrapped. Casting an erased value uses the same rule.
+- Conversions happen where values land: local, global, lazy and reactive
+  initializers, assignments, returns, direct and indirect call arguments and
+  results, array elements, pack fields, dereference, `if` branches and `when`
+  subjects. A mixed `T`/concrete binary operation is computed at the concrete
+  type and erased again when its result is `Any`. The WASM backend now records
+  each callee's declared parameter and physical return types, as LLVM does.
+- Packs previously stored every field with `i32.store` at `index × 4`, so any
+  Long, Double or erased field failed to assemble. Each field now sits at an
+  offset aligned to its width; a union's size is its widest member. Two-field
+  and three-field Int packs keep their previous sizes. Exchange uses the typed
+  layout instead of rejecting wide fields.
+- `__null` is an eight-byte zero narrowed by its destination. A closure
+  environment is an explicit pointer type rather than `Any`.
+- Reading a member the layout does not contain is now a codegen error. It
+  previously loaded offset 0 (or −4 for a missing field) silently.
+
+### IR corrections exposed on the way
+
+- `Box<Long>(5000000000)` typed its literal by the template field (`Any`) and
+  therefore as `Int`. **LLVM silently printed 705032704**; WASM emitted an
+  invalid `i32.const`. Construction now types a type-parameter field by the
+  call's type argument, as member reads already did (`typeParamIndex`).
+- `box.value = 4.25` on a `Box<Double>` stored a `Float` literal. The assignment
+  now takes the instantiated field type too.
+
+### Evidence
+
+`ErasedGenericExecTest` (5 tests) runs generic functions returning Int, Double,
+Long and String values; `Box<Double/Long/String>` construction, reads and writes;
+a Mixed Int/Double/Bool/Long pack; an erased field between concrete ones; and a
+Double field exchange. Interpreter, LLVM and WASM agree, optimized and
+unoptimized. LLVM is excluded only from the generic-function case (see below).
+The 177 existing WASM-executing or WAT-inspecting tests kept every pass/fail status
+at each step.
+
+Full run: **2,316 tests, 2,111 passed, 205 failed, 0 skipped**; no failure
+identity changed.
+
+### Remaining and recorded
+
+- `concreteListRunsOnWasm` now stops explicitly at
+  `no WebAssembly storage for member 'hash' of Any`. `ArrayList.hash` reads
+  `self._data[i].hash` although `T` has no `Hash` bound, and the method is kept
+  even in release builds. LLVM compiles the same access to a default zero
+  (`member .hash … not lowered`), so its list test passes over a silent
+  placeholder. Rejecting or dispatching that access belongs to 019/022/044.
+- `apply(1.5, { x -> x * 2.0 })` for `func<T> apply(value: T, change: (T) -> T): T`
+  infers no type argument, so the call and lambda stay `Any`. The interpreter
+  prints 3.0; WASM prints the Float's raw bits (1077936128) and LLVM prints
+  `<value>`. Inference with lambda arguments is 023.
+- LLVM prints `<value>` for a Long returned from a generic function.
+- Passing an `Array<Int>` where `Array<T>` is expected mismatches element
+  widths on both native targets: ordinary generics are erased, not specialized.
+- Printing an `Any` value on WASM prints its bits; only integers read correctly.
+- `T?` (`Nullable(Any)`) is still a four-byte WASM value.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests '*ErasedGenericExecTest' --tests '*RawPointerExecTest' \
+  --tests '*WasmAllocatorExecTest' --tests '*ListConstructionExecTest'
 ```

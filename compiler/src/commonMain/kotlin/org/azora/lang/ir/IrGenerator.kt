@@ -1290,9 +1290,11 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.MemberAssign -> {
                 val target = autoDerefMemberTarget(lowerExpr(stmt.target), stmt.name, method = false)
-                val fieldType = (target.type as? IrType.Named)
-                    ?.let { table.lookupStruct(it.name) }
-                    ?.fields?.firstOrNull { it.name == stmt.name }?.type
+                val owner = target.type as? IrType.Named
+                val field = owner?.let { table.lookupStruct(it.name) }?.field(stmt.name)
+                // A field declared as a type parameter holds the target's argument
+                // for it, as the matching member read is typed.
+                val fieldType = field?.let { owner.args.getOrNull(it.typeParamIndex) ?: it.type }
                 val value = coerceToFloat(lowerExpr(stmt.value), fieldType ?: IrType.Any)
                 IrStmt.MemberAssign(target, stmt.name, value)
             }
@@ -2404,7 +2406,11 @@ class IrGenerator(private val table: SymbolTable) {
                     } else {
                         expr.args
                     }
-                    val args = loweredFieldValues(struct, supplied)
+                    val args = loweredFieldValues(
+                        struct,
+                        supplied,
+                        expr.typeArgs.map { resolveType(it, currentGenericTypeParams) },
+                    )
                     // A declared `ctor` of the same arity takes precedence over
                     // filling fields positionally - it is the constructor the
                     // author wrote, and skipping it would leave its work undone.
@@ -3498,7 +3504,11 @@ class IrGenerator(private val table: SymbolTable) {
      * reader. Defaults referring to earlier fields are declarations of shape
      * rather than of work, which is what makes that acceptable here.
      */
-    private fun loweredFieldValues(struct: StructType, supplied: List<Expr?>): List<IrExpr> {
+    private fun loweredFieldValues(
+        struct: StructType,
+        supplied: List<Expr?>,
+        typeArgs: List<IrType> = emptyList(),
+    ): List<IrExpr> {
         val saved = constructionBindings
         val bindings = mutableMapOf<String, IrExpr>()
         val values = mutableListOf<IrExpr>()
@@ -3507,7 +3517,11 @@ class IrGenerator(private val table: SymbolTable) {
                 val field = struct.fields[i]
                 val given = supplied.getOrNull(i)
                 constructionBindings = if (given != null) saved else bindings
-                val value = coerceToFloat(lowerExpr(given ?: field.default ?: Expr.NullLiteral), field.type)
+                // A field declared as a type parameter takes the call's argument
+                // for it, so `Box<Long>(5000000000)` is a Long literal rather than
+                // an Int one that no longer fits once it reaches the erased slot.
+                val type = typeArgs.getOrNull(field.typeParamIndex) ?: field.type
+                val value = coerceToFloat(lowerExpr(given ?: field.default ?: Expr.NullLiteral), type)
                 values.add(value)
                 bindings[field.name] = value
             }

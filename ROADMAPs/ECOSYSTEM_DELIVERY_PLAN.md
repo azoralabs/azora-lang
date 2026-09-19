@@ -55,9 +55,9 @@ run. The [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_20
 records the 2,290-test baseline. ArrayList runs on the interpreter, LLVM and
 WASM, and both native targets release memory on `purge`. Packs and specs can
 declare sequence and associative `literal` factories with `where` clauses; a
-literal fails, moves and is constrained as a call to its factory would be. All
-four C3.4 substeps are complete. **010** remains open, including the collection
-factory substeps below.
+literal fails, moves and is constrained as a call to its factory would be. C3.4
+is closed. **010** remains open, including the collection factory substeps
+below.
 
 **007**, the complete **008** review and module identity/scope work under **014**
 remain open. Local imports still leak into unrelated declarations; that requires
@@ -95,7 +95,7 @@ selected `Array` as the default for a non-empty sequence without context.
   - [x] **010.C3.1. Preserve declaring-module reachability for selected imports.** Selecting a type or factory keeps its module's implementations while unrelated declarations and other-module extensions stay inaccessible.
   - [x] **010.C3.2. Remove implicit collection storage reinterpretation.** Named List/Set/Map targets cannot accept unrelated intrinsic storage by short name; IR retains explicit declared types. Expected named types retain generic/const arguments when reconstructed.
   - [x] **010.C3.3. Preserve generic method signatures and physical return ABI.** Substitute owner arguments in parameters/results and convert explicitly at an erased ABI boundary; validate on all backends. Evidence: the ArrayList regression executes on the interpreter, LLVM and WASM, optimized and unoptimized. WASM uses eight-byte erased slots (user decision under 021) with width-aware pack layout and spec dispatch. Both native targets free on `purge` and zero new buffers. `ArrayList.hash` is parked (user decision). Remaining items moved to 016, 019/022, 023 and 063 (closed 2026-09-19).
-  - [ ] **010.C3.4. Register and select target-owned literal factories.** Support sequence/associative shape, constraints and failure/ownership requirements through the complete pipeline.
+  - [x] **010.C3.4. Register and select target-owned literal factories.** Support sequence/associative shape, constraints and failure/ownership requirements through the complete pipeline. Closed 2026-09-19 with its four substeps; borrowed elements move with 033/035, partial-construction cleanup with 037, generic tuple layout conversion with 021/053.
     - [x] **010.C3.4.1. Sequence factories declared by packs.** `literal` is a reserved keyword. `literal [...elements: T]: Type { … }` inside `impl Type` lifts to a type-scoped member no source can name. A literal whose expected type is that pack (binding, argument or return) selects it; elements are checked against the instantiated element type and passed once, left to right, at the factory's physical width. Missing factories, wrong element or result types, duplicates, misplaced declarations and spreads are diagnosed. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest` (interpreter, LLVM, WASM).
     - [x] **010.C3.4.2. Spec-owned factories.** `spec S<T> { literal [...elements: T]: Self { … } }` is the spec's own function, not a requirement; it lifts to `S__literal` and designates the concrete value a `[…]` builds where `S<…>` is expected. Factories are not inherited by child specs. Spec method/property signatures now take the receiver's type arguments (own members), and LLVM converts dispatch results to the call-site type. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest` (interpreter, LLVM, WASM).
     - [x] **010.C3.4.3. Associative factories.** A factory whose declared element type is a two-tuple, `literal [...entries: (K, V)]`, is associative (user decision); a type-parameter element is always a sequence. `[k: v, …]` and `[:]` select it, keys and values are checked separately, and each key runs before its value. Tuples now lower as aggregates on LLVM and WASM, and `t.0` reads a structural tuple. Evidence: `LiteralFactoryTest`, `LiteralFactoryExecTest` (interpreter, LLVM, WASM).

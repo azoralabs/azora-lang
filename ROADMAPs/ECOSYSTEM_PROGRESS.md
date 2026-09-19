@@ -12,9 +12,10 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.3 (closed 2026-09-19 by user decision). ArrayList runs on
   the interpreter, LLVM and WASM; its remaining items moved to 016, 019/022,
   023 and 063.
-- 010.C3.4, target-owned literal factories: all four substeps (packs, specs,
-  associative, constraints/failure/ownership) are complete. C3.5, factory
-  dependency discovery, is next.
+- Completed: 010.C3.4 (closed 2026-09-19 by user decision), target-owned literal
+  factories for packs and specs, sequence and associative, with `where`,
+  failure and ownership behaving as a call to the factory.
+- In progress: 010.C3.5, discovering a selected factory's dependencies.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.

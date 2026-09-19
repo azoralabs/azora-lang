@@ -10,14 +10,13 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.1–C3.2, selected-import implementation reachability and
   removal of implicit collection storage reinterpretation.
 - In progress: 010.C3.3. ArrayList construction, growth, insertion, clearing
-  and equality now execute on the interpreter, LLVM and WASM. WASM has a freeing
-  heap allocator, raw-pointer lowering, eight-byte erased generic slots,
-  width-aware pack layout and spec dispatch. `ArrayList.hash` is parked.
-  Remaining: LLVM purge and array-allocation ownership, 128-bit values in
-  erased slots, generic-call inference with lambda arguments, and the same
-  unconstrained `.hash` reads in Set and Map.
-- Next: make LLVM purge release memory (with fresh-buffer array allocation),
-  then real List/Set/Map literal construction and qualification.
+  and equality execute on the interpreter, LLVM and WASM. Both native targets
+  allocate zeroed buffers and release memory on `purge`. WASM has eight-byte
+  erased slots, width-aware pack layout and spec dispatch. `ArrayList.hash` is
+  parked. Remaining: 128-bit values in erased slots, generic-call inference with
+  lambda arguments, and the unconstrained `.hash` reads in Set and Map. These
+  overlap 016/023/019–022; C3.3 may close once they are moved there.
+- Next: real List/Set/Map literal construction (010.C3.4–C3.5, C4).
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -1033,4 +1032,51 @@ WASM now follows LLVM's design:
 ./gradlew :compiler:desktopTest --offline --console=plain \
   --tests '*SpecDispatchExecTest' --tests '*ListConstructionExecTest' \
   --tests '*ErasedGenericExecTest'
+```
+
+
+## 2026-09-19 — LLVM `purge` releases memory
+
+Dispatch and the parked hash are committed as `bcbd8340`.
+
+LLVM lowered `purge` to an advisory comment, so native programs never freed raw
+memory. Three changes make freeing safe:
+
+- `purge` of a raw (or nullable raw) pointer calls `__azora_free`, the existing
+  null-safe `free` wrapper. Purging any other type is an explicit LLVM codegen
+  failure, matching WASM.
+- `alloc array` returned `array + 8`, a pointer into the array, which `free`
+  cannot release. The elements are now copied into a buffer of their own, like
+  WASM; a pointee whose width differs from the array's elements is rejected.
+- `alloc .() * n` used uninitialized `malloc` memory. Once blocks are reused,
+  such buffers can hold old values, and Map relies on zeroed `occupied` flags.
+  Buffers now come from `__azora_alloc_zeroed`, a `calloc` wrapper that aborts on
+  a negative count or failed allocation, like `__azora_alloc`.
+
+Evidence:
+
+- `RawPointerExecTest` gains two tests (7 total). After a purge, a second 64-Long
+  buffer sums to 0 on LLVM and WASM. A second purge of one pointer stops the
+  program on both: WASM traps, and libc aborts LLVM's double free, which also
+  shows `free` runs. The existing single-value, buffer and allocated-array tests
+  now execute real frees on LLVM, and LLVM rejects a pack purge.
+- Three mutations were run separately and restored. Returning the interior
+  pointer made `anAllocatedArrayCanBePurged` fail (free of an interior pointer),
+  and removing the free call made `aSecondPurgeStopsTheProgram` fail. Removing
+  zeroing was **not** detected by execution: this macOS allocator zeroes memory
+  on free, and the reused block came back at the same address holding zeros. The
+  test therefore also asserts that the buffer is allocated through
+  `__azora_alloc_zeroed`; glibc and WASM keep the execution check meaningful.
+- Full run: **2,320 tests, 2,116 passed, 204 failed, 0 skipped**; no failure
+  identity changed. Stdlib containers whose LLVM execution tests already fail
+  (several Set/Map cases in `LlvmAggregateExecTest`) are not yet evidence that
+  their purges are correct.
+
+Still open here: the interpreter fills new buffers and `Array.fill` slots with
+null rather than each element type's zero (052). Whether purging a pointer
+should also run the pointee's destructor remains 037.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests '*RawPointerExecTest' --tests '*ListConstructionExecTest'
 ```

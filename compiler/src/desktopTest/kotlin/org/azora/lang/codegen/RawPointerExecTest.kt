@@ -81,6 +81,29 @@ class RawPointerExecTest {
         }
     """.trimIndent()
 
+    // Memory a purge released comes back zeroed, not holding the old values.
+    private val reuse = """
+        import std.io
+        unsafe func main() {
+            var first: Long^ = alloc Long^() * 64
+            for i in 0..<64 { first[i] = 7 }
+            purge first
+            var second: Long^ = alloc Long^() * 64
+            var sum: Long = 0
+            for i in 0..<64 { sum = sum + second[i] }
+            println(sum)
+            purge second
+        }
+    """.trimIndent()
+
+    private val purgedTwice = """
+        unsafe func main() {
+            var values: Int^ = alloc Int^() * 4
+            purge values
+            purge values
+        }
+    """.trimIndent()
+
     private fun compile(source: String, optimized: Boolean): IrProgram {
         val result = Compiler().compile(source, release = optimized)
         assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
@@ -106,6 +129,34 @@ class RawPointerExecTest {
 
     @Test fun anAllocatedArrayCanBePurged() = assertRunsEverywhere(allocatedArray, "35")
 
+    // The interpreter still fills a new buffer with null rather than each
+    // element's zero; that difference is recorded rather than asserted here.
+    // Some system allocators (macOS) zero memory on free, so there the LLVM run
+    // cannot tell a zeroing allocation from a plain one; the generated call
+    // says which one it is.
+    @Test fun aBufferAfterAPurgeStartsZeroed() {
+        for (optimized in listOf(false, true)) {
+            val ir = compile(reuse, optimized)
+            val llvm = LlvmCodegen().generate(ir)
+            assertTrue("call i8* @__azora_alloc_zeroed(" in llvm, "buffers are allocated zeroed")
+            if (LlvmExec.available) assertEquals("0", LlvmExec.runIr(llvm), "LLVM, optimized=$optimized")
+            if (WasmExec.available) assertEquals("0", WasmExec.runWat(WasmCodegen().generate(ir)), "WASM, optimized=$optimized")
+        }
+    }
+
+    // Releasing the same block twice stops the program on both native targets:
+    // the WASM allocator traps, and libc aborts LLVM's second free.
+    @Test fun aSecondPurgeStopsTheProgram() {
+        for (optimized in listOf(false, true)) {
+            val ir = compile(purgedTwice, optimized)
+            if (LlvmExec.available) {
+                val failure = assertFailsWith<AssertionError> { LlvmExec.runIr(LlvmCodegen().generate(ir)) }
+                assertTrue("lli exited with code" in failure.message.orEmpty(), failure.message)
+            }
+            if (WasmExec.available) WasmExec.runWatExpectingTrap(WasmCodegen().generate(ir))
+        }
+    }
+
     @Test fun wasmMemoryGrowsForALargeBuffer() {
         assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
         for (optimized in listOf(false, true)) {
@@ -115,7 +166,7 @@ class RawPointerExecTest {
 
     // Only a raw pointer names a heap block. Anything else is refused rather
     // than lowered to a purge that releases nothing.
-    @Test fun wasmRejectsPurgingAValueThatIsNotAPointer() {
+    @Test fun nativeTargetsRejectPurgingAValueThatIsNotAPointer() {
         val ir = compile(
             """
                 pack Box { var v: Int }
@@ -126,7 +177,9 @@ class RawPointerExecTest {
             """.trimIndent(),
             optimized = false,
         )
-        val failure = assertFailsWith<IllegalStateException> { WasmCodegen().generate(ir) }
-        assertTrue("purge of Box is not supported by the WebAssembly target" in failure.message.orEmpty(), failure.message)
+        val wasm = assertFailsWith<IllegalStateException> { WasmCodegen().generate(ir) }
+        assertTrue("purge of Box is not supported by the WebAssembly target" in wasm.message.orEmpty(), wasm.message)
+        val llvm = assertFailsWith<IllegalStateException> { LlvmCodegen().generate(ir) }
+        assertTrue("purge of Box is not supported by the LLVM target" in llvm.message.orEmpty(), llvm.message)
     }
 }

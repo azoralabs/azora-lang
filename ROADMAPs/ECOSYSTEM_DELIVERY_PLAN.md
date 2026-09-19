@@ -49,14 +49,14 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,318 tests: 2,114 passed,
-204 failed, 0 skipped**; the only failure-identity change from the preceding run
-is the WASM list test now passing. The [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
+The latest full compiler run has **2,320 tests: 2,116 passed,
+204 failed, 0 skipped**, with no failure identity changed from the preceding
+run. The [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
 records the 2,290-test baseline. ArrayList construction, growth, insertion,
-clearing and equality execute on the interpreter, LLVM and WASM. WASM has a
-freeing heap allocator, eight-byte erased generic slots, width-aware pack layout
-and spec dispatch; `ArrayList.hash` is parked until generic `Hash` dispatch
-exists. **010** remains open, including the collection factory substeps below.
+clearing and equality execute on the interpreter, LLVM and WASM, and both native
+targets release memory on `purge` with zeroed buffer allocation.
+`ArrayList.hash` is parked until generic `Hash` dispatch exists. **010**
+remains open, including the collection factory substeps below.
 
 **007**, the complete **008** review and module identity/scope work under **014**
 remain open. Local imports still leak into unrelated declarations; that requires
@@ -93,7 +93,7 @@ selected `Array` as the default for a non-empty sequence without context.
 - [ ] **010.C3. Establish canonical target-owned factory resolution.** Resolve declarations by module/target identity, substitute generic constraints and discover factory dependencies before lowering. Do not substitute array layouts for List/Set/Map specs.
   - [x] **010.C3.1. Preserve declaring-module reachability for selected imports.** Selecting a type or factory keeps its module's implementations while unrelated declarations and other-module extensions stay inaccessible.
   - [x] **010.C3.2. Remove implicit collection storage reinterpretation.** Named List/Set/Map targets cannot accept unrelated intrinsic storage by short name; IR retains explicit declared types. Expected named types retain generic/const arguments when reconstructed.
-  - [ ] **010.C3.3. Preserve generic method signatures and physical return ABI.** Substitute owner arguments in parameters/results and convert explicitly at an erased ABI boundary; validate on all backends. Direct constructors/methods share owner substitution. The ArrayList regression executes on the interpreter, LLVM and WASM: WASM has heap allocation/purge, eight-byte erased slots (user decision under 021), width-aware pack layout and spec dispatch. `ArrayList.hash` is parked (user decision) until generic `Hash` dispatch exists. Open: LLVM purge and array-allocation ownership, 128-bit values in erased slots, inference with lambda arguments, unconstrained `.hash` in Set/Map.
+  - [ ] **010.C3.3. Preserve generic method signatures and physical return ABI.** Substitute owner arguments in parameters/results and convert explicitly at an erased ABI boundary; validate on all backends. Direct constructors/methods share owner substitution. The ArrayList regression executes on the interpreter, LLVM and WASM. WASM has eight-byte erased slots (user decision under 021), width-aware pack layout and spec dispatch; both native targets free on `purge` and zero new buffers. `ArrayList.hash` is parked (user decision). Open, overlapping 016/019–023: 128-bit values in erased slots, inference with lambda arguments, unconstrained `.hash` in Set/Map.
   - [ ] **010.C3.4. Register and select target-owned literal factories.** Support sequence/associative shape, constraints and failure/ownership requirements through the complete pipeline.
   - [ ] **010.C3.5. Discover selected factory dependencies before specialization/lowering.** Use canonical declarations and avoid unrelated short-name matches.
 - [ ] **010.C4. Connect real standard List/Set/Map implementations.** Lower literals through the selected constructor/factory and preserve source order, exactly-once key/value evaluation, duplicate rules, failure behavior and ownership.

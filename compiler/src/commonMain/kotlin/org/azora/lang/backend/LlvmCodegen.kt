@@ -230,6 +230,9 @@ class LlvmCodegen {
     private var usesTrunc = false
     private var usesCharToStr = false
     private var usesFree = false
+    private var usesCalloc = false
+    /** `alloc .() * n` reached codegen: emit the zeroing buffer allocator. */
+    private var usesZeroedAlloc = false
     private var usesAllocatorRuntime = false
     private var usesTaskRuntime = false
 
@@ -286,6 +289,8 @@ class LlvmCodegen {
         usesCharToStr = false
         usesFree = false
         usesAllocatorRuntime = false
+        usesCalloc = false
+        usesZeroedAlloc = false
         usesTaskRuntime = false
         loopStack.clear()
         taskScopeStack.clear()
@@ -530,6 +535,7 @@ class LlvmCodegen {
         if (usesAbort) line("declare void @abort() noreturn")
         if (usesMalloc) line("declare i8* @malloc(i64)")
         if (usesFree) line("declare void @free(i8*)")
+        if (usesCalloc) line("declare i8* @calloc(i64, i64)")
         if (usesStrlen) line("declare i64 @strlen(i8*)")
         if (usesUsleep) line("declare i32 @usleep(i32)")
         if (usesStrcpy) line("declare i8* @strcpy(i8*, i8*)")
@@ -4653,7 +4659,7 @@ class LlvmCodegen {
             return "void"
         }
         if (expr.name == "__alloc") {
-            return emitPointerAlloc(expr.args.single())
+            return emitPointerAlloc(expr.args.single(), expr.type)
         }
         if (expr.name == "__allocBuffer") {
             return emitPointerBufferAlloc(expr)
@@ -4666,8 +4672,15 @@ class LlvmCodegen {
             return "void"
         }
         if (expr.name == "__purge") {
-            emitExpr(expr.args.single())
-            emit("  ; drop - advisory for raw pointers; task scopes own native cleanup")
+            // Releases the pointer's storage only; elements a container has
+            // moved out are not destroyed a second time.
+            val value = expr.args.single()
+            val type = value.type
+            check(type is IrType.Pointer || (type is IrType.Nullable && type.inner is IrType.Pointer)) {
+                "purge of $type is not supported by the LLVM target; only raw pointers are released"
+            }
+            usesAllocatorRuntime = true
+            emit("  call void @__azora_free(i8* ${emitExpr(value)})")
             return "void"
         }
         if (symbolDenotes(expr.name, "concurrency_cancel")) {
@@ -4708,13 +4721,30 @@ class LlvmCodegen {
         }
     }
 
-    private fun emitPointerAlloc(valueExpr: IrExpr): String {
+    private fun emitPointerAlloc(valueExpr: IrExpr, pointerType: IrType): String {
         val value = emitExpr(valueExpr)
         val arrayType = valueExpr.type as? IrType.Array
         if (arrayType != null) {
+            // The elements move into a buffer of their own: the pointer must be
+            // one `purge` can release, not an address inside the array.
+            val width = sizeOfScalar(arrayType.element)
+            val pointee = (pointerType as? IrType.Pointer)?.inner
+            check(pointee == null || sizeOfScalar(pointee) == width) {
+                "alloc of $arrayType as $pointee changes the element slot width"
+            }
+            val lengthSlot = nextTmp()
+            emit("  $lengthSlot = bitcast i8* $value to i64*")
+            val length = nextTmp()
+            emit("  $length = load i64, i64* $lengthSlot")
+            val bytes = nextTmp()
+            emit("  $bytes = mul i64 $length, $width")
+            val buffer = emitHeapAlloc(bytes)
             val data = nextTmp()
             emit("  $data = getelementptr i8, i8* $value, i64 8")
-            return data
+            usesMemcpy = true
+            val copied = nextTmp()
+            emit("  $copied = call i8* @memcpy(i8* $buffer, i8* $data, i64 $bytes)")
+            return buffer
         }
         val raw = emitHeapAlloc("${sizeOfScalar(valueExpr.type)}")
         val typed = nextTmp()
@@ -4736,9 +4766,13 @@ class LlvmCodegen {
             widened
         }
         val elementType = (expr.type as? IrType.Pointer)?.inner ?: IrType.Any
-        val bytes = nextTmp()
-        emit("  $bytes = mul i64 $count64, ${sizeOfScalar(elementType)}")
-        return emitHeapAlloc(bytes)
+        // Zeroed, as `.()` is each element's default; memory a purge released
+        // would otherwise come back holding old values.
+        usesAllocatorRuntime = true
+        usesZeroedAlloc = true
+        val raw = nextTmp()
+        emit("  $raw = call i8* @__azora_alloc_zeroed(i64 $count64, i64 ${sizeOfScalar(elementType)})")
+        return raw
     }
 
     private fun emitPointerDeref(ptrExpr: IrExpr, resultType: IrType): String {
@@ -5062,6 +5096,28 @@ class LlvmCodegen {
             sb.appendLine("  ret i8* %p")
             sb.appendLine("}")
             sb.appendLine()
+            if (usesZeroedAlloc) {
+                usesCalloc = true
+                // A negative count, or a size calloc cannot provide, aborts like
+                // any failed allocation; an empty buffer may be null.
+                sb.appendLine("define i8* @__azora_alloc_zeroed(i64 %count, i64 %size) {")
+                sb.appendLine("entry:")
+                sb.appendLine("  %negative = icmp slt i64 %count, 0")
+                sb.appendLine("  br i1 %negative, label %oom, label %allocate")
+                sb.appendLine("allocate:")
+                sb.appendLine("  %p = call i8* @calloc(i64 %count, i64 %size)")
+                sb.appendLine("  %isnull = icmp eq i8* %p, null")
+                sb.appendLine("  %nonempty = icmp ne i64 %count, 0")
+                sb.appendLine("  %failed = and i1 %isnull, %nonempty")
+                sb.appendLine("  br i1 %failed, label %oom, label %ok")
+                sb.appendLine("oom:")
+                sb.appendLine("  call void @abort()")
+                sb.appendLine("  unreachable")
+                sb.appendLine("ok:")
+                sb.appendLine("  ret i8* %p")
+                sb.appendLine("}")
+                sb.appendLine()
+            }
             sb.appendLine("define void @__azora_free(i8* %ptr) {")
             sb.appendLine("entry:")
             sb.appendLine("  %isnull = icmp eq i8* %ptr, null")

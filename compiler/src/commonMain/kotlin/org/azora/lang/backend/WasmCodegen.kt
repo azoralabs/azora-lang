@@ -105,6 +105,7 @@ class WasmCodegen {
     private var usesAlloc = false
     private var usesConcat = false
     private var usesStrEq = false
+    private var usesStrHash = false
     private var usesRepeat = false
     private var usesIntToStr = false
     private var usesLongToStr = false
@@ -225,7 +226,7 @@ class WasmCodegen {
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
         structs.clear(); layouts.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
-        usesAlloc = false; usesConcat = false; usesStrEq = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
+        usesAlloc = false; usesConcat = false; usesStrEq = false; usesStrHash = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         reactiveStorage.clear(); reactiveAliases.clear()
         closureTypes.clear(); closureFunctions.clear()
@@ -355,6 +356,7 @@ class WasmCodegen {
         if (usesConcat) sb.append(RT_CONCAT)
         if (usesIsCheck) usesStrEq = true
         if (usesStrEq) sb.append(RT_STR_EQ)
+        if (usesStrHash) sb.append(RT_STR_HASH)
         if (usesRepeat) sb.append(RT_REPEAT)
         if (usesIntToStr) sb.append(RT_INT_TO_STR)
         if (usesLongToStr) sb.append(RT_LONG_TO_STR)
@@ -856,6 +858,7 @@ class WasmCodegen {
             specMember(expr.target.type, expr.name) != null -> emitDispatch(expr.target, expr.name, emptyList(), expr.type)
             expr.name == "length" || expr.name == "size" -> "(i32.load ${emitExpr(expr.target)})"
             expr.name == "data" -> "(i32.add ${emitExpr(expr.target)} (i32.const 4))"
+            expr.name == "hash" && expr.target.type !is IrType.Named -> emitBuiltinHash(expr.target)
             else -> error("no WebAssembly storage for member '${expr.name}' of ${expr.target.type}")
         }
         is IrExpr.MethodCall -> emitMethodCall(expr)
@@ -1862,6 +1865,10 @@ class WasmCodegen {
         IrType.Double, IrType.Quad -> "f64"
         IrType.Float -> "f32"
         is IrType.Task -> wasmType(type.result)
+        // A nullable value is held as its type is, null being all zero bits:
+        // a pointer's null is address 0, and an erased `V?` stays eight bytes
+        // wide rather than losing the top half of a Long or a Double.
+        is IrType.Nullable -> wasmType(type.inner)
         else -> "i32"
     }
 
@@ -1889,6 +1896,43 @@ class WasmCodegen {
     (memory.copy (i32.add (local.get ${'$'}p) (i32.const 4)) (i32.add (local.get ${'$'}a) (i32.const 4)) (local.get ${'$'}la))
     (memory.copy (i32.add (local.get ${'$'}p) (i32.add (i32.const 4) (local.get ${'$'}la))) (i32.add (local.get ${'$'}b) (i32.const 4)) (local.get ${'$'}lb))
     (local.get ${'$'}p))
+"""
+
+    /**
+     * `Hash`'s member on a value that carries no user-written one, as an i64:
+     * an integer, char or bool is its value, a float its bit pattern, a string
+     * its content, and an erased slot its eight bytes. LLVM and the interpreter
+     * give the same numbers.
+     */
+    private fun emitBuiltinHash(target: IrExpr): String {
+        val type = target.type
+        val value = emitExpr(target)
+        return when {
+            type == IrType.String -> { usesStrHash = true; "(call \$__str_hash $value)" }
+            type == IrType.Any -> value
+            type == IrType.Double || type == IrType.Quad -> "(i64.reinterpret_f64 $value)"
+            type == IrType.Float -> "(i64.extend_i32_u (i32.reinterpret_f32 $value))"
+            wasmType(type) == "i64" -> value
+            IrType.isInteger(type) && !isUnsigned(type) -> "(i64.extend_i32_s $value)"
+            else -> "(i64.extend_i32_u $value)"
+        }
+    }
+
+    /** 64-bit FNV-1a over a string's bytes; the interpreter and LLVM use the same. */
+    private val RT_STR_HASH = """
+  (func ${'$'}__str_hash (param ${'$'}s i32) (result i64)
+    (local ${'$'}h i64) (local ${'$'}i i32) (local ${'$'}n i32)
+    (local.set ${'$'}h (i64.const -3750763034362895579))
+    (local.set ${'$'}n (i32.load (local.get ${'$'}s)))
+    (local.set ${'$'}i (i32.const 0))
+    (block ${'$'}d (loop ${'$'}l
+      (br_if ${'$'}d (i32.ge_u (local.get ${'$'}i) (local.get ${'$'}n)))
+      (local.set ${'$'}h (i64.mul
+        (i64.xor (local.get ${'$'}h) (i64.extend_i32_u (i32.load8_u (i32.add (i32.add (local.get ${'$'}s) (i32.const 4)) (local.get ${'$'}i)))))
+        (i64.const 1099511628211)))
+      (local.set ${'$'}i (i32.add (local.get ${'$'}i) (i32.const 1)))
+      (br ${'$'}l)))
+    (local.get ${'$'}h))
 """
 
     private val RT_STR_EQ = """

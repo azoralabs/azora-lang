@@ -64,6 +64,10 @@ interface AzoraDebugHost {
 /** The single storage slot every member of a `union` instance shares. */
 private const val UNION_SLOT = "__union"
 
+/** 64-bit FNV-1a, the string hash every backend computes. */
+private const val FNV_OFFSET = -3750763034362895579L
+private const val FNV_PRIME = 1099511628211L
+
 class IrInterpreter {
 
     /** When set, receives `__dbg` line events from debug-instrumented programs. */
@@ -1035,13 +1039,17 @@ class IrInterpreter {
      * `-0.0` hash apart exactly as they compare apart. A pack never reaches
      * here: it supplies its own `hash`, derived or written.
      */
+    /**
+     * The values LLVM and Wasm compute: an integer, char or bool is its value, a
+     * float its bit pattern, and a string the 64-bit FNV-1a of its UTF-8 bytes.
+     */
     private fun primitiveHash(value: Any?): Long = when (value) {
         null -> 0L
         is Long -> value
         is Boolean -> if (value) 1L else 0L
-        is String -> value.hashCode().toLong()
+        is String -> value.encodeToByteArray().fold(FNV_OFFSET) { h, b -> (h xor (b.toLong() and 0xFF)) * FNV_PRIME }
         is Double -> value.toRawBits()
-        is Float -> value.toRawBits().toLong()
+        is Float -> value.toRawBits().toLong() and 0xFFFFFFFFL
         is Char -> value.code.toLong()
         else -> value.hashCode().toLong()
     }
@@ -1130,7 +1138,9 @@ class IrInterpreter {
                 // only the built-in value types are answered here - this is the
                 // runtime half of `bridge spec Hash`.
                 if (expr.name.isIntrinsic("hash") && receiver !is Map<*, *>) {
-                    return@evalExpr primitiveHash(receiver)
+                    // A Float is held as a Double here; it hashes as the Float it is.
+                    val value = if (expr.target.type == IrType.Float && receiver is Number) receiver.toFloat() else receiver
+                    return@evalExpr primitiveHash(value)
                 }
                 when (receiver) {
                     is MutableList<*> -> when (expr.name) {
@@ -1469,6 +1479,23 @@ class IrInterpreter {
         // the interpreter already compares erased values at runtime.
         dispatchOperatorOnRuntimeType(expr.op, left, right)?.let { return it }
 
+        // A 64-bit unsigned value is held in a Long; dividing and ordering it
+        // has to read the top bit as magnitude, as LLVM and Wasm do.
+        if (left is Long && right is Long && (isUnsigned64(expr.left.type) || isUnsigned64(expr.right.type))) {
+            val a = left.toULong()
+            val b = right.toULong()
+            when (expr.op) {
+                IrBinaryOp.DIV -> return (a / b).toLong()
+                IrBinaryOp.MOD -> return (a % b).toLong()
+                IrBinaryOp.LT -> return a < b
+                IrBinaryOp.LTE -> return a <= b
+                IrBinaryOp.GT -> return a > b
+                IrBinaryOp.GTE -> return a >= b
+                IrBinaryOp.SHR -> return (a shr right.toInt()).toLong()
+                else -> {}
+            }
+        }
+
         return when (expr.op) {
             IrBinaryOp.ADD -> when {
                 left is String || right is String -> formatValue(left) + formatValue(right)
@@ -1511,6 +1538,8 @@ class IrInterpreter {
             IrBinaryOp.SHR -> (left as Long) shr (right as Long).toInt()
         }
     }
+
+    private fun isUnsigned64(type: IrType): Boolean = type == IrType.ULong || type == IrType.USize
 
     private fun compare(left: Any?, right: Any?): Int {
         return when {

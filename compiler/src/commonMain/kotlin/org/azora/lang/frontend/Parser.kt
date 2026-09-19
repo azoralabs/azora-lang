@@ -11396,8 +11396,33 @@ class Parser(
         // Written out, one member per line - which is what the group stands for.
         // Each member gets the expression, not the result of running it once:
         // `self.{keys, values} = alloc .() * n` asks for a buffer per member,
-        // and handing both the same one would alias them.
-        return Stmt.Scope(targets.map { assign(it, value) }, start.line, start.column)
+        // and handing both the same one would alias them. Each copy is its own
+        // instance of the source position, so each is typed by its own target.
+        return Stmt.Scope(
+            targets.mapIndexed { i, target -> assign(target, instanced(value, i)) },
+            start.line,
+            start.column,
+        )
+    }
+
+    /** [value] with each leading-dot member marked as copy [instance]; see [Expr.InferredMember.instance]. */
+    private fun instanced(value: Expr, instance: Int): Expr {
+        if (instance == 0) return value
+        fun copy(e: Expr): Expr = when (e) {
+            is Expr.InferredMember -> e.copy(instance = instance, ctorArgs = e.ctorArgs?.map(::copy))
+            is Expr.Alloc -> e.copy(value = copy(e.value))
+            is Expr.Binary -> e.copy(left = copy(e.left), right = copy(e.right))
+            is Expr.Unary -> e.copy(operand = copy(e.operand))
+            is Expr.Grouping -> e.copy(expr = copy(e.expr))
+            is Expr.Call -> e.copy(args = e.args.map(::copy))
+            is Expr.MethodCall -> e.copy(target = copy(e.target), args = e.args.map(::copy))
+            is Expr.Member -> e.copy(target = copy(e.target))
+            is Expr.Index -> e.copy(target = copy(e.target), index = copy(e.index))
+            is Expr.NamedArg -> e.copy(value = copy(e.value))
+            is Expr.Cast -> e.copy(expr = copy(e.expr))
+            else -> e
+        }
+        return copy(value)
     }
 
     /**

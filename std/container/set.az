@@ -92,7 +92,7 @@ spec Set<T> {
      * `[a, b, c]` where a `Set<T>` is expected: a `LinkedHashSet<T>`, so
      * iteration follows the literal. A repeated element is kept once.
      */
-    literal [...elements: T]: Self {
+    literal [...elements: T]: Self where T: Equal {
         return _linkedHashSetOf(elements)
     }
 }
@@ -125,7 +125,7 @@ spec MutableSet<T> : Set<T> {
     func &.clear()
 
     /** `[a, b, c]` where a `MutableSet<T>` is expected: a `LinkedHashSet<T>`, as for `Set<T>`. */
-    literal [...elements: T]: Self {
+    literal [...elements: T]: Self where T: Equal {
         return _linkedHashSetOf(elements)
     }
 }
@@ -141,7 +141,7 @@ spec MutableSet<T> : Set<T> {
  */
 @Experimental(since: "0.1")
 @Serializable
-pack LinkedHashSet<T> {
+pack LinkedHashSet<T> where T: Equal {
     var data: T* = alloc .() * 8
     var size: Int = 0
     var capacity: Int = 8
@@ -294,7 +294,7 @@ impl MutableSet<T> for LinkedHashSet<T> {
 // ---------------------------------------------------------------------
 
 /** What `Set` and `MutableSet` literals build: the elements in order, each once. */
-func<T> _linkedHashSetOf(elements: Array<T>): LinkedHashSet<T> {
+func<T> _linkedHashSetOf(elements: Array<T>): LinkedHashSet<T> where T: Equal {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -303,17 +303,17 @@ func<T> _linkedHashSetOf(elements: Array<T>): LinkedHashSet<T> {
 }
 
 @Experimental(since: "0.1")
-func<T> emptySet(): Set<T> {
+func<T> emptySet(): Set<T> where T: Equal {
     return LinkedHashSet<T>()
 }
 
 @Experimental(since: "0.1")
-func<T> emptyMutableSet(): MutableSet<T> {
+func<T> emptyMutableSet(): MutableSet<T> where T: Equal {
     return LinkedHashSet<T>()
 }
 
 @Experimental(since: "0.1")
-func<T> setOf(...elements: T): Set<T> {
+func<T> setOf(...elements: T): Set<T> where T: Equal {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -322,7 +322,7 @@ func<T> setOf(...elements: T): Set<T> {
 }
 
 @Experimental(since: "0.1")
-func<T> mutableSetOf(...elements: T): MutableSet<T> {
+func<T> mutableSetOf(...elements: T): MutableSet<T> where T: Equal {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -331,7 +331,7 @@ func<T> mutableSetOf(...elements: T): MutableSet<T> {
 }
 
 @Experimental(since: "0.1")
-func<T> linkedHashSetOf(...elements: T): LinkedHashSet<T> {
+func<T> linkedHashSetOf(...elements: T): LinkedHashSet<T> where T: Equal {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -340,7 +340,7 @@ func<T> linkedHashSetOf(...elements: T): LinkedHashSet<T> {
 }
 
 @Experimental(since: "0.1")
-func<T> emptyLinkedHashSet(): MutableSet<T> {
+func<T> emptyLinkedHashSet(): MutableSet<T> where T: Equal {
     return LinkedHashSet<T>()
 }
 
@@ -348,14 +348,14 @@ func<T> emptyLinkedHashSet(): MutableSet<T> {
 
 @Experimental(since: "0.1")
 @Serializable
-pack HashSet<T> {
+pack HashSet<T> where T: Hash {
     var data: T* = alloc .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
 
 @Experimental(since: "0.1")
-func<T> hashSetOf(...elements: T): HashSet<T> {
+func<T> hashSetOf(...elements: T): HashSet<T> where T: Hash {
     var result = HashSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])
@@ -364,7 +364,7 @@ func<T> hashSetOf(...elements: T): HashSet<T> {
 }
 
 @Experimental(since: "0.1")
-func<T> emptyHashSet(): MutableSet<T> {
+func<T> emptyHashSet(): MutableSet<T> where T: Hash {
     return HashSet<T>()
 }
 
@@ -567,14 +567,14 @@ oper!= HashSet<T>&.(rhs: Set<T>): Bool {
 
 @Experimental(since: "0.1")
 @Serializable
-pack TreeSet<T> {
+pack TreeSet<T> where T: Order {
     var data: T* = alloc .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
 
 @Experimental(since: "0.1")
-func<T> treeSetOf(...elements: T): TreeSet<T> {
+func<T> treeSetOf(...elements: T): TreeSet<T> where T: Order {
     var result = TreeSet<T>()
     for i in 0..<elements.size {
         result.add(elements[i])

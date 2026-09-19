@@ -222,6 +222,7 @@ class LlvmCodegen {
     private var usesSnprintf = false
     private var usesStrConcat = false
     private var usesStrRepeat = false
+    private var usesStrHash = false
     private var usesArrayGrow = false
     private var usesMapGrow = false
     private var usesIntToStr = false
@@ -280,6 +281,7 @@ class LlvmCodegen {
         usesSnprintf = false
         usesStrConcat = false
         usesStrRepeat = false
+        usesStrHash = false
         usesArrayGrow = false
         usesMapGrow = false
         usesIntToStr = false
@@ -2838,16 +2840,17 @@ class LlvmCodegen {
 
     /** Widens/reinterprets a payload value to the i64 slot cell it is stored in. */
     private fun boxToI64(value: String, type: IrType): String {
-        val t = nextTmp()
+        // Each temporary is taken as it is emitted: LLVM numbers them in order.
         return when {
             IrType.isInteger(type) || type == IrType.Char -> coerceNumeric(value, type, IrType.Long)
-            type == IrType.Bool -> { emit("  $t = zext i1 $value to i64"); t }
-            type == IrType.Double || type == IrType.Quad -> { emit("  $t = bitcast double $value to i64"); t }
+            type == IrType.Bool -> nextTmp().also { emit("  $it = zext i1 $value to i64") }
+            type == IrType.Double || type == IrType.Quad -> nextTmp().also { emit("  $it = bitcast double $value to i64") }
             type == IrType.Float -> {
                 val b = nextTmp(); emit("  $b = bitcast float $value to i32")
-                emit("  $t = zext i32 $b to i64"); t
+                nextTmp().also { emit("  $it = zext i32 $b to i64") }
             }
-            else -> { emit("  $t = ptrtoint ${mapType(type)} $value to i64"); t } // pointers (String, structs, slots)
+            // pointers (String, structs, slots)
+            else -> nextTmp().also { emit("  $it = ptrtoint ${mapType(type)} $value to i64") }
         }
     }
 
@@ -3160,6 +3163,15 @@ class LlvmCodegen {
             //
             // A `Named` type is excluded because it supplies its own `hash`,
             // derived or written, and that member is what resolves.
+            //
+            // A string hashes its content, so equal strings built apart agree.
+            if (targetType == IrType.String) {
+                usesStrHash = true
+                val text = emitExpr(expr.target)
+                val h = nextTmp()
+                emit("  $h = call i64 @__azora_str_hash(i8* $text)")
+                return h
+            }
             return boxToI64(emitExpr(expr.target), targetType)
         }
         // Array/string length.
@@ -5365,6 +5377,30 @@ class LlvmCodegen {
             sb.appendLine("  %c1 = call i8* @strcpy(i8* %buf, i8* %a)")
             sb.appendLine("  %c2 = call i8* @strcat(i8* %buf, i8* %b)")
             sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesStrHash) {
+            // 64-bit FNV-1a over the bytes; the interpreter and Wasm use the same.
+            sb.appendLine("; runtime: string content hash")
+            sb.appendLine("define i64 @__azora_str_hash(i8* %s) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  br label %loop")
+            sb.appendLine("loop:")
+            sb.appendLine("  %h = phi i64 [ -3750763034362895579, %entry ], [ %next, %body ]")
+            sb.appendLine("  %p = phi i8* [ %s, %entry ], [ %p2, %body ]")
+            sb.appendLine("  %c = load i8, i8* %p")
+            sb.appendLine("  %end = icmp eq i8 %c, 0")
+            sb.appendLine("  br i1 %end, label %done, label %body")
+            sb.appendLine("body:")
+            sb.appendLine("  %byte = zext i8 %c to i64")
+            sb.appendLine("  %mixed = xor i64 %h, %byte")
+            sb.appendLine("  %next = mul i64 %mixed, 1099511628211")
+            sb.appendLine("  %p2 = getelementptr i8, i8* %p, i64 1")
+            sb.appendLine("  br label %loop")
+            sb.appendLine("done:")
+            sb.appendLine("  ret i64 %h")
             sb.appendLine("}")
             sb.appendLine()
         }

@@ -28,6 +28,7 @@ import org.azora.lang.stdlib.AzStdlib
 import org.azora.lang.stdlib.StdlibInjector
 import org.azora.lang.frontend.Program
 import org.azora.lang.ir.IrGenerator
+import org.azora.lang.ir.WitnessError
 import org.azora.lang.ir.IrOptimizer
 import org.azora.lang.ir.IrProgram
 import org.azora.lang.ir.IrType
@@ -35,6 +36,7 @@ import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.InferredTypeArgs
 import org.azora.lang.semantic.InlineCallables
 import org.azora.lang.semantic.SemanticPipeline
+import org.azora.lang.semantic.Witnesses
 import org.azora.lang.semantic.SemanticRedundantVariantQualifier
 import org.azora.lang.semantic.SemanticSymbolNamespace
 import org.azora.lang.semantic.SemanticUnresolvedSymbol
@@ -647,7 +649,12 @@ class Compiler(
         // A nested call's type argument, where the call it fills already said it.
         // Before analysis, because a type argument is what an `inline` body
         // substitutes and what `T.typeName` reads.
-        val semantic = SemanticPipeline().analyze(InferredTypeArgs.apply(ast), defines = defines)
+        // A pack whose type parameter is bounded by `Hash`/`Equal` carries that
+        // parameter's descriptor; see [Witnesses].
+        val semantic = SemanticPipeline().analyze(
+            InferredTypeArgs.apply(Witnesses.addDescriptorFields(ast)),
+            defines = defines,
+        )
         val shorthandDiagnostics = semantic.redundantVariantQualifiers.map {
             redundantVariantQualifierDiagnostic(sourceUnit, it)
         }
@@ -715,7 +722,11 @@ class Compiler(
         // written, which is what the annotation promises. Done after analysis, so
         // what is spliced has already been checked where it was written.
         val inlined = InlineCallables.apply(semantic.program)
-        val ir = IrGenerator(semantic.symbolTable).generate(inlined)
+        val ir = try {
+            IrGenerator(semantic.symbolTable).generate(inlined)
+        } catch (e: WitnessError) {
+            return CompilationResult.Failure(listOf(e.message.orEmpty()))
+        }
 
         // 10. IR optimization passes (release mode only)
         val optimizedIr = if (release) IrOptimizer().optimize(ir) else ir

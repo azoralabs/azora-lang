@@ -49,17 +49,20 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,389 tests: 2,199 passed,
-190 failed, 0 skipped** (018.1 on `2b89a938`). No previously
-passing test fails, and the 007/014 acceptance tests in `FactoryDependencyTest` pass. The
+The latest full compiler run has **2,396 tests: 2,205 passed,
+191 failed, 0 skipped** (018.1 and 022.1 on `2b89a938`). One previously passing
+test fails by the new `Equal` bound on sets
+(`LlvmRegressionExecTest.decimalCollectionsUseExplicitPackedAlignment` builds a
+`Set<Quad>`; see the progress log). The 007/014 acceptance tests in
+`FactoryDependencyTest` pass. The
 [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
 records the 2,290-test baseline. Packs and specs declare sequence and
 associative `literal` factories, and importing the target brings in the factory
 and what it builds. Library declarations carry canonical identities, and a
-program's block imports bind lexically. List and Set literals build the standard
-collections on every target; Map literals are correct on the interpreter. **010**
-remains open for native maps (C4.3), untyped associative literals (C4.4, needs a
-decision) and qualification (C5).
+program's block imports bind lexically. List, Set and Map literals build the
+standard collections on every target, and generic code reaches `Hash`, `Equal`
+and `Order` through witness descriptors. **010** remains open for untyped
+associative literals (C4.4, needs a decision) and qualification (C5).
 
 **007**, the complete **008** review and **014** remain open. The progress log
 lists what is left of each. Engine and full Studio build/run qualification also
@@ -105,7 +108,7 @@ selected `Array` as the default for a non-empty sequence without context.
 - [ ] **010.C4. Connect real standard List/Set/Map implementations.** Lower literals through the selected constructor/factory and preserve source order, exactly-once key/value evaluation, duplicate rules, failure behavior and ownership.
   - [x] **010.C4.1. List literals.** `List<T>` and `MutableList<T>` own factories that build an `ArrayList<T>`; `ArrayList<T>` builds itself. Elements run once, left to right, in bindings, arguments, returns, globals and nested literals, and empty literals take their context. A member inherited from a parent spec and an `oper[]` result are now typed by the receiver's arguments. Evidence: `StdCollectionLiteralTest`, `StdCollectionLiteralExecTest`, `GenericMemberSignature*` (interpreter, LLVM, WASM, optimized and unoptimized).
   - [x] **010.C4.2. Set literals.** `Set<T>` and `MutableSet<T>` build a `LinkedHashSet<T>`, the deterministic default GTC §8.4 asks for (insertion order, as `setOf` already chose). `HashSet`, `LinkedHashSet` and `TreeSet` build themselves. A repeated element is kept once, at its first position. The three unconstrained set `hash` properties are parked as `ArrayList.hash` was. Evidence: the same suites; six `LlvmAggregateExecTest` tests that build sets now pass.
-  - [ ] **010.C4.3. Map literals.** `Map<K, V>` and `MutableMap<K, V>` build a `LinkedHashMap<K, V>`; `HashMap`, `LinkedHashMap` and `TreeMap` build themselves. Each key runs before its value, entries left to right, and a repeated key keeps its last value. Correct on the interpreter (`StdCollectionLiteralTest`). Open natively: `key.hash` on an unconstrained `K` (019/022/044; WASM cannot lower it); LLVM prints a nullable as `<value>`. `ctor .()` runs natively since 018.1, so `LinkedHashMap` insertion ends.
+  - [x] **010.C4.3. Map literals.** `Map<K, V>` and `MutableMap<K, V>` build a `LinkedHashMap<K, V>`; `HashMap`, `LinkedHashMap` and `TreeMap` build themselves. Each key runs before its value, entries left to right, and a repeated key keeps its last value. Runs on the interpreter, LLVM and WASM since 018.1 (`ctor .()`) and 022.1 (keys hashed, compared and ordered as their own type). Evidence: `StdCollectionLiteralTest`, `StdCollectionLiteralExecTest`, `WitnessTest`, `WitnessExecTest` (closed 2026-09-19). A map read through `get` returns `V?`, which LLVM still prints as `<value>`, and `??` does not lower natively; both stay open.
   - [ ] **010.C4.4. Untyped associative literals.** GTC §8.4 infers `Map<K, V>` backed by `LinkedHashMap`; today an untyped `[k: v]` is the compiler's structural `IrType.Map`, and existing programs mutate it (`values["b"] = 99`), which a read-only `Map<K, V>` does not allow. Needs a decision.
 - [ ] **010.C5. Qualify factory construction across backends and tooling.** Test nested/empty literals, overloaded/generic contexts, lifetimes, native representation and Studio/compiler diagnostics together.
 
@@ -135,6 +138,7 @@ Dependencies: Core type contracts from 011–020; resolve architectural choices 
 - [ ] **021. Resolve generic representation and specialization architecture.** Acceptance: Document a coherent choice for native/WASM/interpreter execution, ABI, ownership, and code-size tradeoffs.
   - [x] **021.1. Type inferred generic calls by their inferred arguments in IR.** The resolver records the type arguments it inferred on a call that wrote none (`Expr.Call.inferredTypeArgs`); lowering types the result by them through the rule for written arguments, so `fin b = wrap(4)` holds a `Box<Int>` as `wrap<Int>(4)` does. Holes and arguments naming the enclosing function's type parameters keep that rule unchanged (erased). Evidence: `InferredGenericCallTest`, `InferredGenericCallExecTest` (interpreter, LLVM, WASM, optimized and unoptimized); `ErasedGenericExecTest` now runs its generic-function case on LLVM (2026-09-19).
 - [ ] **022. Preserve and enforce inline and where bounds.** Acceptance: Constraints survive parsing and reject invalid instantiations; no declared bound is silently discarded.
+  - [x] **022.1. Reach `Hash`, `Equal` and `Order` through erased generic code.** A type parameter bounded by one of them carries a descriptor naming the concrete type: a hidden field of a bounded pack, a hidden parameter of a bounded function, read from a bounded pack parameter otherwise. `x.hash`, `==`/`!=` and `<`/`<=`/`>`/`>=` on it call generated dispatch functions that apply the concrete type's own operation (the shared-code form GENERICS_DIP §21.3 allows beside the §21.1 specialization strategy). Bounds are checked where a concrete type is chosen (written types, constructions, literal factories, generic calls) and where generic code passes a type parameter on (`add 'where T: Hash'`). `HashMap`/`LinkedHashMap`/`HashSet` need `Hash`, `LinkedHashSet` and the `Set` factories `Equal`, `TreeMap`/`TreeSet` `Order`. Evidence: `WitnessTest`, `WitnessExecTest` (interpreter, LLVM, WASM, optimized and unoptimized). Open: `.hash`/`==` on an unbounded type parameter still compares the erased bits instead of being rejected; a bounded pack's ctor with arguments cannot be given descriptors yet; `<=>` on a bounded parameter is not dispatched.
 - [ ] **023. Complete nested inference, defaults, holes, and explicit arguments.** Acceptance: Functions, members, constructors, and expected types resolve consistently with useful ambiguity errors.
   - From 010.C3.3: `apply(1.5, { x -> x * 2.0 })` for `func<T> apply(value: T, change: (T) -> T): T` infers no type argument, so the call and lambda stay erased.
   - From 021.1: that call's result is now typed by the `T` inferred from `1.5`, but the lambda is still checked and lowered against the erased `(Any) -> Any`. LLVM computes 0 in it, which now prints as `0.0`/`0` where `<value>` hid it; the written form `apply<Float>(…)` prints the same on LLVM and traps on WASM. A hole (`pairOf<Int, _>(…)`) is not completed by inference and stays erased.

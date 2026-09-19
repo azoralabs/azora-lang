@@ -354,6 +354,13 @@ sealed class Expr {
          * the type's constructor instead of one of its members.
          */
         val ctorArgs: List<Expr>? = null,
+        /**
+         * Which copy of a source position this is. A grouped assignment writes
+         * its value once and gives each target its own copy
+         * (`self.{keys, hashes} = alloc .() * n`); each copy is resolved against
+         * its own target, so what `.` means is recorded per copy.
+         */
+        val instance: Int = 0,
     ) : Expr()
 
     data class Member(

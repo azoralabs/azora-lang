@@ -24,9 +24,11 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
   by them in IR, so its value is no longer erased on LLVM and WASM.
 - Completed substeps: 010.C4.1–C4.2. List and Set literals build the standard
   collections on the interpreter, LLVM and WASM.
-- In progress: 010.C4.3. Map literals are correct on the interpreter; native maps
-  wait on `Hash` through a generic slot and on LLVM's printing of nullables.
-  010.C4.4 (untyped `[k: v]`) needs a decision.
+- Completed substep: 010.C4.3. Map literals build the standard maps on every
+  target. 010.C4.4 (untyped `[k: v]`) needs a decision.
+- Completed substep: 022.1. `Hash`, `Equal` and `Order` bounds reach erased
+  generic code through witness descriptors and are checked where types are
+  chosen. A `Set<Quad>` fixture now fails the `Equal` bound and awaits a decision.
 - Completed substep: 018.1. `ctor .()` runs on the interpreter, LLVM and WASM
   wherever a construction writes no arguments, once.
 - The remaining 008 fixture review and 010.C5 remain open. Older entries below
@@ -1750,5 +1752,153 @@ yields its result. Decide whether to reject the declaration or honor it.
 
 ```sh
 ./gradlew :compiler:desktopTest --offline --console=plain --tests '*ReceiverOnlyCtor*' --tests '*CtorOverload*'
+./gradlew :compiler:desktopTest --offline --console=plain
+```
+
+## 2026-09-19 — 022.1: `Hash`, `Equal` and `Order` through erased generic code; 010.C4.3 closed
+
+C4.1–C4.3 are committed as `2b89a938`. The 018.1 patch (`ctor .()` on every
+target) was applied from its session's worktree, uncommitted, and is recorded in
+its own entry above.
+
+**The defect.** A generic value is an erased eight-byte slot. `key.hash` inside
+`HashMap<K, V>` read the slot's bits and `==` compared them. That is right for an
+`Int` and wrong for anything else:
+
+- a `String` built at run time hashed and compared by its address on LLVM;
+- WASM could not lower `.hash` on a slot at all;
+- `TreeMap` ordered its keys by address on LLVM.
+
+**Design.** Descriptors, the shared-code form GENERICS_DIP §21.3 permits beside
+the §21.1 specialization strategy, and the one erased slots (021) allow:
+
+- *Bounds.* A type parameter bounded `where K: Hash`, `Equal` or `Order` carries
+  a descriptor, an `Int` naming the concrete type. `Hash` and `Order` imply
+  `Equal`. `Witnesses` reads bounds from the `where` clause, which the parser
+  already lowers to `K is Hash`.
+- *Where descriptors live.* A bounded pack gets a hidden `__witness_K` field
+  (default `-1`) added to its AST, so layout and copying treat it like any other
+  field; its methods read `self.__witness_K`. A bounded function, and a bounded
+  pack's lifted statics (`literal`), take it as a hidden trailing IR parameter.
+  A function whose receiver or parameter is a bounded pack reads it from that
+  value (`oper+ HashMap<K, V>&.(…)`).
+- *Filling them.* Constructions fill the field from written type arguments or
+  the declared type they are built for (`var m: HashMap<K, V> = .()`). Calls pass
+  the parameter, taking the type arguments in this order: written, bound by
+  matching the callee's parameter types against the arguments' declared types
+  (variadic elements included), then 021.1's inferred ones. A literal passes its
+  target's.
+- *Knowing an operand is a `K`.* IR types erase `K` to `Any`, so lowering reads
+  declarations: parameters, locals, pack fields (with the owner's arguments
+  substituted), and elements of `K*` and `Array<K>`.
+- *Dispatch.* `x.hash`, `==`/`!=` and `<`/`<=`/`>`/`>=` on such an operand call
+  `__witness_hash`, `__witness_equal` or `__witness_compare`. Each is generated
+  last, with one branch per descriptor that needs its operation. A branch binds
+  the slot at the concrete type and lowers the ordinary `x.hash`, `a == b` or
+  `a < b` on it, so a pack's derived or written operator is exactly what
+  concrete code would call. An unset descriptor panics.
+
+**Built-in hashes** now agree on every backend:
+
+- integers, `Char` and `Bool` hash to their value;
+- floats hash to their bit pattern (a `Float` as a `Float`);
+- a string hashes to the 64-bit FNV-1a of its UTF-8 bytes (`__azora_str_hash`
+  on LLVM, `__str_hash` on WASM, the same in the interpreter).
+
+WASM had no `.hash` lowering before this.
+
+**Enforcement.**
+
+- *Concrete types* are checked against the bound, reusing `ConstraintEvaluator`.
+  This covers written types (`HashMap<Double, Int>`, now with a line), explicit
+  constructions (`HashSet<Double>()`, new), literal factories (C3.4.4) and
+  generic calls (`code(2.5)` with `where T: Hash`, new; 022 had no call-site
+  check).
+- *Width aliases.* `Long` is `Int<64>`, so a width answers with its family's
+  conformances. Before, `Long does not implement Equal`.
+- *Generic code* passing a type parameter to a bound it does not declare is
+  rejected: `'T' of 'HashSet' must be Hash, and 'T' is not declared to be; add
+  'where T: Hash'`. The IR generator's `WitnessError` is reported as a compile
+  error.
+
+**Standard library.**
+
+- `HashMap` and `LinkedHashMap` require `K: Hash`, and `HashSet` requires `T: Hash`.
+- `LinkedHashSet` and the `Set`/`MutableSet` factories require `T: Equal`.
+- `TreeMap` and `TreeSet` require `Order`, as their documentation already said.
+- Factories and helpers that build those collections declare the same bounds.
+- A `TreeMap` slice now builds a `TreeMap`. It built a `LinkedHashMap`, which
+  needs a `Hash` its keys do not promise.
+
+**Defects found by running maps natively:**
+
+- *Grouped assignment aliased its type.* `self.{keys, values, hashes, occupied}
+  = alloc .() * n` gives each target a copy of one expression. The resolver
+  records what `.()` means by source position, so the last target's reading
+  (`Bool`) was used for all four. `HashMap._rehash` then allocated its eight-byte
+  buffers at one byte per slot, which corrupted the heap on LLVM. AddressSanitizer
+  (with `sanitize_address` added to each function, which `.ll` input otherwise
+  lacks) located the write in `HashMap__insertKnownHash`; `lli` crashed later, in
+  its own exit handlers. `Expr.InferredMember.instance` now tells the copies
+  apart. `WitnessTest.eachGroupedTargetAllocatesItsOwnElementType` checks the IR.
+- *`HashMap._rehash` looped over `0..newCapacity` and `0..oldCapacity`*,
+  inclusive ranges, one slot past each buffer. It never ran natively before.
+- *`m[k] = v` passed its value at the literal's width.* `3.5` is a `Float` there.
+  It is now coerced to the operator's instantiated parameters, as a method call is.
+- *WASM held every nullable as an `i32`,* truncating an erased `V?` and a
+  `Long?`. A nullable now has its inner type's representation, null being zero.
+- *The interpreter did `ULong` arithmetic as signed.* Division, remainder,
+  ordering and right shift on `ULong`/`USize` are now unsigned. FNV hashes made
+  bucket indices negative.
+- *LLVM `boxToI64` for `Float`* took its result temporary before the bitcast's,
+  numbering them out of order.
+
+**Not changed, recorded:**
+
+- `.hash`/`==` on an unbounded type parameter still compares the erased bits;
+  the DIP asks for a bound there.
+- A bounded pack whose ctor takes arguments cannot be given descriptors yet
+  (`WitnessError`).
+- `<=>` on a bounded parameter is not dispatched.
+- A generic key type (`Pair<Int, String>`) hashes through its own member, whose
+  erased fields are not dispatched.
+- LLVM prints a nullable as `<value>`, and `??` does not lower natively
+  (`__nullCoalesce`); `LlvmAggregateExecTest.mapLiteralReadsIntegerKeys` reads
+  `values[1]` through a `Map<Int, String>` that way.
+- `mapInsertsMissingEntry` writes `values[3] = 30` through `MutableMap`, which
+  declares no `oper[]=`.
+- On WASM a null value-type nullable is indistinguishable from zero.
+
+**Decision needed.** `LlvmRegressionExecTest.decimalCollectionsUseExplicitPackedAlignment`
+passed after C4 and now fails. It checks packed `fp128` stores and builds
+`Set<Quad>`. `Quad` is `PartialEqual`, not `Equal`, so a set of it no longer
+satisfies the `Equal` bound GTC §8.4 implies ("duplicates collapse according to
+`Equal`"). Either the fixture drops `Set<Quad>` (the array and map lines still
+produce the stores it checks), or sets accept `PartialEqual`. The test is
+unchanged.
+
+### Evidence
+
+- `WitnessTest` (5), new:
+  - bounded packs and functions over run-time strings, integers and a derived
+    pack, including a bounded function calling bounded ones;
+  - native maps and sets with run-time keys, grown past their first buffers;
+  - built-in hash values;
+  - the grouped-assignment IR;
+  - rejected key types and unbounded generic code;
+  - unsigned `ULong` arithmetic in the interpreter.
+- `WitnessExecTest` (2), new: the programs on LLVM and WASM, optimized and
+  unoptimized.
+- `StdCollectionLiteralTest`/`ExecTest` run the map programs on every target. The
+  set program's `LinkedHashSet<Double>` is `LinkedHashSet<Long>`, since `Double`
+  is not `Equal`.
+- Full compiler run: **2,396 tests, 2,205 passed, 191 failed, 0 skipped**, against
+  2,385 / 192 before 018.1 and this. Newly failing: the `Set<Quad>` fixture above.
+  Newly passing: `LlvmAggregateExecTest.typedStdlibCollectionLiteralsExposeSize`
+  and `mapLengthAndEmptyProperties`. Errors new inside already-failing tests were
+  compared line by line; there are none.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*Witness*' --tests '*StdCollectionLiteral*'
 ./gradlew :compiler:desktopTest --offline --console=plain
 ```

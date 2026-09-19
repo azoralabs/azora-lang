@@ -19,6 +19,7 @@ package org.azora.lang.semantic
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.ir.IrType
 
 /**
  * Decides whether a declaration's `where` clause holds for one set of type
@@ -37,6 +38,13 @@ import org.azora.lang.frontend.TypeRef
  *    site, so [bindings] name concrete arguments and never other parameters.
  */
 internal object ConstraintEvaluator {
+
+    /** `Int` or `UInt` for a width of either (`Byte`, `Long`, `ULong`, …), which states its conformances once. */
+    private fun integerFamily(name: String): String? {
+        if (!IrType.isPrimitiveName(name)) return null
+        val type = runCatching { IrType.fromName(name) }.getOrNull() as? IrType.Integer ?: return null
+        return if (type.signed) "Int" else "UInt"
+    }
 
     /** What a clause evaluated to, and why when it failed. */
     sealed class Outcome {
@@ -134,6 +142,8 @@ internal object ConstraintEvaluator {
                     Outcome.Unknown("'$subject is ${expr.typeName}' for a non-type binding")
                 table == null -> Outcome.Unknown("'$subject is ${expr.typeName}' without a symbol table")
                 table.conformsTo(bound.name, expr.typeName) -> Outcome.Satisfied
+                // `Long` is `Int<64>`: a width answers with its family's conformances.
+                integerFamily(bound.name)?.let { table.conformsTo(it, expr.typeName) } == true -> Outcome.Satisfied
                 else -> Outcome.Violated(
                     "'$subject is ${expr.typeName}': ${bound.name} does not implement ${expr.typeName}",
                 )

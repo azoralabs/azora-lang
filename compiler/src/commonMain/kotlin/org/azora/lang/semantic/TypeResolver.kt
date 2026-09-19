@@ -927,7 +927,7 @@ class TypeResolver(private val table: SymbolTable) {
             is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
             else -> null
         } ?: return
-        inferredHead(argument)?.let { table.defineInferredMember(it.line, it.column, owner) }
+        inferredHead(argument)?.let { table.defineInferredMember(it.line, it.column, owner, it.instance) }
     }
 
     /**
@@ -968,7 +968,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Alloc -> {
                 val pointee = (expected as? IrType.Pointer)?.inner ?: expected
                 elementOwnerName(pointee)?.let { owner ->
-                    inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, owner) }
+                    inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, owner, it.instance) }
                 }
                 seedExpectedValue(expr.value, pointee)
             }
@@ -1100,7 +1100,7 @@ class TypeResolver(private val table: SymbolTable) {
             is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
             // An annotation argument was matched to its field before this pass,
             // so the type it chose is already recorded.
-            else -> table.lookupInferredMember(expr.line, expr.column)
+            else -> table.lookupInferredMember(expr.line, expr.column, expr.instance)
         }
         if (owner == null) {
             errors.add(
@@ -1109,7 +1109,7 @@ class TypeResolver(private val table: SymbolTable) {
             )
             return null
         }
-        table.defineInferredMember(expr.line, expr.column, owner)
+        table.defineInferredMember(expr.line, expr.column, owner, expr.instance)
         expr.ctorArgs?.let { args ->
             // The name a type is registered under, which is not always the one it
             // is written by: a type declared in a scope is keyed by its qualified
@@ -2152,7 +2152,7 @@ class TypeResolver(private val table: SymbolTable) {
         // A bridge pack cannot be constructed, so `.()` into one is not a
         // construction: `T*` erases to `Any*`, and what the pointer holds is the
         // run of values, not one `Any`.
-        val owner = table.lookupInferredMember(member.line, member.column)
+        val owner = table.lookupInferredMember(member.line, member.column, member.instance)
         if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
         return Expr.ArrayLiteral(args, member.line, member.column, member.length)
     }
@@ -2160,7 +2160,7 @@ class TypeResolver(private val table: SymbolTable) {
     /** What one slot of an allocated repetition holds, or null if nothing said. */
     private fun repeatedElementType(construct: Expr): IrType? {
         val name = when (construct) {
-            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column)
+            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column, construct.instance)
             is Expr.Call -> construct.callee
             else -> null
         } ?: return null
@@ -2443,6 +2443,13 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 val struct = table.lookupStruct(calleeName)
                 if (struct != null) {
+                    // `HashSet<Double>()` is checked against the pack's `where`
+                    // clause as the type `HashSet<Double>` written anywhere is.
+                    if (expr.typeArgs.isNotEmpty()) {
+                        val tpSet = currentFuncTypeParams +
+                            (currentReceiverType?.let { table.lookupStruct(it)?.typeParams?.toSet() } ?: emptySet())
+                        validateGenericInstantiation(TypeRef.Named(calleeName, expr.typeArgs), tpSet, expr.line)
+                    }
                     // A declared `ctor` answers before the fields do: it takes the
                     // arguments it declared rather than one per field, and yields
                     // whatever it says it yields. One that reads a receiver from
@@ -2835,6 +2842,7 @@ class TypeResolver(private val table: SymbolTable) {
                             .map { bindings[it]?.singleOrNull() }
                             .takeIf { expr.typeArgs.isEmpty() && funcDecl.variadicParam == null && null !in it }
                             ?.filterNotNull()
+                        checkCallConstraints(expr, func, bindings)
                         val retRef = func.returnTypeRef
                         if (retRef != null) {
                             try {
@@ -4491,6 +4499,28 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
+     * A generic callee's `where` clause, decided for the type arguments this
+     * call binds: `code(2.5)` against `where T: Hash` is rejected because
+     * `Double` is not `Hash`. A call whose arguments are still generic, or a
+     * clause the evaluator cannot decide, is accepted - the enclosing code's
+     * own bounds answer for it.
+     */
+    private fun checkCallConstraints(expr: Expr.Call, func: FunctionSymbol, bindings: Map<String, List<TypeRef>>) {
+        val clause = func.whereClause ?: return
+        val decided = mutableMapOf<String, ConstraintEvaluator.Binding>()
+        for (param in func.typeParams) {
+            val ref = bindings[param]?.singleOrNull() ?: return
+            val named = ref as? TypeRef.Named
+            if (named != null && (named.name == "Any" || named.name in currentFuncTypeParams)) return
+            decided[param] = ConstraintEvaluator.bindingOf(ref) ?: return
+        }
+        val outcome = ConstraintEvaluator.evaluate(clause, decided, table)
+        if (outcome is ConstraintEvaluator.Outcome.Violated) {
+            errors.add("line ${expr.line}: '${expr.callee}' does not satisfy its 'where' clause here: ${outcome.reason}")
+        }
+    }
+
+    /**
      * A factory's `where` clause decided for the target's type arguments. A
      * clause, or an argument, the evaluator cannot decide is accepted - a
      * literal inside a generic still names its own parameters.
@@ -5395,10 +5425,10 @@ class TypeResolver(private val table: SymbolTable) {
      * `T` and `N` are concrete, and rejecting it there would reject every generic
      * that mentions a constrained type.
      */
-    private fun validateGenericInstantiation(ref: TypeRef, typeParams: Set<String>) {
+    private fun validateGenericInstantiation(ref: TypeRef, typeParams: Set<String>, line: Int = 0) {
         val named = ref as? TypeRef.Named ?: return
         if (named.args.isEmpty()) return
-        named.args.forEach { validateGenericInstantiation(it, typeParams) }
+        named.args.forEach { validateGenericInstantiation(it, typeParams, line) }
         val declaration = genericDeclarations[named.name] ?: return
         val clause = declaration.whereClause ?: return
         if (declaration.typeParams.size != named.args.size) return
@@ -5415,7 +5445,7 @@ class TypeResolver(private val table: SymbolTable) {
         if (!validatedSpecializations.add(key)) return
         val outcome = ConstraintEvaluator.evaluate(clause, bindings, table)
         if (outcome is ConstraintEvaluator.Outcome.Violated) {
-            errors.add("line 0: '$key' does not satisfy its 'where' clause: ${outcome.reason}")
+            errors.add("line $line: '$key' does not satisfy its 'where' clause: ${outcome.reason}")
         }
     }
 }

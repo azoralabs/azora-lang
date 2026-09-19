@@ -105,7 +105,7 @@ spec Map<K, V> {
      * `[k: v, …]` where a `Map<K, V>` is expected: a `LinkedHashMap<K, V>`, so
      * iteration follows the literal. A repeated key keeps its last value.
      */
-    literal [...entries: (K, V)]: Self {
+    literal [...entries: (K, V)]: Self where K: Hash {
         return _linkedHashMapOf(entries)
     }
 }
@@ -145,7 +145,7 @@ spec MutableMap<K, V> : Map<K, V> {
     func &.getOrPut(key: K, defaultValue: () -> V): V
 
     /** `[k: v, …]` where a `MutableMap<K, V>` is expected: a `LinkedHashMap<K, V>`, as for `Map<K, V>`. */
-    literal [...entries: (K, V)]: Self {
+    literal [...entries: (K, V)]: Self where K: Hash {
         return _linkedHashMapOf(entries)
     }
 }
@@ -217,7 +217,7 @@ spec MutableSortedMap<K, V> : SortedMap<K, V> {
 
 /** Hash table with unspecified iteration order. `K` requires `Hash` and `oper==`. */
 @Experimental(since: "0.1")
-pack HashMap<K, V> {
+pack HashMap<K, V> where K: Hash {
     var keys: K* = alloc .() * 16
     var values: V* = alloc .() * 16
     var hashes: ULong* = alloc .() * 16
@@ -228,7 +228,7 @@ pack HashMap<K, V> {
 
 /** Hash table whose dense entry storage preserves insertion order. */
 @Experimental(since: "0.1")
-pack LinkedHashMap<K, V> {
+pack LinkedHashMap<K, V> where K: Hash {
     var keys: K* = alloc .() * 16
     var values: V* = alloc .() * 16
     var hashes: ULong* = alloc .() * 16
@@ -240,7 +240,7 @@ pack LinkedHashMap<K, V> {
 
 /** AVL tree map ordered exclusively through `oper<` for `K`. */
 @Experimental(since: "0.1")
-pack TreeMap<K, V> {
+pack TreeMap<K, V> where K: Order {
     var keys: K* = alloc .() * 16
     var values: V* = alloc .() * 16
     var left: Int* = alloc .() * 16
@@ -350,10 +350,10 @@ impl HashMap<K, V> {
         self.{keys, values, hashes, occupied} = alloc .() * newCapacity
         self.{capacity, _size} = {newCapacity, 0}
 
-        for i in 0..newCapacity {
+        for i in 0..<newCapacity {
             self.occupied[i] = false
         }
-        for i in 0..oldCapacity {
+        for i in 0..<oldCapacity {
             if oldOccupied[i] {
                 self._insertKnownHash(oldKeys[i], oldValues[i], oldHashes[i])
             }
@@ -1242,7 +1242,7 @@ impl MutableSortedMap<K, V> for TreeMap<K, V> {
 // ---------------------------------------------------------------------
 
 /** What `Map` and `MutableMap` literals build: the entries in order, a repeated key keeping its last value. */
-func<K, V> _linkedHashMapOf(entries: Array<(K, V)>): LinkedHashMap<K, V> {
+func<K, V> _linkedHashMapOf(entries: Array<(K, V)>): LinkedHashMap<K, V> where K: Hash {
     var result: LinkedHashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].0, entries[i].1)
@@ -1265,7 +1265,7 @@ func<K, V> mapEntry(key: K, value: V): MapEntry<K, V> {
 macro $a @to $b => mapEntry($a, $b)
 
 @Experimental(since: "0.1")
-func<K, V> hashMapOf(...entries: MapEntry<K, V>): HashMap<K, V> {
+func<K, V> hashMapOf(...entries: MapEntry<K, V>): HashMap<K, V> where K: Hash {
     var result: HashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1274,7 +1274,7 @@ func<K, V> hashMapOf(...entries: MapEntry<K, V>): HashMap<K, V> {
 }
 
 @Experimental(since: "0.1")
-func<K, V> linkedHashMapOf(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
+func<K, V> linkedHashMapOf(...entries: MapEntry<K, V>): LinkedHashMap<K, V> where K: Hash {
     var result: LinkedHashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1283,7 +1283,7 @@ func<K, V> linkedHashMapOf(...entries: MapEntry<K, V>): LinkedHashMap<K, V> {
 }
 
 @Experimental(since: "0.1")
-func<K, V> treeMapOf(...entries: MapEntry<K, V>): TreeMap<K, V> {
+func<K, V> treeMapOf(...entries: MapEntry<K, V>): TreeMap<K, V> where K: Order {
     var result: TreeMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1299,7 +1299,7 @@ func<K, V> treeMapOf(...entries: MapEntry<K, V>): TreeMap<K, V> {
  * keep the last supplied value.
  */
 @Experimental(since: "0.1")
-func<K, V> mapOf(...entries: MapEntry<K, V>): Map<K, V> {
+func<K, V> mapOf(...entries: MapEntry<K, V>): Map<K, V> where K: Hash {
     var result: LinkedHashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1315,7 +1315,7 @@ func<K, V> mapOf(...entries: MapEntry<K, V>): Map<K, V> {
  * the last supplied value.
  */
 @Experimental(since: "0.1")
-func<K, V> mutableMapOf(...entries: MapEntry<K, V>): MutableMap<K, V> {
+func<K, V> mutableMapOf(...entries: MapEntry<K, V>): MutableMap<K, V> where K: Hash {
     var result: LinkedHashMap<K, V> = .()
     for i in 0..<entries.size {
         result.put(entries[i].key, entries[i].value)
@@ -1391,7 +1391,8 @@ oper[:] LinkedHashMap<K, V>&.(slice: MapSlice): Map<K, V> {
 oper[:] TreeMap<K, V>&.(slice: MapSlice): Map<K, V> {
     assert slice.step != 0 panic "Map slice step cannot be zero"
     fin all = self.entries()
-    var result: LinkedHashMap<K, V> = .()
+    // A sorted map's slice is sorted too, and needs `K` ordered rather than hashed.
+    var result: TreeMap<K, V> = .()
     var i = slice.start
     while (slice.step > 0 && i < slice.end) || (slice.step < 0 && i > slice.end) {
         if i >= 0 && i < all.size {

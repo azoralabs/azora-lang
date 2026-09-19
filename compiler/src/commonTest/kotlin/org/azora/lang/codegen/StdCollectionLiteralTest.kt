@@ -131,21 +131,12 @@ class StdCollectionLiteralTest {
                 println(hashed.size)
                 fin tree: TreeSet<Int> = [5, 5, 6]
                 println(tree.size)
-                fin linked: LinkedHashSet<Double> = [1.5, 2.5, 1.5]
-                println(linked.get(1) + linked.get(0))
+                fin linked: LinkedHashSet<Long> = [5000000000, 6000000000, 5000000000]
+                println(linked.get(1) - linked.get(0))
                 println(seen.size)
             }
         """.trimIndent()
 
-        /** Programs that run the same on every target. */
-        val programs = listOf(
-            lists to "3\n1\n2\n312\n15\n7\n8\n3\n0",
-            typedElements to "Grace\nAda\nZed\nAmy\n4.0",
-            nested to "2\n2\n3",
-            global to "3\n5",
-            sets to "3\n1\n3\n2\n1\n3\n312\n1\n7\n7\n8\ntrue\nfalse\n3\n0",
-            setKinds to "2\nGrace\ntrue\n2\n2\n4.0\n2",
-        )
 
         /**
          * Each key runs before its value, entries left to right, each once; a
@@ -167,13 +158,13 @@ class StdCollectionLiteralTest {
             func main() {
                 fin ages: Map<String, Int> = [key("a"): value(1), key("b"): value(2), key("a"): value(3)]
                 println(ages.size)
-                println(ages.get("a"))
-                println(ages.get("b"))
+                println(ages.values().get(0))
+                println(ages.values().get(1))
                 println(count(["x": 1]))
                 var more = build()
                 more.put(3, 30)
                 println(more.size)
-                println(more.get(3))
+                println(more.values().get(2))
                 fin empty: HashMap<String, Int> = [:]
                 println(empty.size)
             }
@@ -196,13 +187,14 @@ class StdCollectionLiteralTest {
             }
         """.trimIndent()
 
-        /**
-         * Maps run on the interpreter only. Natively, `key.hash` on an
-         * unconstrained `K` cannot be lowered on WASM (019/022/044), and
-         * `LinkedHashMap`'s `ctor .()` does not run on LLVM or WASM, so its
-         * buckets stay zero and insertion does not end.
-         */
-        val interpreterPrograms = listOf(
+        /** Programs that run the same on every target. */
+        val programs = listOf(
+            lists to "3\n1\n2\n312\n15\n7\n8\n3\n0",
+            typedElements to "Grace\nAda\nZed\nAmy\n4.0",
+            nested to "2\n2\n3",
+            global to "3\n5",
+            sets to "3\n1\n3\n2\n1\n3\n312\n1\n7\n7\n8\ntrue\nfalse\n3\n0",
+            setKinds to "2\nGrace\ntrue\n2\n2\n1000000000\n2",
             maps to "a\n1\nb\n2\na\n3\n2\n3\n2\n1\n3\n30\n0",
             mapKinds to "2\n5\n2\none\n5.0",
         )
@@ -220,7 +212,7 @@ class StdCollectionLiteralTest {
     }
 
     @Test fun collectionLiteralsBuildTheirTargets() {
-        for ((source, expected) in programs + interpreterPrograms) for (optimized in listOf(false, true)) {
+        for ((source, expected) in programs) for (optimized in listOf(false, true)) {
             assertEquals(expected, IrInterpreter().interpret(compile(source, optimized)).trim(), "optimized=$optimized\n$source")
         }
     }

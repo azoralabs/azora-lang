@@ -1988,21 +1988,13 @@ class LlvmCodegen {
         is IrExpr.Member -> emitMemberRead(expr)
         is IrExpr.MethodCall -> emitMethodCall(expr)
         is IrExpr.StructCtor -> emitStructCtor(expr)
-        is IrExpr.TupleLit -> {
-            for (e in expr.elements) emitExpr(e)
-            emit("  ; tuple literal - aggregate lowering not yet implemented")
-            "null"
-        }
+        is IrExpr.TupleLit -> emitTupleLit(expr)
         is IrExpr.VariantLit -> {
             for (e in expr.elements) emitExpr(e)
             emit("  ; variant literal - aggregate lowering not yet implemented")
             "null"
         }
-        is IrExpr.TupleAccess -> {
-            emitExpr(expr.target)
-            emit("  ; tuple access .${expr.index} - not lowered")
-            defaultValue(expr.type)
-        }
+        is IrExpr.TupleAccess -> emitTupleAccess(expr)
         is IrExpr.CatchExpr -> emitCatchExpr(expr)
         is IrExpr.NumCast -> coerceNumeric(emitExpr(expr.value), expr.value.type, expr.type)
         is IrExpr.IfExpr -> emitIfExpr(expr)
@@ -4721,6 +4713,52 @@ class LlvmCodegen {
             if (expr.type is IrType.Task) emitTaskScopeAttach(tmp)
             coerceNumeric(tmp, physicalReturn, expr.type)
         }
+    }
+
+    /**
+     * A tuple is a heap aggregate, as a pack is: each component at an offset
+     * aligned to its own width. The tuple's type decides the layout, so an
+     * erased `(K, V)` holds eight-byte slots whatever the components were.
+     */
+    private fun tupleOffsets(types: List<IrType>): Pair<List<Int>, Int> {
+        var end = 0
+        val offsets = types.map { type ->
+            val width = sizeOfScalar(type)
+            val at = (end + width - 1) / width * width
+            end = at + width
+            at
+        }
+        return offsets to end
+    }
+
+    private fun emitTupleLit(expr: IrExpr.TupleLit): String {
+        val types = (expr.type as? IrType.Tuple)?.elements ?: expr.elements.map { it.type }
+        val (offsets, size) = tupleOffsets(types)
+        // Components are evaluated left to right before the storage exists.
+        val values = expr.elements.mapIndexed { i, element -> coerceNumeric(emitExpr(element), element.type, types[i]) }
+        val raw = emitHeapAlloc("${maxOf(size, 1)}")
+        for ((i, value) in values.withIndex()) {
+            val slot = nextTmp()
+            emit("  $slot = getelementptr i8, i8* $raw, i64 ${offsets[i]}")
+            val typed = nextTmp()
+            emit("  $typed = bitcast i8* $slot to ${mapType(types[i])}*")
+            emit("  store ${mapType(types[i])} $value, ${mapType(types[i])}* $typed, align 1")
+        }
+        return raw
+    }
+
+    private fun emitTupleAccess(expr: IrExpr.TupleAccess): String {
+        val types = (expr.target.type as? IrType.Tuple)?.elements
+            ?: error("tuple component .${expr.index} of ${expr.target.type} has no tuple layout")
+        val stored = types[expr.index]
+        val raw = emitExpr(expr.target)
+        val slot = nextTmp()
+        emit("  $slot = getelementptr i8, i8* $raw, i64 ${tupleOffsets(types).first[expr.index]}")
+        val typed = nextTmp()
+        emit("  $typed = bitcast i8* $slot to ${mapType(stored)}*")
+        val loaded = nextTmp()
+        emit("  $loaded = load ${mapType(stored)}, ${mapType(stored)}* $typed, align 1")
+        return coerceNumeric(loaded, stored, expr.type)
     }
 
     private fun emitPointerAlloc(valueExpr: IrExpr, pointerType: IrType): String {

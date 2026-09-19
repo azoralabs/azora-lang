@@ -21,6 +21,7 @@ import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.frontend.asRepeatedConstruction
 import org.azora.lang.frontend.lambdaReceiverName
+import org.azora.lang.frontend.LITERAL_ENTRIES_FACTORY
 import org.azora.lang.frontend.LITERAL_FACTORY
 import org.azora.lang.frontend.OPTIONAL_UNWRAP
 import org.azora.lang.frontend.OwnershipOp
@@ -2968,6 +2969,15 @@ class TypeResolver(private val table: SymbolTable) {
                 val resolvedTarget = resolveExpr(expr.target) ?: return null
                 // Auto-deref: member access on a pointer reads through it (`p.v` == `(*p).v`).
                 val targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
+                // `pair.0` - a tuple's components are positional.
+                val position = expr.name.toIntOrNull()
+                if (targetType is IrType.Tuple && position != null) {
+                    if (position !in targetType.elements.indices) {
+                        errors.add("line ${expr.line}: tuple index $position out of bounds (tuple has ${targetType.elements.size} elements)")
+                        return null
+                    }
+                    return targetType.elements[position]
+                }
                 when {
                     // How many an aggregate holds is native to it - the backends
                     // all know, and no library declares it. An array belongs in
@@ -3462,9 +3472,8 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.MapLit -> {
                 val expected = expr.contextualType?.let { tryResolveType(it, expr.line) }
                 val target = expected as? IrType.Map
-                if (expected != null && expected != IrType.Any && target == null) {
-                    errors.add("line ${expr.line}: associative literal target $expected requires a collection literal factory; it cannot use structural map storage")
-                    return null
+                if (expected != null && expected != IrType.Any && !isUnboundTypeParam(expected) && target == null) {
+                    return resolveEntriesFactoryLiteral(expr, expected)
                 }
                 var keyType: IrType? = target?.key
                 var valType: IrType? = target?.value
@@ -4419,6 +4428,44 @@ class TypeResolver(private val table: SymbolTable) {
             val own = resolveExpr(value) ?: return null
             if (!isCompatible(element, adoptLiteralType(value, own, element))) {
                 errors.add("line ${value.line}: an element of a '$target' literal must have type $element, got $own")
+                return null
+            }
+        }
+        expr.literalFactory = factory.name
+        return target
+    }
+
+    /**
+     * `[key: value, …]` whose target is not map storage: the target type's
+     * associative factory builds it from one `(key, value)` entry per pair.
+     */
+    private fun resolveEntriesFactoryLiteral(expr: Expr.MapLit, target: IrType): IrType? {
+        val named = target as? IrType.Named
+        val factory = named?.let { table.lookupTypeStatic(it.name, LITERAL_ENTRIES_FACTORY) }
+        if (named == null || factory == null) {
+            errors.add(
+                "line ${expr.line}: type '$target' does not define an associative literal factory; " +
+                    "define 'literal [...entries: (K, V)]' in its impl or construct it explicitly",
+            )
+            return null
+        }
+        val (entry, built) = literalFactoryTypes(table, named, factory)
+        val (keyType, valueType) = (entry as IrType.Tuple).elements
+        if (!isCompatible(target, built)) {
+            errors.add("line ${expr.line}: the literal factory of '$target' builds $built, not $target")
+            return null
+        }
+        for ((key, value) in expr.entries) {
+            seedExpectedValue(key, keyType)
+            val ownKey = resolveExpr(key) ?: return null
+            if (!isCompatible(keyType, adoptLiteralType(key, ownKey, keyType))) {
+                errors.add("line ${key.line}: a key of a '$target' literal must have type $keyType, got $ownKey")
+                return null
+            }
+            seedExpectedValue(value, valueType)
+            val ownValue = resolveExpr(value) ?: return null
+            if (!isCompatible(valueType, adoptLiteralType(value, ownValue, valueType))) {
+                errors.add("line ${value.line}: a value of a '$target' literal must have type $valueType, got $ownValue")
                 return null
             }
         }

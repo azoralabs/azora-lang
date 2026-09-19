@@ -12,8 +12,9 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.3 (closed 2026-09-19 by user decision). ArrayList runs on
   the interpreter, LLVM and WASM; its remaining items moved to 016, 019/022,
   023 and 063.
-- In progress: 010.C3.4, target-owned literal factories. C3.4.1 (packs) and
-  C3.4.2 (specs) are complete; associative factories (C3.4.3) are next.
+- In progress: 010.C3.4, target-owned literal factories. C3.4.1 (packs),
+  C3.4.2 (specs) and C3.4.3 (associative) are complete; constraints, failure and
+  ownership (C3.4.4) are next.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -1180,3 +1181,52 @@ returning a non-implementation (15 tests). `LiteralFactoryExecTest` runs the
 `Stack` program on LLVM and WASM, optimized and unoptimized, with interpreter
 parity (`3, 3, 2.5, 1.25, 2`). `SpecDispatchExecTest` still passes. Full run:
 **2,337 tests, 2,133 passed, 204 failed, 0 skipped**; no failure identity changed.
+
+## 2026-09-19 — 010.C3.4.3: associative literal factories
+
+C3.4.2 is committed as `d3e8ecca`.
+
+**Declaration rule (user decision).** A factory is associative when its declared
+element type is written as a two-tuple: `literal [...entries: (K, V)]`. A factory
+whose element is a type parameter, `literal [...items: T]`, is a sequence even
+when `T` is instantiated as a pair, so `Bag<(Int, Int)> = [(1, 2), (3, 4)]`
+remains a sequence literal. The associative member lifts to
+`Type__literal_entries`. That name contains an interior underscore, which the
+token validator rejects in source, so no program can call it; a lifted declaration
+passes program validation. Duplicate associative factories get their own message.
+
+**Selection and lowering.** `[k: v, …]` and `[:]` whose expected type is not map
+storage select the target's associative factory, from packs or specs alike. The
+key and value types come from the instantiated `(K, V)` and each is checked on
+its own. The literal lowers to one direct call. Each entry is a tuple built at
+the factory's *physical* entry layout (erased `(K, V)` for a generic factory),
+its key evaluated before its value and each entry before the next. A literal of
+the other shape reports that the target lacks that kind of factory.
+
+**Tuples, which this required.** Tuple values worked only in the interpreter.
+LLVM lowered a tuple literal to `null` and a component read to a default value,
+each with a "not lowered" comment; WASM lowered both to `(i32.const 0)`. `t.0`
+parsed as a member named `0`, which the resolver rejected on a structural tuple.
+Now:
+
+- The resolver and IR read a numeric member of a structural tuple as a
+  positional component (out-of-range index diagnosed). Nominal `__Tuple_…` packs
+  keep their numeric fields.
+- LLVM and WASM lower tuples as heap aggregates like packs, each component at an
+  offset aligned to its width, with components evaluated left to right. A
+  component read loads the stored type and converts it to the use's type.
+
+Still open: a concrete tuple passed across a generic boundary keeps its concrete
+layout while the callee reads erased eight-byte slots. `second((1, 2.5))` for
+`func<K, V> second(entry: (K, V)): V` gives wrong native results, like
+`Array<Int>` passed as `Array<T>`. Factories avoid this by building entries at the
+erased layout directly. The general fix is a layout conversion at the boundary,
+which belongs with the erased-aggregate work (021/053).
+
+Evidence: `LiteralFactoryTest` (20) adds a generic `Ledger<K, V>` (String/Double,
+binding and argument contexts), an ordering program (`1234` from keys and values
+in order, plus `[:]`) and the sequence-of-pairs rule. It also adds shape-mismatch,
+key-type, value-type and duplicate rejections and the uncallable
+`literal_entries`. `LiteralFactoryExecTest` runs all six programs on LLVM and
+WASM, optimized and unoptimized, with interpreter parity. Full run: **2,342 tests,
+2,138 passed, 204 failed, 0 skipped**; no failure identity changed.

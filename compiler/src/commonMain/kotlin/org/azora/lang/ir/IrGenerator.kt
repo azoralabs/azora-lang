@@ -1826,6 +1826,30 @@ class IrGenerator(private val table: SymbolTable) {
      * the elements evaluated left to right into the factory's variadic slots at
      * their physical width - erased for a generic factory.
      */
+    /**
+     * An associative literal matched to its target's factory: one direct call
+     * receiving a `(key, value)` entry per pair, each key evaluated before its
+     * value and each entry before the next. Entries are built at the factory's
+     * physical entry layout, erased for a generic factory.
+     */
+    private fun lowerEntriesFactoryLiteral(expr: Expr.MapLit, factoryName: String): IrExpr {
+        val target = resolveType(expr.contextualType!!) as IrType.Named
+        val factory = table.lookupFunction(factoryName) ?: error("literal factory '$factoryName' is not registered")
+        val slots = factory.params.single().second as IrType.Array
+        val (keyType, valueType) = (literalFactoryTypes(table, target, factory).first as IrType.Tuple).elements
+        val entries = expr.entries.map { (key, value) ->
+            IrExpr.TupleLit(
+                listOf(coerceToFloat(lowerExpr(key), keyType), coerceToFloat(lowerExpr(value), valueType)),
+                slots.element,
+            )
+        }
+        return IrExpr.Call(
+            factoryName,
+            listOf(IrExpr.ArrayLiteral(entries, IrType.Array(slots.element, entries.size.toLong()))),
+            target,
+        )
+    }
+
     private fun lowerFactoryLiteral(expr: Expr.ArrayLiteral, factoryName: String): IrExpr {
         val target = resolveType(expr.contextualType!!) as IrType.Named
         val factory = table.lookupFunction(factoryName) ?: error("literal factory '$factoryName' is not registered")
@@ -2723,16 +2747,21 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.SetLit(elems, IrType.Set(elemType))
             }
             is Expr.MapLit -> {
-                val target = expr.contextualType?.let(::resolveType) as? IrType.Map
-                val entries = expr.entries.map { (key, value) ->
-                    val k = lowerExpr(key)
-                    val v = lowerExpr(value)
-                    (target?.let { coerceToFloat(k, it.key) } ?: k) to
-                        (target?.let { coerceToFloat(v, it.value) } ?: v)
+                val factory = expr.literalFactory
+                if (factory != null) {
+                    lowerEntriesFactoryLiteral(expr, factory)
+                } else {
+                    val target = expr.contextualType?.let(::resolveType) as? IrType.Map
+                    val entries = expr.entries.map { (key, value) ->
+                        val k = lowerExpr(key)
+                        val v = lowerExpr(value)
+                        (target?.let { coerceToFloat(k, it.key) } ?: k) to
+                            (target?.let { coerceToFloat(v, it.value) } ?: v)
+                    }
+                    val keyType = target?.key ?: entries.firstOrNull()?.first?.type ?: IrType.Any
+                    val valType = target?.value ?: entries.firstOrNull()?.second?.type ?: IrType.Any
+                    IrExpr.MapLit(entries, IrType.Map(keyType, valType))
                 }
-                val keyType = target?.key ?: entries.firstOrNull()?.first?.type ?: IrType.Any
-                val valType = target?.value ?: entries.firstOrNull()?.second?.type ?: IrType.Any
-                IrExpr.MapLit(entries, IrType.Map(keyType, valType))
             }
             is Expr.Alloc -> {
                 val value = lowerExpr(allocatedConstruction(expr.value))
@@ -2832,6 +2861,10 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 val target = autoDerefMemberTarget(lowerExpr(expr.target), expr.name, method = false)
                 val tt2 = target.type
+                val position = expr.name.toIntOrNull()
+                if (tt2 is IrType.Tuple && position != null && position in tt2.elements.indices) {
+                    return IrExpr.TupleAccess(target, position, tt2.elements[position])
+                }
                 // `5.seconds` - a member declared on a primitive by an `impl Int`.
                 // The receiver lowers to a builtin rather than a Named pack, so
                 // there is no struct to take a field from: the member is the

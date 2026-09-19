@@ -869,7 +869,15 @@ class WasmCodegen {
         is IrExpr.StringTemplate -> emitTemplate(expr)
         is IrExpr.CatchExpr -> emitAs(expr.expr, expr.type) // no exception support - evaluate the primary expression
         is IrExpr.Lambda -> emitClosure(expr)
-        is IrExpr.SetLit, is IrExpr.MapLit, is IrExpr.TupleLit, is IrExpr.TupleAccess,
+        is IrExpr.TupleLit -> emitTupleLit(expr)
+        is IrExpr.TupleAccess -> {
+            val types = (expr.target.type as? IrType.Tuple)?.elements
+                ?: error("tuple component .${expr.index} of ${expr.target.type} has no tuple layout")
+            val stored = types[expr.index]
+            val address = "(i32.add ${emitExpr(expr.target)} (i32.const ${tupleOffsets(types).first[expr.index]}))"
+            coerceWasm("(${wasmLoad(stored)} $address)", stored, expr.type)
+        }
+        is IrExpr.SetLit, is IrExpr.MapLit,
         is IrExpr.VariantLit, is IrExpr.SlotPattern -> "(i32.const 0)" // unsupported by the MVP target
     }
 
@@ -1251,6 +1259,32 @@ class WasmCodegen {
         }
         sb.append("$pad(local.get $t))")
         return sb.toString()
+    }
+
+    /**
+     * A tuple is a heap aggregate, as a pack is: each component at an offset
+     * aligned to its own width, so an erased `(K, V)` holds eight-byte slots.
+     */
+    private fun tupleOffsets(types: List<IrType>): Pair<List<Int>, Int> {
+        var end = 0
+        val offsets = types.map { type ->
+            val at = alignTo(end, wasmSize(type))
+            end = at + wasmSize(type)
+            at
+        }
+        return offsets to end
+    }
+
+    private fun emitTupleLit(expr: IrExpr.TupleLit): String {
+        usesAlloc = true
+        val types = (expr.type as? IrType.Tuple)?.elements ?: expr.elements.map { it.type }
+        val (offsets, size) = tupleOffsets(types)
+        val t = newTemp("i32")
+        val sb = StringBuilder("(block (result i32) (local.set $t (call \$__alloc (i32.const $size)))")
+        for ((i, element) in expr.elements.withIndex()) {
+            sb.append(" (${wasmStore(types[i])} (i32.add (local.get $t) (i32.const ${offsets[i]})) ${emitAs(element, types[i])})")
+        }
+        return sb.append(" (local.get $t))").toString()
     }
 
     private fun emitArrayLiteral(expr: IrExpr.ArrayLiteral): String {

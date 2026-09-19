@@ -42,6 +42,14 @@ val OPTIONAL_UNWRAP = setOf("require", "take")
 const val LITERAL_FACTORY = "literal"
 
 /**
+ * The member an associative factory - `literal [...entries: (K, V)]` - lifts to:
+ * `Type__literal_entries`. A declared element type that is itself a pair is
+ * what makes a factory associative; a sequence of pairs declares its element
+ * as a type parameter. No source token can spell the name.
+ */
+const val LITERAL_ENTRIES_FACTORY = "literal_entries"
+
+/**
  * Which ownership operation an [Expr.Isolated] performs.
  *
  * Every one of them moves or borrows; none duplicates, so none asks a
@@ -529,6 +537,8 @@ sealed class Expr {
         override val column: Int = 0,
         override val length: Int = 0,
         var contextualType: TypeRef? = null,
+        /** The target's associative `literal` factory the resolver selected. */
+        var literalFactory: String? = null,
     ) : Expr()
 
     /** `alloc <expr>` - heap-allocate a value and return a pointer to it. */

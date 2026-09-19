@@ -6219,18 +6219,14 @@ class Parser(
         val name = consumeIdentifierLike("Expected the elements' name after '...' in a literal factory at line ${start.line}")
         consume(TokenType.COLON, "Expected ':' and the element type after '...$name' at line ${start.line}")
         val element = parseTypeName()
-        if (element is TypeRef.Tuple && element.elements.size == 2) {
-            error(
-                "associative literal factories ('[...entries: (K, V)]') are not implemented yet at line " +
-                    "${start.line}; a sequence factory takes '[...elements: T]'",
-            )
-        }
+        val associative = element is TypeRef.Tuple && element.elements.size == 2
         consume(TokenType.R_BRACKET, "A literal factory takes one variadic parameter at line ${start.line}; $shape")
         consume(TokenType.COLON, "Expected ':' and the type a literal factory builds at line ${start.line}")
         val result = parseTypeName()
         val body = parseMemberBody("literal", "literal [...elements: T]: Type { … }")
         return FuncDecl(
-            LITERAL_FACTORY, listOf(Param(name, TypeRef.Array(element), variadic = true)), TypeAnnotation.Explicit(result), body,
+            if (associative) LITERAL_ENTRIES_FACTORY else LITERAL_FACTORY,
+            listOf(Param(name, TypeRef.Array(element), variadic = true)), TypeAnnotation.Explicit(result), body,
             false, emptyList(), start.line, start.column,
             annotations = annotations, visibility = visibility, declaresReceiver = false,
         )

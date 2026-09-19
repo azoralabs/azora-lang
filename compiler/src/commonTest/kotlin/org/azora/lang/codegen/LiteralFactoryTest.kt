@@ -104,6 +104,72 @@ class LiteralFactoryTest {
             }
         """.trimIndent()
 
+        /** An associative factory receives one `(key, value)` entry per pair. */
+        val ledger = """
+            import std.io
+            pack Ledger<K, V> {
+                var count: Int
+                var firstKey: K
+                var lastValue: V
+            }
+            impl Ledger<K, V> {
+                literal [...entries: (K, V)]: Ledger<K, V> {
+                    return Ledger<K, V>(entries.size, entries[0].0, entries[entries.size - 1].1)
+                }
+            }
+            func total(ledger: Ledger<Int, Int>): Int { return ledger.firstKey + ledger.lastValue }
+            func main() {
+                fin prices: Ledger<String, Double> = ["tea": 1.5, "cake": 3.25]
+                println(prices.count)
+                println(prices.firstKey)
+                println(prices.lastValue)
+                println(total([10: 1, 20: 5]))
+            }
+        """.trimIndent()
+
+        /** Each key runs before its value, and each entry before the next. */
+        val pairs = """
+            import std.io
+            pack Log { var digits: Int }
+            func next(log: Log!, digit: Int): Int {
+                log.digits = log.digits * 10 + digit
+                return digit
+            }
+            pack Pairs { var sum: Int }
+            impl Pairs {
+                literal [...entries: (Int, Int)]: Pairs {
+                    var sum = 0
+                    for i in 0..<entries.size { sum = sum * 100 + entries[i].0 * 10 + entries[i].1 }
+                    return Pairs(sum)
+                }
+            }
+            func main() {
+                var log = Log(0)
+                fin pairs: Pairs = [next(log, 1): next(log, 2), next(log, 3): next(log, 4)]
+                println(pairs.sum)
+                println(log.digits)
+                fin none: Pairs = [:]
+                println(none.sum)
+            }
+        """.trimIndent()
+
+        /** A factory whose element is a type parameter is a sequence even of pairs. */
+        val pairedBag = """
+            import std.io
+            pack Bag<T> {
+                var count: Int
+                var first: T
+            }
+            impl Bag<T> {
+                literal [...items: T]: Bag<T> { return Bag<T>(items.size, items[0]) }
+            }
+            func main() {
+                fin pairs: Bag<(Int, Int)> = [(1, 2), (3, 4)]
+                println(pairs.count)
+                println(pairs.first.1)
+            }
+        """.trimIndent()
+
         fun compile(source: String, optimized: Boolean): IrProgram {
             val result = Compiler().compile(source, release = optimized)
             assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
@@ -223,12 +289,59 @@ class LiteralFactoryTest {
         "a literal factory takes one variadic parameter",
     )
 
-    @Test fun associativeFactoriesAreNotYetAccepted() = assertRejects(
+    @Test fun anAssociativeFactoryBuildsItsTargetFromEntries() {
+        for (optimized in listOf(false, true)) {
+            assertEquals("2\ntea\n3.25\n15", IrInterpreter().interpret(compile(ledger, optimized)).trim())
+        }
+    }
+
+    @Test fun keysRunBeforeValuesAndEntriesInOrder() {
+        for (optimized in listOf(false, true)) {
+            assertEquals("1234\n1234\n0", IrInterpreter().interpret(compile(pairs, optimized)).trim())
+        }
+    }
+
+    @Test fun aSequenceOfPairsIsStillASequence() {
+        for (optimized in listOf(false, true)) {
+            assertEquals("2\n2", IrInterpreter().interpret(compile(pairedBag, optimized)).trim())
+        }
+    }
+
+    @Test fun eachShapeNeedsItsOwnFactory() {
+        assertRejects(
+            """
+                pack Pairs { var sum: Int }
+                impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(entries.size) } }
+                func main() { fin pairs: Pairs = [1, 2] }
+            """,
+            "type 'Pairs' does not define a sequence literal factory",
+        )
+        assertRejects(
+            """
+                pack Digits { var value: Int }
+                impl Digits { literal [...parts: Int]: Digits { return Digits(parts.size) } }
+                func main() { fin digits: Digits = [1: 2] }
+            """,
+            "type 'Digits' does not define an associative literal factory",
+        )
+    }
+
+    @Test fun entriesMustHaveTheFactorysKeyAndValueTypes() {
+        val pairs = """
+            pack Pairs { var sum: Int }
+            impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(entries.size) } }
         """
-            pack Pairs { var count: Int }
-            impl Pairs { literal [...entries: (String, Int)]: Pairs { return Pairs(entries.size) } }
+        assertRejects("$pairs\nfunc main() { fin p: Pairs = [\"one\": 1] }", "a key of a 'Pairs' literal must have type Int")
+        assertRejects("$pairs\nfunc main() { fin p: Pairs = [1: \"one\"] }", "a value of a 'Pairs' literal must have type Int")
+    }
+
+    @Test fun aTypeHasOneAssociativeFactory() = assertRejects(
+        """
+            pack Pairs { var sum: Int }
+            impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(1) } }
+            impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(2) } }
         """,
-        "associative literal factories",
+        "type 'Pairs' declares more than one associative literal factory",
     )
 
     @Test fun aTypeHasOneSequenceFactory() = assertRejects(
@@ -269,6 +382,13 @@ class LiteralFactoryTest {
                 pack Digits { var value: Int }
                 impl Digits { literal [...parts: Int]: Digits { return Digits(parts.size) } }
                 func main() { fin number = Digits::literal(1, 2) }
+            """,
+        )
+        errors(
+            """
+                pack Pairs { var sum: Int }
+                impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(entries.size) } }
+                func main() { fin pairs = Pairs::literal_entries((1, 2)) }
             """,
         )
     }

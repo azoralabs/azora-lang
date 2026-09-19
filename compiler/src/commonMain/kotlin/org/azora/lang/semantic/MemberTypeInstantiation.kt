@@ -31,6 +31,27 @@ internal fun instantiateMember(
     )
 }
 
+/**
+ * What a sequence literal factory takes and builds for [target]: the element
+ * type of its variadic parameter and its result, with the target's type
+ * arguments in place. The factory is lifted with its owner's parameters as its
+ * own, so they are released here to be bound by the target.
+ */
+internal fun literalFactoryTypes(table: SymbolTable, target: IrType.Named, factory: FunctionSymbol): Pair<IrType, IrType> {
+    val physical = factory.params.single().second
+    val element = (physical as? IrType.Array)?.element ?: physical
+    val typed = instantiateMember(
+        table,
+        target,
+        factory.copy(
+            params = listOf("element" to element),
+            paramTypeRefs = factory.paramTypeRefs.take(1).map { (it as? TypeRef.Array)?.element ?: it },
+            typeParams = emptyList(),
+        ),
+    )
+    return typed.params.single().second to typed.returnType
+}
+
 private fun substituteMemberType(ref: TypeRef, bindings: Map<String, TypeRef>): TypeRef = when (ref) {
     is TypeRef.Named -> if (ref.args.isEmpty() && ref.name in bindings) bindings.getValue(ref.name)
         else ref.copy(args = ref.args.map { substituteMemberType(it, bindings) })

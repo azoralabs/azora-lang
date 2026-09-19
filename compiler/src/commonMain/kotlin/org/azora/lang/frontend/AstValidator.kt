@@ -94,7 +94,13 @@ class AstValidator {
         val seen = mutableSetOf<String>()
         for (func in program.functions) {
             if (!seen.add(func.name)) {
-                errors.add("line ${func.line}: duplicate function '${func.name}'")
+                // A type builds a sequence literal one way; the lifted name
+                // `Type__literal` is an implementation detail.
+                val owner = func.name.removeSuffix("__$LITERAL_FACTORY")
+                errors.add(
+                    if (owner != func.name) "line ${func.line}: type '$owner' declares more than one sequence literal factory"
+                    else "line ${func.line}: duplicate function '${func.name}'",
+                )
             }
         }
 

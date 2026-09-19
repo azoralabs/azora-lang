@@ -40,6 +40,7 @@ import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.semantic.ComparisonPlan
 import org.azora.lang.semantic.instantiateMember
+import org.azora.lang.semantic.literalFactoryTypes
 import org.azora.lang.semantic.StructType
 import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.semantic.TypeFunctionEvaluator
@@ -1820,6 +1821,24 @@ class IrGenerator(private val table: SymbolTable) {
     private fun ctorFactoryName(typeName: String, arity: Int): String = ctorFactorySymbol(typeName, arity)
 
     /**
+     * A literal the resolver matched to its target's factory: one direct call,
+     * the elements evaluated left to right into the factory's variadic slots at
+     * their physical width - erased for a generic factory.
+     */
+    private fun lowerFactoryLiteral(expr: Expr.ArrayLiteral, factoryName: String): IrExpr {
+        val target = resolveType(expr.contextualType!!) as IrType.Named
+        val factory = table.lookupFunction(factoryName) ?: error("literal factory '$factoryName' is not registered")
+        val slots = factory.params.single().second as IrType.Array
+        val (element, _) = literalFactoryTypes(table, target, factory)
+        val elements = expr.elements.map { coerceToFloat(lowerExpr(it), element) }
+        return IrExpr.Call(
+            factoryName,
+            listOf(IrExpr.ArrayLiteral(elements, IrType.Array(slots.element, elements.size.toLong()))),
+            target,
+        )
+    }
+
+    /**
      * The pointer behind `p.*` when what it points at cannot itself be indexed.
      *
      * Indexing that deref means reading a slot of the buffer, so the pointer is
@@ -2682,15 +2701,20 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.Grouping -> lowerExpr(expr.expr)
             is Expr.Range -> error("range expressions can only be used as for-loop iterables")
             is Expr.ArrayLiteral -> {
-                val target = expr.contextualType?.let(::resolveType) as? IrType.Array
-                val elems = expr.elements.map { value ->
-                    val lowered = lowerExpr(value)
-                    target?.let { coerceToFloat(lowered, it.element) } ?: lowered
+                val factory = expr.literalFactory
+                if (factory != null) {
+                    lowerFactoryLiteral(expr, factory)
+                } else {
+                    val target = expr.contextualType?.let(::resolveType) as? IrType.Array
+                    val elems = expr.elements.map { value ->
+                        val lowered = lowerExpr(value)
+                        target?.let { coerceToFloat(lowered, it.element) } ?: lowered
+                    }
+                    val elemType = target?.element ?: if (elems.isEmpty()) IrType.Any else elems.first().type
+                    // A literal carries its compile-time element count as the array's size.
+                    val size = elems.size.toLong()
+                    IrExpr.ArrayLiteral(elems, IrType.Array(elemType, size))
                 }
-                val elemType = target?.element ?: if (elems.isEmpty()) IrType.Any else elems.first().type
-                // A literal carries its compile-time element count as the array's size.
-                val size = elems.size.toLong()
-                IrExpr.ArrayLiteral(elems, IrType.Array(elemType, size))
             }
             is Expr.SetLiteral -> {
                 val elems = expr.elements.map { lowerExpr(it) }

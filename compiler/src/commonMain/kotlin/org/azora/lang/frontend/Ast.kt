@@ -36,6 +36,12 @@ package org.azora.lang.frontend
 val OPTIONAL_UNWRAP = setOf("require", "take")
 
 /**
+ * The type-scoped member a sequence literal factory lifts to: `Type__literal`.
+ * `literal` is a keyword, so no source can name the member itself.
+ */
+const val LITERAL_FACTORY = "literal"
+
+/**
  * Which ownership operation an [Expr.Isolated] performs.
  *
  * Every one of them moves or borrows; none duplicates, so none asks a
@@ -276,6 +282,8 @@ sealed class Expr {
         override val length: Int = 0,
         /** Semantic target carried through AST copies into storage lowering. */
         var contextualType: TypeRef? = null,
+        /** The target's `literal` factory the resolver selected, by symbol name. */
+        var literalFactory: String? = null,
     ) : Expr()
 
     /** Set literal `![a, b, c]`. */

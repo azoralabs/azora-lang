@@ -27,12 +27,12 @@ class ArrayStdlibTest {
 
             func main() {
                 fin annotated: Array<Int> = [1, 2, 3]
-                fin literal = [1, 2, 3]
+                fin inferred = [1, 2, 3]
                 println(annotated.size)
                 println(annotated[1])
                 unsafe { println(annotated.data[1]) }
-                println(literal.size)
-                println(literal[1])
+                println(inferred.size)
+                println(inferred[1])
             }
             """,
         )

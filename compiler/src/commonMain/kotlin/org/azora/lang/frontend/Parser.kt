@@ -1136,6 +1136,7 @@ class Parser(
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.IMPL) -> parseImpl(annotations = annotations)
+            check(TokenType.LITERAL) -> misplacedLiteralFactory()
             else -> error(
                 "Expected 'func', 'fin', 'var', 'let', 'test', 'typealias', 'pack', 'enum', " +
                     "'spec', 'impl', 'inline', or 'deepinline' at top level, got " +
@@ -2844,6 +2845,7 @@ class Parser(
         }
         val name = when {
             enforceNumFields && check(TokenType.INT_LITERAL) -> advance().lexeme
+            check(TokenType.LITERAL) -> misplacedLiteralFactory()
             else -> consumeIdentifierLike("Expected field name")
         }
         val type: TypeRef
@@ -3772,6 +3774,7 @@ class Parser(
                         else -> error("Expected 'fin', 'prop' or 'func' after 'bridge' in impl block at line ${peek().line}")
                     }
                 }
+                check(TokenType.LITERAL) -> methods.add(parseLiteralFactory(memberAnnotations, visibility))
                 // `ctor .(…) { … }` - a constructor is a member of the
                 // type it builds, so it lives in the impl beside everything else.
                 check(TokenType.CTOR) -> {
@@ -6173,6 +6176,57 @@ class Parser(
     }
 
     /** A member body is a block, or one statement after an explicit `scope`. */
+    /**
+     * A spread has a runtime length, so a literal holding one cannot be a fixed
+     * call to its target's factory; it needs the builder form, which does not
+     * exist yet. Without this `...values` would read as a range.
+     */
+    private fun rejectLiteralSpread() {
+        if (!check(TokenType.ELLIPSIS)) return
+        error(
+            "a spread in a collection literal at line ${peek().line} needs a builder, which collection " +
+                "literals do not have yet; build the collection explicitly",
+        )
+    }
+
+    private fun misplacedLiteralFactory(): Nothing = error(
+        "a literal factory at line ${peek().line} belongs to the type it builds; declare " +
+            "'literal [...elements: T]: Type { … }' inside 'impl Type { … }'",
+    )
+
+    /**
+     * `literal [...elements: T]: Target { … }` - how a `[…]` literal whose
+     * expected type is this impl's type is built. It has no receiver, so it is
+     * lifted like any other type-scoped member; the literal reaches it through
+     * its target type, never by name.
+     */
+    private fun parseLiteralFactory(annotations: List<Annotation>, visibility: Visibility): FuncDecl {
+        val start = advance()
+        val shape = "write 'literal [...elements: T]: Type { … }'"
+        consume(TokenType.L_BRACKET, "Expected '[' after 'literal' at line ${start.line}; $shape")
+        if (!match(TokenType.ELLIPSIS)) {
+            error("a literal factory takes one variadic parameter at line ${start.line}; $shape")
+        }
+        val name = consumeIdentifierLike("Expected the elements' name after '...' in a literal factory at line ${start.line}")
+        consume(TokenType.COLON, "Expected ':' and the element type after '...$name' at line ${start.line}")
+        val element = parseTypeName()
+        if (element is TypeRef.Tuple && element.elements.size == 2) {
+            error(
+                "associative literal factories ('[...entries: (K, V)]') are not implemented yet at line " +
+                    "${start.line}; a sequence factory takes '[...elements: T]'",
+            )
+        }
+        consume(TokenType.R_BRACKET, "A literal factory takes one variadic parameter at line ${start.line}; $shape")
+        consume(TokenType.COLON, "Expected ':' and the type a literal factory builds at line ${start.line}")
+        val result = parseTypeName()
+        val body = parseMemberBody("literal", "literal [...elements: T]: Type { … }")
+        return FuncDecl(
+            LITERAL_FACTORY, listOf(Param(name, TypeRef.Array(element), variadic = true)), TypeAnnotation.Explicit(result), body,
+            false, emptyList(), start.line, start.column,
+            annotations = annotations, visibility = visibility, declaresReceiver = false,
+        )
+    }
+
     private fun parseMemberBody(kind: String, signature: String): List<Stmt> {
         skipNewlines()
         val scoped = match(TokenType.SCOPE)
@@ -12705,6 +12759,7 @@ class Parser(
                     consume(TokenType.R_BRACKET, "Expected ']' after empty associative literal ':'")
                     Expr.MapLit(emptyList(), tok.line, tok.column)
                 } else {
+                    rejectLiteralSpread()
                     val first = parseExpr()
                     if (match(TokenType.COLON)) {
                         // Associative collection literal: [key: value, ...]
@@ -12727,6 +12782,7 @@ class Parser(
                         while (match(TokenType.COMMA)) {
                             skipNewlines()
                             if (check(TokenType.R_BRACKET)) break
+                            rejectLiteralSpread()
                             elements.add(parseExpr())
                             skipNewlines()
                         }

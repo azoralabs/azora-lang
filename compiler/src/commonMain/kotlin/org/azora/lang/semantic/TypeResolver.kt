@@ -21,6 +21,7 @@ import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.frontend.asRepeatedConstruction
 import org.azora.lang.frontend.lambdaReceiverName
+import org.azora.lang.frontend.LITERAL_FACTORY
 import org.azora.lang.frontend.OPTIONAL_UNWRAP
 import org.azora.lang.frontend.OwnershipOp
 import org.azora.lang.frontend.Param
@@ -4350,8 +4351,7 @@ class TypeResolver(private val table: SymbolTable) {
         val expected = expr.contextualType?.let { tryResolveType(it, expr.line) }
         val target = expected as? IrType.Array
         if (expected != null && expected != IrType.Any && !isUnboundTypeParam(expected) && target == null) {
-            errors.add("line ${expr.line}: sequence literal target $expected requires a collection literal factory; it cannot use array storage")
-            return null
+            return resolveFactoryLiteral(expr, expected)
         }
         var element = target?.element
         if (element == null && expr.elements.isEmpty()) {
@@ -4389,6 +4389,37 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /** Literal lowering currently converts numeric constants, not boxed/spec values. */
+    /**
+     * `[…]` whose target is not array storage: the target type's `literal`
+     * factory builds it, and every element becomes one of its arguments.
+     */
+    private fun resolveFactoryLiteral(expr: Expr.ArrayLiteral, target: IrType): IrType? {
+        val named = target as? IrType.Named
+        val factory = named?.let { table.lookupTypeStatic(it.name, LITERAL_FACTORY) }
+        if (named == null || factory == null) {
+            errors.add(
+                "line ${expr.line}: type '$target' does not define a sequence literal factory; " +
+                    "define 'literal [...elements: T]' in its impl or construct it explicitly",
+            )
+            return null
+        }
+        val (element, built) = literalFactoryTypes(table, named, factory)
+        if (!isCompatible(target, built)) {
+            errors.add("line ${expr.line}: the literal factory of '$target' builds $built, not $target")
+            return null
+        }
+        for (value in expr.elements) {
+            seedExpectedValue(value, element)
+            val own = resolveExpr(value) ?: return null
+            if (!isCompatible(element, adoptLiteralType(value, own, element))) {
+                errors.add("line ${value.line}: an element of a '$target' literal must have type $element, got $own")
+                return null
+            }
+        }
+        expr.literalFactory = factory.name
+        return target
+    }
+
     private fun literalElementCompatible(expected: IrType, actual: IrType): Boolean =
         expected == actual || actual == IrType.Nothing ||
             (expected is IrType.Array && actual is IrType.Array &&

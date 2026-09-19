@@ -174,6 +174,8 @@ enum class TokenType {
     REMEMBER, RETAIN, PRESERVE, EFFECT,
     // Object model: `prop name: T { }`, `ctor(params) { }`, `dtor { }`.
     PROP, CTOR, DTOR,
+    // `literal [...elements: T]: Self { }` - how `[…]` builds a target type.
+    LITERAL,
     // `out { … }` postcondition contracts.
     OUT,
     // Visibility: public by default, `confined` narrows to the package. A

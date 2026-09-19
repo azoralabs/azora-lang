@@ -12,7 +12,8 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.3 (closed 2026-09-19 by user decision). ArrayList runs on
   the interpreter, LLVM and WASM; its remaining items moved to 016, 019/022,
   023 and 063.
-- In progress: 010.C3.4, target-owned literal factories.
+- In progress: 010.C3.4, target-owned literal factories. C3.4.1 (sequence
+  factories declared by packs) is complete; spec-owned (C3.4.2) is next.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -1075,4 +1076,62 @@ should also run the pointee's destructor remains 037.
 ```sh
 ./gradlew :compiler:desktopTest --offline --console=plain \
   --tests '*RawPointerExecTest' --tests '*ListConstructionExecTest'
+```
+
+
+## 2026-09-19 — 010.C3.4.1: sequence literal factories declared by packs
+
+010.C3.3 is closed (commit `c3c75b8d`); LLVM purge is `1a0c1f1a`. C3.4 is split
+into four substeps in the plan.
+
+GTC_DIP §5.7 and §8.7 make a collection literal's target own its construction
+through a static `literal` factory selected from the expected type. This substep
+implements that for packs:
+
+- `literal` is a reserved keyword with its own token (the DIP rules out a
+  contextual keyword). AZLS's two `rangeIs`/`rangeStarts` parameters named
+  `literal` are renamed, and AZLS highlights the keyword. One test fixture used
+  `literal` as a variable name. It is renamed `inferred`, which matches the
+  annotated/inferred comparison the test makes.
+- `literal [...elements: T]: Type { … }` is accepted inside `impl Type { … }`. It
+  has no receiver and lifts like any type-scoped member, to `Type__literal` with
+  the impl's type parameters. Because `literal` is a keyword, `Type::literal(…)`
+  cannot be written. Top-level and pack-body declarations, duplicates, a
+  non-variadic parameter and (for now) a two-tuple element type get targeted errors.
+- The resolver selects the factory when a sequence literal's expected type is a
+  pack, from bindings, arguments and returns. It computes the element type with
+  the target's type arguments in place, checks each element against it (literal
+  adoption included) and checks that the factory builds the target. It records
+  the selection on the literal, and IR lowering reads it rather than selecting
+  again (§14.2).
+- Lowering is one direct call. The elements are evaluated once, left to right,
+  into an array at the factory's physical element width (the erased slot for a
+  generic factory). Probing an ordinary `Type::make(...)` static call showed it
+  packs at the logical width instead, which misreads on native targets; the
+  factory path does not use it.
+- Top-level function symbols now record their source parameter types, as members
+  already did, so a lifted type-scoped member can be instantiated for its owner.
+  Without this, `Bag<Double>` elements stayed `Float` and read back as garbage.
+- A spread inside `[…]` was parsed as the inclusive-range operator. It is now a
+  parse error until literals have the builder form §8.11 requires.
+
+Evidence:
+
+- `LiteralFactoryTest` (11): a generic `Bag<T>` built through a binding, an
+  argument and a return (Int and Double elements). A `Digits` factory shows
+  elements run once, in order, into the factory, and that an empty literal works.
+  Also: the missing-factory, element-type, result-type, duplicate, misplaced,
+  non-variadic, associative and spread diagnostics, the reserved keyword, and
+  that the factory has no callable name.
+- `LiteralFactoryExecTest` (2): both programs on LLVM and WASM, optimized and
+  unoptimized. The ordering side effect is a field write through an exclusive
+  borrow. A `threadlocal var` written from a function **segfaults LLVM under
+  `lli` on this machine**; that pre-existing TLS defect is recorded, not fixed.
+- AZLS tests pass. Full run: **2,333 tests, 2,129 passed, 204 failed, 0 skipped**;
+  no failure identity changed.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests '*LiteralFactoryTest' --tests '*LiteralFactoryExecTest'
+./gradlew :azls:test --offline --console=plain
 ```

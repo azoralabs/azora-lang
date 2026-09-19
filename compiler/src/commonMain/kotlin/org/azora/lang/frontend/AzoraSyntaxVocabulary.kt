@@ -75,6 +75,7 @@ object AzoraSyntaxVocabulary {
         "effect" to TokenType.EFFECT,
         "prop" to TokenType.PROP,
         "ctor" to TokenType.CTOR,
+        "literal" to TokenType.LITERAL,
         "dtor" to TokenType.DTOR,
         "out" to TokenType.OUT,
         "exposed" to TokenType.EXPOSED,

@@ -53,14 +53,14 @@ func rangeEquals(
     return true
 }
 
-func rangeIs(source: String, start: Int, end: Int, literal: String): Bool {
-    return rangeEquals(source, start, end, literal, 0, stringLength(literal))
+func rangeIs(source: String, start: Int, end: Int, word: String): Bool {
+    return rangeEquals(source, start, end, word, 0, stringLength(word))
 }
 
-func rangeStarts(source: String, start: Int, end: Int, literal: String): Bool {
-    fin length = stringLength(literal)
+func rangeStarts(source: String, start: Int, end: Int, word: String): Bool {
+    fin length = stringLength(word)
     if start + length > end { return false }
-    return rangeEquals(source, start, start + length, literal, 0, length)
+    return rangeEquals(source, start, start + length, word, 0, length)
 }
 
 func findFrom(source: String, start: Int, end: Int, needle: String): Int {
@@ -117,7 +117,8 @@ func isKeywordRange(source: String, start: Int, end: Int): Bool {
         rangeIs(source, start, end, "effect") || rangeIs(source, start, end, "with") ||
         rangeIs(source, start, end, "without") ||
         rangeIs(source, start, end, "prop") || rangeIs(source, start, end, "ctor") ||
-        rangeIs(source, start, end, "dtor") || rangeIs(source, start, end, "out") ||
+        rangeIs(source, start, end, "dtor") || rangeIs(source, start, end, "literal") ||
+        rangeIs(source, start, end, "out") ||
         rangeIs(source, start, end, "exposed") || rangeIs(source, start, end, "protected") ||
         rangeIs(source, start, end, "confined") ||
         rangeIs(source, start, end, "threadlocal") ||

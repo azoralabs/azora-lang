@@ -241,6 +241,9 @@ class SymbolCollector {
                     params = params,
                     returnType = callReturnType,
                     returnTypeRef = (func.returnType as? TypeAnnotation.Explicit)?.ref,
+                    // Source types, so a type-scoped member - a lifted static or
+                    // a literal factory - can be instantiated for its owner.
+                    paramTypeRefs = func.params.map { it.type },
                     isInline = func.isInline,
                     typeParams = func.typeParams,
                     paramNames = paramNames,

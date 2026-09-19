@@ -23,11 +23,11 @@ class ErasedGenericExecTest {
         return result.ir
     }
 
-    private fun assertRuns(source: String, expected: String, llvm: Boolean = true) {
+    private fun assertRuns(source: String, expected: String) {
         for (optimized in listOf(false, true)) {
             val ir = compile(source, optimized)
             assertEquals(expected, IrInterpreter().interpret(ir).trim(), "interpreter, optimized=$optimized")
-            if (llvm && LlvmExec.available) {
+            if (LlvmExec.available) {
                 assertEquals(expected, LlvmExec.runIr(LlvmCodegen().generate(ir)), "LLVM, optimized=$optimized")
             }
             if (WasmExec.available) {
@@ -36,8 +36,6 @@ class ErasedGenericExecTest {
         }
     }
 
-    // LLVM prints this Long as `<value>`; that native defect is recorded in the
-    // progress log and is not what this test measures.
     @Test fun genericFunctionsReturnWideValues() = assertRuns(
         """
             import std.io
@@ -53,7 +51,6 @@ class ErasedGenericExecTest {
             }
         """.trimIndent(),
         "7\n2.5\n5000000000\ntext\n3.5",
-        llvm = false,
     )
 
     @Test fun aGenericFieldHoldsItsTypeArgument() = assertRuns(

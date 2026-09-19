@@ -20,6 +20,8 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
   library reference.
 - In progress: 007/014. A program's block imports bind lexically. Library-module
   block imports, receiver syntax, scope members and unknown-module imports remain.
+- Completed substep: 021.1. A generic call with inferred type arguments is typed
+  by them in IR, so its value is no longer erased on LLVM and WASM.
 - The remaining 008 fixture review and 010 (C4–C5) remain open. Older entries
   below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -1397,3 +1399,114 @@ Remaining, with owners:
 
 The full suite now runs in about 1m50s instead of about 4 minutes, because far
 less is injected.
+
+## 2026-09-19 — 021.1: inferred generic calls typed in IR
+
+A generic call whose type arguments were inferred got the callee's erased result
+type in IR. The resolver inferred `T` and typed `wrap(4)` as `Box<Int>`, but
+`IrGenerator` substituted type arguments only when the call wrote them. An
+unannotated binding then took the erased `Box<Any>`, and a field or element read
+through it was lowered as `Any`.
+
+**Change.** Inference stays in the resolver. Where it already binds type
+parameters from the arguments (the `isGeneric` block of `Expr.Call`), it now
+records them on the call as `Expr.Call.inferredTypeArgs`. This follows the
+`ArrayLiteral.literalFactory` precedent: a constructor field the resolver writes
+and `copy` carries through `InlineCallables`. It records only when:
+
+- the call wrote no type arguments;
+- every type parameter is bound to a single type; and
+- the callee has no variadic type parameter.
+
+Otherwise the field is null. `IrGenerator` reads the written arguments, or the
+inferred ones when none were written, through its existing branch for written
+arguments. Two cases keep that rule unchanged:
+
+- A call that writes a hole is not completed: `pairOf<Int, _>(1, "two")` is still
+  `Pair<Any, Any>`.
+- Arguments naming the enclosing function's type parameters erase: `wrap(u)`
+  inside `func<U> rewrap` is `Box<Any>`, the same as the written `wrap<U>(u)`.
+
+Nothing in the IR re-derives inference. No Expr- or declaration-keyed hash
+collection exists after resolution, so the mutable field does not disturb one.
+
+Before and after, unoptimized and optimized alike (the interpreter was already
+right in every row):
+
+| Program | LLVM before | WASM before | After, both targets |
+|---|---|---|---|
+| `fin b = wrap(4)`, `wrap("hey")` | `<value>`, `<value>` | 4, 1024 | 4, hey |
+| `fin xs = listOf(1, 2, 3); xs.get(0)` | `<value>` | 8589934593 | 1 |
+| `identity(big)`, a Long | `<value>` | 5000000000 | 5000000000 |
+| `rewrap(9).item` (generic calling generic) | `<value>` | 9 | 9 |
+| The `listed` test program | invalid IR (`ptr` used as `i32`) | wrong | correct |
+
+**Changed and still wrong (023).** The call `apply(x, { … })` for
+`func<T> apply(value: T, change: (T) -> T): T` is now typed by the `T` inferred
+from `x`. The lambda is still checked and lowered against the erased
+`(Any) -> Any`, as recorded under 010.C3.3.
+
+| Call | Before, LLVM / WASM | After, LLVM / WASM | Written `apply<T>`, before and after |
+|---|---|---|---|
+| `apply(1.5, { x -> x * 2.0 })` | `<value>` / 1077936128 | 0.0 / 3.0 | 0.0 / trap |
+| `apply(d, { x -> x * 2.0 })`, a Double | `<value>` / 0 | 0.0 / 0.0 | 0.0 / trap |
+| `apply(4, { x -> x + 1 })` | `<value>` / 5 | 0 / 5 | 5 / trap |
+
+The LLVM zero is computed in the erased lambda; `<value>` used to hide it. It is
+now a plausible wrong number rather than a placeholder, which makes 023 more
+urgent. Written type arguments behave the same before and after this change.
+
+**Not changed, measured.** `listOf` packs its variadic arguments at their own
+width while its body reads `Array<T>` as erased slots (the known
+`Array<Int>`-as-`Array<T>` mismatch). The annotated form behaves identically
+before and after this change:
+
+- `fin xs: List<Int> = listOf(1, 2, 3)` reads `xs.get(2)` as 0 on LLVM and
+  1098542913 on WASM.
+- Float lists are wrong past the first element.
+- A String `listOf` traps on WASM.
+
+`listOf(1, 2, 3).get(0)` reads 1 only because the first Int is the low half of
+the first slot. Long lists, and lists built from erased values inside a generic
+body, read correctly at every index.
+
+### Evidence
+
+- `InferredGenericCallTest` (commonTest, 6 tests): IR binding types written out
+  with their type arguments. `IrType.Named` equality ignores type arguments, so
+  comparing types directly would pass on the erased result. The tests cover
+  `Box<Int>`/`Box<String>`, and inferred and written forms agreeing. They cover
+  `List<Int/Long/String/Float>` from `listOf` and a user `twice`, a `Long`
+  result, the generic-body and hole rules above, and interpreter output
+  optimized and unoptimized.
+- `InferredGenericCallExecTest` (desktop, 2 tests): the same programs on LLVM and
+  WASM, optimized and unoptimized.
+- `ErasedGenericExecTest.genericFunctionsReturnWideValues` now runs on LLVM too.
+  Its exclusion was this defect: "LLVM prints `<value>` for a Long returned from
+  a generic function" (above). This resolves that item.
+- With the change reverted, 7 of the 13 focused tests fail (the hole and
+  interpreter tests pass either way, by design).
+- Full compiler run: **2,375 tests, 2,172 passed, 203 failed, 0 skipped**,
+  against **2,367 / 2,164 / 203** at `f7b26292` measured just before. Compared by
+  (suite, test) identity, no previously passing test fails and no failure
+  changed its message. The 8 new tests pass.
+- AZLS: 91/91 (`Expr.Call` gained a field).
+
+This was developed and measured in a separate worktree at `f7b26292`. Another
+session had uncommitted edits to `TypeResolver.kt` and `IrGenerator.kt` in the
+main tree (list literal factories, spec ancestor members), and both measurements
+exclude them.
+
+The patch was also applied to a snapshot of those edits, and it applies cleanly.
+There, the reported `func<T> twice(v: T): List<T> { return [v, v] }` prints
+`5`/`hey` for `twice(5).get(1)` and `twice("hey").get(0)` on all three targets,
+optimized and unoptimized. Without this change it prints `<value>` twice on LLVM
+and `1024` for the string on WASM. `GenericMemberSignature*`,
+`StdCollectionLiteral*` and `LiteralFactory*` pass there with and without it.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests '*InferredGenericCall*' --tests '*ErasedGenericExecTest'
+./gradlew :compiler:desktopTest --offline --console=plain
+./gradlew :azls:test --offline --console=plain
+```

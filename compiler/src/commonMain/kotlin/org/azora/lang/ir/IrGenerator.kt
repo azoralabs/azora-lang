@@ -2643,6 +2643,9 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                         result
                     } else args
+                    // What the call wrote, or what the resolver inferred when it
+                    // wrote nothing: `wrap(4)` builds a `Box<Int>` as `wrap<Int>(4)` does.
+                    val typeArgs = expr.typeArgs.ifEmpty { expr.inferredTypeArgs.orEmpty() }
                     val callType = when {
                         expr.callee == "async" -> {
                             val result = (effectiveArgs.firstOrNull()?.type as? IrType.Function)?.ret ?: IrType.Any
@@ -2654,15 +2657,15 @@ class IrGenerator(private val table: SymbolTable) {
                         // A hole was never a type argument: `add<Short, _, Long>`
                         // said two of three, and the return type follows only
                         // when every one of them was said.
-                        funcDecl != null && expr.typeArgs.isNotEmpty() &&
-                            expr.typeArgs.none { it.isHole } &&
-                            expr.typeArgs.none { typeRefMentionsAny(it, currentGenericTypeParams) } -> {
+                        funcDecl != null && typeArgs.isNotEmpty() &&
+                            typeArgs.none { it.isHole } &&
+                            typeArgs.none { typeRefMentionsAny(it, currentGenericTypeParams) } -> {
                             val returnRef = (funcDecl.returnType as? TypeAnnotation.Explicit)?.ref
                             if (returnRef == null) {
                                 func.returnType
                             } else {
                                 val substitutions = func.typeParams
-                                    .zip(expr.typeArgs)
+                                    .zip(typeArgs)
                                     .associate { (name, argument) -> name to listOf(argument) }
                                 resolveType(
                                     TypeFunctionEvaluator.resolve(

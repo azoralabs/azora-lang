@@ -49,9 +49,9 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,367 tests: 2,164 passed,
-203 failed, 0 skipped**. No previously passing test fails, and the 007/014
-acceptance tests in `FactoryDependencyTest` pass. The
+The latest full compiler run has **2,375 tests: 2,172 passed,
+203 failed, 0 skipped** (021.1 on `f7b26292`). No previously passing test
+fails, and the 007/014 acceptance tests in `FactoryDependencyTest` pass. The
 [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
 records the 2,290-test baseline. Packs and specs declare sequence and
 associative `literal` factories, and importing the target brings in the factory
@@ -125,9 +125,11 @@ Dependencies: Steps 001–010; narrow semantic tests can be developed earlier wi
 Dependencies: Core type contracts from 011–020; resolve architectural choices before broad rewrites.
 
 - [ ] **021. Resolve generic representation and specialization architecture.** Acceptance: Document a coherent choice for native/WASM/interpreter execution, ABI, ownership, and code-size tradeoffs.
+  - [x] **021.1. Type inferred generic calls by their inferred arguments in IR.** The resolver records the type arguments it inferred on a call that wrote none (`Expr.Call.inferredTypeArgs`); lowering types the result by them through the rule for written arguments, so `fin b = wrap(4)` holds a `Box<Int>` as `wrap<Int>(4)` does. Holes and arguments naming the enclosing function's type parameters keep that rule unchanged (erased). Evidence: `InferredGenericCallTest`, `InferredGenericCallExecTest` (interpreter, LLVM, WASM, optimized and unoptimized); `ErasedGenericExecTest` now runs its generic-function case on LLVM (2026-09-19).
 - [ ] **022. Preserve and enforce inline and where bounds.** Acceptance: Constraints survive parsing and reject invalid instantiations; no declared bound is silently discarded.
 - [ ] **023. Complete nested inference, defaults, holes, and explicit arguments.** Acceptance: Functions, members, constructors, and expected types resolve consistently with useful ambiguity errors.
   - From 010.C3.3: `apply(1.5, { x -> x * 2.0 })` for `func<T> apply(value: T, change: (T) -> T): T` infers no type argument, so the call and lambda stay erased.
+  - From 021.1: that call's result is now typed by the `T` inferred from `1.5`, but the lambda is still checked and lowered against the erased `(Any) -> Any`. LLVM computes 0 in it, which now prints as `0.0`/`0` where `<value>` hid it; the written form `apply<Float>(…)` prints the same on LLVM and traps on WASM. A hole (`pairOf<Int, _>(…)`) is not completed by inference and stays erased.
 - [ ] **024. Complete const generic identity and layout computation.** Acceptance: Distinct const arguments produce correct layouts and cache keys; invalid values fail at compile time.
 - [ ] **025. Complete variadic generic expansion and constraints.** Acceptance: Empty, singleton, nested, and heterogeneous packs preserve arity, order, and element-wise bounds.
 - [ ] **026. Enforce associated types, coherence, variance, and object safety.** Acceptance: Ambiguous impls and unsafe spec objects are rejected; substitution respects declaration identity.

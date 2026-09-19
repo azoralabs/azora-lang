@@ -2822,6 +2822,14 @@ class TypeResolver(private val table: SymbolTable) {
                                 }
                             }
                         }
+                        // `wrap(4)` is `wrap<Int>(4)` from here on: lowering reads
+                        // what was inferred rather than inferring it again. Only a
+                        // call that wrote no type arguments, and only once every
+                        // parameter is bound to a single type.
+                        expr.inferredTypeArgs = func.typeParams
+                            .map { bindings[it]?.singleOrNull() }
+                            .takeIf { expr.typeArgs.isEmpty() && funcDecl.variadicParam == null && null !in it }
+                            ?.filterNotNull()
                         val retRef = func.returnTypeRef
                         if (retRef != null) {
                             try {

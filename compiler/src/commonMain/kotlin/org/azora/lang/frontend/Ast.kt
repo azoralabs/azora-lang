@@ -216,7 +216,21 @@ sealed class Expr {
      * named function; [callee] is then unused. The receiver must evaluate to a
      * function value.
      */
-    data class Call(val callee: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0, val typeArgs: List<TypeRef> = emptyList(), val receiver: Expr? = null) : Expr()
+    data class Call(
+        val callee: String,
+        val args: List<Expr>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val typeArgs: List<TypeRef> = emptyList(),
+        val receiver: Expr? = null,
+        /**
+         * The type arguments the resolver inferred for a generic call that wrote
+         * none, one per type parameter; null when it wrote some or inference left
+         * one unbound. Lowering types the result by them.
+         */
+        var inferredTypeArgs: List<TypeRef>? = null,
+    ) : Expr()
 
     /**
      * Parenthesized expression (e.g. `(a + b)`).

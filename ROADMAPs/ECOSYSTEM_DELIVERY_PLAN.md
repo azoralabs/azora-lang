@@ -93,7 +93,7 @@ selected `Array` as the default for a non-empty sequence without context.
 - [ ] **010.C3. Establish canonical target-owned factory resolution.** Resolve declarations by module/target identity, substitute generic constraints and discover factory dependencies before lowering. Do not substitute array layouts for List/Set/Map specs.
   - [x] **010.C3.1. Preserve declaring-module reachability for selected imports.** Selecting a type or factory keeps its module's implementations while unrelated declarations and other-module extensions stay inaccessible.
   - [x] **010.C3.2. Remove implicit collection storage reinterpretation.** Named List/Set/Map targets cannot accept unrelated intrinsic storage by short name; IR retains explicit declared types. Expected named types retain generic/const arguments when reconstructed.
-  - [ ] **010.C3.3. Preserve generic method signatures and physical return ABI.** Substitute owner arguments in parameters/results and convert explicitly at an erased ABI boundary; validate on all backends. Direct constructors/methods share owner substitution. The ArrayList regression executes on the interpreter, LLVM and WASM. WASM has eight-byte erased slots (user decision under 021), width-aware pack layout and spec dispatch; both native targets free on `purge` and zero new buffers. `ArrayList.hash` is parked (user decision). Open, overlapping 016/019–023: 128-bit values in erased slots, inference with lambda arguments, unconstrained `.hash` in Set/Map.
+  - [x] **010.C3.3. Preserve generic method signatures and physical return ABI.** Substitute owner arguments in parameters/results and convert explicitly at an erased ABI boundary; validate on all backends. Evidence: the ArrayList regression executes on the interpreter, LLVM and WASM, optimized and unoptimized. WASM uses eight-byte erased slots (user decision under 021) with width-aware pack layout and spec dispatch. Both native targets free on `purge` and zero new buffers. `ArrayList.hash` is parked (user decision). Remaining items moved to 016, 019/022, 023 and 063 (closed 2026-09-19).
   - [ ] **010.C3.4. Register and select target-owned literal factories.** Support sequence/associative shape, constraints and failure/ownership requirements through the complete pipeline.
   - [ ] **010.C3.5. Discover selected factory dependencies before specialization/lowering.** Use canonical declarations and avoid unrelated short-name matches.
 - [ ] **010.C4. Connect real standard List/Set/Map implementations.** Lower literals through the selected constructor/factory and preserve source order, exactly-once key/value evaluation, duplicate rules, failure behavior and ownership.
@@ -109,9 +109,11 @@ Dependencies: Steps 001–010; narrow semantic tests can be developed earlier wi
 - [ ] **014. Repair module resolution, visibility, aliases, and symbol identity.** Acceptance: Multi-file ambiguity, shadowing, access checks, and incremental analysis agree with compilation.
 - [ ] **015. Enforce all four binding mutability combinations.** Acceptance: Rebinding and mutation are checked separately for locals, globals, fields, and captures.
 - [ ] **016. Define and enforce numeric conversion and overflow behavior.** Acceptance: Widths, signedness, literals, promotions, casts, shifts, and overflow have target-consistent tests.
+  - From 010.C3.3: 128-bit values (`Cent`, `UCent`, `Quad`) do not fit an eight-byte erased generic slot on either native target.
 - [ ] **017. Complete nullable, failable, Unit, and Nothing typing.** Acceptance: Invalid unwraps and missing returns are rejected; propagation and unreachable paths preserve types.
 - [ ] **018. Validate packs, enums, variants, errors, and unsafe unions.** Acceptance: Layouts, constructors, payloads, discriminants, exhaustiveness, and unsafe access agree through execution.
 - [ ] **019. Repair spec conformance, required members, and operator contracts.** Acceptance: Return types, receivers, associated outputs, overlapping impls, and field capability derivation are checked.
+  - From 010.C3.3: member access on an unconstrained type parameter is accepted (`ArrayList.hash` read `.hash` on `T`); LLVM lowers it to a default zero. `ArrayList.hash` is parked until a `Hash` bound can be required and dispatched.
 - [ ] **020. Gate core typing with positive and negative program suites.** Acceptance: Invalid programs stop before code generation and valid programs retain the intended type behavior.
 
 ## Phase 3: Complete generics and metaprogramming (021–030)
@@ -121,6 +123,7 @@ Dependencies: Core type contracts from 011–020; resolve architectural choices 
 - [ ] **021. Resolve generic representation and specialization architecture.** Acceptance: Document a coherent choice for native/WASM/interpreter execution, ABI, ownership, and code-size tradeoffs.
 - [ ] **022. Preserve and enforce inline and where bounds.** Acceptance: Constraints survive parsing and reject invalid instantiations; no declared bound is silently discarded.
 - [ ] **023. Complete nested inference, defaults, holes, and explicit arguments.** Acceptance: Functions, members, constructors, and expected types resolve consistently with useful ambiguity errors.
+  - From 010.C3.3: `apply(1.5, { x -> x * 2.0 })` for `func<T> apply(value: T, change: (T) -> T): T` infers no type argument, so the call and lambda stay erased.
 - [ ] **024. Complete const generic identity and layout computation.** Acceptance: Distinct const arguments produce correct layouts and cache keys; invalid values fail at compile time.
 - [ ] **025. Complete variadic generic expansion and constraints.** Acceptance: Empty, singleton, nested, and heterogeneous packs preserve arity, order, and element-wise bounds.
 - [ ] **026. Enforce associated types, coherence, variance, and object safety.** Acceptance: Ambiguous impls and unsafe spec objects are rejected; substitution respects declaration identity.
@@ -181,6 +184,7 @@ Dependencies: Recovered library plus type, memory, concurrency, and backend gate
 - [ ] **061. Audit standard-library contracts and generic capabilities.** Acceptance: Each public operation states mutation, ownership, errors, constraints, and target availability.
 - [ ] **062. Repair arrays, lists, tuples, queues, and iterators.** Acceptance: Bounds, growth, aliasing, element drops, iteration invalidation, and empty cases are correct.
 - [ ] **063. Repair maps, sets, ordering, and hashing.** Acceptance: Equality/hash agreement, collisions, NaN behavior, resizing, and deterministic contracts are tested.
+  - From 010.C3.3: Set and Map read `.hash` on unconstrained element/key types, including Map lookup and insertion; with 019/022 this blocks both on WASM and is a zero on LLVM.
 - [ ] **064. Complete strings, Unicode, formatting, and numeric conversion.** Acceptance: Encoding, slicing, round trips, overflow, locale policy, and allocation behavior are explicit.
 - [ ] **065. Complete math, time, randomness, and algorithms.** Acceptance: Numerical/domain edge cases, monotonic clocks, reproducibility, and algorithm contracts are tested.
 - [ ] **066. Complete I/O, filesystem, OS, and networking boundaries.** Acceptance: Partial operations, failures, cancellation, resource cleanup, and target support are verified.

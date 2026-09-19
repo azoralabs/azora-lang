@@ -38,7 +38,7 @@ import org.azora.lang.ir.IrUnaryOp
  *    are laid out as `[len: i32][payload…]`; packs as packed `i32` fields.
  *
  * Printing and string handling go through host imports (`print_i32`, `print_str`,
- * …) and a small linear-memory runtime (`__alloc`, `__str_concat`, `__str_eq`,
+ * …) and a small linear-memory runtime (`__alloc`/`__free`, `__str_concat`, `__str_eq`,
  * `__str_repeat`, `__int_to_str`). Structured control flow lowers to
  * `block`/`loop`/`br_if`.
  *
@@ -122,6 +122,84 @@ class WasmCodegen {
 
     companion object {
         private const val STRING_BASE = 1024
+
+        // Heap allocator (see ALLOCATOR_RUNTIME). Payloads are powers of two from
+        // 8 bytes up to 1 GiB; one list head per class, padded to keep the
+        // first block 8-aligned.
+        internal const val WASM_MIN_CLASS = 3
+        internal const val WASM_MAX_CLASS = 30
+        internal const val WASM_MAX_ALLOC = 1 shl WASM_MAX_CLASS
+        internal const val WASM_FREE_LIST_BYTES = (WASM_MAX_CLASS + 2) * 4
+        internal const val WASM_BLOCK_LIVE = 0x417A6F41 // "AzoA"
+        internal const val WASM_BLOCK_FREE = 0x417A6F46 // "AzoF"
+
+        /** The allocator's globals: the free-list table at [heapBase], then the first block. */
+        internal fun heapGlobals(heapBase: Int): String =
+            "  (global \$__free_lists i32 (i32.const $heapBase))\n" +
+                "  (global \$__heap (mut i32) (i32.const ${heapBase + WASM_FREE_LIST_BYTES}))\n"
+
+        // The heap is a table of free-list heads followed by blocks. A block is an
+        // 8-byte header - its size class, then a live/free tag - and a payload of
+        // `1 << class` bytes, so every payload is 8-aligned. `__alloc` reuses a
+        // freed block of the same class (zeroing it, as fresh memory is) or takes
+        // new memory, growing it when needed. `__free` accepts null, and traps on a
+        // pointer whose block is not live: a double purge, an interior pointer or
+        // memory the allocator never handed out. Exhaustion traps like LLVM's abort.
+        internal val ALLOCATOR_RUNTIME = """
+  (func ${'$'}__heap_take (param ${'$'}bytes i32) (result i32)
+    (local ${'$'}p i32) (local ${'$'}end i64) (local ${'$'}have i64)
+    (local.set ${'$'}p (global.get ${'$'}__heap))
+    (local.set ${'$'}end (i64.add (i64.extend_i32_u (local.get ${'$'}p)) (i64.extend_i32_u (local.get ${'$'}bytes))))
+    (if (i64.ge_u (local.get ${'$'}end) (i64.const 4294967296)) (then unreachable))
+    (local.set ${'$'}have (i64.shl (i64.extend_i32_u (memory.size)) (i64.const 16)))
+    (if (i64.gt_u (local.get ${'$'}end) (local.get ${'$'}have))
+      (then
+        (if (i32.eq
+              (memory.grow (i32.wrap_i64 (i64.shr_u (i64.add (i64.sub (local.get ${'$'}end) (local.get ${'$'}have)) (i64.const 65535)) (i64.const 16))))
+              (i32.const -1))
+          (then unreachable))))
+    (global.set ${'$'}__heap (i32.wrap_i64 (local.get ${'$'}end)))
+    (local.get ${'$'}p))
+  (func ${'$'}__alloc (param ${'$'}size i32) (result i32)
+    (local ${'$'}class i32) (local ${'$'}head i32) (local ${'$'}block i32)
+    (if (i32.gt_u (local.get ${'$'}size) (i32.const $WASM_MAX_ALLOC)) (then unreachable))
+    (local.set ${'$'}class (i32.const $WASM_MIN_CLASS))
+    (if (i32.gt_u (local.get ${'$'}size) (i32.const ${1 shl WASM_MIN_CLASS}))
+      (then (local.set ${'$'}class (i32.sub (i32.const 32) (i32.clz (i32.sub (local.get ${'$'}size) (i32.const 1)))))))
+    (local.set ${'$'}head (i32.add (global.get ${'$'}__free_lists) (i32.shl (local.get ${'$'}class) (i32.const 2))))
+    (local.set ${'$'}block (i32.load (local.get ${'$'}head)))
+    (if (local.get ${'$'}block)
+      (then
+        (i32.store (local.get ${'$'}head) (i32.load offset=8 (local.get ${'$'}block)))
+        (memory.fill (i32.add (local.get ${'$'}block) (i32.const 8)) (i32.const 0) (local.get ${'$'}size)))
+      (else
+        (local.set ${'$'}block (call ${'$'}__heap_take (i32.add (i32.const 8) (i32.shl (i32.const 1) (local.get ${'$'}class)))))))
+    (i32.store (local.get ${'$'}block) (local.get ${'$'}class))
+    (i32.store offset=4 (local.get ${'$'}block) (i32.const $WASM_BLOCK_LIVE))
+    (i32.add (local.get ${'$'}block) (i32.const 8)))
+  (func ${'$'}__free (param ${'$'}p i32)
+    (local ${'$'}block i32) (local ${'$'}class i32) (local ${'$'}head i32)
+    (if (i32.eqz (local.get ${'$'}p)) (then (return)))
+    (if (i32.or
+          (i32.or
+            (i32.lt_u (local.get ${'$'}p) (i32.add (global.get ${'$'}__free_lists) (i32.const ${WASM_FREE_LIST_BYTES + 8})))
+            (i32.ge_u (local.get ${'$'}p) (global.get ${'$'}__heap)))
+          (i32.and (local.get ${'$'}p) (i32.const 7)))
+      (then unreachable))
+    (local.set ${'$'}block (i32.sub (local.get ${'$'}p) (i32.const 8)))
+    (if (i32.ne (i32.load offset=4 (local.get ${'$'}block)) (i32.const $WASM_BLOCK_LIVE)) (then unreachable))
+    (local.set ${'$'}class (i32.load (local.get ${'$'}block)))
+    (if (i32.or (i32.lt_u (local.get ${'$'}class) (i32.const $WASM_MIN_CLASS)) (i32.gt_u (local.get ${'$'}class) (i32.const $WASM_MAX_CLASS)))
+      (then unreachable))
+    (i32.store offset=4 (local.get ${'$'}block) (i32.const $WASM_BLOCK_FREE))
+    (local.set ${'$'}head (i32.add (global.get ${'$'}__free_lists) (i32.shl (local.get ${'$'}class) (i32.const 2))))
+    (i32.store (local.get ${'$'}p) (i32.load (local.get ${'$'}head)))
+    (i32.store (local.get ${'$'}head) (local.get ${'$'}block)))
+  (func ${'$'}__alloc_buffer (param ${'$'}count i32) (param ${'$'}stride i32) (result i32)
+    (if (i32.gt_u (local.get ${'$'}count) (i32.div_u (i32.const $WASM_MAX_ALLOC) (local.get ${'$'}stride)))
+      (then unreachable))
+    (call ${'$'}__alloc (i32.mul (local.get ${'$'}count) (local.get ${'$'}stride))))
+"""
     }
 
     /**
@@ -218,8 +296,10 @@ class WasmCodegen {
             val result = if (hasFunctionResult(callable.ret)) " (result ${wasmType(callable.ret)})" else ""
             sb.appendLine("  (type \$$name (func$params$result))")
         }
+        // A module can call through a callable parameter without creating a
+        // lambda itself; `call_indirect` still needs a table to name.
+        if (closureTypes.isNotEmpty()) sb.appendLine("  (table ${closureFunctions.size} funcref)")
         if (closureFunctions.isNotEmpty()) {
-            sb.appendLine("  (table ${closureFunctions.size} funcref)")
             sb.appendLine(
                 closureFunctions.joinToString(" ", "  (elem (i32.const 0) ", ")\n") {
                     "\$__closure_${it.index}"
@@ -227,7 +307,7 @@ class WasmCodegen {
             )
         }
         sb.appendLine("  (memory (export \"memory\") 16)")
-        sb.appendLine("  (global \$__heap (mut i32) (i32.const ${align4(constCursor)}))")
+        sb.append(heapGlobals(alignTo(constCursor, 8)))
         for ((name, type) in globalTypes) {
             sb.appendLine("  (global \$$name (mut ${wasmType(type)}) (${wasmType(type)}.const 0))")
         }
@@ -242,7 +322,7 @@ class WasmCodegen {
             val escaped = exportName.replace("\\", "\\\\").replace("\"", "\\\"")
             sb.appendLine("  (export \"$escaped\" (global \$$internalName))")
         }
-        if (usesAlloc) sb.append(RT_ALLOC)
+        if (usesAlloc) sb.append(ALLOCATOR_RUNTIME)
         if (usesConcat) sb.append(RT_CONCAT)
         if (usesIsCheck) usesStrEq = true
         if (usesStrEq) sb.append(RT_STR_EQ)
@@ -679,7 +759,9 @@ class WasmCodegen {
         is IrExpr.StringLiteral -> "(i32.const ${internString(expr.value)})"
         is IrExpr.EnumLiteral -> "(i32.const ${internString(expr.variant)})"
         is IrExpr.EnumToString -> emitExpr(expr.value)
-        is IrExpr.Var -> {
+        // The null reference. No object lives at address 0: string data and
+        // the heap both start above STRING_BASE.
+        is IrExpr.Var -> if (expr.name == "__null") "(i32.const 0)" else {
             ensureLazyInitialized(expr.name)
             val alias = reactiveAliases[expr.name]
             val target = alias?.valueGlobal ?: expr.name
@@ -844,6 +926,18 @@ class WasmCodegen {
             // panic reporter. `unreachable` is Wasm's bottom instruction.
             return "(block (result i32) (drop ${emitExpr(expr.args.single())}) unreachable)"
         }
+        when (expr.name) {
+            "__alloc" -> return emitPointerAlloc(expr)
+            "__allocBuffer" -> return emitPointerBufferAlloc(expr)
+            "__deref" -> return "(${wasmLoad(expr.type)} ${emitExpr(expr.args.single())})"
+            "__derefAssign" -> {
+                val (pointer, value) = expr.args
+                val pointee = (pointer.type as? IrType.Pointer)?.inner ?: value.type
+                val stored = coerceWasm(emitExpr(value), value.type, pointee)
+                return wrapCallResult(expr.type, "(${wasmStore(pointee)} ${emitExpr(pointer)} $stored)")
+            }
+            "__purge" -> return wrapCallResult(expr.type, emitPurge(expr.args.single()))
+        }
         if (expr.receiver != null) {
             val callable = expr.receiver.type as? IrType.Function
                 ?: error("indirect call receiver is not a callable type")
@@ -904,6 +998,69 @@ class WasmCodegen {
         IrType.Unit -> "(block (result i32) $call (i32.const 0))"
         IrType.Nothing -> "(block (result i32) $call unreachable)"
         else -> call
+    }
+
+    /**
+     * `alloc value` - a fresh heap block owning the value. An array's elements
+     * move into a buffer of their own rather than the pointer aliasing the
+     * array's storage, so purging the pointer releases exactly that buffer.
+     */
+    private fun emitPointerAlloc(expr: IrExpr.Call): String {
+        usesAlloc = true
+        val valueExpr = expr.args.single()
+        val value = emitExpr(valueExpr)
+        val block = newTemp("i32")
+        val array = valueExpr.type as? IrType.Array
+        if (array != null) {
+            val stride = wasmSize(array.element)
+            val pointee = (expr.type as? IrType.Pointer)?.inner
+            check(pointee == null || wasmSize(pointee) == stride) {
+                "alloc of $array as $pointee changes the element slot width"
+            }
+            val source = newTemp("i32")
+            return "(block (result i32) (local.set $source $value) " +
+                "(local.set $block (call \$__alloc_buffer (i32.load (local.get $source)) (i32.const $stride))) " +
+                "(memory.copy (local.get $block) (i32.add (local.get $source) (i32.const 4)) " +
+                "(i32.mul (i32.load (local.get $source)) (i32.const $stride))) " +
+                "(local.get $block))"
+        }
+        val slot = newTemp(wasmType(valueExpr.type))
+        return "(block (result i32) (local.set $slot $value) " +
+            "(local.set $block (call \$__alloc (i32.const ${wasmSize(valueExpr.type)}))) " +
+            "(${wasmStore(valueExpr.type)} (local.get $block) (local.get $slot)) " +
+            "(local.get $block))"
+    }
+
+    /** `alloc .() * count` - `count` zeroed elements; a negative or oversized count traps. */
+    private fun emitPointerBufferAlloc(expr: IrExpr.Call): String {
+        usesAlloc = true
+        val element = (expr.type as? IrType.Pointer)?.inner
+            ?: error("buffer allocation must produce a pointer, got ${expr.type}")
+        val countExpr = expr.args.single()
+        val count = when (wasmType(countExpr.type)) {
+            "i32" -> emitExpr(countExpr)
+            "i64" -> {
+                val wide = newTemp("i64")
+                "(block (result i32) (local.set $wide ${emitExpr(countExpr)}) " +
+                    "(if (i64.gt_u (local.get $wide) (i64.const $WASM_MAX_ALLOC)) (then unreachable)) " +
+                    "(i32.wrap_i64 (local.get $wide)))"
+            }
+            else -> error("buffer count must be an integer, got ${countExpr.type}")
+        }
+        return "(call \$__alloc_buffer $count (i32.const ${wasmSize(element)}))"
+    }
+
+    /**
+     * `purge pointer` returns the pointer's block to the allocator. It releases
+     * storage only: elements are not destroyed, which is what a container that
+     * has already moved them out relies on.
+     */
+    private fun emitPurge(value: IrExpr): String {
+        val type = value.type
+        val pointer = type is IrType.Pointer || (type is IrType.Nullable && type.inner is IrType.Pointer)
+        check(pointer) { "purge of $type is not supported by the WebAssembly target; only raw pointers are released" }
+        usesAlloc = true
+        return "(call \$__free ${emitExpr(value)})"
     }
 
     private fun emitStructCtor(expr: IrExpr.StructCtor): String {
@@ -1482,14 +1639,6 @@ class WasmCodegen {
     }
 
     // ── Linear-memory runtime (folded WAT) ────────────────────────────────
-
-    private val RT_ALLOC = """
-  (func ${'$'}__alloc (param ${'$'}size i32) (result i32)
-    (local ${'$'}p i32)
-    (local.set ${'$'}p (global.get ${'$'}__heap))
-    (global.set ${'$'}__heap (i32.and (i32.add (i32.add (global.get ${'$'}__heap) (local.get ${'$'}size)) (i32.const 3)) (i32.const -4)))
-    (local.get ${'$'}p))
-"""
 
     private val RT_CONCAT = """
   (func ${'$'}__str_concat (param ${'$'}a i32) (param ${'$'}b i32) (result i32)

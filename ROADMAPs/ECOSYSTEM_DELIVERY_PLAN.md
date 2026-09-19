@@ -1,6 +1,6 @@
 # Azora ecosystem delivery plan
 
-Updated: 2026-09-15. Scope: Azora Language, Engine, Studio, runtime, standard
+Updated: 2026-09-19. Scope: Azora Language, Engine, Studio, runtime, standard
 library, AZLS, packages, and their integration. This is the execution plan for
 progressive delivery; the older DIPs/roadmaps remain design evidence and history.
 
@@ -49,12 +49,13 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,290 tests: 2,084 passed,
-206 failed, 0 skipped**. The [current inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
-compares this run with the preceding contextual-array baseline. Selected-import
-and storage-identity checks pass; ArrayList first insertion and growth now work
-in the interpreter. Native list tests expose generic return-ABI and buffer
-allocation/lifetime gaps. **010** remains open, including those prerequisites
+The latest full compiler run has **2,311 tests: 2,106 passed,
+205 failed, 0 skipped**, with no failure identity changed from the preceding
+run. The [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
+records the 2,290-test baseline. Selected-import and storage-identity checks
+pass; ArrayList construction and growth run on the interpreter and LLVM. WASM
+has a freeing heap allocator; its list test is blocked on how erased generic
+slots hold wide values (021). **010** remains open, including those prerequisites
 and the collection factory substeps below.
 
 **007**, the complete **008** review and module identity/scope work under **014**
@@ -92,7 +93,7 @@ selected `Array` as the default for a non-empty sequence without context.
 - [ ] **010.C3. Establish canonical target-owned factory resolution.** Resolve declarations by module/target identity, substitute generic constraints and discover factory dependencies before lowering. Do not substitute array layouts for List/Set/Map specs.
   - [x] **010.C3.1. Preserve declaring-module reachability for selected imports.** Selecting a type or factory keeps its module's implementations while unrelated declarations and other-module extensions stay inaccessible.
   - [x] **010.C3.2. Remove implicit collection storage reinterpretation.** Named List/Set/Map targets cannot accept unrelated intrinsic storage by short name; IR retains explicit declared types. Expected named types retain generic/const arguments when reconstructed.
-  - [ ] **010.C3.3. Preserve generic method signatures and physical return ABI.** Substitute owner arguments in parameters/results and convert explicitly at an erased ABI boundary; validate on all backends. Direct constructors/methods now share owner substitution; interpreter and LLVM scalar/list regressions pass. Property/index/spec dispatch, aggregate ABI and WASM allocation/lifetime qualification remain open.
+  - [ ] **010.C3.3. Preserve generic method signatures and physical return ABI.** Substitute owner arguments in parameters/results and convert explicitly at an erased ABI boundary; validate on all backends. Direct constructors/methods now share owner substitution; interpreter and LLVM scalar/list regressions pass. WASM heap allocation, purge and raw-pointer lowering are implemented and tested. Open: WASM wide values in erased generic slots (021 decision), property/index/spec dispatch, LLVM purge and array-allocation ownership, aggregate ABI.
   - [ ] **010.C3.4. Register and select target-owned literal factories.** Support sequence/associative shape, constraints and failure/ownership requirements through the complete pipeline.
   - [ ] **010.C3.5. Discover selected factory dependencies before specialization/lowering.** Use canonical declarations and avoid unrelated short-name matches.
 - [ ] **010.C4. Connect real standard List/Set/Map implementations.** Lower literals through the selected constructor/factory and preserve source order, exactly-once key/value evaluation, duplicate rules, failure behavior and ownership.

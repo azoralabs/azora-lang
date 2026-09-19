@@ -3,17 +3,20 @@
 Plan: [150-step delivery plan](ECOSYSTEM_DELIVERY_PLAN.md).
 Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 
-## Current status — 2026-09-15
+## Current status — 2026-09-19
 
 - Completed: 001–006 and 009; strict disk and bundled standard-library loading pass.
 - Completed substeps: 010.C1–C2, bracket grammar and contextual array execution.
 - Completed: 010.C3.1–C3.2, selected-import implementation reachability and
   removal of implicit collection storage reinterpretation.
 - In progress: 010.C3.3. Direct generic constructor/method calls retain owner
-  types; interpreter and LLVM scalar/list execution are covered. Generic
-  properties, indexing, aggregate ABI and WASM qualification remain open.
-- Next: complete generic call coverage and buffer allocation/lifetime lowering
-  before real List/Set/Map literal construction and qualification.
+  types; interpreter and LLVM scalar/list execution are covered. WASM now has a
+  freeing heap allocator and lowers raw-pointer allocation, dereference, purge
+  and null. Remaining: WASM representation of wide values in erased generic
+  slots (a 021 architecture decision), generic property/index/spec dispatch,
+  LLVM purge and array-allocation ownership, and aggregate ABI.
+- Next: decide the WASM erased-generic representation, then make LLVM purge
+  release memory, before real List/Set/Map literal construction and qualification.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -802,3 +805,101 @@ The sole failure is the documented WASM list acceptance test. Log:
 `/tmp/azora-generic-member-async-focused.log`. The earlier array/generic/list run
 was **12 tests, 11 passed, 1 failed, 0 skipped**; log:
 `/tmp/azora-generic-member-focused.log`.
+
+
+## 2026-09-19 — Full check of 010.C3.3 and the WASM heap allocator
+
+The generic-signature changes above had only a focused run. A full run before
+this work (2,295 tests, 205 failed) showed **no previously passing test now
+fails**; `concreteListRunsOnLlvm` changed to passing. All work to this point is
+committed as `29f57876` on branch `collection-foundations`.
+
+### Allocator
+
+WASM previously had a bump allocator that never freed memory. It never grew
+memory past its initial 16 pages and never checked a request. The IR's raw-pointer
+intrinsics had no WASM lowering: `__allocBuffer`, `__purge`, `__deref`,
+`__derefAssign` and `__null` referenced undefined names. `__alloc(value)` fell
+through to the runtime's `__alloc(size)`, so `alloc^ 5` allocated five bytes and
+never stored the value. That was a silent miscompile.
+
+The runtime is now a segregated free-list allocator (`WasmCodegen.ALLOCATOR_RUNTIME`):
+
+- A block has an 8-byte header (size class, live/free tag) and a power-of-two
+  payload from 8 bytes to 1 GiB. Payloads are 8-aligned.
+- `__alloc` reuses the most recently freed block of the same class, zeroing the
+  requested bytes, or takes new memory. When needed it grows memory with `memory.grow`.
+  Oversized or negative requests and exhaustion execute `unreachable`, like
+  LLVM's abort on allocation failure.
+- `__free` accepts null. It traps on a second free, an interior or misaligned
+  pointer, and memory outside the heap. The tag check detects misuse; it is not a
+  proof against every forged pointer.
+- Freed blocks are not coalesced or returned to the host. Power-of-two classes
+  trade up to half of each payload for constant-time allocation and free.
+
+Lowering by operand type:
+
+- `alloc .() * n` computes a checked `n × element width` (8 bytes for Long/Double)
+  and yields zeroed memory. A Long count is range-checked before narrowing.
+- `alloc value` stores the value in a block of its width.
+- `alloc array` moves the elements into a buffer of their own instead of aliasing
+  the array's storage, so purging it releases exactly that buffer.
+- `purge` of a raw (or nullable raw) pointer releases storage only. It does not
+  destroy elements, which containers that moved them out rely on. Purging any other
+  type is an explicit WASM codegen failure, not a no-op.
+- `__null` is address 0; strings and the heap start above it.
+- A module that calls through a callable parameter without creating a lambda now
+  declares its function table.
+
+### Evidence
+
+- `WasmAllocatorExecTest` (11 tests) runs the emitted runtime directly. It covers
+  class-local and most-recent-first reuse, alignment and disjointness for sizes
+  0–64, zeroing on reuse, growth from one page, null free, and traps for double
+  free, interior/misaligned/foreign pointers, oversized and negative requests
+  and exhaustion under a memory maximum. The trap helper requires
+  `RuntimeError: unreachable`, so unrelated crashes do not count. Removing zeroing
+  and the live-tag check made two of these tests fail; both were restored.
+- `RawPointerExecTest` (5 tests) compiles programs through the public compiler.
+  Single values (Int, Double), Int and Long buffers, and a purged allocated array
+  give identical output on interpreter, LLVM and WASM, optimized and unoptimized.
+  A 300,000-element buffer grows WASM memory and is reallocated after purge. A pack
+  purge is rejected by the WASM backend.
+- Full run: **2,311 tests, 2,106 passed, 205 failed, 0 skipped**. The 16 new tests
+  pass; no failure identity changed relative to the preceding run.
+
+`ListConstructionExecTest.concreteListRunsOnWasm` stays enabled and failing. Its
+allocation, purge, null and table errors are gone. The remaining errors are not
+allocator defects:
+
+1. WASM erases a generic `T` to a four-byte slot. `ArrayList<Double>(1.25, 2.5)`
+   stores `f64` into those slots and compares the `i32` result of `get` with `f64`.
+   LLVM's eight-byte erased slot holds a double bit for bit. WASM needs boxing or
+   eight-byte erased slots. That is the generic representation choice of 021 and
+   is not decided here.
+2. `ArrayList.hash` reads `self._data[i].hash` although `T` has no `Hash` bound.
+   Semantic analysis accepted it and lowered it as a field load (019/022).
+
+### Recorded for follow-up
+
+- LLVM `purge` still emits an advisory comment. LLVM `alloc array` returns the
+  array's data pointer (`array + 8`), so implementing `free` there first requires
+  the same fresh-buffer ownership as WASM.
+- Buffer contents differ by backend: the interpreter fills with null, LLVM uses
+  uninitialized `malloc` memory and WASM zeroes. `alloc .() * n` names a default
+  construction, so the three need one defined contract.
+- A pointer's declared type does not reach the `alloc` operand: `var r: Double^ =
+  alloc^ 2.5` infers `Float^`, and `alloc^ [3, 4, 5]` gives the literal an `Int`
+  target.
+- `Tier3MemoryTest.dropIsAdvisoryNoOp` asserts that reading through a pointer after
+  `purge` returns the old value. That contradicts LIFETIMES_ALTERNATIVE_DIP (a
+  purged binding is dead). It passes only on the interpreter and needs 008 review
+  together with use-after-purge checking.
+- Whether pointer purge should also run the pointee's destructor, as
+  CUSTOM_ALLOCATORS_DIP's `purgeWith` does, remains open under 037.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain \
+  --tests '*WasmAllocatorExecTest' --tests '*RawPointerExecTest' \
+  --tests '*ListConstructionExecTest'
+```

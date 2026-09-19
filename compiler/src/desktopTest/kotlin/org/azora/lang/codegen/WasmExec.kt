@@ -94,7 +94,22 @@ object WasmExec {
     fun run(source: String): String = runWat(compile(source))
 
     /** Execute emitted WAT independently of standard-library loading. */
-    fun runWat(wat: String): String {
+    fun runWat(wat: String): String = execute(wat) { exit, stdout, stderr ->
+        if (exit != 0) fail("node exited non-zero\n--- stderr ---\n$stderr\n--- WAT ---\n$wat")
+        stdout
+    }
+
+    /**
+     * Execute WAT that must stop with the WebAssembly [trap] (for example
+     * `unreachable`); returns what it printed before trapping.
+     */
+    fun runWatExpectingTrap(wat: String, trap: String = "unreachable"): String = execute(wat) { exit, stdout, stderr ->
+        if (exit == 0) fail("expected a '$trap' trap, but the program finished\n--- stdout ---\n$stdout\n--- WAT ---\n$wat")
+        if ("RuntimeError: $trap" !in stderr) fail("expected a '$trap' trap\n--- stderr ---\n$stderr\n--- WAT ---\n$wat")
+        stdout
+    }
+
+    private fun execute(wat: String, outcome: (exit: Int, stdout: String, stderr: String) -> String): String {
         val nodeTool = node ?: error("node not available")
         val npxTool = npx ?: error("npx not available")
         val dir = File.createTempFile("azora_wat_", "").let { it.delete(); it.mkdirs(); it }
@@ -120,8 +135,7 @@ object WasmExec {
                 .start()
             val stdout = runProc.inputStream.bufferedReader().readText()
             val stderr = runProc.errorStream.bufferedReader().readText()
-            if (runProc.waitFor() != 0) fail("node exited non-zero\n--- stderr ---\n$stderr\n--- WAT ---\n$wat")
-            return stdout.trimEnd('\n')
+            return outcome(runProc.waitFor(), stdout.trimEnd('\n'), stderr)
         } finally {
             dir.deleteRecursively()
         }

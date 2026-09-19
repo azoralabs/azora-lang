@@ -25,8 +25,10 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed substeps: 010.C4.1–C4.2. List and Set literals build the standard
   collections on the interpreter, LLVM and WASM.
 - In progress: 010.C4.3. Map literals are correct on the interpreter; native maps
-  wait on `Hash` through a generic slot and on zero-argument ctors. 010.C4.4
-  (untyped `[k: v]`) needs a decision.
+  wait on `Hash` through a generic slot and on LLVM's printing of nullables.
+  010.C4.4 (untyped `[k: v]`) needs a decision.
+- Completed substep: 018.1. `ctor .()` runs on the interpreter, LLVM and WASM
+  wherever a construction writes no arguments, once.
 - The remaining 008 fixture review and 010.C5 remain open. Older entries below
   preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -1653,4 +1655,100 @@ read-only `Map<K, V>` would reject those writes.
 ./gradlew :compiler:desktopTest --offline --console=plain --tests '*StdCollectionLiteral*' --tests '*GenericMemberSignature*'
 ./gradlew :compiler:desktopTest --offline --console=plain
 ./gradlew :azls:test --offline
+```
+
+## 2026-09-19 — 018.1: `ctor .()` runs on every target
+
+A pack's `ctor .()` ran only in the interpreter, and only on unoptimized IR.
+`IrInterpreter` called `<Type>_ctor` whenever it evaluated a `StructCtor` and
+that function took nothing but the receiver. Nothing in the IR asked for the
+call, so LLVM and WASM never made it. In release, the optimizer removed the
+uncalled ctor as dead code, so the interpreter skipped it there too. A ctor with
+parameters was already lowered to a factory call.
+
+**Change.** Lowering asks for the call. A construction that writes no
+arguments is one of:
+
+- `.()` where the type is stated: a binding, a field default, a return, an
+  argument or a default parameter;
+- `Type()`;
+- `Type<Args>()`.
+
+Such a construction builds the value exactly as before. It then passes the value
+to `__ctor_<Type>_run` (`ctorRunSymbol`), a generated function that runs the ctor
+on it and returns it. The interpreter's implicit call is gone, so the ctor runs
+once. `receiverOnlyCtorSymbol` finds the ctor in the symbol table for both the
+resolver and the IR generator, so the two stages agree on which calls run it.
+
+- *Beside other ctors.* `ctor .()` is emitted as `<Type>_ctor_0` when the type
+  declares another ctor. The interpreter's lookup of `<Type>_ctor` never found it,
+  and the resolver rejected `.()` with "'P' has no argument for 'v'". It now
+  answers a call writing no arguments, ahead of a ctor whose parameters all have
+  defaults. A call with arguments runs only the ctor it selected.
+- *Memberwise construction does not run it.* `Q(8, 9)` fills the fields it
+  names. The unoptimized interpreter used to run `ctor .()` afterwards and
+  overwrite them. That is not what the call says, and no other target did it.
+- *A default parameter `p: Plain = .()`* lowered to a member named `''` and
+  failed on every target, with or without a ctor. It now lowers through the same
+  helper as every other `.()` (`lowerInferredMember`).
+
+Measured on `f7b26292` without and with the change, unoptimized / optimized:
+
+| Program | Interpreter before | LLVM, WASM before | After, all three |
+|---|---|---|---|
+| The reported program: `Counter` and `Gen<Int>` via `.()`, `Counter()`, `Gen<Int>()` | 5, -1, 5, 7, 7 / 1, null, 1, 1, 1 | 1, 0, 1, 1, 1 | 5, -1, 5, 7, 7 |
+| `.()` beside `ctor .(v: Int)` | rejected | rejected | runs `ctor .()` |
+| `Q(8, 9)` beside `ctor .()` | x = 50 / x = 8 | x = 8 | x = 8 |
+| `p: Plain = .()` | fails | fails | 4 |
+| Open-addressing table whose buckets `ctor .()` sets to -1 | correct / "Cannot compare null and 0" | nothing stored | correct |
+
+**The `LinkedHashMap` consequence.** `LinkedHashMap`'s `ctor .()` sets its
+buckets to -1. The program builds `var m: LinkedHashMap<Int, Int> = .()`, puts
+40 keys, then re-puts one. Measured on 010.C4's map module (then uncommitted):
+
+- *Before:* `lli` did not finish within 60 s, unoptimized and optimized. The
+  optimized interpreter failed with "Cannot compare null and 0".
+- *After:* LLVM stores 40 entries, deduplicates the re-put, and `keys()` returns
+  40. A looked-up value still prints as `<value>`, the C4.3 nullable item.
+
+WASM still stops at `key.hash` on an unconstrained `K`.
+
+**Not changed, recorded under 018.** A receiver-only ctor may declare a return
+type (`ctor .(): Int`). Construction yields the value the ctor filled and ignores
+the returned value, although a ctor with parameters that declares a return type
+yields its result. Decide whether to reject the declaration or honor it.
+
+### Evidence
+
+- `ReceiverOnlyCtorTest` (2), new: five programs on the interpreter, optimized and
+  unoptimized, plus the IR shape. `main` calls `__ctor_Counter_run`, which calls
+  `Counter_ctor`. The programs cover:
+  - plain and generic packs, with the ctor running exactly once;
+  - overloads, a defaulted overload and named arguments;
+  - memberwise construction;
+  - a field default, `return .()`, `Self()`, default parameters and
+    `Box<T>()` in a generic function;
+  - the open-addressing table.
+- `ReceiverOnlyCtorExecTest` (2), new: the same programs on LLVM and WASM,
+  optimized and unoptimized.
+- With the compiler change reverted, all four new tests fail.
+- Focused suites pass: `CtorOverloadTest`, `RepeatedConstructionTest`,
+  `LiteralFactory*`, `ListConstruction*`, `RepeatConstructionTest`,
+  `DeclarationBodyTest`.
+- No existing test exercised the implicit call. With it instrumented, a full
+  run on `f7b26292` reached it zero times.
+- Full compiler run on `f7b26292`: 2,367 → 2,371 tests, 2,164 → 2,168 passed,
+  203 failed before and after. No test newly fails.
+- Full compiler run on `2b89a938`: **2,385 → 2,389 tests, 2,193 → 2,199 passed,
+  192 → 190 failed**, 0 skipped. No test newly fails. `LlvmAggregateExecTest`'s
+  `mapLengthAndEmptyProperties` and `typedStdlibCollectionLiteralsExposeSize` now
+  pass. Both used to stop at the 60 s limit, as did `mapLiteralReadsIntegerKeys`.
+  That test now finishes in 0.1 s and fails on the C4.3 `<value>` item.
+- `StdCollectionLiteralTest` still says `LinkedHashMap`'s `ctor .()` does not run
+  natively. That reason no longer holds; its maps remain interpreter-only for the
+  other two C4.3 items.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*ReceiverOnlyCtor*' --tests '*CtorOverload*'
+./gradlew :compiler:desktopTest --offline --console=plain
 ```

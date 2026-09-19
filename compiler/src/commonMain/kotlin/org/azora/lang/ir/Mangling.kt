@@ -16,6 +16,8 @@
 
 package org.azora.lang.ir
 
+import org.azora.lang.semantic.SymbolTable
+
 /**
  * Maps a method symbol to an identifier that is legal in every backend.
  *
@@ -169,6 +171,24 @@ fun ctorSymbol(typeName: String, arity: Int, repeated: Boolean, overloaded: Bool
 /** The factory a construction call resolves to; see [ctorSymbol] for the key. */
 fun ctorFactorySymbol(typeName: String, arity: Int, repeated: Boolean = false): String =
     "__ctor_${typeName}_$arity" + if (repeated) "r" else ""
+
+/**
+ * The function that runs a receiver-only `ctor .()` on a value just built and
+ * hands the value back. `Type()` and `.()` lower to a call of it, so a backend
+ * runs the ctor without knowing about constructors.
+ */
+fun ctorRunSymbol(typeName: String): String = "__ctor_${typeName}_run"
+
+/**
+ * The symbol of [typeName]'s `ctor .()`, or null when it declares none: the
+ * ctor taking nothing but its receiver, under the plain symbol or, beside
+ * overloads, the arity-0 one. The resolver and the IR generator both ask here,
+ * so they agree on which constructions run it.
+ */
+fun receiverOnlyCtorSymbol(typeName: String, table: SymbolTable): String? =
+    listOf(false, true)
+        .map { ctorSymbol(typeName, 0, repeated = false, overloaded = it) }
+        .firstOrNull { symbol -> table.lookupFunction(symbol)?.let { it.params.size == 1 && !it.isInline } == true }
 
 /** How many `ctor` members [methods] declares, which decides whether they are overloads. */
 fun ctorCount(names: List<String>): Int = names.count { it == "ctor" }

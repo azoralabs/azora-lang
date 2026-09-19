@@ -734,6 +734,23 @@ class IrGenerator(private val table: SymbolTable) {
                 }
             }
         } +
+        // `ctor .()` takes no argument, so there is no factory to call.
+        // `Type()` builds the value as any construction does and passes it
+        // here, where the ctor runs on it before it is handed back.
+        program.items.filterIsInstance<TopLevel.Impl>().mapNotNull { item ->
+            if (item.isBridge || table.lookupStruct(item.typeName) == null) return@mapNotNull null
+            if (item.methods.none { it.name == "ctor" && it.params.isEmpty() }) return@mapNotNull null
+            val ctor = receiverOnlyCtorSymbol(item.typeName, table) ?: return@mapNotNull null
+            val type = IrType.Named(item.typeName)
+            val self = IrExpr.Var("__self", type)
+            val run = IrExpr.Call(ctor, listOf(self), table.lookupFunction(ctor)!!.returnType)
+            IrTopLevel.Func(IrFunction(
+                ctorRunSymbol(item.typeName),
+                listOf("__self" to type),
+                type,
+                listOf(IrStmt.ExprStmt(run), IrStmt.Return(self)),
+            ))
+        } +
         // Emit __singleton factories for `graph` registrations (DI wiring).
         program.items.filterIsInstance<TopLevel.Graph>().flatMap { graph ->
             graph.registrations.mapNotNull { reg ->
@@ -2037,31 +2054,11 @@ class IrGenerator(private val table: SymbolTable) {
             // The resolver already decided which type the dot meant; lowering
             // reads that answer rather than deriving it again from a context it
             // no longer has.
-            is Expr.InferredMember -> {
-                val owner = table.lookupInferredMember(expr.line, expr.column)
-                    ?: error("line ${expr.line}: '.${expr.name}' was never resolved to a type")
-                expr.ctorArgs?.let { args ->
-                    return if (expr.name.isEmpty()) {
-                        lowerExpr(Expr.Call(owner, args, expr.line, expr.column, owner.length))
-                    } else {
-                        lowerExpr(
-                            Expr.MethodCall(
-                                Expr.Identifier(owner, expr.line, expr.column, owner.length),
-                                expr.name, args, expr.line, expr.column,
-                            ),
-                        )
-                    }
-                }
-                lowerExpr(
-                    Expr.Member(
-                        Expr.Identifier(owner, expr.line, expr.column, owner.length),
-                        expr.name,
-                        expr.line,
-                        expr.column,
-                        expr.length,
-                    ),
-                )
-            }
+            is Expr.InferredMember -> lowerInferredMember(
+                expr,
+                table.lookupInferredMember(expr.line, expr.column)
+                    ?: error("line ${expr.line}: '.${expr.name}' was never resolved to a type"),
+            )
             // Only a macro arm taking `[...${key: value}]` can consume one, and the
             // expander does so before lowering. Reaching here means no arm matched.
             is Expr.MapEntryArg -> error(
@@ -2457,6 +2454,19 @@ class IrGenerator(private val table: SymbolTable) {
                         supplied,
                         expr.typeArgs.map { resolveType(it, currentGenericTypeParams) },
                     )
+                    // `ctor .()` is the constructor of a call that writes no
+                    // arguments, ahead of one whose parameters all have defaults.
+                    // The value is built as any other construction builds it,
+                    // then the ctor runs on it.
+                    if (expr.args.isEmpty() && receiverOnlyCtorSymbol(actualCallee, table) != null) {
+                        val built = IrExpr.StructCtor(
+                            actualCallee,
+                            struct.fields.map { it.name },
+                            args,
+                            IrType.Named(actualCallee, expr.typeArgs.map { resolveType(it, currentGenericTypeParams) }),
+                        )
+                        return IrExpr.Call(ctorRunSymbol(actualCallee), listOf(built), built.type)
+                    }
                     // A declared `ctor` of the same arity takes precedence over
                     // filling fields positionally - it is the constructor the
                     // author wrote, and skipping it would leave its work undone.
@@ -3600,6 +3610,20 @@ class IrGenerator(private val table: SymbolTable) {
         return values
     }
 
+    /**
+     * `.Name`, `.name(…)` or `.(…)` once [owner] is known to be the type the dot
+     * meant: a member of it, a call of that member, or a construction of it.
+     */
+    private fun lowerInferredMember(expr: Expr.InferredMember, owner: String): IrExpr {
+        val ownerRef = Expr.Identifier(owner, expr.line, expr.column, owner.length)
+        val args = expr.ctorArgs
+        return when {
+            args == null -> lowerExpr(Expr.Member(ownerRef, expr.name, expr.line, expr.column, expr.length))
+            expr.name.isEmpty() -> lowerExpr(Expr.Call(owner, args, expr.line, expr.column, owner.length))
+            else -> lowerExpr(Expr.MethodCall(ownerRef, expr.name, args, expr.line, expr.column))
+        }
+    }
+
     /** Provides a default (zero) value for solo fields without explicit defaults. */
     /**
      * Lowers a default-argument expression at a call site.
@@ -3619,17 +3643,7 @@ class IrGenerator(private val table: SymbolTable) {
                 is IrType.Nullable -> (paramType.inner as? IrType.Named)?.name
                 else -> null
             }
-            if (owner != null) {
-                return lowerExpr(
-                    Expr.Member(
-                        Expr.Identifier(owner, default.line, default.column, owner.length),
-                        default.name,
-                        default.line,
-                        default.column,
-                        default.length,
-                    ),
-                )
-            }
+            if (owner != null) return lowerInferredMember(default, owner)
         }
         if (default is Expr.Identifier) {
             constantLiterals[default.name]?.let { return it }

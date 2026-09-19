@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.ir.ctorFactorySymbol
+import org.azora.lang.ir.receiverOnlyCtorSymbol
 import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.frontend.asRepeatedConstruction
@@ -2461,7 +2462,11 @@ class TypeResolver(private val table: SymbolTable) {
                     } ?: (expr.args.size downTo 1).firstNotNullOfOrNull { arity ->
                         table.lookupFunction("__ctor_${calleeName}_$arity")?.takeIf { it.isVariadic }
                     }
-                    val factory = probe?.let {
+                    // `ctor .()` answers a call that writes no arguments, ahead
+                    // of a ctor whose parameters all have defaults. It yields the
+                    // value it fills, which is typed as the fields below type it.
+                    val receiverOnly = expr.args.isEmpty() && receiverOnlyCtorSymbol(calleeName, table) != null
+                    val factory = probe?.takeUnless { receiverOnly }?.let {
                         table.lookupFunction(
                             "__ctor_${calleeName}_${it.paramNames.size - it.contextualParams}",
                         ) ?: it

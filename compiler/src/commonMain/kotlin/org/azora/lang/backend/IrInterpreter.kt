@@ -1204,13 +1204,8 @@ class IrInterpreter {
                         map[expr.fieldNames[i]] = evalExpr(expr.args[i])
                     }
                 }
-                // Run the pack's `impl ctor()` (if any) so field-initializing
-                // constructors execute. Only a receiver-only ctor (`mut ref self`)
-                // is auto-invoked here; the instance is mutated in place.
-                val ctor = functions["${expr.name}_ctor"]
-                if (ctor != null && ctor.params.size == 1) {
-                    executeFunction(ctor, listOf(map))
-                }
+                // A `ctor .()` is not run here. Lowering calls it where a
+                // construction asks for it (`ctorRunSymbol`), for every backend.
                 map
             }
             is IrExpr.TupleLit -> expr.elements.map { evalExpr(it) }

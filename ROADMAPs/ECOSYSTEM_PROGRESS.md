@@ -15,7 +15,9 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.4 (closed 2026-09-19 by user decision), target-owned literal
   factories for packs and specs, sequence and associative, with `where`,
   failure and ownership behaving as a call to the factory.
-- In progress: 010.C3.5, discovering a selected factory's dependencies.
+- In progress: 010.C3.5. Factory dependency discovery works; canonical identity
+  (no capture by a program's own names, no leak of injected dependencies) is the
+  007/014 defect and awaits a decision on doing that redesign now.
 - 007 lexical imports, the remaining 008 fixture review and 010 failure triage
   remain open. Older entries below preserve the evidence at each stage.
 - Engine/Studio build and release qualification remain open.
@@ -1268,3 +1270,44 @@ rejection. `LiteralFactoryExecTest` runs the `where` and ownership programs on L
 and WASM. The failable program gives `2, 0` on LLVM and traps after printing `2`
 on WASM. Full run: **2,347 tests, 2,143 passed, 204 failed, 0 skipped**; no failure
 identity changed.
+
+## 2026-09-19 — 010.C3.5: factory dependency discovery; identity gap measured
+
+C3.4.4 is committed as `ef276a7f` and C3.4 is closed in `679b9d9d`.
+
+A literal needs its target's factory and whatever that factory builds, though
+the program names neither. Measured with a test-owned library (`lib.seq`):
+
+- A pack's factories were already injected with a selected pack. Its lifted
+  `Pack__literal` / `Pack__literal_entries` members are type-scoped statics, which
+  `attachStaticMembersForType` attaches.
+- A spec's factory was never injected, even with a whole-module import.
+  `attachStaticMembersForType` returned early for anything but a pack or enum.
+  Specs now own static members too, and the transitive walk then reaches what
+  the factory body builds (`Vector` and its impls).
+
+`FactoryDependencyTest` covers a selected spec with sequence and associative
+factories, a selected pack with both factory shapes, a whole-module import, and
+an unrelated declaration that stays unimported; all four pass.
+
+Two invariants C3.5 names ("canonical declarations, no unrelated short-name
+matches") fail. Both are recorded as enabled acceptance tests:
+
+1. **Injected dependencies leak into source.** After `[1, 2, 3]` injects
+   `Vector`, the program can write `Vector<Int>(3)`. This is not specific to
+   factories: `import lib.values::makeValue` followed by `Value(7)` compiles
+   when `makeValue()` is also called (which injects `Value`) and is rejected when
+   it is not.
+2. **A program's own declaration captures the library's reference.** With
+   `pack Vector<T>` in the program, the injector skips the library `Vector` as
+   shadowed. The factory body's `Vector<T>(…)` then binds to the program's type
+   (rejected here only because that type does not implement `Seq`; a conforming
+   type would be silently used).
+
+Both follow from identifying declarations by short name. That is the redesign
+outlined under 007/014: lexical import scope, declaration identity separate from
+source spelling, and identities carried through injection. It is not attempted
+here without a decision.
+
+Full run: **2,353 tests, 2,147 passed, 206 failed, 0 skipped**. No previously
+passing test fails; the two new failures are the acceptance tests above.

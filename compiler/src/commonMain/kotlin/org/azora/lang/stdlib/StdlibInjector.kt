@@ -1690,8 +1690,9 @@ class StdlibInjector private constructor(
     ) {
         // Only a declared type has a `::` block. Without this, a module-qualified
         // name (`std__io__println`) would look like a member of a type `std__io`.
+        // A spec owns one too: the literal factory designating what `[…]` builds.
         val owner = index.items[typeName]
-        if (owner !is TopLevel.Pack && owner !is TopLevel.Enum) return
+        if (owner !is TopLevel.Pack && owner !is TopLevel.Enum && owner !is TopLevel.Spec) return
         for (member in staticMembersByOwner[typeName].orEmpty()) {
             if (member in injected) continue
             val item = index.items[member] ?: continue

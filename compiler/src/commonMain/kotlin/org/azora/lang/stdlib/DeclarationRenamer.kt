@@ -19,6 +19,7 @@ package org.azora.lang.stdlib
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.FuncDecl
+import org.azora.lang.frontend.NamedTypeMacroCall
 import org.azora.lang.frontend.PackField
 import org.azora.lang.frontend.Param
 import org.azora.lang.frontend.Program
@@ -92,6 +93,9 @@ internal class DeclarationRenamer(
 
     private fun type(name: String, scope: Scope): String =
         if (name in scope.types) name else scope.renames[name] ?: renamed(name) ?: name
+
+    /** [ref], as a type written at the top of its module. */
+    fun type(ref: TypeRef): TypeRef = typeRef(ref, top)
 
     fun item(item: TopLevel): TopLevel = when (item) {
         is TopLevel.Func -> item.copy(decl = func(item.decl, top, declared(item.decl.name)))
@@ -220,8 +224,22 @@ internal class DeclarationRenamer(
         else -> a
     }
 
+    /**
+     * A type macro's name is renamed only by a block import that binds it: a
+     * module's declaration of the same spelling is not the macro.
+     */
+    private fun typeMacroCall(ref: TypeRef.Named, scope: Scope): TypeRef {
+        val name = NamedTypeMacroCall.name(ref)
+        return NamedTypeMacroCall.create(
+            scope.renames[name] ?: name,
+            ref.args.map { typeRef(it, scope) },
+            NamedTypeMacroCall.modifier(ref),
+            NamedTypeMacroCall.form(ref),
+        )
+    }
+
     private fun typeRef(ref: TypeRef, scope: Scope): TypeRef = when (ref) {
-        is TypeRef.Named -> ref.copy(
+        is TypeRef.Named -> if (NamedTypeMacroCall.isCall(ref)) typeMacroCall(ref, scope) else ref.copy(
             name = if (ref.qualifier == null) type(ref.name, scope) else ref.name,
             args = ref.args.map { typeRef(it, scope) },
             valueArgs = ref.valueArgs.map { expr(it, scope) },

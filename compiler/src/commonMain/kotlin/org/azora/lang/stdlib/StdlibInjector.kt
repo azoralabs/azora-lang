@@ -1395,7 +1395,10 @@ class StdlibInjector private constructor(
     }
 
     /** What [requests] make nameable, expanded through the imported modules' re-exports. */
-    private fun itemsImportedBy(requests: Collection<ImportRequest>): Map<String, TopLevel> {
+    private fun itemsImportedBy(
+        requests: Collection<ImportRequest>,
+        isImportable: (String) -> Boolean = ::isExternallyImportable,
+    ): Map<String, TopLevel> {
         val visible = LinkedHashMap<String, TopLevel>()
         val seeds = ArrayDeque(requests)
         // Expand transitively: resolving a module also pulls in its `export import`
@@ -1405,7 +1408,7 @@ class StdlibInjector private constructor(
             val (path, selected, without) = seeds.removeFirst()
             val key = "$path::${selected ?: "*"}::${without.sorted().joinToString(",")}"
             if (!visited.add(key)) continue
-            for ((name, declaration) in itemsVisibleFromImport(path, selected)) {
+            for ((name, declaration) in itemsVisibleFromImport(path, selected, isImportable)) {
                 if (name in without || name.substringAfterLast("__") in without) continue
                 visible.putIfAbsentCompat(name, declaration)
             }
@@ -1459,65 +1462,109 @@ class StdlibInjector private constructor(
         if (index.modules.containsKey(path)) listOf(path)
         else index.modules.keys.filter { it.startsWith("$path.") }.toList()
 
-    private fun importedTypeFunctions(program: Program): List<TypeFunctionDecl> {
-        val visible = mutableListOf<TypeFunctionDecl>()
-        for (item in program.items) {
-            if (item !is TopLevel.UseImport) continue
-            for ((path, selected, without) in importRequests(item)) {
-                val modules = when {
-                    index.typeFunctionsByModule.containsKey(path) -> listOf(path)
-                    else -> index.typeFunctionsByModule.keys.filter { it.startsWith("$path.") }
-                }.filter(::isExternallyImportable)
-                for (module in modules) {
-                    val declarations = index.typeFunctionsByModule[module].orEmpty()
-                    val selectedDeclarations = if (selected == null || selected == "*") {
-                        declarations.filterNot { declaration ->
-                            declaration.name in without || declaration.name.substringAfterLast("__") in without
-                        }
-                    } else declarations.filter { declaration ->
-                        declaration.name == selected || declaration.name.substringAfterLast("__") == selected
-                    }
-                    for (declaration in selectedDeclarations) {
-                        visible.add(declaration)
-                    }
-                }
-            }
-        }
-        return visible
-    }
+    private fun importedTypeFunctions(program: Program): List<TypeFunctionDecl> =
+        typeLevelImportedBy(program.items.filterIsInstance<TopLevel.UseImport>().flatMap(::importRequests))
+            .functions.map { it.second }
 
-    private fun importedTypeMacros(program: Program): List<TypeTypeArm> {
-        val visible = mutableListOf<TypeTypeArm>()
-        val seeds = ArrayDeque<ImportRequest>()
+    private fun importedTypeMacros(program: Program): List<Pair<String, TypeTypeArm>> {
+        // Type macros obey the same transitive `export import` visibility as
+        // ordinary declarations. A facade module may therefore re-export a
+        // library-defined grammar without copying or compiler-registering it.
+        val seeds = mutableListOf<ImportRequest>()
         for (item in program.items) {
             if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
         }
+        return typeLevelImportedBy(seeds).macros
+    }
 
-        // Type macros obey the same transitive `export import` visibility as
-        // ordinary declarations. A facade module may therefore re-export a
-        // library-defined grammar without copying or compiler-registering it.
+    /** Type functions and named type macros an import brings, each with the module that declares it. */
+    private class TypeLevelImports(
+        val functions: List<Pair<String, TypeFunctionDecl>>,
+        val macros: List<Pair<String, TypeTypeArm>>,
+    )
+
+    /**
+     * The type functions and type macros [requests] bring: all of a module's,
+     * all below a namespace, or the one a path selects (`lib.rows::wider`).
+     * Re-exports carry them on, as they carry declarations.
+     */
+    private fun typeLevelImportedBy(
+        requests: Collection<ImportRequest>,
+        isImportable: (String) -> Boolean = ::isExternallyImportable,
+    ): TypeLevelImports {
+        val functions = mutableListOf<Pair<String, TypeFunctionDecl>>()
+        val macros = mutableListOf<Pair<String, TypeTypeArm>>()
+        val seeds = ArrayDeque(requests)
         val visited = mutableSetOf<String>()
         while (seeds.isNotEmpty()) {
             val (path, selected, without) = seeds.removeFirst()
-            val key = "$path::${selected ?: "*"}::${without.sorted().joinToString(",")}"
-            if (!visited.add(key)) continue
-            for (module in modulesForPath(path).filter(::isExternallyImportable)) {
-                val declarations = index.typeMacrosByModule[module].orEmpty()
-                visible.addAll(
-                    if (selected == null || selected == "*") declarations.filterNot {
-                        it.name?.let { name -> name in without || name.substringAfterLast("__") in without } == true
-                    }
-                    else declarations.filter { it.name == selected },
-                )
-                for (reExport in index.exportedImportsByModule[module].orEmpty()) {
-                    seeds.add(reExport.copy(without = reExport.without + without))
-                }
+            if (!visited.add("$path::${selected ?: "*"}::${without.sorted().joinToString(",")}")) continue
+            val modules = modulesForPath(path)
+            if (modules.isEmpty() && selected == null) {
+                val (module, name) = selectedTypeLevelPath(path) ?: continue
+                if (!isImportable(module)) continue
+                fun named(declared: String?) = declared == name || declared?.substringAfterLast("__") == name
+                index.typeFunctionsByModule[module].orEmpty().filter { named(it.name) }.mapTo(functions) { module to it }
+                index.typeMacrosByModule[module].orEmpty().filter { named(it.name) }.mapTo(macros) { module to it }
+                continue
+            }
+            fun kept(declared: String?) =
+                declared == null || (declared !in without && declared.substringAfterLast("__") !in without)
+            for (module in modules.filter(isImportable)) {
+                index.typeFunctionsByModule[module].orEmpty().filter { kept(it.name) }.mapTo(functions) { module to it }
+                index.typeMacrosByModule[module].orEmpty().filter { kept(it.name) }.mapTo(macros) { module to it }
+                index.exportedImportsByModule[module].orEmpty().forEach { seeds.add(it.copy(without = it.without + without)) }
             }
         }
-        return visible
+        return TypeLevelImports(functions, macros)
+    }
+
+    /** What each type macro's template names, as references written in its module. */
+    private fun templateRefs(macros: List<Pair<String, TypeTypeArm>>): List<Ref> = macros.flatMap { (module, arm) ->
+        mutableSetOf<String>().also { collectNamesFromTypeRef(arm.template, it) }.map { Ref(it, module) }
+    }
+
+    /** `lib.rows.wider` → (`lib.rows`, `wider`): the module a dotted path selects from, and what it selects. */
+    private fun selectedTypeLevelPath(path: String): Pair<String, String>? {
+        val segments = path.split('.')
+        for (itemStart in segments.lastIndex downTo 1) {
+            val module = segments.take(itemStart).joinToString(".")
+            if (module in index.modules) return module to segments.drop(itemStart).joinToString("__")
+        }
+        return null
+    }
+
+    /**
+     * A block's type functions and named type macros, under a name only that
+     * block uses: the module-qualified spelling a program may also write in full
+     * (`std.traits.promote<…>`). A bare use elsewhere does not resolve to it,
+     * where a `module__name` identity would, by the evaluator's scope suffix.
+     * A shape macro has no name to scope, so a block cannot import one.
+     */
+    private class BlockTypeLevel(
+        val renames: Map<String, String>,
+        val functions: List<TypeFunctionDecl>,
+        /** Each with the module that declares it, whose scope its template reads. */
+        val macros: List<Pair<String, TypeTypeArm>>,
+    )
+
+    private fun blockTypeLevel(imported: TypeLevelImports): BlockTypeLevel {
+        val renames = LinkedHashMap<String, String>()
+        val functions = imported.functions.map { (module, declaration) ->
+            val identity = ModuleQualifiedSymbol.create(module, declaration.name)
+            renames[declaration.name] = identity
+            declaration.copy(name = identity)
+        }
+        val macros = imported.macros.mapNotNull { (module, arm) ->
+            val name = arm.name ?: return@mapNotNull null
+            val identity = ModuleQualifiedSymbol.create(module, name)
+            renames[name] = identity
+            module to arm.copy(name = identity)
+        }
+        return BlockTypeLevel(renames, functions, macros)
     }
 
     /**
@@ -1574,23 +1621,15 @@ class StdlibInjector private constructor(
     private fun libraryScope(module: String): Map<String, TopLevel> = libraryScopes.getOrPut(module) {
         val scope = LinkedHashMap<String, TopLevel>()
         index.modules[module]?.let { scope.putAll(it) }
-        val seeds = ArrayDeque(index.importsOfModule[module].orEmpty())
-        val visited = mutableSetOf<String>()
-        while (seeds.isNotEmpty()) {
-            val request = seeds.removeFirst()
-            if (!visited.add("${request.path}::${request.selected}::${request.without.sorted()}")) continue
-            for ((name, declaration) in itemsVisibleFromImport(request.path, request.selected) { true }) {
-                if (name in request.without || name.substringAfterLast("__") in request.without) continue
-                scope.putIfAbsentCompat(name, declaration)
-            }
-            for (imported in modulesForPath(request.path)) {
-                index.exportedImportsByModule[imported].orEmpty()
-                    .forEach { seeds.add(it.copy(without = it.without + request.without)) }
-            }
-        }
+        libraryImportBindings(index.importsOfModule[module].orEmpty())
+            .forEach { (name, declaration) -> scope.putIfAbsentCompat(name, declaration) }
         index.implicitRootItems.forEach { (name, declaration) -> scope.putIfAbsentCompat(name, declaration) }
         scope
     }
+
+    /** What a library module's imports bind, re-exports included. */
+    private fun libraryImportBindings(requests: Collection<ImportRequest>): Map<String, TopLevel> =
+        itemsImportedBy(requests) { true }
 
     /** The module that declared [item] under [name]; null for a user declaration. */
     private fun declaringModule(item: TopLevel, name: String): String? {
@@ -1656,10 +1695,6 @@ class StdlibInjector private constructor(
         ) return program
 
         val importedTypeFunctions = index.alwaysTypeFunctions + importedTypeFunctions(program)
-        val typeMacros = (
-            program.typeMacroRules + index.alwaysTypeMacros + importedTypeMacros(program)
-        ).distinct()
-        val typeMacrosChanged = typeMacros.size != program.typeMacroRules.size
 
         val shadowed = userDeclaredNames(program) - program.injectedNames
         val reachable = reachableModules(program)
@@ -1704,6 +1739,9 @@ class StdlibInjector private constructor(
         var frontier = referenced.map { Ref(it, null) }
         val bodyImports = bodyImportBlocks(program)
         frontier = frontier + seedBodyImports(bodyImports, walk)
+        val fileTypeMacros = importedTypeMacros(program)
+        val programBlockMacros = bodyImports.values.flatten().flatMap { it.typeLevel.macros }
+        frontier = frontier + templateRefs(fileTypeMacros + programBlockMacros)
         while (frontier.isNotEmpty()) {
             val next = mutableListOf<Ref>()
             for (ref in frontier) {
@@ -1738,6 +1776,8 @@ class StdlibInjector private constructor(
         }
         val injected = walk.injected
         val injectedExterns = walk.externs
+        // What blocks import at the type level, the program's and the libraries'.
+        val blockTypeLevels = bodyImports.values.flatten().map { it.typeLevel }
         if (StdlibInjector.DEBUG_INJECT) {
             println("[inject] shadowed=${shadowed.filter { "erial" in it }}")
             println("[inject] visibleSerial=${visible.keys.filter { "erial" in it }.sorted()}")
@@ -1771,9 +1811,20 @@ class StdlibInjector private constructor(
         // Injection runs twice; remove the exact same declaration object while
         // preserving independently declared duplicate signatures for diagnostics.
         val typeFunctions = (
-            program.typeFunctions + importedTypeFunctions + dependencyTypeFunctions + fullyQualifiedTypeFunctions
+            program.typeFunctions + importedTypeFunctions + dependencyTypeFunctions + fullyQualifiedTypeFunctions +
+                blockTypeLevels.flatMap { it.functions } + walk.blockTypeFunctions
         ).distinct()
         val typeFunctionsChanged = typeFunctions.size != program.typeFunctions.size
+        val identified = identifiedDeclarations(walk, visible, shadowed)
+        // A type macro's template is its module's code: the names in it mean
+        // what they mean there, under the identities they were injected with.
+        val typeMacros = (
+            program.typeMacroRules + index.alwaysTypeMacros +
+                (fileTypeMacros + programBlockMacros + walk.blockTypeMacros).map { (module, arm) ->
+                    identified.renamers[module]?.let { arm.copy(template = it.type(arm.template)) } ?: arm
+                }
+        ).distinct()
+        val typeMacrosChanged = typeMacros.size != program.typeMacroRules.size
 
         if (
             injected.isEmpty() &&
@@ -1787,15 +1838,15 @@ class StdlibInjector private constructor(
         val existingIdentities = program.items.mapTo(mutableSetOf()) { itemIdentity(it) }
         // Deduplicated by the identity each declaration now has, so same-named
         // declarations from two modules both survive.
-        val (identifiedAll, hidden) = identifiedDeclarations(walk, visible, shadowed)
-        val identified = identifiedAll.filter { (_, renamed) -> existingIdentities.add(itemIdentity(renamed)) }
+        val (identifiedAll, hidden) = identified
+        val kept = identifiedAll.filter { (_, renamed) -> existingIdentities.add(itemIdentity(renamed)) }
         val programItems = rewriteBodyImports(program, bodyImports, hidden)
-        val declarations = identified.map { it.second }
+        val declarations = kept.map { it.second }
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         // Exported/core compile-time blocks are injected unconditionally.
         val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
         val injectedScopeTypeNamespaces = buildMap {
-            for (declaration in identified.map { it.first } + alwaysDeclarations) {
+            for (declaration in kept.map { it.first } + alwaysDeclarations) {
                 val name = typeDeclarationName(declaration) ?: continue
                 val qualifier = index.scopeTypesByShortName[name]
                     ?.firstOrNull { it.declaration === declaration }
@@ -1872,6 +1923,17 @@ class StdlibInjector private constructor(
         val bindings = HashMap<String, MutableMap<String, String>>()
         val externs = LinkedHashMap<String, TopLevel>()
         val seen = HashSet<Ref>()
+        /**
+         * module → each block of it that imports → the identity each name the
+         * block uses resolved to there. Keyed by module because an import is
+         * compared by value, and two files may write the same one at the same
+         * position.
+         */
+        val blockUses = HashMap<String, MutableMap<Stmt.Import, Map<String, String>>>()
+        /** The same blocks' type functions and type macros: spelling → block-only name. */
+        val blockTypeRenames = HashMap<String, MutableMap<Stmt.Import, Map<String, String>>>()
+        val blockTypeFunctions = mutableListOf<TypeFunctionDecl>()
+        val blockTypeMacros = mutableListOf<Pair<String, TypeTypeArm>>()
 
         fun add(key: String, item: TopLevel, module: String?, next: MutableList<Ref>) {
             injected[key] = item
@@ -1879,8 +1941,53 @@ class StdlibInjector private constructor(
             val names = mutableSetOf<String>()
             collectNamesFromItem(item, names)
             names.forEach { next.add(Ref(it, module)) }
+            if (module != null) bindLibraryBlockImports(item, module, this, next)
         }
     }
+
+    /**
+     * A library block's imports bind in that block and the blocks it encloses,
+     * as a program's do. What the block uses and they provide enters the walk,
+     * and [Walk.blockUses] records what each name resolved to, for
+     * [identifiedDeclarations] to rename within the block alone.
+     */
+    private fun bindLibraryBlockImports(item: TopLevel, module: String, walk: Walk, next: MutableList<Ref>) {
+        DeclarationRenamer(emptyMap(), onImportingBlock = { imports, body ->
+            val requests = imports.flatMap { importRequests(it.use) }
+            val bindings = libraryImportBindings(requests)
+            val typeLevel = blockTypeLevel(typeLevelImportedBy(requests) { true })
+            walk.blockTypeFunctions += typeLevel.functions
+            walk.blockTypeMacros += typeLevel.macros
+            next += templateRefs(typeLevel.macros)
+            val typeBlocks = walk.blockTypeRenames.getOrPut(module) { mutableMapOf() }
+            imports.forEach { typeBlocks[it] = typeBlocks[it].orEmpty() + typeLevel.renames }
+            val names = mutableSetOf<String>()
+            body.forEach { collectNamesFromStmt(it, names) }
+            val used = LinkedHashMap<String, String>()
+            for (name in names) {
+                val bound = bindings[name] ?: continue
+                val home = declaringModule(bound, name)
+                val key = identityKey(home, name)
+                used[name] = key
+                if (key in walk.injected) continue
+                walk.add(key, bound, home, next)
+                attachImplsForType(bound, name, walk, next)
+                attachStaticMembersForType(name, home, walk, next)
+            }
+            val blocks = walk.blockUses.getOrPut(module) { mutableMapOf() }
+            imports.forEach { blocks[it] = blocks[it].orEmpty() + used }
+        }).item(item)
+    }
+
+    /**
+     * Each injected declaration paired with its identified form, the hidden
+     * identities by declaration key, and each module's renamer.
+     */
+    private data class Identified(
+        val declarations: List<Pair<TopLevel, TopLevel>>,
+        val hidden: Map<String, String>,
+        val renamers: Map<String, DeclarationRenamer>,
+    )
 
     /**
      * Gives each injected library declaration its identity. One the program can
@@ -1891,14 +1998,12 @@ class StdlibInjector private constructor(
      * module made is renamed to match. Scope members and lifted statics already
      * carry a qualified name (a static moves with its owner), and a scope-scoped
      * type keeps the namespace its scope gives it.
-     *
-     * Returns each declaration paired with its identified form.
      */
     private fun identifiedDeclarations(
         walk: Walk,
         visible: Map<String, TopLevel>,
         shadowed: Set<String>,
-    ): Pair<List<Pair<TopLevel, TopLevel>>, Map<String, String>> {
+    ): Identified {
         val nameable = HashSet<String>()
         for ((name, item) in visible) {
             if (name !in shadowed) declaringModule(item, name)?.let { nameable.add(identityKey(it, name)) }
@@ -1926,17 +2031,31 @@ class StdlibInjector private constructor(
                 if (name !in names) names[name] = identity
             }
         }
-        val renamers = renames.filterValues { it.isNotEmpty() }.mapValues { (_, names) -> DeclarationRenamer(names) }
+        // Within a library block, a name its imports bind means what it
+        // resolved to there - a hidden identity, or the name itself when the
+        // program may name it - and not what the module binds. Every library
+        // item with such a block is renamed, which also removes its imports.
+        val blockRenames = (walk.blockUses.keys + walk.blockTypeRenames.keys).associateWith { module ->
+            val uses = walk.blockUses[module].orEmpty()
+            val types = walk.blockTypeRenames[module].orEmpty()
+            (uses.keys + types.keys).associateWith { import ->
+                types[import].orEmpty() + uses[import].orEmpty().mapValues { (name, key) -> hidden[key] ?: name }
+            }
+        }
+        val renamers = (renames.filterValues { it.isNotEmpty() }.keys + blockRenames.keys).associateWith { module ->
+            DeclarationRenamer(renames[module].orEmpty(), bodyImports = blockRenames[module].orEmpty())
+        }
         val identified = walk.injected.map { (key, item) ->
             item to (walk.moduleOf[key]?.let { renamers[it] }?.item(item) ?: item)
         }
-        return identified to hidden
+        return Identified(identified, hidden, renamers)
     }
 
     /** A block of the program's source that imports, and what its imports bind there. */
     private class BodyImportBlock(
         val imports: List<Stmt.Import>,
         val bindings: Map<String, TopLevel>,
+        val typeLevel: BlockTypeLevel,
         /** Bound names the block uses → the identity each resolved to. */
         val used: MutableMap<String, String> = LinkedHashMap(),
     )
@@ -1947,8 +2066,9 @@ class StdlibInjector private constructor(
         for (item in program.items) {
             val found = mutableListOf<BodyImportBlock>()
             DeclarationRenamer(emptyMap(), onImportingBlock = { imports, body ->
-                val bindings = itemsImportedBy(imports.flatMap { importRequests(it.use) })
-                val block = BodyImportBlock(imports, bindings)
+                val requests = imports.flatMap { importRequests(it.use) }
+                val block = BodyImportBlock(imports, itemsImportedBy(requests), blockTypeLevel(typeLevelImportedBy(requests)))
+                val bindings = block.bindings
                 val names = mutableSetOf<String>()
                 body.forEach { collectNamesFromStmt(it, names) }
                 for (name in names) bindings[name]?.let { block.used[name] = identityKey(declaringModule(it, name), name) }
@@ -1989,7 +2109,7 @@ class StdlibInjector private constructor(
         if (blocks.isEmpty()) return program.items
         val bound = HashMap<Stmt.Import, Map<String, String>>()
         for (block in blocks.values.flatten()) {
-            val renames = block.used.mapNotNull { (name, key) -> hidden[key]?.let { name to it } }.toMap()
+            val renames = block.typeLevel.renames + block.used.mapNotNull { (name, key) -> hidden[key]?.let { name to it } }
             block.imports.forEach { bound[it] = renames }
         }
         val renamer = DeclarationRenamer(emptyMap(), bodyImports = bound)

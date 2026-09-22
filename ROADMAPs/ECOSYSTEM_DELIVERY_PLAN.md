@@ -49,8 +49,8 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,409 tests: 2,218 passed,
-191 failed, 0 skipped** (014's import check on `c6550959`). The
+The latest full compiler run has **2,425 tests: 2,234 passed,
+191 failed, 0 skipped** (007's import work on `c45f1b6`). The
 `globalMapInitializerRunsBeforeMain` failure is the LLVM global-initializer
 defect that `globalSetInitializerRunsBeforeMain` already has. The 007/014 acceptance tests in `FactoryDependencyTest`
 pass. The
@@ -83,7 +83,7 @@ Dependencies: None. Preserve existing local work and the already verified delimi
 - [x] **004. Migrate standard-library assertion messages and directly related fixtures to the current contract.** Acceptance: Conditions and messages are preserved; removed assertion-message forms are migrated; focused semantic/interpreter/native checks establish lazy evaluation. Unrelated file parse failures remain tracked under 005–009.
 - [x] **005. Repair lifecycle and multiline body parsing/migrations.** Acceptance: Constructor, destructor, property, function, if, and grouped bodies retain the intended ownership and control flow. Receiver modes and statement boundaries are preserved; interpreter/native execution verifies contracts, constructors/properties, and grouped conditions. Full lifecycle cleanup remains under 037.
 - [x] **006. Reconcile range syntax and reserved-name collisions in the library.** Acceptance: `>..` excludes the left bound, descends, and includes the right bound; the reverse keyword/modifier is removed. Bounds/step execute once, invalid steps fail, and Int-edge examples agree across interpreter/LLVM/WASM. Explicit member-name positions support `.then()`; unqualified `then` remains reserved. Tooling source migrations and build limits are recorded in the progress log.
-- [ ] **007. Reconcile receiver and import syntax across library sources and test fixtures.** Acceptance: Accepted forms match current intent; removed forms have accurate diagnostics; imports retain their scope. Progress 2026-09-19: a program's block imports bind lexically (`LexicalImportTest`). Open: library modules still hoist block imports, block-imported type functions and macros are not in scope, and the §5.2 receiver discrepancy remains.
+- [ ] **007. Reconcile receiver and import syntax across library sources and test fixtures.** Acceptance: Accepted forms match current intent; removed forms have accurate diagnostics; imports retain their scope. Progress 2026-09-19: a program's block imports bind lexically (`LexicalImportTest`). 2026-09-22: the three open items are done. Block imports bind lexically in library modules and in files that declare a module (`ModuleBlockImportTest`). Type functions and named type macros import by selection and bind in a block, and a type macro's template reads its own module (`TypeLevelImportTest`). §5.2 keeps `func .name()` beside `Self.name()` (user decision). Proposed for closure; the remainders are recorded in the progress log with owners 014, 020 and 028.
 - [ ] **008. Review stale frontend assertions rather than changing code to satisfy them.** Acceptance: Each changed test cites the intended invariant; tests for rejected syntax and evaluation behavior remain meaningful.
 - [x] **009. Make the complete standard-library tree parse and load.** Acceptance: Disk and bundled loading both succeed, including compile-time lists and version validation. Evidence: strict disk/bundle tests and full compiler baseline, 2026-09-10; runtime/library semantic failures remain under subsequent packages.
 - [ ] **010. Establish reproducible per-stage baseline reports.** Acceptance: A full run classifies independent failures, unavailable native tools, and cascades; no blanket skips conceal defects.

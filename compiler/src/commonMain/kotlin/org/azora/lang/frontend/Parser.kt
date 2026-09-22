@@ -111,12 +111,6 @@ class Parser(
     private var currentImplTypeName: String? = null
 
     /**
-     * A file that declares its `module` keeps the imports written in its bodies
-     * at module scope; a program's are lexical, binding only in their block.
-     */
-    private var parsingModule = false
-
-    /**
      * True while a statement's own target is being read, which is the only place
      * a grouped target (`self.{a, b} = …`) may appear.
      */
@@ -367,7 +361,6 @@ class Parser(
             }
             parseModule()
         } else null
-        parsingModule = moduleName != null
         val items = mutableListOf<TopLevel>()
         while (!isAtEnd()) {
             skipNewlines()
@@ -7684,17 +7677,12 @@ class Parser(
             check(TokenType.EFFECT) -> parseEffect()
             // A test opens with what it needs: reading `reflect` is that
             // test's business and nothing else's in the file, so the import
-            // that brings it in is written beside the use, and in a program it
-            // binds only there. A library module's still resolves at module scope.
+            // that brings it in is written beside the use and binds only
+            // there - in a program and in a library module alike.
             check(TokenType.IMPORT) -> {
                 val at = peek()
                 val use = parseUse() as TopLevel.UseImport
-                if (parsingModule) {
-                    pendingTopLevels.add(use)
-                    Stmt.Scope(emptyList(), at.line, at.column)
-                } else {
-                    Stmt.Import(use, at.line, at.column, at.lexeme.length)
-                }
+                Stmt.Import(use, at.line, at.column, at.lexeme.length)
             }
             check(TokenType.USING) -> parseUsingContext()
             check(TokenType.WITH) -> error(

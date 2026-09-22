@@ -18,9 +18,10 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.5. Factory dependencies are discovered and carry canonical
   identities; nothing injected becomes nameable, and program names capture no
   library reference.
-- In progress: 007/014. A program's block imports bind lexically, and an import
-  that names no module or declaration is an error (2026-09-22). Library-module
-  block imports, receiver syntax and scope members remain.
+- In progress: 007/014. Block imports bind lexically in every file, for
+  declarations, type functions and named type macros, and an import that names
+  nothing is an error (2026-09-22). §5.2 keeps `func .name()`. 007 is proposed
+  for closure; 014's scope members and access checks remain.
 - Completed substep: 021.1. A generic call with inferred type arguments is typed
   by them in IR, so its value is no longer erased on LLVM and WASM.
 - Completed substeps: 010.C4.1–C4.2. List and Set literals build the standard
@@ -2086,4 +2087,128 @@ There are two options:
 ./gradlew :compiler:desktopTest --offline --console=plain --tests '*UnknownImportTest' --tests '*ModulesTest' --tests '*CastSpecTest' --tests '*ConvertSpecTest'
 ./gradlew :compiler:desktopTest --offline --console=plain
 ./gradlew :azls:test --offline
+```
+
+## 2026-09-22 — 007: block imports in module files, type-level imports, §5.2 receivers
+
+014's import check is committed as `c45f1b6`; this entry starts from it. It
+covers the three items the 2026-09-19 007/014 entry left open.
+
+### Block imports in a file that declares a module
+
+The parser hoisted every block import in a file with a `module` header to module
+scope. That covers every library module and any program that declares one.
+One function's import then reached its siblings. Measured on `c45f1b6` with
+the new `ModuleBlockImportTest`, 5 of 8 failed:
+
+- two library functions importing `answer` from `lib.one` and from `lib.two`
+  both called `lib.one`'s, and printed `1` and `1`. That is a silent miscompile;
+- a library function used `answer` that only its sibling imported, and compiled;
+- a `module app` program's block import reached `main`.
+
+**Change.** A block import is a `Stmt.Import` in every file. A library body now
+resolves like a program's:
+
+- As the dependency walk adds a library declaration, it finds the blocks in it
+  that import.
+- It binds each block's imports as that library's imports bind. That allows
+  its own library's `confined` modules and follows re-exports
+  (`libraryImportBindings`, now shared with `libraryScope`).
+- It injects what the block uses from them.
+- The module's renamer then renames those uses within the block alone. A
+  block's binding stands closer than the module's, and a local closer still.
+- The blocks are keyed by module, because an import compares by value and two
+  files may write the same one at the same position.
+
+The standard library's one block import, `std.container.queue`'s metadata test
+importing `reflect`, now binds in that test.
+
+### Type functions and type macros
+
+Probed on `c45f1b6` with a library declaring a type function `wider<A, B>` and
+a type macro `rows T`:
+
+| Program | Before | After |
+|---|---|---|
+| file `import lib.rows` | works | works |
+| block `import lib.rows` | not in scope | works, in that block |
+| `import lib.rows::wider`, `::{Rows, rows}` | imported nothing | selects it |
+| use outside the importing block | rejected (as `type mismatch … declared wider`) | rejected; the macro now says `undefined type macro 'rows'` |
+
+- *Selection.* File-level and block imports share one helper
+  (`typeLevelImportedBy`). It takes a module's type functions and named
+  macros, all below a namespace, or the one a dotted path selects, and follows
+  re-exports. Type functions did not follow re-exports before; type macros did.
+- *Block scope.* Inside the block, each use is renamed to the module-qualified
+  spelling a program may write in full (`std.traits.promote<…>`), and a copy of
+  the declaration is added under that name. It is not renamed to
+  `module__name`: `TypeFunctionEvaluator` resolves a bare use to the one
+  declaration ending in `__name`, the scope suffix, which would have leaked it
+  to the whole program. A shape macro has no name to scope, so a block cannot
+  import one.
+- *Macro templates read their own module.* A named type macro's template now
+  resolves in the module that declares it, at file scope and in a block. Its
+  names are walked in that module's scope, injected, and renamed to the
+  identities they were injected with. Before, `Rows<$T>` meant whatever the
+  use site called `Rows`. That was nothing when the program imported only the
+  macro, and the program's own `Rows` when it declared one. This is 028's
+  "macro templates are not renamed", for type macros only; expression macros
+  are unchanged.
+
+### FUNCTIONS_DIP §5.2: the owned receiver keeps its bare spelling
+
+§5.2 said there is no `func .consume()`. The parser accepted it, and
+`ReceiverShorthandTest` and `PropReceiverTest` used it; all three arrived in
+`e849c53`. User decision: keep it. §5.2 and §5.5 now say that `func .name()`,
+`func Self.name()` and `func (self: Self).name()` are the same owned
+receiver. `ReceiverShorthandTest.theOwnedSpellingsAgree` checks it. A property
+still only observes; `prop .name` stays rejected.
+
+### Not changed, recorded
+
+- `std.traits`'s `promote` resolves in a program that imports nothing
+  (probed; 014). A type function that injected library code names is added
+  under its short name, visible to the whole program
+  (`dependencyTypeFunctions`).
+- A type function or macro that is not in scope is reported as a type mismatch
+  against its bare name (`declared wider but initializer is Float`), not as an
+  undefined type (020).
+- `fin r: rows Int = .(4)` fails. `.(…)` reads the type before the macro
+  expands (028).
+- A type function's body names sibling type functions by short name, program
+  wide. A block-imported one whose body calls a sibling that nothing else
+  imported would not find it. No standard type function does.
+- A block's imports do not bring shape macros (unnamed type grammar); import
+  those at file scope (028).
+
+### Evidence
+
+- `ModuleBlockImportTest` (8), new: 5 fail on `c45f1b6`. The cases:
+  - sibling providers;
+  - a sibling leak;
+  - nested blocks, both ways;
+  - a block-imported type;
+  - local shadowing;
+  - a library block import that the program cannot name;
+  - a `module app` program.
+- `TypeLevelImportTest` (8), new:
+  - block type functions and macros, and their leaks;
+  - selection by name;
+  - a macro template reading its own module, and one not captured by the
+    program's `Rows`;
+  - a library block importing both.
+
+  With the template renaming disabled, four of them fail.
+- `TestScopedImportTest.aModuleKeepsItsBlockImportsInTheBlock` replaces the
+  test that asserted the hoisting. The 007 entry had already said that passing
+  it proved nothing.
+- `ReceiverShorthandTest` 9/9, `PropReceiverTest`.
+- Full compiler run: **2,425 tests, 2,234 passed, 191 failed, 0 skipped**,
+  against 2,409 / 191 at `c45f1b6`. The same 191 fail, and none newly. The
+  receiver test was added after it; its suite passes.
+- AZLS: 91/91.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*ModuleBlockImportTest' --tests '*TypeLevelImportTest' --tests '*LexicalImportTest' --tests '*TestScopedImportTest' --tests '*ReceiverShorthandTest'
+./gradlew :compiler:desktopTest --offline --console=plain
 ```

@@ -64,15 +64,29 @@ class ReceiverShorthandTest {
     }
 
     @Test fun theShortAndLongSpellingsAgree() {
-        val short = impl("func &.x() {}", "func !.y() {}")
-        val long = impl("func (self: Self&).x() {}", "func (self: Self!).y() {}")
+        val short = impl("func &.x() {}", "func !.y() {}", "func .c() {}")
+        val long = impl("func (self: Self&).x() {}", "func (self: Self!).y() {}", "func (self: Self).c() {}")
 
-        for (name in listOf("x", "y")) {
+        for (name in listOf("x", "y", "c")) {
             assertEquals(
                 member(long, name).receiverModifier,
                 member(short, name).receiverModifier,
                 name,
             )
+        }
+    }
+
+    /**
+     * The owned receiver has three spellings, all kept (FUNCTIONS_DIP §5.2,
+     * decided 2026-09-22): `.c`, `Self.c` and `(self: Self).c`.
+     */
+    @Test fun theOwnedSpellingsAgree() {
+        val source = impl("func .c() {}", "func Self.d() {}", "func (self: Self).e() {}")
+        for (name in listOf("c", "d", "e")) {
+            val decl = member(source, name)
+            assertEquals(ParamModifier.NONE, decl.receiverModifier, name)
+            assertEquals("self", decl.receiverName, name)
+            assertTrue(decl.declaresReceiver, "$name declares a receiver")
         }
     }
 

@@ -82,7 +82,12 @@ class TestScopedImportTest {
         assertTrue(parsed.none { it is TopLevel.UseImport })
     }
 
-    @Test fun aModuleKeepsItsBlockImportsAtModuleScope() {
+    /**
+     * A file that declares a module binds a block's import in that block too.
+     * It used to hoist the import to module scope, where every sibling saw it
+     * (`ModuleBlockImportTest`).
+     */
+    @Test fun aModuleKeepsItsBlockImportsInTheBlock() {
         val parsed = items(
             """
             module lib.probe
@@ -92,8 +97,8 @@ class TestScopedImportTest {
             }
             """.trimIndent()
         )
-        assertEquals(1, parsed.count { it is TopLevel.UseImport })
-        assertTrue(parsed.filterIsInstance<TopLevel.Func>().single().decl.body.none { it is Stmt.Import })
+        assertTrue(parsed.none { it is TopLevel.UseImport }, "the import binds in the function alone: $parsed")
+        assertIs<Stmt.Import>(parsed.filterIsInstance<TopLevel.Func>().single().decl.body.first())
     }
 
     @Test fun aTestWithoutImportsIsUnchanged() {

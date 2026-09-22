@@ -38,7 +38,7 @@ NAMED_RECEIVER_GROUP ::= '(' NAMED_RECEIVER (',' NAMED_RECEIVER)* ')'
 UNNAMED_RECEIVER_GROUP ::= '(' TYPE ',' TYPE (',' TYPE)* ')'
 NAMED_RECEIVER ::= NAME ':' TYPE                       (for example self: T&, owner: U!, value: V)
 UNNAMED_RECEIVER_TYPE ::= TYPE                         (for example T&, Box<T>!, Request)
-IMPL_CAPABILITY ::= '&' | '!'                          (inside impl/spec; means Self& or Self!)
+IMPL_CAPABILITY ::= '&' | '!' | (nothing)              (inside impl/spec; means Self&, Self! or owned Self)
 RETURN_TYPE  ::= Type | (nothing → Unit; never inferred - see §1.4)
 FAILS        ::= E | [E1, E2]                           (error sets; optional)
 CLAUSE       ::= (...T).length >= N  |  T is Spec       (joined with &&; optional)
@@ -462,11 +462,13 @@ impl Counter {
 
 - `Self` denotes the implementing type.
 - Inside an `impl` or `spec`, `func &.name()` means
-  `func (self: Self&).name()` and `func !.name()` means
-  `func (self: Self!).name()`. Both introduce implicit `self` in the body.
-- There is no bare owned-capability spelling such as `func .consume()`. Write
-  `func Self.consume()` for implicit owned `self`, or
-  `func (self: Self).consume()` for the explicit form.
+  `func (self: Self&).name()`, `func !.name()` means
+  `func (self: Self!).name()`, and `func .name()` means
+  `func (self: Self).name()`: an owned receiver the method consumes. All three
+  introduce implicit `self` in the body.
+- `func Self.consume()` is the same owned receiver with its type written, and
+  `func (self: Self).consume()` the explicit form. The three spellings are
+  equivalent. (Decided 2026-09-22: the bare `.` stays, beside `&.` and `!.`.)
 - A method with its own type parameters puts them after `func`, before the
   receiver head: `func<R> &.map(f: (Item&) -> R): List<R>`.
 - Mutating through `Self&` is an error; declare `Self!` when mutation is needed.
@@ -620,7 +622,8 @@ prop (model: Model&, theme: Theme&).label: String
 ```
 
 - Inside an `impl`/`spec`, `prop &.name` expands to
-  `prop (self: Self&).name`. There is no `prop !.` or owned `prop Self.` form.
+  `prop (self: Self&).name`. There is no `prop !.`, `prop .` or owned
+  `prop Self.` form: a property only observes.
 - Outside an implementing context, `prop Type&.name` introduces implicit
   `self: Type&`; the full named spelling is `prop (self: Type&).name`.
 - Generic property parameters remain attached to the property name:
@@ -633,8 +636,8 @@ prop (model: Model&, theme: Theme&).label: String
 - A receiver-free `prop name: T` is a static/type property and has no `self`.
 - Reading a property may calculate a result and mutate local temporaries, but
   it cannot mutate or consume a receiver. Declare `func !.name()` for mutation
-  and `func Self.name()` for consumption; the call parentheses make that effect
-  visible.
+  and `func .name()` (or `func Self.name()`) for consumption; the call
+  parentheses make that effect visible.
 
 Operators retain their dedicated declaration grammar:
 

@@ -249,17 +249,19 @@ class LlvmRegressionExecTest {
         """.trimIndent()
     )
 
+    /**
+     * A set is left out: its elements must be `Equal`, and a float is only
+     * `PartialEqual` (GTC §8.4). The array and the map store the same `fp128`.
+     */
     @Test fun decimalCollectionsUseExplicitPackedAlignment() {
         val ir = LlvmExec.compile(
             """
             import std.io
             import std.container.map
-            import std.container.set
             import std.container.core
             func main() {
                 var array = [Quad(1.5), Quad(2.5)]
                 var map: Map<String, Quad> = ["value": Quad(3.5)]
-                var set: Set<Quad> = [Quad(1.5), Quad(2.5)]
             }
             """.trimIndent()
         )

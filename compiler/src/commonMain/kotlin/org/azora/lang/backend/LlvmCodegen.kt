@@ -4923,6 +4923,32 @@ class LlvmCodegen {
                     printfFmt("%s", listOf("i8* $s"))
                 }
             }
+            // A nullable prints what it holds, or `null`: a map's `get` answers
+            // one, and its value is the answer the program asked for.
+            is IrType.Nullable -> {
+                val inner = (arg.type as IrType.Nullable).inner
+                val pointer = emitExpr(arg)
+                val isNull = nextTmp()
+                emit("  $isNull = icmp eq i8* $pointer, null")
+                val absent = "print.null.${labelCounter++}"
+                val present = "print.value.${labelCounter++}"
+                val printed = "print.done.${labelCounter++}"
+                emit("  br i1 $isNull, label %$absent, label %$present")
+                emit("$absent:")
+                val nullText = gepString(addStringConstant("null"))
+                if (newline) {
+                    usesPuts = true
+                    val unused = nextTmp()
+                    emit("  $unused = call i32 @puts(i8* $nullText)")
+                } else {
+                    printfFmt("%s", listOf("i8* $nullText"))
+                }
+                emit("  br label %$printed")
+                emit("$present:")
+                emitPrintHeld(pointer, inner, nl, newline)
+                emit("  br label %$printed")
+                emit("$printed:")
+            }
             else -> {
                 emitExpr(arg)
                 val placeholder = gepString(addStringConstant("<value>"))
@@ -4961,6 +4987,63 @@ class LlvmCodegen {
         emit("  $fmt = select i1 $isIntegral, i8* $intFmt, i8* $genFmt")
         val unused = nextTmp()
         emit("  $unused = call i32 (i8*, ...) @printf(i8* $fmt, double $value)")
+    }
+
+    /** What a non-null nullable holds, printed as its own type would be. */
+    private fun emitPrintHeld(pointer: String, inner: IrType, nl: String, newline: Boolean) {
+        when {
+            inner == IrType.String || inner is IrType.Named -> {
+                if (newline) {
+                    usesPuts = true
+                    val unused = nextTmp()
+                    emit("  $unused = call i32 @puts(i8* $pointer)")
+                } else {
+                    printfFmt("%s", listOf("i8* $pointer"))
+                }
+            }
+            inner == IrType.Bool -> {
+                val bits = coerceNumeric(pointer, IrType.Nullable(inner), IrType.Int)
+                val flag = nextTmp()
+                emit("  $flag = icmp ne i32 $bits, 0")
+                val text = boolToStr(flag)
+                if (newline) {
+                    usesPuts = true
+                    val unused = nextTmp()
+                    emit("  $unused = call i32 @puts(i8* $text)")
+                } else {
+                    printfFmt("%s", listOf("i8* $text"))
+                }
+            }
+            inner in IrType.floatTypes -> {
+                val value = coerceNumeric(pointer, IrType.Nullable(inner), IrType.Double)
+                printDouble(value, nl)
+            }
+            IrType.isInteger(inner) || inner == IrType.Char -> {
+                val value = coerceNumeric(pointer, IrType.Nullable(inner), IrType.Long)
+                val format = when {
+                    inner == IrType.Char -> "%c$nl"
+                    isUnsigned(inner) -> "%llu$nl"
+                    else -> "%lld$nl"
+                }
+                if (inner == IrType.Char) {
+                    val narrow = nextTmp()
+                    emit("  $narrow = trunc i64 $value to i32")
+                    printfFmt(format, listOf("i32 $narrow"))
+                } else {
+                    printfFmt(format, listOf("i64 $value"))
+                }
+            }
+            else -> {
+                val placeholder = gepString(addStringConstant("<value>"))
+                if (newline) {
+                    usesPuts = true
+                    val unused = nextTmp()
+                    emit("  $unused = call i32 @puts(i8* $placeholder)")
+                } else {
+                    printfFmt("%s", listOf("i8* $placeholder"))
+                }
+            }
+        }
     }
 
     private fun printfFmt(fmt: String, args: List<String>) {

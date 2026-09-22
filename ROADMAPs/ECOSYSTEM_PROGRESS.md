@@ -28,7 +28,9 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
   target. 010.C4.4 (untyped `[k: v]`) needs a decision.
 - Completed substep: 022.1. `Hash`, `Equal` and `Order` bounds reach erased
   generic code through witness descriptors and are checked where types are
-  chosen. A `Set<Quad>` fixture now fails the `Equal` bound and awaits a decision.
+  chosen.
+- Completed substep: 010.C4.4. An untyped `[k: v]` builds the standard
+  `LinkedHashMap`. 010.C4 is closed; C5 (qualification) remains.
 - Completed substep: 018.1. `ctor .()` runs on the interpreter, LLVM and WASM
   wherever a construction writes no arguments, once.
 - The remaining 008 fixture review and 010.C5 remain open. Older entries below
@@ -1900,5 +1902,74 @@ unchanged.
 
 ```sh
 ./gradlew :compiler:desktopTest --offline --console=plain --tests '*Witness*' --tests '*StdCollectionLiteral*'
+./gradlew :compiler:desktopTest --offline --console=plain
+```
+
+## 2026-09-22 — 010.C4.4: untyped associative literals build the standard map
+
+022.1 is committed as `95ab0bad`. Both open decisions from that entry are taken.
+
+**Sets keep their `Equal` bound.** `LlvmRegressionExecTest.decimalCollectionsUseExplicitPackedAlignment`
+built a `Set<Quad>` to check packed `fp128` stores. A float is `PartialEqual`,
+not `Equal`, and a set decides membership by equality (GTC §8.4), so the fixture
+drops its set line and keeps the array and the map, which store the same
+`fp128`. It passes again.
+
+**An untyped `[k: v]` builds `LinkedHashMap<K, V>`.** GTC §8.4 names that as the
+backing implementation. The inferred type is the concrete pack, as a sequence
+without a context infers `Array<E>` rather than `List<E>` (the 2026-09-10
+decision), so `m["b"] = 99` and `scores[40] = 40` keep working - a read-only
+`Map<K, V>` view would have rejected the website and playground examples that
+write to a map they just wrote down. The compiler's structural `IrType.Map`
+remains only where the standard library is absent, as in a stage test. Keys must
+be `Hash`, as for any map. The literal's target is injected without an import,
+and stays unnameable: it is retained through the visibility filter by a new
+`implicitLiteralTargets`, not by the compiler-known set that would have kept its
+short name.
+
+**Defects this uncovered, all fixed:**
+
+- *Two declarations, one symbol.* The IR canonicalizer collapsed every run of
+  underscores, so a module's public `linkedHashMapOf` and its private
+  `_linkedHashMapOf` both became `__std_container_map_linkedHashMapOf` once the
+  identity rename joined them to their module - `invalid redefinition` at link.
+  A run of three or more now keeps one underscore of its own.
+- *A program's own name is the program's.* A user `pack Map` and the injected
+  standard `Map` spec shared the short name, because compiler-known declarations
+  are never renamed; `fin value: Map<Int, Int> = data` then accepted a standard
+  map (`CollectionTargetSafetyTest.keyedValuesCannotMasqueradeAsNamedMaps`).
+  A compiler-known name the program declares now takes its module's identity.
+- *A `using` block's members lost to globals.* Inside `using self { purge [keys,
+  values, …] }`, `values` resolved to a global of that name rather than the
+  field, so any program with a global named `values` failed as soon as the map's
+  destructor was injected. A member a `using` block opens now stands closer than
+  a global (and a parameter or local closer than either), in the resolver and in
+  lowering. This also fixed a latent defect: a global holding any non-`Copy`
+  pack (`fin values: HashMap<String, Int> = …`) could not be used at all.
+- *LLVM printed a nullable as `<value>`.* It now branches on null and prints
+  `null` or the value at its own type, which is what `println(map.get(k))`
+  asked for (`LlvmAggregateExecTest.mapGetPutAndContainsKey`).
+- *Global map literals* were typed as the structural map by symbol collection,
+  which disagreed with the resolver; it names the standard map too.
+
+**Open, recorded.** A global initialized through a literal factory does not link
+on LLVM: the factory is defined in the module and the initializer's call still
+reports `use of undefined value`. `globalSetInitializerRunsBeforeMain` has failed
+that way since C4.2; `globalMapInitializerRunsBeforeMain` now joins it, having
+passed while untyped maps were structural. Every other context - local bindings,
+arguments, returns, fields - links and runs.
+
+### Evidence
+
+- `StdCollectionLiteralTest.untypedMap`, new, runs on the interpreter, LLVM and
+  WASM: reads, an update, a new key, growth, `Double` values and insertion order.
+- `CollectionTargetSafetyTest` 4/4, `WitnessTest` 5/5, `StdCollectionLiteral*`
+  7/7, `LlvmRegressionExecTest.decimalCollectionsUseExplicitPackedAlignment`.
+- Full compiler run: **2,396 tests, 2,205 passed, 191 failed, 0 skipped**,
+  against 2,396 / 191 at `95ab0bad` measured in a scratch worktree. One test
+  newly passes (the `Set<Quad>` fixture) and one newly fails (the global map
+  initializer above).
+
+```sh
 ./gradlew :compiler:desktopTest --offline --console=plain
 ```

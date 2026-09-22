@@ -48,7 +48,9 @@ object InferredTypeArgs {
             if (decl.typeParams.isEmpty()) return
             generic[decl.name] = decl
             // A library's declaration carries its scope; a call names it plainly.
-            generic.putIfAbsent(decl.name.substringAfterLast("__"), decl)
+            // getOrPut, not putIfAbsent: the latter is a JVM-only extension and
+            // this file is commonMain, so it does not resolve on Kotlin/Wasm.
+            generic.getOrPut(decl.name.substringAfterLast("__")) { decl }
         }
         for (item in program.items) {
             when (item) {

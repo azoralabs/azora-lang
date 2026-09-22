@@ -2625,6 +2625,19 @@ class IrGenerator(private val table: SymbolTable) {
                 // declaration, so the value was bound just before this default
                 // was lowered.
                 constructionBindings?.get(expr.name)?.let { return it }
+                // A member a `using` block opened stands closer than a global of
+                // the same name, as the resolver typed it: inside
+                // `using self { purge [keys, values] }`, `values` is the field.
+                if (table.isGlobalOnly(expr.name)) {
+                    contextualValues.asReversed().filter { it.prefersMembers }.forEach { frame ->
+                        frame.values.forEach { value ->
+                            val owner = (value.type as? IrType.Named)?.let { table.lookupStruct(it.name) }
+                            owner?.field(expr.name)?.let { field ->
+                                return IrExpr.Member(value, expr.name, field.type)
+                            }
+                        }
+                    }
+                }
                 val sym = table.lookupVariable(expr.name)
                 // `Vec3f::zero` names a member of whatever `Vec3f` aliases, as it did
                 // when the resolver typed it.

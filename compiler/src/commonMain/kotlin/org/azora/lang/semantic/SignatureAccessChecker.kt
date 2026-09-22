@@ -69,7 +69,9 @@ object SignatureAccessChecker {
         fun consider(decl: FuncDecl) {
             val outgoing = Calls(decl, calls(decl.body))
             functions[decl.name] = outgoing
-            functions.putIfAbsent(named(decl.name), outgoing)
+            // getOrPut, not putIfAbsent: the latter is a JVM-only extension and
+            // this file is commonMain, so it does not resolve on Kotlin/Wasm.
+            functions.getOrPut(named(decl.name)) { outgoing }
             if (decl.annotations.any { named(it.name) == "SignatureOnly" }) {
                 signatureOnly.add(decl.name)
                 signatureOnly.add(named(decl.name))

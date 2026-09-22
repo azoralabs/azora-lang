@@ -616,6 +616,18 @@ class SymbolTable {
     fun enclosingVariableNames(): Set<String> =
         scopes.toList().dropLast(1).flatMapTo(mutableSetOf()) { it.keys }
 
+    /**
+     * True when [name] is declared only at the outermost scope - a global. A
+     * member a `using` block opens stands closer than one of those, and a
+     * parameter or local closer still.
+     */
+    fun isGlobalOnly(name: String): Boolean {
+        for (index in scopes.indices.reversed()) {
+            if (scopes[index].containsKey(name)) return index == 0
+        }
+        return false
+    }
+
     fun lookupVariableInCurrentScope(name: String): VariableSymbol? {
         return scopes.lastOrNull()?.get(name)
     }

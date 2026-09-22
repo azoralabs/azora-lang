@@ -60,6 +60,9 @@ import kotlin.collections.iterator
  * @param table the symbol table populated by [SymbolCollector], used to look up
  *   function signatures and manage local variable scopes
  */
+/** What an associative literal builds when nothing says otherwise; see GTC §8.4. */
+private const val STANDARD_MAP = "LinkedHashMap"
+
 class TypeResolver(private val table: SymbolTable) {
     private var unsafeContext = false
     private var currentReceiverType: String? = null
@@ -1070,15 +1073,16 @@ class TypeResolver(private val table: SymbolTable) {
             column = target.column,
             length = target.length + 1, // include the member dot; the fix replaces `Type.` with `.`.
         )
-        redundantQualifiers.putIfAbsent(
+        // getOrPut, not putIfAbsent: the latter is a JVM-only extension and this
+        // file is commonMain, so it does not resolve on Kotlin/Wasm.
+        redundantQualifiers.getOrPut(
             VariantQualifierKey(
                 occurrence.line,
                 occurrence.column,
                 occurrence.length,
                 occurrence.variant,
             ),
-            occurrence,
-        )
+        ) { occurrence }
     }
 
     /** The name of the type a slot holds, declared or primitive. */
@@ -2202,20 +2206,26 @@ class TypeResolver(private val table: SymbolTable) {
                 checkNotMutablyBorrowed(expr.name, expr.line)
                 checkBorrowAcrossSuspension(expr.name, expr.line)
                 checkCapture(expr.name, expr.line)
-                val sym = table.lookupVariable(expr.name)
+                val found = table.lookupVariable(expr.name)
                     ?: throughTypeAlias(expr.name)?.let { table.lookupVariable(it) }
-                if (sym == null) {
-                    // `using self { purge [keys, values] }` names its receiver once
-                    // and reaches into it for the rest of the form - that is
-                    // the whole point of `using`, and the names inside it are
-                    // already qualified by the line they are written on.
-                    val opened = contextualValues.asReversed()
+                // `using self { purge [keys, values] }` names its receiver once
+                // and reaches into it for the rest of the form - that is
+                // the whole point of `using`, and the names inside it are
+                // already qualified by the line they are written on. A member it
+                // opens stands closer than a global of the same name, and a
+                // parameter or local closer than either.
+                val openedMember = if (found == null || table.isGlobalOnly(expr.name)) {
+                    contextualValues.asReversed()
                         .filter { it.prefersMembers }
                         .firstNotNullOfOrNull { frame ->
                             frame.values.firstNotNullOfOrNull { (_, type) ->
                                 (type as? IrType.Named)?.let { table.lookupStruct(it.name)?.field(expr.name) }
                             }
                         }
+                } else null
+                val sym = if (openedMember != null) null else found
+                if (sym == null) {
+                    val opened = openedMember
                     // Otherwise a bare name inside a member resolves to
                     // parameters and locals only. A field belongs to the
                     // receiver, and reading it as though it stood on its own is
@@ -3515,6 +3525,15 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${expr.line}: cannot infer key and value types of empty associative literal")
                     return null
                 }
+                // Nothing said what to build, so it is the standard map:
+                // GTC §8.4's backing implementation, as a sequence without a
+                // context builds the `Array` that table names. The compiler's
+                // structural map answers only where the library is absent, as
+                // in a stage test with no standard library.
+                standardMapTarget(keyType!!, valType!!)?.let { standard ->
+                    expr.contextualType = typeRefOf(standard)
+                    return resolveEntriesFactoryLiteral(expr, standard)
+                }
                 val resolved = IrType.Map(keyType!!, valType!!)
                 expr.contextualType = typeRefOf(resolved)
                 resolved
@@ -4463,6 +4482,19 @@ class TypeResolver(private val table: SymbolTable) {
      * `[key: value, …]` whose target is not map storage: the target type's
      * associative factory builds it from one `(key, value)` entry per pair.
      */
+    /**
+     * `LinkedHashMap<K, V>` as this program names it - hidden behind its
+     * module's identity when the program never imported it - or null when the
+     * standard library is not loaded or defines no factory for it.
+     */
+    private fun standardMapTarget(key: IrType, value: IrType): IrType.Named? {
+        val name = table.allStructNames()
+            .firstOrNull { it == STANDARD_MAP || it.endsWith("__$STANDARD_MAP") }
+            ?: return null
+        if (table.lookupTypeStatic(name, LITERAL_ENTRIES_FACTORY) == null) return null
+        return IrType.Named(name, listOf(key, value))
+    }
+
     private fun resolveEntriesFactoryLiteral(expr: Expr.MapLit, target: IrType): IrType? {
         val named = target as? IrType.Named
         val factory = named?.let { table.lookupTypeStatic(it.name, LITERAL_ENTRIES_FACTORY) }

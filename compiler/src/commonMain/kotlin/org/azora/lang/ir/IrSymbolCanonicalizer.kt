@@ -339,10 +339,27 @@ internal object IrSymbolCanonicalizer {
         private fun canonicalNamespace(namespace: String): String =
             collapseSeparators(namespace.replace("::", "_").replace(".", "_"))
 
+        /**
+         * `a__b` reads as `a_b`, but a longer run keeps one underscore of its
+         * own: a module identity joined to a private name (`map___helper`) is
+         * not the same declaration as the module's public `map__helper`, and
+         * collapsing both to `map_helper` emits two functions under one symbol.
+         */
         private fun collapseSeparators(name: String): String {
-            var result = name
-            while ("__" in result) result = result.replace("__", "_")
-            return result
+            val result = StringBuilder()
+            var index = 0
+            while (index < name.length) {
+                if (name[index] != '_') {
+                    result.append(name[index])
+                    index++
+                    continue
+                }
+                var end = index
+                while (end < name.length && name[end] == '_') end++
+                result.append(if (end - index >= 3) "__" else "_")
+                index = end
+            }
+            return result.toString()
         }
     }
 }

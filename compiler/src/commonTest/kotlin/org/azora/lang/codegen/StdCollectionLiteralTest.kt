@@ -187,6 +187,30 @@ class StdCollectionLiteralTest {
             }
         """.trimIndent()
 
+        /**
+         * An associative literal with no expected type builds the standard map
+         * (GTC §8.4), which a program need not import to write one: it reads,
+         * updates and grows, and keeps what it was written in.
+         */
+        val untypedMap = """
+            import std.io
+            func main() {
+                var m = ["a": 1, "b": 2, "c": 3]
+                println(m["a"])
+                m["b"] = 99
+                println(m["b"])
+                println(m.size)
+                var scores = [10: 10, 20: 20]
+                scores[40] = 40
+                println(scores[40])
+                println(scores.size)
+                var reals = ["pi": 3.14, "half": 0.5]
+                reals["half"] = 2.5
+                println(reals["half"])
+                println(m.values().get(2))
+            }
+        """.trimIndent()
+
         /** Programs that run the same on every target. */
         val programs = listOf(
             lists to "3\n1\n2\n312\n15\n7\n8\n3\n0",
@@ -197,6 +221,7 @@ class StdCollectionLiteralTest {
             setKinds to "2\nGrace\ntrue\n2\n2\n1000000000\n2",
             maps to "a\n1\nb\n2\na\n3\n2\n3\n2\n1\n3\n30\n0",
             mapKinds to "2\n5\n2\none\n5.0",
+            untypedMap to "1\n99\n3\n40\n3\n2.5\n3",
         )
 
         fun compile(source: String, optimized: Boolean): IrProgram {

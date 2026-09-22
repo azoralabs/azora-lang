@@ -282,6 +282,14 @@ class StdlibInjector private constructor(
 
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")
 
+    /**
+     * What a literal builds when its context names no target: the standard map
+     * of GTC §8.4. A program writing `["a": 1]` needs it without importing it,
+     * so it survives the visibility filter - but it is not compiler-known, so it
+     * still takes its module's identity and no source can name it.
+     */
+    private val implicitLiteralTargets = setOf("LinkedHashMap")
+
     /** Non-bridge library types named by compiler code (the Display deriver, channels). */
     private val COMPILER_NAMED_TYPES = setOf("Formatter", "Channel")
 
@@ -1605,7 +1613,9 @@ class StdlibInjector private constructor(
         }
         // Exported/core blocks are always injected; pull in whatever they reference.
         for (item in index.alwaysInjectedItems) collectNamesFromItem(item, referenced)
-        val implicitReferenced = referenced.filterTo(mutableSetOf()) { it in implicitCollectionTypes }
+        val implicitReferenced = referenced.filterTo(mutableSetOf()) {
+            it in implicitCollectionTypes || it in implicitLiteralTargets
+        }
         referenced.retainAll(visible.keys)
         referenced += implicitReferenced
         // Exposed root declarations are visible without an import, but visibility
@@ -1827,7 +1837,11 @@ class StdlibInjector private constructor(
             if (item is TopLevel.Impl) continue
             val module = walk.moduleOf[key] ?: continue
             val name = key.substringAfter("::")
-            if ("__" in name || key in nameable || name in index.scopeTypesByShortName || isCompilerKnown(item, name)) continue
+            // A name the program declares is the program's: even a
+            // compiler-known library declaration takes its module's identity
+            // there, so a program's own `pack Map` is not the standard `Map`.
+            val known = isCompilerKnown(item, name) && name !in shadowed
+            if ("__" in name || key in nameable || name in index.scopeTypesByShortName || known) continue
             val identity = module.replace(".", "__") + "__" + name
             hidden[key] = identity
             renames.getOrPut(module) { mutableMapOf() }[name] = identity
@@ -2456,9 +2470,15 @@ class StdlibInjector private constructor(
                 collectNamesFromExpr(expr.to, names)
             }
             is Expr.ArrayLiteral -> expr.elements.forEach { collectNamesFromExpr(it, names) }
-            is Expr.MapLit -> expr.entries.forEach { (k, v) ->
-                collectNamesFromExpr(k, names)
-                collectNamesFromExpr(v, names)
+            is Expr.MapLit -> {
+                // An associative literal builds the standard map unless its
+                // context names another target, and the program need not have
+                // imported it to write one.
+                names.add("LinkedHashMap")
+                expr.entries.forEach { (k, v) ->
+                    collectNamesFromExpr(k, names)
+                    collectNamesFromExpr(v, names)
+                }
             }
             // `.(args)` - the expected type's constructor. Its arguments are
             // references like any other call's, and may be the only place a

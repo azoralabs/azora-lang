@@ -1017,6 +1017,12 @@ class SymbolCollector {
      * Simple expression type inference for return type deduction.
      * Only needs to handle literal types and parameter references.
      */
+    /** `LinkedHashMap<K, V>` as this program names it, or null without the standard library. */
+    private fun standardMapNamed(key: IrType, value: IrType): IrType.Named? =
+        symbolTable?.allStructNames()
+            ?.firstOrNull { it == "LinkedHashMap" || it.endsWith("__LinkedHashMap") }
+            ?.let { IrType.Named(it, listOf(key, value)) }
+
     private fun inferExprType(expr: Expr, env: Map<String, IrType>): IrType? = when (expr) {
         // Its type is whatever context expects; nothing here states one.
         is Expr.InferredMember -> null
@@ -1068,7 +1074,11 @@ class SymbolCollector {
         is Expr.MapLit -> expr.entries.firstOrNull()?.let { (key, value) ->
             val keyType = inferExprType(key, env)
             val valueType = inferExprType(value, env)
-            if (keyType != null && valueType != null) IrType.Map(keyType, valueType) else null
+            // The standard map, as the resolver builds it; the compiler's
+            // structural map only where the library is absent.
+            if (keyType != null && valueType != null) {
+                standardMapNamed(keyType, valueType) ?: IrType.Map(keyType, valueType)
+            } else null
         }
         is Expr.Member -> {
             val target = inferExprType(expr.target, env)

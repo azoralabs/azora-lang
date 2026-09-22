@@ -5,6 +5,10 @@
 
 package org.azora.lang.diagnostics
 
+// kotlin.jvm.* is a default import only on the JVM target. This file is
+// commonMain, so the annotation has to be imported explicitly for Kotlin/Wasm.
+import kotlin.jvm.JvmInline
+
 @JvmInline
 value class SourceId(val value: String)
 

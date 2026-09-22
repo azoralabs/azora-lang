@@ -18,8 +18,9 @@ Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 - Completed: 010.C3.5. Factory dependencies are discovered and carry canonical
   identities; nothing injected becomes nameable, and program names capture no
   library reference.
-- In progress: 007/014. A program's block imports bind lexically. Library-module
-  block imports, receiver syntax, scope members and unknown-module imports remain.
+- In progress: 007/014. A program's block imports bind lexically, and an import
+  that names no module or declaration is an error (2026-09-22). Library-module
+  block imports, receiver syntax and scope members remain.
 - Completed substep: 021.1. A generic call with inferred type arguments is typed
   by them in IR, so its value is no longer erased on LLVM and WASM.
 - Completed substeps: 010.C4.1–C4.2. List and Set literals build the standard
@@ -1972,4 +1973,117 @@ arguments, returns, fields - links and runs.
 
 ```sh
 ./gradlew :compiler:desktopTest --offline --console=plain
+```
+
+## 2026-09-22 — 014: an import that names nothing is an error
+
+010.C4.4 is committed as `c6550959`; this entry starts from it.
+
+**The defect.** `validateImports` rejected one kind of bad import, a bare
+namespace (`import std`). Anything else that named nothing imported nothing and
+compiled. Measured on `c6550959`, each of these compiled:
+
+- `import std.nothere`, `import lib.missing` and `import nowhere`, at file scope
+  and inside a function;
+- `import std.nothere::*`, `import nowhere::{*, without x}`;
+- `import std::{math, nothere}`;
+- `import std.math::nothere`, `import std.math.nothere`,
+  `import std.math::{abs, nothere}` and `import lib.one::nothere`.
+
+**Change.** Each clause of an import must name one of:
+
+- a module;
+- a namespace, for a wildcard (a plain namespace keeps its existing error);
+- something a module declares: a declaration, type function, type macro, scope,
+  scope member or scope type.
+
+The modules are the standard library's plus the compilation's library sources:
+the project's other files in `azora build`/`run`, and the workspace catalog in
+the language server. The error is reported at the clause's own line, so a
+multi-line group names the member that is wrong. It names the first missing
+piece: `std.nothere::thing` reports `std.nothere`.
+
+```text
+line 2: there is no module 'std.nothere' to import
+line 4: module 'std.math' has nothing named 'nothere' to import
+line 2: there is no module or namespace 'nowhere' to import from
+```
+
+Two kinds of name are not missing although no library module declares them:
+
+- *The program's own module,* and anything the program declares. That includes
+  its scopes: `import Const` beside `scope Const { … }` stays a no-op, as
+  `ModulesTest.useDoesNotCreateBareAlias` expects. A module *below* the
+  program's own (`app.util` from `module app`) is looked up like any other.
+- *A module that exists but cannot be imported from here* (a `confined`
+  module). It still imports nothing and compiles; see below.
+
+Every standard-library module's own imports pass the check. The check sees only
+imports the program wrote. Imports the compiler generates (a derived
+serializer's) are added after it runs.
+
+**Stale fixtures.** Four fixtures imported modules that do not exist. Only
+their imports changed. What each asserts is unchanged, and each passes again:
+
+| Fixture | Import | Where the declarations are |
+|---|---|---|
+| `ConvertSpecTest` (3 programs) | `std::convert` | `From` and `Into` are in `std.core`, which every program sees |
+| `CastSpecTest` (3) | `std::convert` | `Cast`, `CheckedCast` and `BitCast` are in `std.core` |
+| `Feature003SyntaxTest` (2) | `std::convert` | `Cast`, in `std.core` |
+| `LlvmRegressionExecTest.decimalCollectionsUseExplicitPackedAlignment` | `std.container.core` | nothing is used from it |
+
+`Feature003SyntaxTest.implAsStringDoesNotCreateToString` expects a failure
+mentioning `toString`. It would have reported the import instead, so the
+missing-import error could not stand in for the error it checks.
+
+**Decision needed: `std.convert`.** CAST_DIP §1 says `Into` and `From` are
+`std.convert`'s, and `std/serializer.az` declares
+`@Derive(conversionModule: "std.convert", conversionProvider: "convert")`. A
+derived serializer therefore imports `std.convert` and calls
+`convert::toString`. No `std.convert` module exists. The generated import is not
+checked (see above), and serializer derivation already fails in the baseline.
+There are two options:
+
+- add a `std.convert` module that owns or re-exports the specs, and gives the
+  serializer its `toString`;
+- correct CAST_DIP §1 and the serializer's metadata to `std.core`.
+
+**Not changed, recorded:**
+
+- `ResultUnwrapOrTest` (2) imports `std::result` and calls `ok`, `err` and
+  `unwrapOr`. None of them exists anywhere. The test failed before and now
+  fails at the import. It is a missing implementation or an obsolete test.
+- Importing a `confined` module from outside its package imports nothing and
+  compiles. MODULES_DIP says the folder comparison behind module visibility does
+  not exist yet, and a same-package entry must still be able to import it.
+- `import std::*` and `import std::{math, time}` fail with the serializer's
+  derive errors (`undefined function 'std::serialFieldAt'`, …) on `95ab0bad`
+  as now.
+- These errors are legacy strings. In the editor, a missing item underlines its
+  name and a missing module underlines the whole import line.
+
+### Evidence
+
+- `UnknownImportTest` (13), new:
+  - each form above, with its message and line;
+  - a block import and a test's import;
+  - a module file;
+  - a module below the program's own;
+  - a scope the program declares;
+  - every accepted form, which still compiles and runs: module, namespace
+    wildcard, selected and dotted item, type function, scope, scope member, and
+    a library whose own imports resolve.
+- Full compiler run: **2,409 tests, 2,218 passed, 191 failed, 0 skipped**,
+  against 2,396 / 191 at `c6550959` in a scratch worktree. The 13 added tests
+  pass. The same 191 tests fail, none newly. Only the two `ResultUnwrapOrTest`
+  messages changed, as described above. Before the fixtures were repaired,
+  the same run showed exactly the eight stale imports above and
+  `useDoesNotCreateBareAlias`. That test is why the program's own scopes are
+  not missing.
+- AZLS: 91/91, as at `c6550959`.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*UnknownImportTest' --tests '*ModulesTest' --tests '*CastSpecTest' --tests '*ConvertSpecTest'
+./gradlew :compiler:desktopTest --offline --console=plain
+./gradlew :azls:test --offline
 ```

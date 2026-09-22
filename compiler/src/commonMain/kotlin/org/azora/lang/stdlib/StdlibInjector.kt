@@ -393,38 +393,66 @@ class StdlibInjector private constructor(
     }
 
     /**
-     * Rejects imports that name a namespace/folder rather than an actual module
-     * file. `import std` fails because there is no `std` module - only modules
+     * Rejects imports that name no module, or a namespace rather than a module.
+     *
+     * `import std` fails because there is no `std` module - only modules
      * *under* `std` (`std.math`, `std.container`, …). Callers that want every
      * module below a namespace write `import std.*`; a specific one, `import
-     * std.container`. Unknown roots (e.g. a user's own module) are left alone.
+     * std.container`.
+     *
+     * An import must also name something that exists: a module, a namespace for
+     * a wildcard, or a declaration, type function, type macro or scope of a
+     * module. The modules are the standard library's and the compilation's
+     * library sources, which are the project's other files in a build and the
+     * workspace in an editor. `import std.nothere` and `import std.math::nothere`
+     * used to import nothing and compile.
      */
     fun validateImports(program: Program): List<String> {
         if (index.modules.isEmpty()) return emptyList()
         val known = index.modules.keys
         val errors = mutableListOf<String>()
+        // A scope the program declares is not a module, but naming it is not
+        // naming nothing: `import Const` beside `scope Const { … }` stays a
+        // no-op, as a library module's scope does.
+        val declaredHere = userDeclaredNames(program)
+        val scopesHere = program.scopeTypeNamespaces.values.toSet()
+        fun declaredByProgram(path: String): Boolean {
+            val name = path.replace(".", "__")
+            val qualified = path.replace(".", "::")
+            return name in declaredHere || declaredHere.any { it.startsWith("${name}__") } ||
+                scopesHere.any { it == qualified || it.startsWith("$qualified::") }
+        }
         for (item in program.writtenImports()) {
-            for (request in importRequests(item)) {
-                val (path, selected, without) = request
-                // Wildcard and selective-item forms are validated by name resolution.
+            for (spec in item.importSpecs) {
+                val path = spec.path
+                val selected = if (spec.selector is ImportSpec.Selector.All) "*" else null
+                val without = spec.without.toSet()
+                val line = spec.line.takeIf { it > 0 } ?: item.line
+                // The program's own module and what it declares are not in the
+                // library index. A module below it (`app.util` from `module app`)
+                // is an ordinary import.
+                val own = program.moduleName
+                val namesProgram = declaredByProgram(path) || own != null &&
+                    (path == own || path.startsWith("$own.") && declaredByProgram(path.removePrefix("$own.")))
+                val reachesKnownModule = path in known || known.any { it.startsWith("$path.") }
                 if (selected != null) {
-                    if (selected == "*" && without.isNotEmpty()) {
-                        val reachesKnownModule = path in known || known.any { it.startsWith("$path.") }
-                        if (reachesKnownModule) {
-                            val available = linkedSetOf<String>()
-                            available.addAll(itemsVisibleFromImport(path, selected).keys.map { it.substringAfterLast("__") })
-                            modulesForPath(path).forEach { module ->
-                                available.addAll(index.typeFunctionsByModule[module].orEmpty().map { it.name.substringAfterLast("__") })
-                                available.addAll(index.typeMacrosByModule[module].orEmpty().mapNotNull { it.name?.substringAfterLast("__") })
-                            }
-                            for (name in without) {
-                                if (name !in available) {
-                                    errors.add(
-                                        "cannot exclude '$name' from 'import $path::{*, without $name}': " +
-                                            "the wildcard does not provide a symbol named '$name' (line ${item.line})",
-                                    )
-                                }
-                            }
+                    if (!reachesKnownModule) {
+                        if (!namesProgram) errors.add("line $line: there is no module or namespace '$path' to import from")
+                        continue
+                    }
+                    if (without.isEmpty()) continue
+                    val available = linkedSetOf<String>()
+                    available.addAll(itemsVisibleFromImport(path, selected).keys.map { it.substringAfterLast("__") })
+                    modulesForPath(path).forEach { module ->
+                        available.addAll(index.typeFunctionsByModule[module].orEmpty().map { it.name.substringAfterLast("__") })
+                        available.addAll(index.typeMacrosByModule[module].orEmpty().mapNotNull { it.name?.substringAfterLast("__") })
+                    }
+                    for (name in without) {
+                        if (name !in available) {
+                            errors.add(
+                                "cannot exclude '$name' from 'import $path::{*, without $name}': " +
+                                    "the wildcard does not provide a symbol named '$name' (line ${item.line})",
+                            )
                         }
                     }
                     continue
@@ -433,18 +461,62 @@ class StdlibInjector private constructor(
                 val isSelectedItem = resolveSelectedLibraryPath(path)
                     ?.let { isExternallyImportable(it.first) && index.modules[it.first]?.containsKey(it.second) == true } == true
                 if (isExactModule || isSelectedItem) continue
-                // Only flag paths that are a real namespace of known modules (so a
-                // typo'd or user-defined root is not falsely rejected here).
                 if (known.any { it.startsWith("$path.") }) {
                     errors.add(
                         "cannot 'import $path': '$path' is a namespace, not a module - " +
                             "import a specific module such as 'import $path.<name>', or 'import $path.*' " +
                             "to pull in every module below it (line ${item.line})"
                     )
+                    continue
                 }
+                // A module that is not importable from here is left to name
+                // resolution, as before; this rejects only what exists nowhere.
+                if (path in known || namesProgram) continue
+                missingImport(path)?.let { errors.add("line $line: $it") }
             }
         }
         return errors
+    }
+
+    /**
+     * Why the dotted import [path] names nothing, or null when it names
+     * something a module declares. [path] is neither a module nor a namespace.
+     *
+     * The message names the first missing piece: `std.math.nothere` is missing
+     * from the module `std.math`, and `std.nothere.thing` has no module
+     * `std.nothere` to come from.
+     */
+    private fun missingImport(path: String): String? {
+        val segments = path.split('.')
+        val prefixes = (segments.size - 1 downTo 1).map { segments.take(it).joinToString(".") }
+        val modules = prefixes.filter { it in index.modules }
+        if (modules.any { moduleDeclares(it, path.removePrefix("$it.").replace(".", "__")) }) return null
+        modules.firstOrNull()?.let { module ->
+            return "module '$module' has nothing named '${path.removePrefix("$module.").replace(".", "::")}' to import"
+        }
+        val namespace = prefixes.firstOrNull { prefix -> index.modules.keys.any { it.startsWith("$prefix.") } }
+        val missing = namespace?.let { segments.take(it.split('.').size + 1).joinToString(".") } ?: path
+        return "there is no module '$missing' to import"
+    }
+
+    /**
+     * Whether [module] declares [name] - a declaration, type function or type
+     * macro, `scope__member` for a scope's member - or a scope called [name].
+     */
+    private fun moduleDeclares(module: String, name: String): Boolean {
+        val items = index.modules[module] ?: return false
+        if (name in items) return true
+        fun named(declared: String?) = declared == name || declared?.substringAfterLast("__") == name
+        if (index.typeFunctionsByModule[module].orEmpty().any { named(it.name) }) return true
+        if (index.typeMacrosByModule[module].orEmpty().any { named(it.name) }) return true
+        // A scope's members are registered as `scope__member`; its types by
+        // their short name, with the scope as their qualifier.
+        if (items.keys.any { it.startsWith("${name}__") }) return true
+        val qualified = name.replace("__", "::")
+        return index.scopeTypesByQualifiedName.values.any { export ->
+            export.module == module &&
+                (export.qualifiedName == qualified || export.qualifier == qualified || export.qualifier.startsWith("$qualified::"))
+        }
     }
 
     /**

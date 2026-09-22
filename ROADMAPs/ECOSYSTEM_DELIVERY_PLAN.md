@@ -49,16 +49,17 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,396 tests: 2,205 passed,
-191 failed, 0 skipped** (010.C4.4 on `95ab0bad`). The `Set<Quad>` fixture passes
-again; `globalMapInitializerRunsBeforeMain` now meets the same LLVM defect its
-set twin already had. The 007/014 acceptance tests in `FactoryDependencyTest`
+The latest full compiler run has **2,409 tests: 2,218 passed,
+191 failed, 0 skipped** (014's import check on `c6550959`). The
+`globalMapInitializerRunsBeforeMain` failure is the LLVM global-initializer
+defect that `globalSetInitializerRunsBeforeMain` already has. The 007/014 acceptance tests in `FactoryDependencyTest`
 pass. The
 [latest durable inventory](ECOSYSTEM_BASELINE_COLLECTION_FOUNDATIONS_2026_09_15.json)
 records the 2,290-test baseline. Packs and specs declare sequence and
 associative `literal` factories, and importing the target brings in the factory
-and what it builds. Library declarations carry canonical identities, and a
-program's block imports bind lexically. List, Set and Map literals build the
+and what it builds. Library declarations carry canonical identities, a
+program's block imports bind lexically, and an import that names nothing is an
+error. List, Set and Map literals build the
 standard collections on every target, generic code reaches `Hash`, `Equal` and
 `Order` through witness descriptors, and an untyped `[k: v]` builds the standard
 map. **010** remains open for qualification (C5).
@@ -118,7 +119,7 @@ Dependencies: Steps 001–010; narrow semantic tests can be developed earlier wi
 - [ ] **011. Publish a feature and target support matrix from code inspection.** Acceptance: Every language feature identifies responsible stages, tests, unsupported targets, and actual limits.
 - [ ] **012. Consolidate lexical vocabulary and source locations.** Acceptance: Compiler, AZLS, Studio, and plugin tokenization agree on names, escapes, Unicode, comments, and spans.
 - [ ] **013. Harden parser recovery and AST validation.** Acceptance: Malformed input yields bounded, located diagnostics without corrupting the next declaration.
-- [ ] **014. Repair module resolution, visibility, aliases, and symbol identity.** Acceptance: Multi-file ambiguity, shadowing, access checks, and incremental analysis agree with compilation. Foundation in place 2026-09-19: canonical identities for injected library declarations and per-module reference resolution. Open: scope members keep short names, an import naming no module compiles silently, and multi-file ambiguity, access and incremental checks.
+- [ ] **014. Repair module resolution, visibility, aliases, and symbol identity.** Acceptance: Multi-file ambiguity, shadowing, access checks, and incremental analysis agree with compilation. Foundation in place 2026-09-19: canonical identities for injected library declarations and per-module reference resolution. 2026-09-22: an import that names no module, namespace or declaration is an error at its clause (`UnknownImportTest`). Open: scope members keep short names, importing a `confined` module from outside its package imports nothing silently, `std.convert` needs a decision (progress log), and multi-file ambiguity, access and incremental checks.
 - [ ] **015. Enforce all four binding mutability combinations.** Acceptance: Rebinding and mutation are checked separately for locals, globals, fields, and captures.
 - [ ] **016. Define and enforce numeric conversion and overflow behavior.** Acceptance: Widths, signedness, literals, promotions, casts, shifts, and overflow have target-consistent tests.
   - From 010.C3.3: 128-bit values (`Cent`, `UCent`, `Quad`) do not fit an eight-byte erased generic slot on either native target.

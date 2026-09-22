@@ -258,7 +258,6 @@ class LlvmRegressionExecTest {
             """
             import std.io
             import std.container.map
-            import std.container.core
             func main() {
                 var array = [Quad(1.5), Quad(2.5)]
                 var map: Map<String, Quad> = ["value": Quad(3.5)]

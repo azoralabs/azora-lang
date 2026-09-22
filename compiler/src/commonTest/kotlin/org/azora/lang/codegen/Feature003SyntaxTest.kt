@@ -272,7 +272,6 @@ class Feature003SyntaxTest {
     @Test fun implAsStringIsCastOnly() {
         assertEquals("cast:x", run("""
             import std.io
-            import std::convert
             pack Label {
                 var value: String
             }
@@ -291,7 +290,6 @@ class Feature003SyntaxTest {
     @Test fun implAsStringDoesNotCreateToString() {
         val result = compile("""
             import std.io
-            import std::convert
             pack Label {
                 var value: String
             }

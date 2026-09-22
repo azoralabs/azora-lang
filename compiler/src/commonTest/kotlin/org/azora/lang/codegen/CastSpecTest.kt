@@ -44,7 +44,6 @@ class CastSpecTest {
     @Test fun castDispatchesToTheImplForItsTarget() {
         assertEquals("212", run("""
             import std.io
-            import std::convert
             pack Celsius {
                 var degrees: Int
             }
@@ -67,7 +66,6 @@ class CastSpecTest {
     @Test fun aTypeMayCastToMoreThanOneTarget() {
         assertEquals("212\n373", run("""
             import std.io
-            import std::convert
             pack Celsius {
                 var degrees: Int
             }
@@ -98,7 +96,6 @@ class CastSpecTest {
     @Test fun bitCastIsItsOwnSpec() {
         assertEquals("7\n1", run("""
             import std.io
-            import std::convert
             pack Handle {
                 var raw: Int
             }

@@ -29,6 +29,10 @@ import kotlin.test.assertTrue
  *
  * `Into` converts a value it has; `From` constructs one it does not, so its
  * member is a static and the two cannot be the same spec.
+ *
+ * Both are declared in `std.core`, which every program sees. The programs
+ * used to write `import std::convert`, a module that does not exist (CAST_DIP
+ * §1 still places the specs there); naming it is now an error.
  */
 class ConvertSpecTest {
     private fun compile(source: String) = Compiler().compile(source, release = false)
@@ -46,7 +50,6 @@ class ConvertSpecTest {
     @Test fun fromIsAStaticReachedThroughTheType() {
         assertEquals("gabriel", run("""
             import std.io
-            import std::convert
             pack Username {
                 value: String
             }
@@ -66,7 +69,6 @@ class ConvertSpecTest {
     @Test fun intoConvertsThroughItsReceiver() {
         assertEquals("Label(ok)", run("""
             import std.io
-            import std::convert
             pack Label {
                 var value: String
             }
@@ -89,7 +91,6 @@ class ConvertSpecTest {
     @Test fun inBraceReceiverOnASpecImplIsRejected() {
         val result = compile("""
             import std.io
-            import std::convert
             pack Label {
                 var value: String
             }

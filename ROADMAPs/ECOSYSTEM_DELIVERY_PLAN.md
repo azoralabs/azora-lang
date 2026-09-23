@@ -49,8 +49,8 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,425 tests: 2,234 passed,
-191 failed, 0 skipped** (007's import work on `c45f1b6`). The
+The latest full compiler run has **2,428 tests: 2,237 passed,
+191 failed, 0 skipped** (type macros invoked with `@`, on `b0df2c3`). The
 `globalMapInitializerRunsBeforeMain` failure is the LLVM global-initializer
 defect that `globalSetInitializerRunsBeforeMain` already has. The 007/014 acceptance tests in `FactoryDependencyTest`
 pass. The

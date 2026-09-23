@@ -2125,8 +2125,10 @@ importing `reflect`, now binds in that test.
 
 ### Type functions and type macros
 
-Probed on `c45f1b6` with a library declaring a type function `wider<A, B>` and
-a type macro `rows T`:
+Probed on `c45f1b6` with a test library, `lib/rows.az` in
+`TypeLevelImportTest`. It declares a type function `wider<A, B>` and a type
+macro `macro @rows { $T => Rows<$T> }`. `rows` is the test's name, not
+language syntax, and a use is written `@rows Int` since the entry below.
 
 | Program | Before | After |
 |---|---|---|
@@ -2173,8 +2175,7 @@ still only observes; `prop .name` stays rejected.
 - A type function or macro that is not in scope is reported as a type mismatch
   against its bare name (`declared wider but initializer is Float`), not as an
   undefined type (020).
-- `fin r: rows Int = .(4)` fails. `.(…)` reads the type before the macro
-  expands (028).
+- `fin r: @rows Int = .(4)` failed; fixed in the entry below.
 - A type function's body names sibling type functions by short name, program
   wide. A block-imported one whose body calls a sibling that nothing else
   imported would not find it. No standard type function does.
@@ -2210,5 +2211,64 @@ still only observes; `prop .name` stays rejected.
 
 ```sh
 ./gradlew :compiler:desktopTest --offline --console=plain --tests '*ModuleBlockImportTest' --tests '*TypeLevelImportTest' --tests '*LexicalImportTest' --tests '*TestScopedImportTest' --tests '*ReceiverShorthandTest'
+./gradlew :compiler:desktopTest --offline --console=plain
+```
+
+## 2026-09-22 — Type macros are invoked with `@`; `.(…)` builds their type
+
+007 is committed as `b0df2c3`. MACRO_DIP §3.2 said type macros were removed.
+The compiler kept them, and the engine's `macro @query` (2026-08-22) uses them.
+User decision: they stay, and a use leads with the macro's sigil like any other
+macro call, `fin r: @rows Int = .(4)`.
+
+**The sigil is required.** The parser read a type macro both as `@rows Int` and
+bare, as `rows Int`: any lowercase name followed by a type in a type position.
+A bare use is now an error:
+
+```text
+a type macro is invoked with '@': write '@rows …' instead of 'rows …' at line 4
+```
+
+No source had to change apart from `TypeLevelImportTest`. The engine declares
+`@query` and its documentation already writes `@query [...]`; nothing calls it.
+The standard library and the compiler tests have no other type macros.
+`azora-engine/proposals/ARCHITECTURE.MD` still writes `res Time` and
+`query [...]`. It is a proposal, and `res` has no declaration.
+
+**`.(…)` builds the expanded type.** A binding's `.(args)` was turned into
+`<declared type>(args)` by `parseInitializer` while parsing. For
+`fin r: @rows Int = .(4)`, the declared type is still the macro call at that
+point, so the call named the macro's encoded name:
+`undefined function '__azora_named_type_macro__Prefixrows'`. An argument and a
+return already kept the leading dot for the resolver, which sees the expanded
+type, and both worked. A binding whose type is a macro call now does the same.
+
+**MACRO_DIP.** New §1.3, *Type arms*, covers:
+
+- uppercase holes, and the arm's `with`/`without` clauses;
+- the `@` rule;
+- that the template reads its module;
+- imports: by module, by name, in a block;
+- `.(…)`.
+
+§3.2 is now *Built-in type grammars*: `macro .Type` and the grammars it built in
+(`[T]`, `{T}`, …) stay removed, and `res`/`query` point to §1.3.
+
+### Evidence
+
+- `TypeLevelImportTest` (10):
+  - `aTypeMacroIsInvokedWithItsSigil`, new, rejects `rows Int`;
+  - `theInferredConstructorBuildsTheExpandedType`, new, runs `.(4)` in a
+    binding and `.(5)` as an argument. Before the parser change it failed with
+    the error above;
+  - the six other tests that use the macro now write `@rows`.
+- A probe of `.(…)` against `@rows Int` in `fin`, `var`, argument and return
+  position printed 4, 4, 5 and 6. Against `Rows<Int>` it was already correct.
+- Full compiler run: **2,428 tests, 2,237 passed, 191 failed, 0 skipped**. The
+  same 191 fail as in 007's run; the three added tests pass.
+- AZLS: 91/91.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*TypeLevelImportTest' --tests '*MacroTest' --tests '*MacroFormTest'
 ./gradlew :compiler:desktopTest --offline --console=plain
 ```

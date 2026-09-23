@@ -21,6 +21,10 @@ SIGIL        ::= ! | ? | & | * | ^
 
 INVOKE       ::= @NAME ( … ) | @NAME [ … ] | @NAME { … }
               |  EXPR @NAME EXPR
+
+TYPE_ARM     ::= TYPE_PATTERN => TYPE             (a prefix arm whose holes are uppercase)
+TYPE_INVOKE  ::= @NAME TYPE [CLAUSE …] | @NAME [ TYPE, … ] [CLAUSE …]
+CLAUSE       ::= with OPERAND | without OPERAND
 ```
 
 The `@` always leads. It leads on the declaration and it leads on the call, so
@@ -85,6 +89,32 @@ declaring library chooses - the compiler only knows they are part of the name.
 Including one that is a keyword elsewhere: `@with`, `@to`, `@in`. The leading
 `@` has already said that a name follows, so there is nothing to disambiguate.
 
+### 1.3 Type arms
+
+An arm whose holes are uppercase takes types, and is matched where a type is
+written rather than where a call is:
+
+```azora
+macro @rows {
+    $T          => Rows<$T>
+    [...$ITEMS] => Rows<...$ITEMS>
+}
+
+fin r: @rows Int = .(4)                                   // Rows<Int>
+func moving(bodies: @query [Position, Velocity] without Frozen)
+```
+
+- The `@` leads here as it does everywhere else. `fin r: rows Int` is an error
+  that says to write `@rows Int` (decided 2026-09-22).
+- The case of a hole is the whole distinction: `$T` is a type and `$t` a value.
+- After its first operand, an arm may continue with `with` and `without`
+  clauses. They are the arm's own grammar, matched as one pattern.
+- The template is the declaring module's code. Its names mean what they mean in
+  that module, whatever the use site imports or declares.
+- A type macro is imported like a declaration: with its module, by name
+  (`import lib.rows::rows`), or inside a block, where it binds only there.
+- `.(…)` builds the type the macro expands to, as it builds any declared type.
+
 ---
 
 ## 2. Infix macros
@@ -136,9 +166,9 @@ from `std/core.az`. The compiler reads the kind off the declaration's shape: a
 `$hole` before the `@` means infix, and nothing before it means prefix. A kind
 that can be seen does not need to be declared.
 
-### 3.2 Type macros
+### 3.2 Built-in type grammars
 
-`macro .Type { … }` is gone entirely, with the grammars it supplied:
+`macro .Type { … }` is gone, with the grammars it built into the language:
 
 | removed                      | write instead    |
 |------------------------------|------------------|
@@ -148,13 +178,14 @@ that can be seen does not need to be declared.
 | `[K: V]`                     | `Map<K, V>`      |
 | `[T; N]`                     | `Array<T, N>`    |
 | `(A, B)`                     | `Tuple<A, B>`    |
-| `res $T`                     | `Resource<T>`    |
-| `query [...$T]`              | `Query<…>`       |
+| `res $T`                     | `Resource<T>`, or a library's `@res T` (§1.3)   |
+| `query [...$T]`              | `Query<…>`, or a library's `@query [...]` (§1.3) |
 | `$A with $B` (type position) | `With<A, B>`     |
 
-A type macro let a library invent type syntax, and the cost was that a type's
-spelling depended on which modules happened to be imported. A generic type says
-the same thing and always means it.
+Those grammars let a library invent type syntax with nothing at the use site to
+show it: a type's spelling depended on which modules happened to be imported. A
+named type macro (§1.3) still depends on an import, but its `@` says so where it
+is written.
 
 ### 3.3 The `#` token
 

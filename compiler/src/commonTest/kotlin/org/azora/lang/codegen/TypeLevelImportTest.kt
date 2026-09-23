@@ -74,7 +74,7 @@ class TypeLevelImportTest {
         import std.io
         func main() {
             import lib.rows
-            fin r: rows Int = Rows(4)
+            fin r: @rows Int = Rows(4)
             println(r.v)
         }
     """))
@@ -86,10 +86,32 @@ class TypeLevelImportTest {
             import lib.rows
         }
         func main() {
-            fin r: rows Int = Rows(4)
+            fin r: @rows Int = Rows(4)
             println(r.v)
         }
     """, "undefined type macro 'rows'")
+
+    /** A type macro is a macro, and a macro is invoked behind its `@`. */
+    @Test fun aTypeMacroIsInvokedWithItsSigil() = rejects("""
+        import std.io
+        import lib.rows
+        func main() {
+            fin r: rows Int = Rows(4)
+            println(r.v)
+        }
+    """, "write '@rows …' instead of 'rows …'")
+
+    /** `.(…)` builds the type the macro expands to, as it builds any declared type. */
+    @Test fun theInferredConstructorBuildsTheExpandedType() = assertEquals("4\n5", run("""
+        import std.io
+        import lib.rows
+        func size(r: @rows Int): Int { return r.v }
+        func main() {
+            fin r: @rows Int = .(4)
+            println(r.v)
+            println(size(.(5)))
+        }
+    """))
 
     @Test fun aTypeFunctionAndATypeMacroMayBeSelectedByName() = assertEquals("1.5\n4", run("""
         import std.io
@@ -97,7 +119,7 @@ class TypeLevelImportTest {
         func main() {
             fin x: wider<Int, Double> = 1.5
             println(x)
-            fin r: rows Int = Rows(4)
+            fin r: @rows Int = Rows(4)
             println(r.v)
         }
     """))
@@ -106,9 +128,9 @@ class TypeLevelImportTest {
     @Test fun aTypeMacroTemplateReadsItsOwnModule() = assertEquals("4", run("""
         import std.io
         import lib.rows::{rows, makeRows}
-        func size(r: rows Int): Int { return r.v }
+        func size(r: @rows Int): Int { return r.v }
         func main() {
-            fin r: rows Int = makeRows(4)
+            fin r: @rows Int = makeRows(4)
             println(size(r))
         }
     """))
@@ -121,7 +143,7 @@ class TypeLevelImportTest {
             var w: Int
         }
         func main() {
-            fin r: rows Int = makeRows(4)
+            fin r: @rows Int = makeRows(4)
             println(r.v)
             println(Rows(9).w)
         }
@@ -143,7 +165,7 @@ class TypeLevelImportTest {
         }
         func count(): Int {
             import lib.rows
-            fin r: rows Int = Rows(6)
+            fin r: @rows Int = Rows(6)
             return r.v
         }
     """.trimIndent())))

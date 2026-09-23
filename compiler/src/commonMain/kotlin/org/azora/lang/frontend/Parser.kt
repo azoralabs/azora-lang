@@ -5203,7 +5203,8 @@ class Parser(
      * The case of the hole is the whole distinction: `$T` stands for a type and
      * `$t` for a value, so an arm can say which it takes without a second
      * keyword to say it again. A type arm's template is a type, and the arm is
-     * matched where a type is written rather than where a call is.
+     * matched where a type is written rather than where a call is:
+     * `fin r: @rows Int`.
      */
     private fun parseTypeMacroArm(macroName: String): TypeTypeArm? {
         // A bare hole heads a type arm when what follows is the arrow, or a word
@@ -6948,7 +6949,7 @@ class Parser(
     private fun isNamedTypeMacroInvocationAhead(index: Int = current): Boolean {
         val macro = tokens.getOrNull(index) ?: return false
         if (macro.type != TokenType.IDENTIFIER || macro.lexeme.firstOrNull()?.isLowerCase() != true) return false
-        // A borrow sigil binds to the macro name (`res& T`, `res! T`), so look
+        // A borrow sigil binds to the macro name (`@res& T`, `@res! T`), so look
         // past it for the operand that makes this an invocation.
         var offset = index + 1
         if (tokens.getOrNull(offset)?.type in setOf(TokenType.AMP, TokenType.BANG)) offset++
@@ -7009,7 +7010,7 @@ class Parser(
 
     private fun parseNamedTypeMacroInvocation(modifier: String = ""): TypeRef {
         var name = consume(TokenType.IDENTIFIER, "Expected type-macro name").lexeme
-        // Fold the borrow sigil into the name so `res& T` resolves against the
+        // Fold the borrow sigil into the name so `@res& T` resolves against the
         // `res&` arm, exactly as the declaration spelled it.
         when {
             match(TokenType.BANG) -> name += "!"
@@ -7157,8 +7158,16 @@ class Parser(
                 parseNamedTypeMacroInvocation()
             }
             check(TokenType.IDENTIFIER) -> {
+                // A type macro is invoked as any macro is, behind its `@`: the
+                // sigil is what shows that the type's spelling comes from an
+                // import. A bare `rows Int` reads as a type followed by a stray
+                // word, so it is named as the macro call it tried to be.
                 if (isNamedTypeMacroInvocationAhead()) {
-                    return parseNamedTypeMacroInvocation()
+                    val macro = peek()
+                    error(
+                        "a type macro is invoked with '@': write '@${macro.lexeme} …' " +
+                            "instead of '${macro.lexeme} …' at line ${macro.line}",
+                    )
                 }
                 if (peekNext()?.type == TokenType.L_BRACKET && peek().lexeme in setOf("arr", "vec", "set", "map")) {
                     error("'${peek().lexeme}[...]' type syntax was removed; use Array<T>, List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
@@ -9969,6 +9978,10 @@ class Parser(
             is TypeRef.Nullable -> expectedType.inner as? TypeRef.Named
             else -> null
         } ?: return parseExpr()
+        // `fin r: @rows Int = .(4)` - a type macro names its type only once it
+        // expands, which is after parsing. The leading dot stays for the
+        // resolver, as it does in an argument or a return.
+        if (NamedTypeMacroCall.isCall(named)) return parseExpr()
         val dot = advance()
         // `.(args)` - the declared type's constructor, without naming it twice.
         // `fin origin: Point = .(0, 0)` says the type once, in the place that

@@ -1097,7 +1097,19 @@ class IrInterpreter {
             }
             is IrExpr.Binary -> evalBinary(expr)
             is IrExpr.Call -> evalCall(expr).let { if (expr.type == IrType.Unit) kotlin.Unit else it }
-            is IrExpr.ArrayLiteral -> expr.elements.map { evalExpr(it) }.toMutableList()
+            is IrExpr.ArrayLiteral -> {
+                val values = mutableListOf<Any?>()
+                for (element in expr.elements) {
+                    if (element is IrExpr.Spread) {
+                        val array = evalExpr(element.array)
+                        if (array !is List<*>) error("spread requires an array, got $array")
+                        values.addAll(array)
+                    } else {
+                        values.add(evalExpr(element))
+                    }
+                }
+                values
+            }
             is IrExpr.SetLit -> expr.elements.map { evalExpr(it) }.distinct().toMutableList()
             is IrExpr.MapLit -> {
                 val map = linkedMapOf<Any?, Any?>()
@@ -1753,12 +1765,14 @@ class IrInterpreter {
         // std.filesystem. Each bridge reports failure as the *name* of a
         // FileError variant in its first slot, so the platform-to-language error
         // mapping happens once, in FsAccess, and is read back once, in `_raise`.
-        if (expr.name.isIntrinsic("fsRead")) {
+        // These bridges are private to their modules, and a bridge keeps the
+        // name it declares, underscore included: `_fsRead`, not `fsRead`.
+        if (expr.name.isIntrinsic("_fsRead")) {
             val result = fsReadText(args[0] as String)
             // Error name, newline, contents - the encoding std.filesystem reads.
             return (result.error ?: "") + "\n" + (result.value ?: "")
         }
-        if (expr.name.isIntrinsic("fsReadBytes")) {
+        if (expr.name.isIntrinsic("_fsReadBytes")) {
             val result = fsReadBytes(args[0] as String)
             val bytes = result.value
             if (bytes == null) return mutableListOf<Any?>(1L)
@@ -1767,16 +1781,16 @@ class IrInterpreter {
             for (byte in bytes) out.add(byte.toLong())
             return out
         }
-        if (expr.name.isIntrinsic("fsWrite")) {
+        if (expr.name.isIntrinsic("_fsWrite")) {
             return fsWriteText(args[0] as String, args[1] as String, args[2] as Boolean) ?: ""
         }
-        if (expr.name.isIntrinsic("fsList")) {
+        if (expr.name.isIntrinsic("_fsList")) {
             val result = fsList(args[0] as String)
             val out = mutableListOf<Any?>(result.error ?: "")
             result.value?.forEach { out.add(it) }
             return out
         }
-        if (expr.name.isIntrinsic("fsStat")) {
+        if (expr.name.isIntrinsic("_fsStat")) {
             val result = fsStat(args[0] as String)
             val info = result.value
                 ?: return mutableListOf<Any?>(result.error ?: "ReadFailed", "", "", "", "")
@@ -1788,11 +1802,11 @@ class IrInterpreter {
                 info.modifiedNanoseconds.toString(),
             )
         }
-        if (expr.name.isIntrinsic("fsExists")) return fsExists(args[0] as String)
-        if (expr.name.isIntrinsic("fsMutate")) {
+        if (expr.name.isIntrinsic("_fsExists")) return fsExists(args[0] as String)
+        if (expr.name.isIntrinsic("_fsMutate")) {
             return fsMutate(args[0] as String, args[1] as String, args[2] as String) ?: ""
         }
-        if (expr.name.isIntrinsic("fsPathQuery")) {
+        if (expr.name.isIntrinsic("_fsPathQuery")) {
             val argument = args[1] as String
             val result = when (args[0] as String) {
                 "canonical" -> fsCanonical(argument)
@@ -1802,7 +1816,7 @@ class IrInterpreter {
             }
             return mutableListOf<Any?>(result.error ?: "", result.value ?: "")
         }
-        if (expr.name.isIntrinsic("commandParts")) {
+        if (expr.name.isIntrinsic("_commandParts")) {
             val result = osRunCommand(args[0] as String)
             // Exit code, started, output - one per line, output last because it
             // is the only one that can contain a newline.

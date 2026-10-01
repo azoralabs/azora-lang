@@ -169,7 +169,7 @@ impl Path {
     @Experimental(since: "0.1")
     func &.withExtension(extension: String): Path {
         fin {base, name}: {Path, String} = self.{parent, stem}
-        fin renamed: Bool = if stringLength(extension) == 0 then name else name + "." + extension
+        fin renamed: String = if stringLength(extension) == 0 then name else name + "." + extension
         return if self.parent.text == "." && _lastSeparator(self.text) < 0 then .(renamed)
         else base.join(renamed)
     }
@@ -203,7 +203,6 @@ impl Path {
                 _pushSegment(kept, substring(self.text, start, index), rooted)
                 start = index + 1
             }
-            index++
         }
         var joined: String = ""
         for i: Int in 0..<kept.size {

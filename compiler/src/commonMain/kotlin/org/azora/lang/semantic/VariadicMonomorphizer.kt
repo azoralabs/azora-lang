@@ -249,9 +249,9 @@ private class MonoContext(
     /**
      * Rejects a specialization whose `where` clause does not hold.
      *
-     * The only binding a variadic template has is its pack's length, so this is a
-     * thin adapter onto [ConstraintEvaluator] rather than a second implementation:
-     * `(...T).length >= 2` evaluates there as an ordinary comparison. A clause the
+     * Fixed arguments and the variadic tail's size bind through the same
+     * [ConstraintEvaluator] adapter as other specializations:
+     * `(...T).size >= 2` evaluates there as an ordinary comparison. A clause the
      * evaluator cannot decide is accepted - under-enforcing beats rejecting valid
      * code.
      */
@@ -263,19 +263,13 @@ private class MonoContext(
         declaration: TopLevel.Pack? = null,
     ) {
         if (clause == null) return
-        // A variadic pack binds only its length; an ordinary generic binds each of
-        // its type and const parameters, so `where T is Number && N in 2..4` is
-        // decided here - before the specialization is published.
-        val bindings = buildMap {
-            if (variadicParam != null) {
-                put(variadicParam, ConstraintEvaluator.Binding.Pack(args.size.toLong()))
-            }
-            declaration?.typeParams?.forEachIndexed { index, parameter ->
-                args.getOrNull(index)?.let { argument ->
-                    ConstraintEvaluator.bindingOf(argument)?.let { put(parameter, it) }
-                }
-            }
-        }
+        // Bind the tail once, without replacing it with its first element or
+        // counting fixed arguments in its size.
+        val bindings = ConstraintEvaluator.bindingsFor(
+            declaration?.typeParams ?: listOfNotNull(variadicParam),
+            variadicParam,
+            args,
+        )
         if (bindings.isEmpty()) return
         val outcome = ConstraintEvaluator.evaluate(clause, bindings, table = null)
         if (outcome is ConstraintEvaluator.Outcome.Violated) {
@@ -795,12 +789,11 @@ private class MonoContext(
             ("Self" to TypeRef.Named(mangled))
         // A member's own `where` narrows which specializations have it: `cross` exists
         // on a 3-vector and nowhere else, so it is not emitted where its clause fails.
-        val constraintBindings = packTemplate?.typeParams.orEmpty()
-            .zip(arguments)
-            .mapNotNull { (parameter, argument) ->
-                ConstraintEvaluator.bindingOf(argument)?.let { parameter to it }
-            }
-            .toMap()
+        val constraintBindings = ConstraintEvaluator.bindingsFor(
+            packTemplate?.typeParams.orEmpty(),
+            packTemplate?.variadicParam,
+            arguments,
+        )
         implTemplates[templateName].orEmpty().map { template ->
             val methods = template.methods.filterNot { method ->
                 ConstraintEvaluator.evaluate(method.whereClause, constraintBindings, null) is

@@ -20,7 +20,7 @@ typealias Char = Char
  * versioned workspace corpus supplied by the browser.
  */
 
-func azlsVersion(): String { return "0.0.5" }
+func azlsVersion(): String { return "0.1-dev" }
 
 /** Allocates an ABI-compatible UTF-8 input buffer for the browser host. */
 func azlsReserve(size: Int): String { return " " * size }
@@ -389,6 +389,23 @@ func contextualRequiresIsKeyword(source: String, start: Int, end: Int): Bool {
     fin next = nextNonSpace(source, end)
     return next < stringLength(source) &&
         (isIdentifierStart(charAt(source, next)) || charAt(source, next) == '[')
+}
+
+func skipTypeArguments(source: String, limit: Int, index: Int): Int {
+    if index >= limit || charAt(source, index) != '<' { return index }
+    var depth = 0
+    var scan = index
+    while scan < limit {
+        fin c = charAt(source, scan)
+        if c == '<' { depth += 1 }
+        else if c == '>' {
+            depth -= 1
+            if depth == 0 { return scan + 1 }
+        }
+        else if c == '\n' || c == ';' || c == '{' || c == '}' { return index }
+        scan += 1
+    }
+    return index
 }
 
 func contextualEscapingIsKeyword(source: String, start: Int, end: Int): Bool {
@@ -805,6 +822,8 @@ func addInterpolationHighlights(
             else {
                 var next = index
                 while next < end && isSpace(charAt(source, next)) { next += 1 }
+                next = skipTypeArguments(source, end, next)
+                while next < end && isSpace(charAt(source, next)) { next += 1 }
                 if next < end && charAt(source, next) == '(' &&
                     functionReferenceIsKnown(source, identifierStart, index, corpus) {
                     kind = "function"
@@ -958,6 +977,8 @@ func azlsHighlightRange(
                 }
                 else {
                     var next = index
+                    while next < stringLength(source) && isSpace(charAt(source, next)) { next += 1 }
+                    next = skipTypeArguments(source, stringLength(source), next)
                     while next < stringLength(source) && isSpace(charAt(source, next)) { next += 1 }
                     if next < stringLength(source) && charAt(source, next) == '(' &&
                         functionReferenceIsKnown(source, start, index, corpus) {
@@ -1133,8 +1154,7 @@ func importStart(source: String, offset: Int): Int {
     while lineEnd < stringLength(source) && charAt(source, lineEnd) != '\n' { lineEnd += 1 }
     var index = lineStart
     while index < lineEnd && isSpace(charAt(source, index)) { index += 1 }
-    if rangeStarts(source, index, lineEnd, "use") { index += 3 }
-    else if rangeStarts(source, index, lineEnd, "use") { index += 3 }
+    if rangeStarts(source, index, lineEnd, "import") { index += 6 }
     else { return -1 }
     while index < lineEnd && isSpace(charAt(source, index)) { index += 1 }
     return index
@@ -1354,7 +1374,7 @@ func sourceImportsModule(
             while index < stringLength(source) && isIdentifierPart(charAt(source, index)) {
                 index += 1
             }
-            if rangeIs(source, start, index, "use") {
+            if rangeIs(source, start, index, "import") {
                 while index < stringLength(source) && isSpace(charAt(source, index)) { index += 1 }
                 fin pathStart = index
                 while index < stringLength(source) {

@@ -229,7 +229,7 @@ class LiteralFactoryTest {
         fun compile(source: String, optimized: Boolean): IrProgram {
             val result = Compiler().compile(source, release = optimized)
             assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
-            return result.ir
+            return if (optimized) result.optimizedIr else result.ir
         }
     }
 

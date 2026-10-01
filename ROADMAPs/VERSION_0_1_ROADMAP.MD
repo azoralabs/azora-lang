@@ -1,5 +1,9 @@
 # Azora 0.1 - Road to Production
 
+The test counts and item statuses below include older snapshots. For current
+measured status, see [the delivery plan](ECOSYSTEM_DELIVERY_PLAN.md) and
+[the progress log](ECOSYSTEM_PROGRESS.md).
+
 > The complete list of what has to be true before `0.1` ships, and what is
 > already true today.
 >

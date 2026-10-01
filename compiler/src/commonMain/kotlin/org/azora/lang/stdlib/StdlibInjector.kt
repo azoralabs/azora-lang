@@ -627,7 +627,9 @@ class StdlibInjector private constructor(
         val reached = reachableImportPaths(program)
         return skipped.filter { failure ->
             val module = failure.module ?: return@filter false
-            reached.any { path -> module == path || module.startsWith("$path.") }
+            // The module itself, a namespace above it, or a declaration in it:
+            // `import lib.vals::describe` reaches `lib.vals` too.
+            reached.any { path -> module == path || module.startsWith("$path.") || path.startsWith("$module.") }
         }.map { it.message }
     }
 

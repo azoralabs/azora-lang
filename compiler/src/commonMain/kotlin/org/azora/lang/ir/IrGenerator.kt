@@ -38,6 +38,7 @@ import org.azora.lang.frontend.TestMethod
 import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
+import org.azora.lang.semantic.SlotPatterns
 import org.azora.lang.semantic.ComparisonPlan
 import org.azora.lang.semantic.instantiateMember
 import org.azora.lang.semantic.literalFactoryTypes
@@ -922,6 +923,9 @@ class IrGenerator(private val table: SymbolTable) {
         val sources = bounds.keys.zip(witnessParams)
             .associateTo(LinkedHashMap<String, IrExpr>()) { (param, slot) -> param to IrExpr.Var(slot.first, IrType.Int) }
         val scopeBounds = LinkedHashMap(bounds)
+        func.variadicParam?.let { pack ->
+            Witnesses.bounds(func.whereClause, func.typeParams)[pack]?.let { scopeBounds[pack] = it }
+        }
         // A parameter holding a bounded pack carries the descriptors of the type
         // arguments it was built at: `oper+ HashMap<K, V>&.(…)` knows its `K`.
         for (param in listOfNotNull(func.extensionReceiver) + func.params) {
@@ -1550,12 +1554,16 @@ class IrGenerator(private val table: SymbolTable) {
                     pushNameScope()
                     val elem = registerName(stmt.name)
                     table.defineVariable(VariableSymbol(stmt.name, elemType, mutable = false))
+                    val savedElementRef = declaredRefs[stmt.name]
+                    val elementRef = elementRefOf(declaredRefOf(stmt.iterable))
+                    if (elementRef == null) declaredRefs.remove(stmt.name) else declaredRefs[stmt.name] = elementRef
                     val index = stmt.indexName?.let { name ->
                         val registered = registerName(name)
                         table.defineVariable(VariableSymbol(name, IrType.Int, mutable = false))
                         registered
                     }
                     val body = lowerBody(stmt.body)
+                    if (savedElementRef == null) declaredRefs.remove(stmt.name) else declaredRefs[stmt.name] = savedElementRef
                     popNameScope()
                     table.popScope()
                     IrStmt.ForEach(elem, iterable, body, indexName = index)
@@ -1642,16 +1650,17 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.Yield -> IrStmt.Yield(lowerExpr(stmt.value))
             is Stmt.When -> {
                 val scrutinee = lowerExpr(stmt.scrutinee)
+                val scrutineeSlot = (scrutinee.type as? IrType.Named)?.name?.takeIf { table.lookupSlot(it) != null }
                 val branches = stmt.branches.map { b ->
                     var slotBindings: List<Pair<String, IrType>>? = null
                     val irPatterns = b.patterns.map { pat ->
-                        if (pat is Expr.MethodCall && pat.target is Expr.Identifier &&
-                            table.lookupSlot(pat.target.name) != null) {
-                            val slotVariants = table.lookupSlot(pat.target.name)!!
-                            val variant = slotVariants.find { it.first == pat.name }
-                            val bindNames = pat.args.map { (it as Expr.Identifier).name }
+                        val parts = SlotPatterns.parts(pat, scrutineeSlot)
+                        val slotVariants = parts?.let { table.lookupSlot(it.slot) }
+                        if (parts != null && slotVariants != null) {
+                            val variant = slotVariants.find { it.first == parts.variant }
+                            val bindNames = parts.bindings.map { (it as Expr.Identifier).name }
                             if (variant != null) slotBindings = bindNames.zip(variant.second)
-                            IrExpr.SlotPattern(pat.target.name, pat.name, bindNames, variant?.second ?: emptyList())
+                            IrExpr.SlotPattern(parts.slot, parts.variant, bindNames, variant?.second ?: emptyList())
                         } else {
                             lowerExpr(pat)
                         }
@@ -1982,7 +1991,12 @@ class IrGenerator(private val table: SymbolTable) {
             Witnesses.bounds(item).takeIf { it.isNotEmpty() }?.let { packWitnessBounds[item.name] = it }
         }
         for (decl in program.functions) {
+            // A heterogeneous pack has one descriptor per element, rather
+            // than the single descriptor used for a homogeneous parameter.
+            // Pack-wide predicates are checked by the resolver; they do not
+            // request a singular descriptor for the whole pack.
             val own = Witnesses.bounds(decl.whereClause, decl.typeParams)
+                .filterKeys { it != decl.variadicParam }
             // A pack's type-scoped members (`literal`, lifted as `Pack__member`)
             // take its parameters as their own, and its bounds with them.
             val owner = packWitnessBounds[decl.name.substringBeforeLast("__", "")].orEmpty()
@@ -2095,10 +2109,16 @@ class IrGenerator(private val table: SymbolTable) {
         if (ref is TypeRef.Named && ref.name == Intrinsics.ARRAY && ref.args.size == 1) TypeRef.Array(ref.args.single()) else ref
 
     /** The bounded type parameter [expr] holds a value of, if it holds one. */
-    private fun witnessParamOf(expr: Expr): String? =
-        (stripRef(declaredRefOf(expr)) as? TypeRef.Named)
-            ?.takeIf { it.args.isEmpty() && it.name in witnessSources }
-            ?.name
+    private fun witnessParamOf(expr: Expr): String? {
+        val ref = (stripRef(declaredRefOf(expr)) as? TypeRef.Named)?.takeIf { it.args.isEmpty() } ?: return null
+        if (ref.name in witnessBounds && ref.name !in witnessSources) {
+            throw WitnessError(
+                "line ${expr.line}: element-wise witness dispatch for heterogeneous pack '${ref.name}' " +
+                    "is not supported yet",
+            )
+        }
+        return ref.name.takeIf { it in witnessSources }
+    }
 
     /**
      * Where [param] is bound to in [pattern], matched against [actual]:
@@ -2181,7 +2201,7 @@ class IrGenerator(private val table: SymbolTable) {
      * order: from the written type arguments, else from what its arguments
      * were declared as, else from what the resolver inferred.
      */
-    private fun descriptorArgs(callee: String, call: Expr.Call, typeParams: List<String>): List<IrExpr> {
+    private fun descriptorArgs(callee: String, call: Expr.Call, typeParams: List<String>, arguments: List<IrExpr>): List<IrExpr> {
         val bounds = functionWitnessBounds[callee] ?: return emptyList()
         val decl = functionDecls[callee]
         return bounds.map { (param, needs) ->
@@ -2194,7 +2214,20 @@ class IrGenerator(private val table: SymbolTable) {
                 taken.firstNotNullOfOrNull { arg -> declaredRefOf(arg)?.let { bindingIn(element, it, param) } }
             }
             val inferred = call.inferredTypeArgs?.getOrNull(index)
-            descriptorOf(written ?: fromArguments ?: inferred, needs, "'$param' of '$callee'", call.line)
+            val ref = written ?: fromArguments ?: inferred
+            if (ref != null) descriptorOf(ref, needs, "'$param' of '$callee'", call.line)
+            else {
+                // A heterogeneous tail prevents a single inferredTypeArgs
+                // list, but its fixed prefix still has ordinary concrete
+                // types. Reuse those lowered arguments, without evaluating
+                // or lowering their expressions again.
+                val fixedIndex = decl?.params?.indexOfFirst { parameter ->
+                    !parameter.variadic && (stripRef(parameter.type) as? TypeRef.Named)
+                        ?.let { it.name == param && it.args.isEmpty() } == true
+                } ?: -1
+                val type = arguments.getOrNull(fixedIndex)?.type ?: IrType.Any
+                descriptorOf(type, needs, "'$param' of '$callee'", call.line)
+            }
         }
     }
 
@@ -3126,8 +3159,10 @@ class IrGenerator(private val table: SymbolTable) {
                     val effectiveArgs = if (func.isVariadic && args.size >= func.params.size - 1) {
                         val fixed = args.take(func.params.size - 1)
                         val rest = args.drop(func.params.size - 1)
-                        val elemType = homogeneousVariadicType
-                            ?: (func.params.last().second as? IrType.Array)?.element
+                        // Pack physical slots, even when inference knows the
+                        // logical T. A generic callee reads erased elements.
+                        val elemType = (func.params.last().second as? IrType.Array)?.element
+                            ?: homogeneousVariadicType
                             ?: IrType.Any
                         val restSize: kotlin.Long? = if (hasSpread) null else rest.size.toLong()
                         fixed + listOf(IrExpr.ArrayLiteral(rest, IrType.Array(elemType, restSize)))
@@ -3196,7 +3231,7 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                     }
                     // A bounded type parameter's descriptor follows the written arguments.
-                    val descriptors = descriptorArgs(func.name, expr, funcDecl?.typeParams ?: func.typeParams)
+                    val descriptors = descriptorArgs(func.name, expr, funcDecl?.typeParams ?: func.typeParams, args)
                     return IrExpr.Call(func.name, displayArgs + descriptors, callType)
                 }
                 // Calling a lambda stored in a variable.

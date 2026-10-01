@@ -35,8 +35,8 @@ func<T: Order> mergeSort(arr: Array<T>): Array<T> {
     if arr.size <= 1 then return arr
     var mid: Int = arr.size / 2
     var {left, right}: Array<T> = {.() * mid, .() * arr.size - mid}
-    for i: Int in 0..mid then left[i] = arr[i]
-    for j: Int in 0..arr.size then right[j] = arr[mid + j]
+    for i: Int in 0..<mid then left[i] = arr[i]
+    for j: Int in 0..<arr.size - mid then right[j] = arr[mid + j]
     var {sortedLeft, sortedRight}: Array<T> = mergeSort{(left), (right)}
     return merge(sortedLeft, sortedRight)
 }
@@ -90,7 +90,10 @@ out {
     var scratch: Array<T> = .() * count
     var scratchKeys: Array<K> = .() * count
     while width < count {
-        for lo: Int in 0..count {
+        // Stepped by hand, a whole merge window at a time: a `for` would visit
+        // every index and merge overlapping windows.
+        var lo: Int = 0
+        while lo < count {
             var mid = lo + width
             if mid > count then mid = count
             var hi = lo + width + width

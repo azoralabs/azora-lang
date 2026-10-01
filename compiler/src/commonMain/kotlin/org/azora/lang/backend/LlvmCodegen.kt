@@ -2002,11 +2002,7 @@ class LlvmCodegen {
         is IrExpr.IfExpr -> emitIfExpr(expr)
         is IrExpr.SlotPattern -> "0"
         is IrExpr.Await -> emitAwait(expr)
-        is IrExpr.Spread -> {
-            emitExpr(expr.array)
-            emit("  ; spread - interpreter-only")
-            "null"
-        }
+        is IrExpr.Spread -> error("LLVM cannot expand a spread into fixed call parameters yet")
         is IrExpr.Lambda -> {
             emitClosure(expr)
         }
@@ -3422,6 +3418,7 @@ class LlvmCodegen {
 
     /** `[a, b, c]` → malloc(8 + n*elemSize), i64 length header, packed elements. */
     private fun emitArrayLiteral(expr: IrExpr.ArrayLiteral): String {
+        if (expr.elements.any { it is IrExpr.Spread }) return emitSpreadArrayLiteral(expr)
         val elemType = (expr.type as? IrType.Array)?.element ?: IrType.Any
         val et = mapType(elemType)
         val elemSize = sizeOfScalar(elemType)
@@ -3445,6 +3442,87 @@ class LlvmCodegen {
                 emit("  $ep = getelementptr $et, $et* $data, i64 $i")
                 emit("  store $et $value, $et* $ep, align 1")
             }
+        }
+        return raw
+    }
+
+    /** Append each segment before evaluating the next, preserving spread snapshots. */
+    private fun emitSpreadArrayLiteral(expr: IrExpr.ArrayLiteral): String {
+        val element = (expr.type as IrType.Array).element
+        val et = mapType(element)
+        val stride = sizeOfScalar(element)
+        var raw = emitHeapAlloc("8")
+        val initialLength = nextTmp()
+        emit("  $initialLength = bitcast i8* $raw to i64*")
+        emit("  store i64 0, i64* $initialLength")
+        usesMemcpy = true
+        for (part in expr.elements) {
+            val spread = part as? IrExpr.Spread
+            val sourceType = spread?.let { (it.array.type as IrType.Array).element }
+            val value = emitExpr(spread?.array ?: part)
+            val count = if (spread != null) emitArrayLengthI64(value) else "1"
+            val oldLength = emitArrayLengthI64(raw)
+            val length = nextTmp()
+            emit("  $length = add i64 $oldLength, $count")
+            val bytes = nextTmp()
+            emit("  $bytes = mul i64 $length, $stride")
+            val size = nextTmp()
+            emit("  $size = add i64 $bytes, 8")
+            val grown = emitHeapAlloc(size)
+            val lengthPtr = nextTmp()
+            emit("  $lengthPtr = bitcast i8* $grown to i64*")
+            emit("  store i64 $length, i64* $lengthPtr")
+            val oldData = nextTmp()
+            emit("  $oldData = getelementptr i8, i8* $raw, i64 8")
+            val newData = nextTmp()
+            emit("  $newData = getelementptr i8, i8* $grown, i64 8")
+            val oldBytes = nextTmp()
+            emit("  $oldBytes = mul i64 $oldLength, $stride")
+            val copied = nextTmp()
+            emit("  $copied = call i8* @memcpy(i8* $newData, i8* $oldData, i64 $oldBytes)")
+            val destination = nextTmp()
+            emit("  $destination = bitcast i8* $newData to $et*")
+            if (spread == null) {
+                val converted = coerceNumeric(value, part.type, element)
+                val slot = nextTmp()
+                emit("  $slot = getelementptr $et, $et* $destination, i64 $oldLength")
+                emit("  store $et $converted, $et* $slot, align 1")
+            } else {
+                val st = mapType(sourceType!!)
+                val sourceData = nextTmp()
+                emit("  $sourceData = getelementptr i8, i8* $value, i64 8")
+                val source = nextTmp()
+                emit("  $source = bitcast i8* $sourceData to $st*")
+                val condition = nextLabel("spread_cond")
+                val body = nextLabel("spread_body")
+                val end = nextLabel("spread_end")
+                val before = currentBlock
+                val next = "%spread_next_${labelCounter++}"
+                emitTerminator("  br label %$condition")
+                startBlock(condition)
+                val index = nextTmp()
+                emit("  $index = phi i64 [ 0, %$before ], [ $next, %$body ]")
+                val done = nextTmp()
+                emit("  $done = icmp uge i64 $index, $count")
+                emitTerminator("  br i1 $done, label %$end, label %$body")
+                startBlock(body)
+                val sourceSlot = nextTmp()
+                emit("  $sourceSlot = getelementptr $st, $st* $source, i64 $index")
+                val loaded = nextTmp()
+                emit("  $loaded = load $st, $st* $sourceSlot, align 1")
+                val converted = coerceNumeric(loaded, sourceType, element)
+                val offset = nextTmp()
+                emit("  $offset = add i64 $oldLength, $index")
+                val slot = nextTmp()
+                emit("  $slot = getelementptr $et, $et* $destination, i64 $offset")
+                emit("  store $et $converted, $et* $slot, align 1")
+                emit("  $next = add i64 $index, 1")
+                emitTerminator("  br label %$condition")
+                startBlock(end)
+            }
+            // Only the builder's old buffer is freed; sources remain owned by callers.
+            emit("  call void @__azora_free(i8* $raw)")
+            raw = grown
         }
         return raw
     }

@@ -106,6 +106,11 @@ data class VariableSymbol(
     val valueMutable: Boolean = true,
     /** Lazy/reactive storage has observable access behavior, unlike a plain slot. */
     val hasStorageEffects: Boolean = false,
+    /**
+     * A `for` loop's own row or index binding. Each iteration binds it afresh,
+     * so a write to it would change nothing the loop visits.
+     */
+    val loopVariable: Boolean = false,
 )
 
 /**

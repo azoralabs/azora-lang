@@ -1,6 +1,8 @@
 # Azora Bugs
 
-Failing tests and known defects, measured against the current tree.
+Historical failing-test inventory recorded on 2026-08-24. Current measurements
+and completed fixes are tracked in [the delivery plan](ROADMAPs/ECOSYSTEM_DELIVERY_PLAN.md)
+and [the progress log](ROADMAPs/ECOSYSTEM_PROGRESS.md).
 
 - **97 failing tests** of 1654 (`./gradlew :compiler:desktopTest`).
 - Every entry is `file:line  testName`, at the line the test is declared.

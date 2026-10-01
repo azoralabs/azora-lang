@@ -75,10 +75,10 @@ error SerializationError {
 @Derive(
     generator: "serializer",
     role: "all",
-    provider: "std",
-    conversionProvider: "convert",
+    provider: "std.serializer",
+    conversionProvider: "",
     providerModule: "std.serializer",
-    conversionModule: "std.convert",
+    conversionModule: "",
     listModule: "std.container.list",
     deferGeneric: true
 )
@@ -95,10 +95,10 @@ annot @Serializable for .Pack binds (Serializer, AzonSerializer) {
 @Derive(
     generator: "serializer",
     role: "azon",
-    provider: "std",
-    conversionProvider: "convert",
+    provider: "std.serializer",
+    conversionProvider: "",
     providerModule: "std.serializer",
-    conversionModule: "std.convert",
+    conversionModule: "",
     listModule: "std.container.list",
     deferGeneric: true
 )

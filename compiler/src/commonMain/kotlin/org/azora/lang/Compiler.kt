@@ -41,6 +41,7 @@ import org.azora.lang.semantic.SemanticRedundantVariantQualifier
 import org.azora.lang.semantic.SemanticSymbolNamespace
 import org.azora.lang.semantic.SemanticUnresolvedSymbol
 import org.azora.lang.semantic.ReflectDecoExpander
+import org.azora.lang.semantic.ReturnedVariants
 import org.azora.lang.semantic.SpecDefaults
 import org.azora.lang.semantic.CastDeriver
 import org.azora.lang.semantic.ComparisonDeriver
@@ -633,6 +634,12 @@ class Compiler(
             VariadicMonomorphizer.monomorphize(typeReInjected)
         } catch (e: IllegalStateException) {
             return CompilationResult.Failure(listOf(e.message ?: "variadic monomorphization failed"))
+        }.let { monomorphized ->
+            // `return .Variant` - the error set's to fail with, or the success
+            // type's to return. Decided here, where both are finally known.
+            val returned = ReturnedVariants.resolve(monomorphized)
+            if (returned.errors.isNotEmpty()) return CompilationResult.Failure(returned.errors)
+            returned.program
         }
 
         // 3. AST Validation: structural checks

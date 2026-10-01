@@ -235,7 +235,7 @@ class FilesystemStdlibTest {
                 writeText(dir.join("a.txt"), "a") catch { }
                 createDirectory(dir.join("sub")) catch { }
 
-                fin empty: Array<Path> = Array::fill<Path>(0)
+                fin empty: Array<Path> = .() * 0
                 fin entries: Array<Path> = listDirectory(dir) catch empty
                 println(entries.size)
                 var names = ""
@@ -260,6 +260,7 @@ class FilesystemStdlibTest {
             """
             import std.filesystem
             import std.io
+            import std.time::Instant
 
             func main() {
                 fin dir = createTemporaryDirectory("azfs") catch path("")

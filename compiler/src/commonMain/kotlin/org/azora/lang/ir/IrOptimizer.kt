@@ -589,25 +589,40 @@ class IrOptimizer {
         // Collect all referenced names across the entire program
         val usedNames = mutableSetOf<String>()
 
-        // Start from main - it's always reachable
         val funcMap = mutableMapOf<String, IrFunction>()
+        val globalInitializers = mutableMapOf<String, IrExpr>()
         for (item in program.items) {
-            if (item is IrTopLevel.Func) funcMap[item.function.name] = item.function
+            when (item) {
+                is IrTopLevel.Func -> funcMap[item.function.name] = item.function
+                is IrTopLevel.Global -> when (val stmt = item.stmt) {
+                    is IrStmt.VarDecl -> globalInitializers[stmt.name] = stmt.initializer
+                    is IrStmt.FinDecl -> globalInitializers[stmt.name] = stmt.initializer
+                    is IrStmt.LetDecl -> globalInitializers[stmt.name] = stmt.initializer
+                    else -> {}
+                }
+                else -> {}
+            }
         }
 
-        // Also collect names from test bodies (tests are always reachable)
-        for (item in program.items) {
-            if (item is IrTopLevel.Test) {
-                val refs = collectReferencedNames(item.body)
-                usedNames.addAll(refs)
-                for (ref in refs) {
-                    if (ref in funcMap) usedNames.add(ref)
+        // Functions and global initializers form one dependency graph. A global
+        // can call a function that reads another global, whose initializer calls
+        // another function; visit them together until no new symbol is reached.
+        val worklist = ArrayDeque<String>()
+        fun enqueue(refs: Set<String>) {
+            usedNames.addAll(refs)
+            for (ref in refs) {
+                if (ref in funcMap || ref in globalInitializers) worklist.add(ref)
+            }
+            // `inject Type` reaches its singleton factory indirectly. This also
+            // applies when injection occurs in a global initializer or a test.
+            if ("__inject" in refs) {
+                funcMap.keys.filter { it.startsWith("__singleton_") }.forEach { singleton ->
+                    usedNames.add(singleton)
+                    worklist.add(singleton)
                 }
             }
         }
 
-        // Transitively collect all used function names starting from "main"
-        val worklist = ArrayDeque<String>()
         if ("main" in funcMap) worklist.add("main")
         // Spec `impl` methods are reached only through dynamic dispatch (backends
         // synthesize the stubs), so the IR has no direct reference to them. Treat
@@ -619,58 +634,28 @@ class IrOptimizer {
                 }
             }
         }
-        // Also enqueue functions referenced by tests
+        // Tests and exported bridge globals are always kept, so their
+        // dependencies must survive even without a reference from `main`.
         for (item in program.items) {
-            if (item is IrTopLevel.Test) {
-                val refs = collectReferencedNames(item.body)
-                for (ref in refs) {
-                    if (ref in funcMap) worklist.add(ref)
+            when (item) {
+                is IrTopLevel.Test -> enqueue(collectReferencedNames(item.body))
+                is IrTopLevel.Global -> if (item.exportName != null) {
+                    enqueue(collectReferencedNames(listOf(item.stmt)))
                 }
+                else -> {}
             }
         }
         val reachableFuncs = mutableSetOf<String>()
+        val visited = mutableSetOf<String>()
         while (worklist.isNotEmpty()) {
             val name = worklist.removeFirst()
-            if (!reachableFuncs.add(name)) continue
-            val func = funcMap[name] ?: continue
-            val refs = collectReferencedNames(func.body)
-            usedNames.addAll(refs)
-            // `inject Type` lowers to `__inject("Type")`, so the matching
-            // `__singleton_Type` factory is reached indirectly rather than by
-            // an ordinary IR call. Preserve singleton factories whenever DI is
-            // reachable; the runtime selects the requested one by type name.
-            if ("__inject" in refs) {
-                funcMap.keys
-                    .filter { it.startsWith("__singleton_") }
-                    .forEach { singleton ->
-                        usedNames.add(singleton)
-                        worklist.add(singleton)
-                    }
-            }
-            // Enqueue called functions
-            for (ref in refs) {
-                if (ref in funcMap) worklist.add(ref)
-            }
-        }
-
-        // Also collect names used in global initializers of reachable globals
-        for (item in program.items) {
-            if (item is IrTopLevel.Global) {
-                val globalName = when (val s = item.stmt) {
-                    is IrStmt.VarDecl -> s.name
-                    is IrStmt.FinDecl -> s.name
-                    is IrStmt.LetDecl -> s.name
-                    else -> null
-                }
-                if (globalName != null && globalName in usedNames) {
-                    val initRefs = collectReferencedNamesFromExpr(when (val s = item.stmt) {
-                        is IrStmt.VarDecl -> s.initializer
-                        is IrStmt.FinDecl -> s.initializer
-                        is IrStmt.LetDecl -> s.initializer
-                        else -> null
-                    })
-                    usedNames.addAll(initRefs)
-                }
+            if (!visited.add(name)) continue
+            val func = funcMap[name]
+            if (func != null) {
+                reachableFuncs.add(name)
+                enqueue(collectReferencedNames(func.body))
+            } else {
+                enqueue(collectReferencedNamesFromExpr(globalInitializers[name]))
             }
         }
 

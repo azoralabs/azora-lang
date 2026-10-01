@@ -67,8 +67,13 @@ internal object ConstraintEvaluator {
         data class Type(val name: String) : Binding()
         data class Const(val value: Long) : Binding()
 
-        /** A variadic pack, bound to how many arguments it received. */
-        data class Pack(val length: Long) : Binding()
+        /**
+         * A variadic pack's cardinality and the types present in it. Repeated
+         * elements from one spread need only one entry for universal bounds.
+         * A null entry denotes an unresolved element; a null list means none
+         * of the elements are known. Runtime cardinality may also be unknown.
+         */
+        data class Pack(val length: Long?, val elementTypes: List<Binding?>? = null) : Binding()
     }
 
     /**
@@ -125,6 +130,22 @@ internal object ConstraintEvaluator {
         else -> null
     }
 
+    /** Bind fixed parameters individually and the variadic tail by its own size. */
+    fun bindingsFor(
+        params: List<String>,
+        variadicParam: String?,
+        args: List<TypeRef>,
+    ): Map<String, Binding> = buildMap {
+        for ((index, param) in params.withIndex()) {
+            if (param == variadicParam) {
+                val tail = args.drop(index)
+                put(param, Binding.Pack(tail.size.toLong(), tail.map(::bindingOf)))
+            } else {
+                args.getOrNull(index)?.let { bindingOf(it) }?.let { put(param, it) }
+            }
+        }
+    }
+
     private fun eval(expr: Expr, env: Map<String, Binding>, table: SymbolTable?): Outcome = when (expr) {
         is Expr.Grouping -> eval(expr.expr, env, table)
 
@@ -134,19 +155,17 @@ internal object ConstraintEvaluator {
             val bound = subject?.let { env[it] }
             when {
                 bound == null -> Outcome.Unknown("'${subject ?: "expression"} is ${expr.typeName}'")
-                // A pack bound only by its length says nothing about its elements'
-                // conformance, and a const is not a type at all. Neither is decidable
-                // here, so neither rejects.
-                // TODO: element-wise conformance for a variadic pack.
-                bound !is Binding.Type ->
-                    Outcome.Unknown("'$subject is ${expr.typeName}' for a non-type binding")
-                table == null -> Outcome.Unknown("'$subject is ${expr.typeName}' without a symbol table")
-                table.conformsTo(bound.name, expr.typeName) -> Outcome.Satisfied
-                // `Long` is `Int<64>`: a width answers with its family's conformances.
-                integerFamily(bound.name)?.let { table.conformsTo(it, expr.typeName) } == true -> Outcome.Satisfied
-                else -> Outcome.Violated(
-                    "'$subject is ${expr.typeName}': ${bound.name} does not implement ${expr.typeName}",
-                )
+                bound is Binding.Pack -> {
+                    val elements = bound.elementTypes
+                    if (elements == null) Outcome.Unknown("'$subject is ${expr.typeName}' for an unresolved pack")
+                    else {
+                        val outcomes = elements.map { conformance(subject, it, expr.typeName, table) }
+                        outcomes.firstOrNull { it is Outcome.Violated }
+                            ?: outcomes.firstOrNull { it is Outcome.Unknown }
+                            ?: Outcome.Satisfied // The empty pack satisfies every element-wise bound.
+                    }
+                }
+                else -> conformance(subject, bound, expr.typeName, table)
             }
         }
 
@@ -182,9 +201,18 @@ internal object ConstraintEvaluator {
             else -> compare(expr, env)
         }
 
-        // TODO: calls, member access other than the variadic `.length` reading, and
+        // TODO: calls, member access other than the variadic `.size` reading, and
         // any other expression a clause might legitimately contain.
         else -> Outcome.Unknown(render(expr))
+    }
+
+    private fun conformance(subject: String?, bound: Binding?, spec: String, table: SymbolTable?): Outcome = when {
+        bound !is Binding.Type -> Outcome.Unknown("'$subject is $spec' for an unresolved type binding")
+        table == null -> Outcome.Unknown("'$subject is $spec' without a symbol table")
+        table.conformsTo(bound.name, spec) -> Outcome.Satisfied
+        // `Long` is `Int<64>`: a width answers with its family's conformances.
+        integerFamily(bound.name)?.let { table.conformsTo(it, spec) } == true -> Outcome.Satisfied
+        else -> Outcome.Violated("'$subject is $spec': ${bound.name} does not implement $spec")
     }
 
     /** `&&` needs both sides; `||` needs either. Unknown on one side is not fatal. */
@@ -212,7 +240,7 @@ internal object ConstraintEvaluator {
         }
     }
 
-    /** A comparison between two integers, e.g. `N == 4` or `(...T).length >= 2`. */
+    /** A comparison between two integers, e.g. `N == 4` or `(...T).size >= 2`. */
     private fun compare(expr: Expr.Binary, env: Map<String, Binding>): Outcome {
         val left = constOf(expr.left, env) ?: return Outcome.Unknown(render(expr))
         val right = constOf(expr.right, env) ?: return Outcome.Unknown(render(expr))
@@ -237,9 +265,10 @@ internal object ConstraintEvaluator {
         is Expr.IntLiteral -> expr.value.toString().toLongOrNull()
         is Expr.Grouping -> constOf(expr.expr, env)
         is Expr.Identifier -> (env[expr.name] as? Binding.Const)?.value
-        // `(...T).length` - the pack's argument count, bound per combination.
+        // `(...T).size` - the pack's argument count, bound per combination.
+        // Keep `.length` for existing source that used the older spelling.
         is Expr.Member ->
-            if (expr.name == "length") {
+            if (expr.name == "size" || expr.name == "length") {
                 (nameOf(expr.target)?.let { env[it] } as? Binding.Pack)?.length
             } else {
                 null

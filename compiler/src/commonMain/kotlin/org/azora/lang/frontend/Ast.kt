@@ -1315,7 +1315,18 @@ sealed class Stmt {
     ) : Stmt()
 
     /** `throw value` - raises [value] as a throwable. */
-    data class Throw(val value: Expr, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Stmt()
+    data class Throw(
+        val value: Expr,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        /**
+         * Written `return .Variant` in a function that declares `?!`. The parser
+         * cannot tell whose variant that is; [ReturnedVariants] decides once the
+         * error sets and the success type are known.
+         */
+        val returned: Boolean = false,
+    ) : Stmt()
 
     /**
      * `panic "msg"` - unrecoverable runtime abort with [message].

@@ -508,7 +508,7 @@ class WasmCodegen {
             is IrStmt.While -> emitWhile(stmt.label, emitExpr(stmt.condition), stmt.body, isFor = false, forInc = null)
             is IrStmt.Loop -> emitWhile(stmt.label, "(i32.const 1)", stmt.body, isFor = false, forInc = null)
             is IrStmt.For -> emitFor(stmt)
-            is IrStmt.ForEach -> {} // not supported by the WASM MVP target
+            is IrStmt.ForEach -> emitForEach(stmt)
             is IrStmt.Break -> line("(br \$${breakTarget(stmt.label)})")
             is IrStmt.Continue -> line("(br \$${continueTarget(stmt.label)})")
             is IrStmt.Scope -> for (s in stmt.body) emitStmt(s)
@@ -719,7 +719,10 @@ class WasmCodegen {
         repeat(depth) { indent--; line("))"); indent-- }
     }
 
-    private fun emitWhile(label: String?, cond: String, body: List<IrStmt>, isFor: Boolean, forInc: (() -> Unit)?) {
+    private fun emitWhile(
+        label: String?, cond: String, body: List<IrStmt>, isFor: Boolean,
+        bindIteration: (() -> Unit)? = null, forInc: (() -> Unit)?,
+    ) {
         val n = blockCounter++
         val brk = "brk_$n"
         val loop = "loop_$n"
@@ -736,6 +739,7 @@ class WasmCodegen {
             line("(block \$$cont")
             indent++
         }
+        bindIteration?.invoke()
         for (s in body) emitStmt(s)
         if (isFor) {
             indent--
@@ -751,6 +755,28 @@ class WasmCodegen {
         if (label != null) {
             if (previousLabelTarget == null) labelTargets.remove(label)
             else labelTargets[label] = previousLabelTarget
+        }
+    }
+
+    private fun emitForEach(stmt: IrStmt.ForEach) {
+        val array = stmt.iterable.type as? IrType.Array
+            ?: error("WebAssembly for-in requires an array; iteration over ${stmt.iterable.type} is not supported")
+        val raw = newTemp("i32")
+        val length = newTemp("i32")
+        val index = newTemp("i32")
+        declareLocal(stmt.elem, array.element)
+        stmt.indexName?.let { declareLocal(it, IrType.Int) }
+        line("(local.set $raw ${emitExpr(stmt.iterable)})")
+        line("(local.set $length (i32.load (local.get $raw)))")
+        line("(local.set $index (i32.const 0))")
+        val condition = "(i32.lt_u (local.get $index) (local.get $length))"
+        emitWhile(null, condition, stmt.body, isFor = true, bindIteration = {
+            val address = "(i32.add (local.get $raw) (i32.add (i32.const 4) " +
+                "(i32.mul (local.get $index) (i32.const ${wasmSize(array.element)}))))"
+            line(storeVariable(stmt.elem, array.element, "(${wasmLoad(array.element)} $address)"))
+            stmt.indexName?.let { line(storeVariable(it, IrType.Int, "(local.get $index)")) }
+        }) {
+            line("(local.set $index (i32.add (local.get $index) (i32.const 1)))")
         }
     }
 
@@ -845,7 +871,7 @@ class WasmCodegen {
         is IrExpr.Binary -> emitBinary(expr)
         is IrExpr.Call -> emitCall(expr)
         is IrExpr.Await -> emitExpr(expr.value)
-        is IrExpr.Spread -> emitExpr(expr.array)
+        is IrExpr.Spread -> error("WebAssembly cannot expand a spread into fixed call parameters yet")
         is IrExpr.Index -> {
             val element = elementType(expr.target)
             coerceWasm("(${wasmLoad(element)} ${elemAddr(expr.target, expr.index)})", element, expr.type)
@@ -1291,6 +1317,7 @@ class WasmCodegen {
     }
 
     private fun emitArrayLiteral(expr: IrExpr.ArrayLiteral): String {
+        if (expr.elements.any { it is IrExpr.Spread }) return emitSpreadArrayLiteral(expr)
         usesAlloc = true
         val t = newTemp("i32")
         val n = expr.elements.size
@@ -1305,6 +1332,57 @@ class WasmCodegen {
         }
         sb.append("$pad(local.get $t))")
         return sb.toString()
+    }
+
+    /** Copy each spread before later arguments can mutate its source. */
+    private fun emitSpreadArrayLiteral(expr: IrExpr.ArrayLiteral): String {
+        usesAlloc = true
+        val element = (expr.type as IrType.Array).element
+        val stride = wasmSize(element)
+        val raw = newTemp("i32")
+        val sb = StringBuilder("(block (result i32)\n")
+        sb.append("(local.set $raw (call \$__alloc (i32.const 4)))\n")
+        sb.append("(i32.store (local.get $raw) (i32.const 0))\n")
+        for (part in expr.elements) {
+            val spread = part as? IrExpr.Spread
+            val sourceType = spread?.let { (it.array.type as IrType.Array).element }
+            val value = newTemp(if (spread != null) "i32" else wasmType(part.type))
+            sb.append("(local.set $value ${emitExpr(spread?.array ?: part)})\n")
+            val oldLength = newTemp("i32")
+            val count = newTemp("i32")
+            val length = newTemp("i32")
+            val grown = newTemp("i32")
+            sb.append("(local.set $oldLength (i32.load (local.get $raw)))\n")
+            val countExpr = if (spread == null) "(i32.const 1)" else "(i32.load (local.get $value))"
+            sb.append("(local.set $count $countExpr)\n")
+            sb.append("(local.set $length (i32.add (local.get $oldLength) (local.get $count)))\n")
+            sb.append("(local.set $grown (call \$__alloc (i32.add (i32.const 4) (i32.mul (local.get $length) (i32.const $stride)))))\n")
+            sb.append("(i32.store (local.get $grown) (local.get $length))\n")
+            sb.append("(memory.copy (i32.add (local.get $grown) (i32.const 4)) " +
+                "(i32.add (local.get $raw) (i32.const 4)) (i32.mul (local.get $oldLength) (i32.const $stride)))\n")
+            fun address(base: String, index: String, width: Int) =
+                "(i32.add (local.get $base) (i32.add (i32.const 4) (i32.mul $index (i32.const $width))))"
+            if (spread == null) {
+                val stored = coerceWasm("(local.get $value)", part.type, element)
+                sb.append("(${wasmStore(element)} ${address(grown, "(local.get $oldLength)", stride)} $stored)\n")
+            } else {
+                val index = newTemp("i32")
+                val done = "${index}_done"
+                val loop = "${index}_copy"
+                sb.append("(local.set $index (i32.const 0))\n")
+                sb.append("(block $done (loop $loop\n")
+                sb.append("(br_if $done (i32.ge_u (local.get $index) (local.get $count)))\n")
+                val loaded = "(${wasmLoad(sourceType!!)} ${address(value, "(local.get $index)", wasmSize(sourceType))})"
+                val stored = coerceWasm(loaded, sourceType, element)
+                val offset = "(i32.add (local.get $oldLength) (local.get $index))"
+                sb.append("(${wasmStore(element)} ${address(grown, offset, stride)} $stored)\n")
+                sb.append("(local.set $index (i32.add (local.get $index) (i32.const 1)))\n")
+                sb.append("(br $loop)))\n")
+            }
+            sb.append("(call \$__free (local.get $raw))\n")
+            sb.append("(local.set $raw (local.get $grown))\n")
+        }
+        return sb.append("(local.get $raw))").toString()
     }
 
     private fun closureTypeName(type: IrType.Function): String =

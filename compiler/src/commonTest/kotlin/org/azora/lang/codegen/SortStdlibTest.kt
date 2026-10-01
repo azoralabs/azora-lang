@@ -92,7 +92,7 @@ class SortStdlibTest {
 
             func main() {
                 fin count = 50
-                var values: Array<Int> = Array::fill<Int>(count)
+                var values: Array<Int> = .() * count
                 for i in 0..<count {
                     values[i] = (count - i) * 7 % 31
                 }
@@ -117,7 +117,7 @@ class SortStdlibTest {
             import std.io
 
             func main() {
-                fin empty: Array<Int> = Array::fill<Int>(0)
+                fin empty: Array<Int> = .() * 0
                 println(sort<Int>(empty).size)
                 fin one: Array<Int> = [42]
                 fin sorted: Array<Int> = sort<Int>(one)
@@ -144,7 +144,7 @@ class SortStdlibTest {
             }
 
             func main() {
-                var entries: Array<Entry> = Array::fill<Entry>(5)
+                var entries: Array<Entry> = .() * 5
                 entries[0] = Entry("a", 2)
                 entries[1] = Entry("b", 1)
                 entries[2] = Entry("c", 2)
@@ -183,7 +183,7 @@ class SortStdlibTest {
             }
 
             func main() {
-                var people: Array<Person> = Array::fill<Person>(3)
+                var people: Array<Person> = .() * 3
                 people[0] = Person("ann", 30)
                 people[1] = Person("bob", 20)
                 people[2] = Person("cy", 25)

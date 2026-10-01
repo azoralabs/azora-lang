@@ -5747,6 +5747,17 @@ class Parser(
         }
     }
 
+    /** Delimiters inside a header keep lambda bodies separate from its own body. */
+    private fun <T> withinExpressionDelimiter(parse: () -> T): T {
+        val saved = allowTrailingLambda
+        allowTrailingLambda = true
+        try {
+            return parse()
+        } finally {
+            allowTrailingLambda = saved
+        }
+    }
+
     private data class WhenHead(val scrutinee: Expr, val guard: Boolean)
 
     private fun parseWhenHead(): WhenHead {
@@ -10103,7 +10114,7 @@ class Parser(
         }
         skipNewlines()
 
-        val values = parseGroupBindingValues(names, start, broadcast)
+        val values = parseGroupBindingValues(names, start, broadcast, types)
         if (values.broadcastValue != null) {
             val tempName = "__group_value_${groupValueCounter++}"
             val temp = Stmt.FinDecl(
@@ -10232,7 +10243,12 @@ class Parser(
         names: List<String>,
         start: Token,
         broadcast: Boolean,
+        types: List<TypeAnnotation>,
     ): GroupBindingValues {
+        // What each target states, so a value written for it reads `.()` as its
+        // type's constructor exactly as a lone binding does:
+        // `var {left, right}: Array<T> = {.() * mid, .() * rest}`.
+        fun stated(index: Int): TypeRef? = (types.getOrNull(index) as? TypeAnnotation.Explicit)?.ref
         fun expect(count: Int) {
             if (count == names.size) return
             error(
@@ -10284,7 +10300,7 @@ class Parser(
             val values = mutableListOf<Expr>()
             skipNewlines()
             while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                values.add(parseExpr())
+                values.add(parseInitializer(stated(values.size)))
                 skipNewlines()
                 if (match(TokenType.COMMA)) skipNewlines()
             }
@@ -10295,7 +10311,7 @@ class Parser(
 
         // One expression, written once per name - as the lines it stands for
         // would have written it.
-        val value = parseExpr()
+        val value = parseInitializer(stated(0).takeIf { types.distinct().size == 1 })
         return GroupBindingValues(names.map { value })
     }
 
@@ -10558,9 +10574,10 @@ class Parser(
                         variant, args, start.line, start.column,
                     ),
                     start.line, start.column,
+                    returned = true,
                 )
             }
-            return Stmt.Throw(Expr.StringLiteral(variant, start.line), start.line, start.column)
+            return Stmt.Throw(Expr.StringLiteral(variant, start.line), start.line, start.column, returned = true)
         }
         return Stmt.Return(parseExpr(), start.line, start.column)
     }
@@ -10892,6 +10909,8 @@ class Parser(
         val destructures = when (pattern) {
             is Expr.MethodCall -> pattern.args.isNotEmpty()
             is Expr.Call -> pattern.args.isNotEmpty()
+            // `.Circle(r)` - the same pattern with the type left to the scrutinee.
+            is Expr.InferredMember -> pattern.name.isNotEmpty() && !pattern.ctorArgs.isNullOrEmpty()
             else -> false
         }
         if (destructures) {
@@ -12200,7 +12219,7 @@ class Parser(
                 check(TokenType.L_PAREN) -> {
                     advance()
                     // Mutable because a trailing lambda joins the list below.
-                    val args = parseCallArgumentList().toMutableList()
+                    val args = withinExpressionDelimiter { parseCallArgumentList() }.toMutableList()
                     consume(TokenType.R_PAREN, "Expected ')' after arguments")
                     // A fragment macro may stand where the block's markers go -
                     // `f(args) @children { … }` - so it is expanded here too,
@@ -12774,12 +12793,12 @@ class Parser(
                 if (check(TokenType.R_PAREN)) {
                     error("empty tuple literal '()' is not a value; use Unit at line ${tok.line}")
                 }
-                val first = parseExpr()
+                val first = withinExpressionDelimiter { parseExpr() }
                 if (match(TokenType.COMMA)) {
                     val elements = mutableListOf(first)
                     skipNewlines()
                     while (!check(TokenType.R_PAREN)) {
-                        elements.add(parseExpr())
+                        elements.add(withinExpressionDelimiter { parseExpr() })
                         skipNewlines()
                         if (!match(TokenType.COMMA)) break
                         skipNewlines()
@@ -12792,7 +12811,8 @@ class Parser(
                 }
             }
             // `[self: Vec2&]{ … }` - a lambda binding named receivers.
-            TokenType.L_BRACKET if isReceiverLambdaAhead() -> parseReceiverLambda()
+            // In a loop/condition header, the following brace opens its body.
+            TokenType.L_BRACKET if allowTrailingLambda && isReceiverLambdaAhead() -> parseReceiverLambda()
             TokenType.L_BRACKET -> {
                 advance()
                 skipNewlines()
@@ -12805,17 +12825,17 @@ class Parser(
                     Expr.MapLit(emptyList(), tok.line, tok.column)
                 } else {
                     rejectLiteralSpread()
-                    val first = parseExpr()
+                    val first = withinExpressionDelimiter { parseExpr() }
                     if (match(TokenType.COLON)) {
                         // Associative collection literal: [key: value, ...]
-                        val entries = mutableListOf<Pair<Expr, Expr>>(first to parseExpr())
+                        val entries = mutableListOf<Pair<Expr, Expr>>(first to withinExpressionDelimiter { parseExpr() })
                         skipNewlines()
                         while (match(TokenType.COMMA)) {
                             skipNewlines()
                             if (check(TokenType.R_BRACKET)) break
-                            val k = parseExpr()
+                            val k = withinExpressionDelimiter { parseExpr() }
                             consume(TokenType.COLON, "Expected ':' in associative collection literal")
-                            entries.add(k to parseExpr())
+                            entries.add(k to withinExpressionDelimiter { parseExpr() })
                             skipNewlines()
                         }
                         consume(TokenType.R_BRACKET, "Expected ']' after associative collection literal")
@@ -12828,7 +12848,7 @@ class Parser(
                             skipNewlines()
                             if (check(TokenType.R_BRACKET)) break
                             rejectLiteralSpread()
-                            elements.add(parseExpr())
+                            elements.add(withinExpressionDelimiter { parseExpr() })
                             skipNewlines()
                         }
                         consume(TokenType.R_BRACKET, "Expected ']' after collection literal")
@@ -12885,18 +12905,24 @@ class Parser(
                     if (depth == 0) {
                         var after = i + 1
                         while (tokens.getOrNull(after)?.type == TokenType.NEWLINE) after++
+                        // A receiver is written beside the list it follows. On the
+                        // next line, a name opens the next statement instead:
+                        // `fin values = [5, 3]` then `println(f(values, { x -> … }))`.
+                        val sameLine = after == i + 1
                         return when (tokens.getOrNull(after)?.type) {
                             TokenType.L_BRACE -> true
                             TokenType.L_BRACKET -> isReceiverLambdaAhead(after)
                             // `[&] value { … }` and `[&] value: Context { … }`.
-                            TokenType.IDENTIFIER -> {
+                            TokenType.IDENTIFIER -> sameLine && run {
                                 var j = after + 1
                                 var nested = 0
                                 while (j < tokens.size) {
                                     when (tokens[j].type) {
                                         TokenType.L_PAREN, TokenType.LESS -> nested++
                                         TokenType.R_PAREN, TokenType.GREATER -> if (nested > 0) nested--
-                                        TokenType.L_BRACE -> return true
+                                        // The lambda's body, not a block inside an
+                                        // argument list the name is called with.
+                                        TokenType.L_BRACE -> if (nested == 0) return true
                                         TokenType.NEWLINE, TokenType.EOF -> if (nested == 0) return false
                                         else -> {}
                                     }

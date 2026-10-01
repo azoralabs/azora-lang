@@ -639,7 +639,7 @@ sealed class IrExpr {
     /**
      * Array literal `[a, b, c]`.
      *
-     * @property elements the element expressions
+     * @property elements scalar expressions or [Spread] segments, evaluated and copied in order
      * @property type the resolved array type [IrType.Array]
      */
     data class ArrayLiteral(val elements: List<IrExpr>, override val type: IrType) : IrExpr()

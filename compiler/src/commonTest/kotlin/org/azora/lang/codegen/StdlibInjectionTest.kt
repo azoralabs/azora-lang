@@ -169,8 +169,12 @@ class StdlibInjectionTest {
         val deriveImports = derived.program.items.filterIsInstance<TopLevel.UseImport>()
             .flatMap { it.imports }
             .mapTo(mutableSetOf()) { it.first }
+        // What the generated bodies call: the serializer's helpers, named
+        // through their module, and the list that holds fields and elements.
+        // `toString` is the compiler's own; there is no `std.convert` to import.
         assertTrue("std.serializer" in deriveImports)
-        assertTrue("std.convert" in deriveImports)
+        assertTrue("std.container.list" in deriveImports)
+        assertTrue("std.convert" !in deriveImports)
     }
 
     @Test fun stdlibIndexExposesCollectionPacks() {

@@ -92,6 +92,8 @@ class TypeResolver(private val table: SymbolTable) {
     val redundantVariantQualifiers: List<SemanticRedundantVariantQualifier>
         get() = redundantQualifiers.values.toList()
     private var program: Program? = null
+    // Symbol identity distinguishes shadowed bindings and shared scope exports.
+    private val stableArraySizes = mutableListOf<Pair<VariableSymbol, Long>>()
 
     private fun reportUndefined(
         internalName: String,
@@ -118,6 +120,7 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     fun resolve(program: Program): List<String> {
+        stableArraySizes.clear()
         this.program = program
         typePropertyNames = program.typeFunctions.mapTo(mutableSetOf()) { it.name }
         packModules = program.items.filterIsInstance<TopLevel.Pack>()
@@ -148,6 +151,9 @@ class TypeResolver(private val table: SymbolTable) {
             if (declared != null && actual != null &&
                 !isCompatible(declared, adoptLiteralType(initializer, actual, declared))) {
                 errors.add("line $line: global initializer expects $declared, got $actual")
+            }
+            if (item is TopLevel.FinDecl && actual is IrType.Array) {
+                table.lookupVariable(item.name)?.let { rememberArraySize(it, initializer, actual) }
             }
         }
         for (bridge in program.items.filterIsInstance<TopLevel.Bridge>()) {
@@ -1591,6 +1597,10 @@ class TypeResolver(private val table: SymbolTable) {
                     )
                     return
                 }
+                if (varSym.loopVariable) {
+                    errors.add(loopVariableWrite(stmt.name, stmt.line))
+                    return
+                }
                 if (!varSym.mutable) {
                     // A `let`/`fin` that gave its value away can never receive
                     // another, so it stays unusable for the rest of its scope.
@@ -1737,11 +1747,21 @@ class TypeResolver(private val table: SymbolTable) {
                             }
                         }
                         table.pushScope()
+                        // Fixed like every other loop's row: the counter is the
+                        // loop's, and writing the binding never advanced it.
                         table.defineVariable(
-                            VariableSymbol(stmt.name, loopRowType(stmt, IrType.Int), mutable = true),
+                            VariableSymbol(
+                                stmt.name,
+                                loopRowType(stmt, IrType.Int),
+                                mutable = false,
+                                valueMutable = false,
+                                loopVariable = true,
+                            ),
                         )
                         stmt.indexName?.let { index ->
-                            table.defineVariable(VariableSymbol(index, IrType.Int, mutable = false))
+                            table.defineVariable(
+                                VariableSymbol(index, IrType.Int, mutable = false, valueMutable = false, loopVariable = true),
+                            )
                         }
                         inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
@@ -1760,10 +1780,12 @@ class TypeResolver(private val table: SymbolTable) {
                     if (walked != null) {
                         table.pushScope()
                         table.defineVariable(
-                            VariableSymbol(stmt.name, loopRowType(stmt, walked), mutable = false),
+                            VariableSymbol(stmt.name, loopRowType(stmt, walked), mutable = false, loopVariable = true),
                         )
                         stmt.indexName?.let { index ->
-                            table.defineVariable(VariableSymbol(index, IrType.Int, mutable = false))
+                            table.defineVariable(
+                                VariableSymbol(index, IrType.Int, mutable = false, valueMutable = false, loopVariable = true),
+                            )
                         }
                         inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
@@ -1783,10 +1805,12 @@ class TypeResolver(private val table: SymbolTable) {
                         else -> error("unreachable")
                     }
                     table.defineVariable(
-                        VariableSymbol(stmt.name, loopRowType(stmt, elementType), mutable = false),
+                        VariableSymbol(stmt.name, loopRowType(stmt, elementType), mutable = false, loopVariable = true),
                     )
                     stmt.indexName?.let { index ->
-                        table.defineVariable(VariableSymbol(index, IrType.Int, mutable = false))
+                        table.defineVariable(
+                            VariableSymbol(index, IrType.Int, mutable = false, valueMutable = false, loopVariable = true),
+                        )
                     }
                     inLoop { resolveBody(stmt.body, returnType) }
                         table.popScope()
@@ -1941,26 +1965,26 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Stmt.When -> {
                 val scrutineeType = resolveExpr(stmt.scrutinee) ?: return
+                val scrutineeSlot = (scrutineeType as? IrType.Named)?.name?.takeIf { table.lookupSlot(it) != null }
                 for (branch in stmt.branches) {
                     var handledBySlot = false
                     for (pattern in branch.patterns) {
-                        if (pattern is Expr.MethodCall && pattern.target is Expr.Identifier) {
-                            val slotVariants = table.lookupSlot(pattern.target.name)
-                            if (slotVariants != null) {
-                                val variant = slotVariants.find { it.first == pattern.name }
-                                if (variant != null) {
-                                    table.pushScope()
-                                    for (i in pattern.args.indices) {
-                                        val bindName = (pattern.args[i] as? Expr.Identifier)?.name
-                                        if (bindName != null && i < variant.second.size) {
-                                            table.defineVariable(VariableSymbol(bindName, variant.second[i], mutable = true))
-                                        }
+                        val parts = SlotPatterns.parts(pattern, scrutineeSlot) ?: continue
+                        val slotVariants = table.lookupSlot(parts.slot)
+                        if (slotVariants != null) {
+                            val variant = slotVariants.find { it.first == parts.variant }
+                            if (variant != null) {
+                                table.pushScope()
+                                for (i in parts.bindings.indices) {
+                                    val bindName = (parts.bindings[i] as? Expr.Identifier)?.name
+                                    if (bindName != null && i < variant.second.size) {
+                                        table.defineVariable(VariableSymbol(bindName, variant.second[i], mutable = true))
                                     }
-                                    inBranch { resolveBody(branch.body, returnType) }
-                                    table.popScope()
-                                    handledBySlot = true
-                                    break
                                 }
+                                inBranch { resolveBody(branch.body, returnType) }
+                                table.popScope()
+                                handledBySlot = true
+                                break
                             }
                         }
                     }
@@ -2320,6 +2344,11 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 if (!IrType.isInteger(targetType) && targetType !in IrType.floatTypes && targetType != IrType.Any) {
                     errors.add("line ${expr.line}: ${expr.op} requires a numeric target, got $targetType")
+                    return null
+                }
+                val incremented = (expr.target as? Expr.Identifier)?.let { table.lookupVariable(it.name) }
+                if (incremented?.loopVariable == true) {
+                    errors.add(loopVariableWrite(incremented.name, expr.line))
                     return null
                 }
                 if (!checkValueMutable(expr.target, expr.line, "increment or decrement")) return null
@@ -2733,6 +2762,13 @@ class TypeResolver(private val table: SymbolTable) {
                 if (func.isVariadic) {
                     // Variadic: min args = params - 1 (all but the variadic param).
                     val minArgs = func.params.size - 1
+                    if (effectiveArgs.take(minArgs).any { it is Expr.Spread }) {
+                        errors.add(
+                            "line ${expr.line}: spread cannot fill fixed parameters of variadic '${expr.callee}' yet; " +
+                                "pass the fixed arguments separately",
+                        )
+                        return null
+                    }
                     if (effectiveArgs.size < minArgs) {
                         errors.add("line ${expr.line}: '${expr.callee}' expects at least $minArgs args, got ${effectiveArgs.size}")
                         return null
@@ -2766,6 +2802,9 @@ class TypeResolver(private val table: SymbolTable) {
                     ?.let { func.typeParams.zip(expr.typeArgs).filterNot { (_, arg) -> arg.isHole }.toMap() }
                     ?: emptyMap()
                 val argTypes = mutableListOf<IrType>()
+                // Resolve a spread source once: its element type checks the
+                // arguments, while its own array type determines cardinality.
+                val spreadSizes = mutableMapOf<Int, Long?>()
                 for (i in effectiveArgs.indices) {
                     val arg = effectiveArgs[i]
                     val declaredType = func.params.getOrNull(i)?.second
@@ -2779,7 +2818,11 @@ class TypeResolver(private val table: SymbolTable) {
                     val paramType = statedDecl?.params?.getOrNull(i)
                         ?.let { IrType.resolve(withStatedTypeArgs(it.type, stated)) }
                         ?: written
-                    val argType = resolveContextualArgument(arg, paramType) ?: return null
+                    val argType = if (arg is Expr.Spread) {
+                        val array = resolveSpreadArray(arg) ?: return null
+                        spreadSizes[i] = knownSpreadSize(arg.array, array)
+                        array.element
+                    } else resolveContextualArgument(arg, paramType) ?: return null
                     argTypes.add(argType)
                     // `f(x)` where the parameter is `p!` borrows x exclusively, so
                     // the callee may write through it - which a `val`/`fin` binding
@@ -2852,7 +2895,7 @@ class TypeResolver(private val table: SymbolTable) {
                             .map { bindings[it]?.singleOrNull() }
                             .takeIf { expr.typeArgs.isEmpty() && funcDecl.variadicParam == null && null !in it }
                             ?.filterNotNull()
-                        checkCallConstraints(expr, func, bindings)
+                        checkCallConstraints(expr, func, bindings, funcDecl.variadicParam, argTypes, spreadSizes)
                         val retRef = func.returnTypeRef
                         if (retRef != null) {
                             try {
@@ -3403,6 +3446,8 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 // Builtin array methods
                 if (targetType is IrType.Array) {
+                    if (expr.name in setOf("add", "insert", "remove", "fill") &&
+                        !checkValueMutable(expr.target, expr.line, "resize an array")) return null
                     return resolveArrayMethod(expr.name, expr.args, targetType, expr.line)
                 }
                 if (targetType is IrType.Set) {
@@ -3568,7 +3613,9 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.Inject -> IrType.Named(expr.typeName)
-            is Expr.Spread -> { resolveExpr(expr.array) ?: return null; IrType.Any }
+            is Expr.Spread -> {
+                resolveSpreadArray(expr)?.element
+            }
             is Expr.Cast -> {
                 resolveExpr(expr.expr) ?: return null
                 val target = resolveDeclaredType(expr.targetType)
@@ -4537,19 +4584,75 @@ class TypeResolver(private val table: SymbolTable) {
      * clause the evaluator cannot decide, is accepted - the enclosing code's
      * own bounds answer for it.
      */
-    private fun checkCallConstraints(expr: Expr.Call, func: FunctionSymbol, bindings: Map<String, List<TypeRef>>) {
+    private fun checkCallConstraints(
+        expr: Expr.Call,
+        func: FunctionSymbol,
+        bindings: Map<String, List<TypeRef>>,
+        variadicParam: String?,
+        argTypes: List<IrType>,
+        spreadSizes: Map<Int, Long?>,
+    ) {
         val clause = func.whereClause ?: return
         val decided = mutableMapOf<String, ConstraintEvaluator.Binding>()
         for (param in func.typeParams) {
-            val ref = bindings[param]?.singleOrNull() ?: return
-            val named = ref as? TypeRef.Named
-            if (named != null && (named.name == "Any" || named.name in currentFuncTypeParams)) return
-            decided[param] = ConstraintEvaluator.bindingOf(ref) ?: return
+            if (param == variadicParam) {
+                var size: Long? = 0
+                val elements = mutableListOf<ConstraintEvaluator.Binding?>()
+                for (index in (func.params.size - 1).coerceAtLeast(0) until argTypes.size) {
+                    val count = if (index in spreadSizes) spreadSizes[index] else 1L
+                    size = if (size == null || count == null || count < 0 || size > Long.MAX_VALUE - count) null
+                        else size + count
+                    if (count == 0L) continue
+                    // A runtime spread might be empty: its nonconforming type
+                    // alone cannot disprove the universal element-wise bound.
+                    elements.add(if (count == null) null else concreteConstraintBinding(typeRefOf(argTypes[index])))
+                }
+                decided[param] = ConstraintEvaluator.Binding.Pack(size, elements)
+                continue
+            }
+            val ref = bindings[param]?.singleOrNull() ?: continue
+            decided[param] = concreteConstraintBinding(ref) ?: continue
         }
         val outcome = ConstraintEvaluator.evaluate(clause, decided, table)
         if (outcome is ConstraintEvaluator.Outcome.Violated) {
             errors.add("line ${expr.line}: '${expr.callee}' does not satisfy its 'where' clause here: ${outcome.reason}")
         }
+    }
+
+    private fun resolveSpreadArray(expr: Expr.Spread): IrType.Array? {
+        val source = resolveExpr(expr.array) ?: return null
+        if (source is IrType.Array) return source
+        errors.add("line ${expr.line}: spread requires an array, got $source")
+        return null
+    }
+
+    /** A mutable array's type size can outlive a resize, so it is not its live count. */
+    private fun knownSpreadSize(source: Expr, type: IrType.Array): Long? = when (source) {
+        is Expr.Grouping -> knownSpreadSize(source.expr, type)
+        is Expr.Identifier -> table.lookupVariable(source.name)?.let { variable ->
+            stableArraySizes.firstOrNull { it.first === variable }?.second
+        }
+        is Expr.ArrayLiteral -> source.elements.size.toLong()
+        is Expr.Call -> {
+            // A signature alone is not proof: a resized array can retain N in
+            // Array<T, N>. Qualify a fresh literal result without earlier
+            // control flow; more complex producers remain undecided.
+            val body = program?.functions?.find { it.name == source.callee }?.body
+            val literal = (body?.lastOrNull() as? Stmt.Return)?.value as? Expr.ArrayLiteral
+            literal?.elements?.size?.toLong()?.takeIf { body.dropLast(1).all { it is Stmt.ExprStmt } }
+        }
+        else -> null // Mutable fields, casts and other aliases need cardinality tracking.
+    }
+
+    private fun rememberArraySize(variable: VariableSymbol, initializer: Expr, type: IrType.Array) {
+        if (variable.mutable || variable.valueMutable || variable.hasStorageEffects) return
+        knownSpreadSize(initializer, type)?.let { stableArraySizes.add(variable to it) }
+    }
+
+    private fun concreteConstraintBinding(ref: TypeRef): ConstraintEvaluator.Binding? {
+        val named = ref as? TypeRef.Named
+        if (named != null && (named.name == "Any" || named.name in currentFuncTypeParams)) return null
+        return ConstraintEvaluator.bindingOf(ref)
     }
 
     /**
@@ -4731,6 +4834,17 @@ class TypeResolver(private val table: SymbolTable) {
      * Rejects a write through a binding whose *value* is immutable (`val`/`fin`).
      * Reassigning the name is checked separately where the assignment is resolved.
      */
+    /**
+     * A write to a `for` loop's own binding. Every backend binds it afresh on
+     * each iteration, so `i += 2` or `index++` never stepped the loop: it was
+     * accepted and did nothing, which is how the standard library's merge
+     * passes came to visit every index.
+     */
+    private fun loopVariableWrite(name: String, line: Int): String =
+        "line $line: '$name' is the loop's variable, bound afresh on every iteration - " +
+            "writing it would not change what the loop visits; step a 'while' loop by hand, " +
+            "or copy it into a 'var'"
+
     private fun checkValueMutable(target: Expr, line: Int, what: String): Boolean {
         val rootName = pathRoot(target)?.name
         if (rootName != null) checkCapture(rootName, line)
@@ -5372,6 +5486,9 @@ class TypeResolver(private val table: SymbolTable) {
             is TypeAnnotation.Inferred -> {
                 table.defineVariable(VariableSymbol(name, initType, mutable, valueMutable = valueMutable, hasStorageEffects = hasStorageEffects))
             }
+        }
+        if (initType is IrType.Array) {
+            table.lookupVariable(name)?.let { rememberArraySize(it, initializer, initType) }
         }
         movedBindings.remove(name)
         // `let m: User! = user.!` - the borrow now lives as long as `m` does,

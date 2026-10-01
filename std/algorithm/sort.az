@@ -125,7 +125,7 @@ func<T: Order> _insertionSortRange(
     stop: Int
     ascending: Bool
 ) {
-    for i: Int in start + 1..stop {
+    for i: Int in start + 1..<stop {
         fin moving = values[i]
         var j = i - 1
         while j >= start && _outOfOrder<T>(values[j], moving, ascending) {

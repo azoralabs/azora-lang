@@ -142,18 +142,18 @@ internal object TypeFunctionEvaluator {
         /**
          * The bindings a type property's `where` clause can be evaluated against.
          *
-         * Only the variadic pack's length is concrete at this stage; element types
-         * are not, so a clause about them reports `Unknown` and is accepted.
+         * Fixed arguments bind individually and the variadic tail binds its size.
+         * Element-wise pack conformance still reports `Unknown` and is accepted.
          */
         private fun constraintBindings(
             declaration: TypeFunctionDecl,
             args: List<TypeRef>,
         ): Map<String, ConstraintEvaluator.Binding> {
-            val pack = declaration.variadicParam ?: return emptyMap()
-            val fixedCount = declaration.params.indexOfFirst { it.variadic }.takeIf { it >= 0 }
-                ?: declaration.params.size
-            val variadicCount = (args.size - fixedCount).coerceAtLeast(0)
-            return mapOf(pack to ConstraintEvaluator.Binding.Pack(variadicCount.toLong()))
+            return ConstraintEvaluator.bindingsFor(
+                declaration.params.map { it.name },
+                declaration.variadicParam,
+                args,
+            )
         }
 
         /**

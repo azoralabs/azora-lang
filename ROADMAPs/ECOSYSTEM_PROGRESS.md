@@ -2272,3 +2272,525 @@ type, and both worked. A binding whose type is a macro call now does the same.
 ./gradlew :compiler:desktopTest --offline --console=plain --tests '*TypeLevelImportTest' --tests '*MacroTest' --tests '*MacroFormTest'
 ./gradlew :compiler:desktopTest --offline --console=plain
 ```
+
+## 2026-09-27 — 010.C4.5 / 057: global initializer dependencies survive release optimization
+
+The workspace starts at `ad7b0af`, with existing edits to the Azora AZLS source.
+A fresh full compiler run reproduces **2,428 tests, 2,237 passed, 191 failed,
+0 skipped**. `Bugs.MD` and the release roadmap carry older inventories; their
+headers now point to the current delivery plan and progress log.
+
+**The global set/map failure is an optimizer defect.** The two existing LLVM
+tests pass on raw IR and fail on optimized IR: unused-symbol elimination visits
+function bodies, then gathers references from global initializers after the
+function worklist has finished. A factory referenced only by a global is
+therefore removed, leaving a call to an undefined symbol. Adding its name to a
+used-name set does not retain the factory or its transitive dependencies.
+
+Functions and global initializers now share a traversal. A reachable global
+can call a function that reads an earlier global, whose initializer calls
+another function; all are followed before filtering declarations. Test bodies,
+spec implementation methods and exported bridge globals retain their roots.
+Indirect singleton dependencies are followed from global/test references as
+well as function bodies. Unreferenced functions and globals are still removed.
+This changes reachability, not initializer order.
+
+**Regression evidence:**
+
+- `GlobalInitializerTest`, three new cases, and `GlobalInitializerExecTest`,
+  two new cases: interpreter, LLVM and WASM execution of raw and actual
+  optimized IR. They check transitive function/global dependencies, global
+  List/Set/map factories, duplicate set elements, exactly-once evaluation in
+  declaration/element order, and thread-local custom factories with empty and
+  nonempty literals.
+- `IrOptimizerReachabilityTest`, two new cases: exported bridge globals and
+  test roots keep transitive dependencies without `main`; unrelated functions
+  are still removed and export metadata survives.
+- Both existing `LlvmAggregateExecTest` global set/map regressions now pass.
+- Initial focused run: **43 tests, 0 failures, 0 skipped**.
+
+**The shared release helpers now execute optimized IR.**
+`StdCollectionLiteralTest`, `LiteralFactoryTest` and `WitnessTest` compiled with
+`release = optimized` but returned `result.ir` in both branches. Their native
+and interpreter loops therefore exercised raw IR twice. They now return
+`result.optimizedIr` for the release branch. The follow-up run covering these
+three families and the new regressions passes **48 tests, 0 failures, 0 skipped**.
+Earlier claims of release execution through these helpers should be read with
+that correction; the new run supplies actual optimized execution evidence.
+
+**Full verification:** **2,435 tests, 2,246 passed, 189 failed, 0 skipped**.
+Compared by `(suite, test)` identity against the freshly measured pre-change
+run, the global set/map tests are the only previous failures now passing, no
+previously passing test fails, and all seven new tests pass. AZLS is **91/91**.
+The full run precedes the helper corrections; the affected suites were rerun
+afterwards and all still pass. The inventory, failure messages and comparison
+are saved in
+[`ECOSYSTEM_BASELINE_GLOBAL_INITIALIZERS_2026_09_27.json`](ECOSYSTEM_BASELINE_GLOBAL_INITIALIZERS_2026_09_27.json).
+
+**Recorded for follow-up (055/059):** `WasmExec` obtains the exported memory
+only after instantiation, but a WASM start function runs global initializers
+during instantiation. An initializer printing a string therefore reaches the
+host's `readStr` before its memory variable is assigned. The ordering regression
+uses numeric initialization logs, which do not require host memory access.
+String output during WASM start remains unqualified. Collection lifetime and
+remaining factory/backend/tooling qualification remain under 010.C5.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*GlobalInitializer*' --tests '*IrOptimizerReachability*' --tests '*LlvmAggregateExecTest.globalMapInitializerRunsBeforeMain' --tests '*LlvmAggregateExecTest.globalSetInitializerRunsBeforeMain' --tests '*StdCollectionLiteral*' --tests '*LiteralFactory*'
+./gradlew :compiler:desktopTest :azls:test --continue --offline --console=plain
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*GlobalInitializer*' --tests '*IrOptimizerReachability*' --tests '*StdCollectionLiteral*' --tests '*LiteralFactory*' --tests '*Witness*'
+```
+
+## 2026-09-27 — 022.2 / 025: enforce variadic pack-size constraints
+
+The prior work package leaves **2,435 compiler tests, 189 failures**. Three
+existing `TypeFunctionTest` failures accept invalid concrete specializations:
+`stdlibPromoteRequiresTwoTypes`, `variadicConstraintProducesDiagnostic` and
+`aConcreteInvalidSpecializationIsAnError`. GENERICS_DIP §12 and the standard
+library use `.size`, but `ConstraintEvaluator` reads only `.length`; the
+canonical spelling therefore yields an unknown constraint and is accepted.
+
+The evaluator now reads both `T.size` and `(...T).size`, retaining `.length`
+compatibility. A shared binding adapter binds fixed parameters individually and
+counts only the variadic tail. Previously, pack specialization counted the
+fixed prefix, then overwrote its pack binding with the first element's type.
+Type properties and specialized impl-method filtering now use the same adapter.
+Generic function calls bind the tail even when it has zero or multiple elements;
+an undecidable fixed argument no longer suppresses a decidable size predicate.
+A runtime spread leaves its cardinality unbound instead of counting it as one
+written argument.
+
+**Regression evidence:** `PackSizeConstraintTest` adds eight cases and
+`PackSizeConstraintExecTest` two. They cover canonical/grouped/legacy queries,
+empty/singleton/oversized calls, both equality boundaries, fixed-prefix exclusion,
+a generic fixed argument, constrained type-property overload selection,
+specialized method availability, and deferred runtime-spread compilation. A valid
+heterogeneous pack/type-property program and a generic forwarding call print
+`42`, `7`, `2` on the interpreter, LLVM and WASM with raw and actual optimized IR.
+The focused qualification also covers `TypeFunctionTest`, witness dispatch and
+literal-factory bounds: **71 tests, 0 failures, 0 skipped**.
+
+**Final full verification:** **2,445 tests, 2,259 passed, 186 failed, 0 skipped**.
+Compared by `(suite, test)` identity with the prior 2,435-test / 189-failure
+inventory, the three existing failures above now pass, no previously passing
+test fails, and all ten new tests pass. AZLS is **91/91**. The inventory,
+diagnostic messages, comparison and focused qualification are saved in
+[`ECOSYSTEM_BASELINE_PACK_SIZE_2026_09_27.json`](ECOSYSTEM_BASELINE_PACK_SIZE_2026_09_27.json).
+
+**Remaining scope:** element-wise variadic conformance still evaluates as
+unknown, as do unsupported constraint expressions. Runtime-spread compilation
+is covered; its execution is not qualified. A probe calling
+`count(...values)` with `fin values = [10, 20]` throws
+`Spread should be handled by evalCall, not evaluated directly` in the
+interpreter. `IrGenerator` nests the spread inside the variadic `ArrayLiteral`,
+while `evalCall` only splices spreads that are direct call arguments. This
+lowering defect remains under 025. Tasks 022 and 025 stay open.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*PackSizeConstraint*' --tests '*TypeFunctionTest'
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*PackSizeConstraint*' --tests '*TypeFunctionTest' --tests '*Witness*' --tests '*LiteralFactory*'
+./gradlew :compiler:desktopTest :azls:test --offline --console=plain --continue
+```
+
+## 2026-09-27 — 013.1 / 025.1 / 053.1 / 056.1: 28 roadmap checks
+
+The user requested at least ten checks before stopping. This work package checks
+**28 concrete behaviors**, rather than marking 28 broad roadmap items complete.
+The starting inventory is **2,445 compiler tests, 186 failures**, from the
+pack-size work package. Existing workspace edits, including the Azora AZLS
+source, are preserved.
+
+**Repairs:**
+
+- The interpreter expands `IrExpr.Spread` segments within the array packed for a
+  variadic tail. Each source is evaluated once and copied before the next
+  argument, so a later argument's mutation cannot change an earlier segment.
+- Semantic inference reads the source array's element type, diagnoses non-array
+  sources, and rejects incompatible homogeneous or explicitly typed arguments.
+- Variadic calls use the callee's physical element type. A generic callee reads
+  erased slots even when the caller knows `T`; packing narrow typed slots had
+  supplied the wrong ABI. LLVM and WASM load each spread's source width and
+  convert into the destination slots, retaining floating-point bits at erased
+  boundaries. The native builders free replaced temporary buffers and preserve
+  the caller's source array; the final buffer follows the existing array
+  allocation/lifetime policy. Growth is per segment, not an amortized builder.
+- WASM emits array `for-in` loops instead of silently dropping them. It evaluates
+  the source and length once, loads typed elements, binds the ordinal and routes
+  `continue` through progression. Nested loops and `break` keep their targets.
+  Unsupported non-array iteration now reports a backend error.
+- Control-header brackets no longer absorb the following loop body as a capture
+  lambda. Explicit argument, grouping and literal delimiters restore lambda
+  parsing internally and then restore the header's suppression state.
+- A spread occupying a fixed slot of a variadic function is explicitly rejected
+  until that expansion is implemented. Ordinary fixed-arity expansion still
+  executes on the interpreter; LLVM/WASM generators now report their unsupported
+  expansion instead of emitting a null/pointer placeholder.
+
+**Individually checked behaviors:** I/L/W means interpreter, LLVM and WASM,
+each on raw and actual optimized IR. Compiler rejection rows run in both modes;
+parser rows inspect the AST and preserve the distinction they name.
+
+| # | Check | Roadmap | Result / evidence |
+|---|---|---|---|
+| 1 | Nonempty runtime array spread | 025/052/054/056 | `123`; I/L/W |
+| 2 | Empty spread has zero elements | 025 | `0`; I/L/W |
+| 3 | Singleton spread retains its element | 025 | `7`; I/L/W |
+| 4 | Scalars, multiple spreads and an empty segment preserve order | 025/041 | `123456`; I/L/W |
+| 5 | Explicit fixed prefix stays outside the variadic tail | 025 | `9123`; I/L/W |
+| 6 | Homogeneous inference uses spread element type | 023 | Inferred Int result `20`; I/L/W |
+| 7 | Double values cross erased slots | 016/053 | `2.5`; I/L/W |
+| 8 | Byte source width converts to erased slot width | 016/053 | `9`; I/L/W |
+| 9 | Float values retain their bits at erased boundaries | 016/053 | `2.5`; I/L/W |
+| 10 | String inference and result ABI | 023/053 | `two`; I/L/W |
+| 11 | Ordinary generic variadic calls retain physical slots | 053 | Byte/Double/Float/String: `9`, `2.5`, `2.5`, `two`; I/L/W |
+| 12 | Argument expressions run exactly once, left to right | 041/057 | Trace `1, 2, 4, 5, 7`, then `1234567`; I/L/W |
+| 13 | Callee mutation affects its packed copy, not the source | 025/062 | `9`, then unchanged source `1`; I/L/W |
+| 14 | An earlier spread is copied before a later argument mutates its source | 041/057 | `123`, then source `9`; I/L/W |
+| 15 | Nested generic forwarding preserves the full tail | 025 | `123`; I/L/W |
+| 16 | Variadic closure accepts a runtime spread | 025/044 | Length `3`; I/L/W |
+| 17 | Array ordinal, `continue` and `break` progression | 042/056 | `134`; I/L/W |
+| 18 | Nested array iteration preserves outer and inner rows | 042/056 | `13142324`; I/L/W |
+| 19 | Iterable expression is evaluated once | 041/042 | Trace `99` once, then `123`; I/L/W |
+| 20 | Typed array iteration loads Byte, Float and String correctly | 053/056/062 | `7, 9, 1.5, 2.5, one, two`; I/L/W |
+| 21 | Scalar cannot be spread as an array | 017/025 | Located compiler diagnostic |
+| 22 | Homogeneous spreads cannot mix Int and String elements | 023/025 | Compiler diagnostic |
+| 23 | Int variadic parameter rejects a String spread | 017/025 | Compiler diagnostic |
+| 24 | Unsupported spread into a fixed variadic slot is explicit | 025/060 | Compiler diagnostic; fixed arguments must be passed separately |
+| 25 | Literal loop headers retain array shape and body | 013 | Numeric, identifier and String arrays; parser AST checks |
+| 26 | Capture lambda inside a header's call argument remains a lambda | 013/044 | Parser AST check |
+| 27 | Array-valued header can contain capture lambdas | 013/044 | Parser AST check |
+| 28 | Fixed-arity native expansion is explicitly unsupported | 054/056/060 | Interpreter prints `6`; both generators reject, raw/optimized |
+
+`VariadicSpreadTest` supplies twenty positive cases and four diagnostic cases.
+`VariadicSpreadExecTest` independently reports every positive case, backend and
+optimization mode: **80 native test cases**, alongside interpreter execution in
+both modes, for **120 program executions** across the three backends. Three new
+`CollectionLiteralSyntaxTest` cases check parser shape; two
+`FixedSpreadBackendDiagnosticTest` cases qualify the explicit target limitation.
+The earlier `PackSizeConstraintTest` spread case now executes and prints `2`.
+The integer encoding fixtures explicitly cast their erased values to Int;
+unbounded generic arithmetic is not qualified by those fixtures.
+
+**Focused verification:** **122 tests, 0 failures, 0 skipped**. The broader
+callable/lambda qualification has **223 tests, 220 passed, 3 failed, 0 skipped**;
+all three failure identities already occur in the starting baseline:
+`LambdaTest.callableKindsAreStorablePackFields`,
+`LambdaTest.aReceiverIsSuppliedByUsingOrByAReceiverCall` and
+`PropCallTest.anArrayEmptinessPropertyIsNotCallable`. The full run also includes
+the closure and fixed-expansion additions made after that broader check.
+
+**Final full verification:** **2,554 tests, 2,369 passed, 185 failed, 0 skipped**.
+Compared by `(suite, test)` identity against the starting inventory,
+`LoopTest.forArrayWithADeclaredRowType` now passes, all **109 new tests** pass,
+no previously passing test fails, and no tests were removed. AZLS is **91/91**.
+The dated inventory includes all test identities, remaining diagnostic messages,
+the comparison and both focused qualifications:
+[`ECOSYSTEM_BASELINE_VARIADIC_SPREAD_2026_09_27.json`](ECOSYSTEM_BASELINE_VARIADIC_SPREAD_2026_09_27.json).
+
+**Remaining:** full compile-time type-pack expansion, element-wise conformance,
+constraints whose spread cardinality is unresolved, fixed-parameter expansion,
+non-array WASM iterators, labeled for-in metadata, iterator invalidation,
+unbounded generic arithmetic and complete temporary-array lifetime qualification
+remain open. Tasks 013, 025, 053 and 056 keep their broader acceptance gates.
+
+## 2026-09-27 — 025.2 / 062.1: 34 spread-constraint roadmap checks
+
+Continued from the 2,554-test / 185-failure inventory and the earlier request to
+check at least ten things. This package checks **34 individually named
+behaviors**, preserves existing workspace edits and advances narrow parts of
+025 and 062. Their broader acceptance gates remain open.
+
+The first twenty reproducers exposed thirteen failures. Six invalid size calls
+compiled because any written spread suppressed the pack binding. Pack-wide
+Hash predicates also requested a single descriptor for the heterogeneous pack,
+giving an inference error instead of checking its elements. Follow-up cases
+exposed stale array-size metadata after resizing and missing fixed-head witness
+inference when a heterogeneous tail prevented `inferredTypeArgs` from being a
+single list.
+
+**Repairs:**
+
+- Resolve each spread source once during argument checking and keep its element
+  type separate from cardinality. Count scalars and stable spread segments,
+  excluding fixed parameters. Canonical `.size`, grouped queries, `.length`,
+  comparisons and range membership use the resulting count.
+- Track stable immutable array bindings by symbol identity, including global
+  bindings and immutable aliases. Fresh literals and simple fresh-literal
+  function results have a known count. Mutable bindings, aliases of mutable or
+  resized arrays, fields, casts, lazy storage and more complex producers remain
+  undecided. A declared `Array<T, N>` alone is insufficient: existing resizing
+  can retain N while the runtime header changes.
+- Pack bindings carry known element types. Nominal bounds inspect every known
+  member, use integer-family conformances for widths, and accept an empty pack
+  vacuously. A known violation is retained beside an unresolved member. Unknown
+  cardinality does not pretend to be the number of written arguments; an
+  unresolved spread may be empty, so its nonconforming type alone does not
+  disprove a universal bound.
+- Pack-wide predicates do not request a singular runtime descriptor. Fixed
+  arguments still pass their own descriptors, inferred from the already lowered
+  arguments when necessary. Indexed and iterated heterogeneous pack elements
+  explicitly diagnose unsupported Hash/Equal/Order witness dispatch. Loop
+  lowering retains the declared element reference used for this check.
+- Builtin array `add`, `insert`, `remove` and `fill` use the existing receiver
+  mutability checker. A `fin` array cannot be resized through its binding.
+
+**Individual checks:** I/L/W means interpreter, LLVM and WASM on raw and actual
+optimized IR. Compiler diagnostics run in both compilation modes. The three
+resizing rows execute on interpreter/LLVM and assert WASM's existing unsupported
+`add` diagnostic; they are not counted as WASM executions.
+
+| # | Check | Result / evidence |
+|---|---|---|
+| 1 | Stable local spread satisfies its size | `2`; I/L/W |
+| 2 | Empty Double spread satisfies a universal Hash bound | `0`; I/L/W |
+| 3 | Scalars and multiple spreads contribute expanded counts | `6`; I/L/W |
+| 4 | Fresh literal function result is evaluated once | Trace `99`, then `3`; I/L/W |
+| 5 | Grouped pack size supports range membership | `2`; I/L/W |
+| 6 | Legacy `.length` uses expanded cardinality | `2`; I/L/W |
+| 7 | Unknown-size array forwarding remains undecided | `2`; I/L/W |
+| 8 | Int, Byte and String pack members satisfy Hash | `4`; I/L/W |
+| 9 | Fixed prefix is excluded from tail size and bounds | Double head, Hash tail: `2`; I/L/W |
+| 10 | A satisfied size disjunct admits non-Hash Double elements | `2`; I/L/W |
+| 11 | Mutable resized source does not use its stale type size | `3`; I/L, W diagnostic |
+| 12 | Immutable alias of resized source stays undecided | `3`; I/L, W diagnostic |
+| 13 | Declared producer size alone does not prove its live count | Declared size 2, live count `3`; I/L, W diagnostic |
+| 14 | Empty direct pack satisfies its universal bound | `0`; I/L/W |
+| 15 | Fixed-head witness inference survives a heterogeneous tail | `true`, then `2`; I/L/W |
+| 16 | Immutable global source retains its size | `2`; I/L/W |
+| 17 | Immutable alias of a stable source retains its size | `2`; I/L/W |
+| 18 | Short known spread is rejected | Located where diagnostic: `1 vs 2` |
+| 19 | Long known spread is rejected | Located where diagnostic: `3 vs 2` |
+| 20 | Empty spread contributes zero arguments | Located where diagnostic: `0 vs 0` for `> 0` |
+| 21 | A scalar beside a spread increases cardinality | Located where diagnostic: `3 vs 2` |
+| 22 | Multiple spreads add their lengths | Located where diagnostic: `4 vs 3` |
+| 23 | Known fresh result size is checked | Located where diagnostic: `3 vs 2` |
+| 24 | Every scalar member must conform | Double does not implement Hash |
+| 25 | Every member of a known nonempty spread must conform | Double does not implement Hash |
+| 26 | Empty good segment cannot hide a bad scalar | Double does not implement Hash |
+| 27 | Unknown spread cannot hide a known bad scalar | Double does not implement Hash |
+| 28 | Shadowed bindings retain independent sizes | Inner size `1 vs 2` rejected |
+| 29 | Fixed-head violation is checked beside a spread tail | Double head does not implement Hash |
+| 30 | Immutable array resizing is rejected | `add`, `insert`, `remove`, `fill`; located mutability diagnostics |
+| 31 | Indexed pack Hash dispatch is explicitly unsupported | Located compiler diagnostic |
+| 32 | Iterated pack Hash dispatch is explicitly unsupported | Located compiler diagnostic |
+| 33 | Pack Equal dispatch is explicitly unsupported | Located compiler diagnostic |
+| 34 | Pack Order dispatch is explicitly unsupported | Located compiler diagnostic |
+
+`PackSpreadConstraintTest` has **34 tests**. `PackSpreadConstraintExecTest`
+independently reports **68 native execution/diagnostic cases**: 62 executions
+and six WASM resize diagnostics. Together with both interpreter modes, the
+positive fixtures have **96 program executions** across available targets.
+The focused qualification also runs existing `ArrayTest`,
+`ConstGenericArrayTest`, `BindingMutabilityTest`, witness, pack-size and runtime
+spread suites: **259 tests, 0 failures, 0 errors, 0 skipped**.
+
+**Full verification:** **2,656 compiler tests, 2,471 passed, 185 failed, 0
+errors, 0 skipped**. All **102 new tests** pass. Compared by `(suite, test)`
+identity with the preceding 2,554-test inventory, the same 185 pre-existing
+failures remain, no previously passing test fails and no tests were removed.
+AZLS passes **91/91**, with no skips. The compiler task exits with failure
+because those existing failures remain; this is not a clean full-suite gate.
+
+Commands:
+
+```text
+./gradlew :compiler:desktopTest --tests '*PackSpreadConstraint*' --tests '*ArrayTest*' --tests '*MutabilityTest*' --tests '*WitnessTest*' --tests '*WitnessExecTest*' --tests '*PackSizeConstraint*' --tests '*VariadicSpread*' --offline --console=plain
+./gradlew :compiler:desktopTest :azls:test --offline --console=plain --continue
+git diff --check
+```
+
+The full-suite comparison and remaining failure identities are recorded in
+[`ECOSYSTEM_BASELINE_SPREAD_CONSTRAINTS_2026_09_27.json`](ECOSYSTEM_BASELINE_SPREAD_CONSTRAINTS_2026_09_27.json).
+
+**Remaining:** unknown-cardinality constraint obligations are deferred rather
+than proved; complete type-pack expansion, per-element runtime descriptors,
+fixed-parameter spread expansion, const-size preservation under mutable
+resizing, comprehensive alias/cardinality tracking and WASM resize execution
+remain open. Pack/spec specialization conformance still needs symbol-table
+evaluation in the earlier expansion stages. This package qualifies stable
+function-call predicates, not the complete 022/025/062 acceptance gates.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*VariadicSpread*'
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*VariadicSpread*' --tests '*PackSizeConstraint*' --tests '*CollectionLiteralSyntaxTest' --tests '*Callable*' --tests '*Lambda*'
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*VariadicSpread*' --tests '*FixedSpreadBackend*' --tests '*PackSizeConstraint*' --tests '*CollectionLiteralSyntaxTest'
+./gradlew :compiler:desktopTest :azls:test --offline --console=plain --continue
+```
+
+## 2026-10-01 — Loop variables, `.Variant` shorthands, and the standard library they broke
+
+Starts from `ad7b0af` plus the uncommitted 2026-09-27 work above. A fresh full
+run reproduces that work's inventory exactly: **2,656 tests, 185 failed**.
+Grouped by message, the 185 point to several shared defects. This package
+fixes six of them, and the stale fixtures in front of them.
+
+### 1. A `for` loop's variable accepted writes that did nothing
+
+All three backends bind a loop variable afresh on every iteration. Writing it
+never changed what the loop visits. The resolver nevertheless declared a
+*range* loop's variable mutable, so `i += 2`, `i++` and `i = 0` compiled and
+were ignored. (An array or iterator loop's row was already immutable.) Measured:
+`for i in 0..6 { …; i += 2 }` visits all seven values on the interpreter, LLVM
+and WASM.
+
+The standard library had four loops written as if the write stepped them:
+
+- *`sortBy`* (`std.algorithm`) stepped its merge windows with
+  `lo += width * 2` inside `for lo in 0..count`. It merged every overlapping
+  window instead. On 14 elements the old code printed `12 12 12 12 …`,
+  duplicating some elements and dropping others.
+- *`_decimalValue`* (`std.os`) used its loop variable as the accumulator and
+  returned it after the loop, out of scope. That is the `undefined value
+  'value'` behind the `OsStdlibTest` failures.
+- *`Path.normalized`* (`std.filesystem`) ended its body with a leftover
+  `index++`.
+- *`mergeSort`* (`std.algorithm`, below) did not compile at all.
+
+**Change.** Every loop's own row and `with` index is immutable, range loops
+included. `=`, compound assignment, `++` and `--` on one are rejected:
+
+```text
+line 5: 'i' is the loop's variable, bound afresh on every iteration - writing it
+would not change what the loop visits; step a 'while' loop by hand, or copy it into a 'var'
+```
+
+`sortBy` steps a `while` loop. `_decimalValue` keeps a `var value` and loops
+over its indices.
+
+### 2. Inclusive ranges one past the end
+
+`..` includes its upper bound. Three `std.algorithm` loops used it as if it
+were `..<`:
+
+- `_insertionSortRange` iterated `start + 1..stop`, reading `values[stop]`.
+  The `IndexOutOfBoundsException` in `SortStdlibTest` came from this, on
+  every input whose last run ends at the array's end.
+- `mergeSort` copied `0..mid` into a `mid`-element half and `0..arr.size` into
+  the `arr.size - mid` right half.
+
+### 3. A grouped binding's `.()` had no type
+
+`var {left, right}: Array<T> = {.() * mid, .() * rest}` failed with `cannot
+tell what '.' belongs to`. A lone binding's `.(…)` is built from its stated type
+while parsing (`parseInitializer`). A grouped binding's values were parsed
+without that type. They now get each target's stated type. This is what
+`mergeSort` needed.
+
+### 4. A capture list read the next statement as its lambda
+
+`isReceiverLambdaAhead` decides whether `[…]` opens a lambda's capture list
+by what follows the `]`. It skipped line breaks, and after a name it took the
+first `{` it met, even inside an argument list:
+
+```azora
+fin values: Array<Int> = [5, 3]
+println(f(values, { x -> 0 - x }))   // [5, 3] read as captures of a receiver lambda
+```
+
+That failed with `Expected a capture name in a lambda bracket list, got '5'`
+(`ForExpressionTest.itWalksWhateverForWalks`). Now a receiver name must stand on
+the same line as the `]`, and a `{` counts only outside parentheses.
+
+### 5. `.Variant` without its type, in two places
+
+- *`when` patterns.* `.Flag(v) -> …` matched, but its binding was never defined
+  (`undefined value 'v'`). The resolver and the IR generator bound payloads
+  only for `Value.Flag(v)`. Both now read patterns through `SlotPatterns`, where
+  `.Flag(v)` means a variant of the scrutinee's type. A `when` *expression*
+  rejects `.Flag(v)` with the same message it gives `Value.Flag(v)`, instead of
+  comparing against a construction.
+- *`return .Variant` in a `T ?! E` function.* The parser wrote every such return
+  as a throw, so returning a variant of the *success* type failed the function.
+  `return .Nothing` from a `Value ?! ParseError` function ran the caller's
+  `catch`. `std.serializer`'s parser returned `.Object(fields)` and so could not
+  compile. The parser now marks these throws, and `ReturnedVariants` decides
+  them once the program is complete:
+  - a variant of the error set fails the function, as ERROR_HANDLING_DIP says;
+  - otherwise a variant of the success type is returned;
+  - a name both declare, or that no declared set has, is an error.
+
+### 6. Serializer derivation and host bridges
+
+- *Derived serializers named their helpers `std::serialFieldAt`*, a `std` scope
+  that no longer reaches `std.serializer`'s declarations. They also imported
+  `std.convert`, which does not exist, to call `convert::toString`. The
+  `@Derive` metadata in `std/serializer.az` now names the helpers through their
+  module (`std.serializer::serialFieldAt`), which a program's own declaration
+  of that name cannot capture. Conversion uses the compiler's `toString`.
+  `StdlibInjectionTest.serializerFixturesProduceGeneratedCodecMethods` asserted
+  the `std.convert` import; it now asserts that it is absent. 20 failing tests
+  were stopped here.
+- *The interpreter's filesystem and process bridges never matched.* It looked
+  up `fsRead`, `fsPathQuery`, `commandParts` and the rest by their local name.
+  The library declares them `_fsRead`, … and a bridge keeps its declared name.
+  Every interpreted file or process operation failed with `Undefined function`.
+  LLVM strips the prefix itself (`substringAfterLast('_')`). The interpreter now
+  uses the declared names; `symbolDenotes` is unchanged, so a program's own
+  `_println` does not become the intrinsic.
+- *Typo:* `Path.withExtension` declared `fin renamed: Bool` for a `String`.
+
+### Smaller repairs
+
+- A library that fails to parse is now reported to a program that selects a
+  declaration from it (`import lib.vals::describe`). Before, the program saw
+  014's `there is no module 'lib.vals.describe'`.
+- Stale fixtures:
+  - `Array::fill<T>(n)` was removed from std on 2026-08-17 and is now `.() * n`
+    (`SortStdlibTest` ×4, `FilesystemStdlibTest` ×1);
+  - `FilesystemStdlibTest.metadataReportsKindAndSize` imports the
+    `std.time::Instant` it constructs.
+
+### Decision needed: string index type
+
+`std.string`'s `strCharAt` and `strSlice` take `UInt` indices since `46a372b`
+(2026-08-26). Everything around them takes `Int`: `substring` and `charAt` in
+`std.core`, `strLength`, `std.decimal`'s callers. So `strSlice` cannot compile,
+and the six `DecimalStdlibTest` failures stop there. There are three options:
+
+- revert the two functions to `Int`;
+- convert at each call site;
+- move string indices and lengths to `UInt` throughout.
+
+The functions are unchanged.
+
+### Not changed, recorded
+
+- `.() * n` builds an array only in a binding. As a return value or an
+  argument (`return .() * 3` from a function returning `Array<Int>`) it reports
+  `cannot tell what '.' belongs to`. Without `import std.container.array`, even
+  `var a: Array<Int> = .() * 1` reports a misleading
+  `cannot infer element type of empty sequence literal`.
+- The LLVM and WASM generators still carry `Array::fill` lowering that no
+  library declaration reaches.
+- `std.convert`: the serializer no longer needs it. CAST_DIP §1 still places
+  `Into` and `From` there.
+
+### Evidence
+
+- `LoopVariableTest` (6), new: writes to range rows, array rows and `with`
+  indices are rejected; reading, a `var` copy and a stepped `while` run.
+- `AlgorithmStdlibTest` (3), new: `mergeSort` on 7 and 13 elements, `sortBy`
+  across several passes, and `sortBy` stability. The two `sortBy` tests fail on
+  the old `std/algorithm.az` with the old range-loop rule.
+- `VariantReturnAndPatternTest` (7), new:
+  - success and error variants returned from `if` and `when`;
+  - an ambiguous name, and a name no set declares;
+  - `.Flag(v)` bindings, in a program and in a library;
+  - the `when`-expression rejection.
+- Now pass: `SortStdlibTest` (6), `FilesystemStdlibTest` (15),
+  `OsStdlibTest` (4), `TimeStdlibTest` (3), `ScopeQualifiedAccessTest` (4),
+  `ThirdPartyFormatTest` (2), `CollectionCtorTest` (3), and the
+  `StdlibInjectionTest` serializer tests, among others.
+- Full compiler run: **2,672 tests, 2,528 passed, 144 failed, 0 skipped**, against
+  2,656 / 185 measured on the same starting tree. 41 earlier failures pass, none
+  newly fails, and all 16 added tests pass. Three still-failing tests lost their
+  serializer errors; their remaining errors are unrelated (`tupleOf`, a
+  missing `ArrayList` import).
+- AZLS: 91/91.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*LoopVariableTest' --tests '*AlgorithmStdlibTest' --tests '*VariantReturnAndPatternTest' --tests '*SortStdlibTest' --tests '*FilesystemStdlibTest' --tests '*OsStdlibTest'
+./gradlew :compiler:desktopTest --offline --console=plain
+./gradlew :azls:test --offline
+```

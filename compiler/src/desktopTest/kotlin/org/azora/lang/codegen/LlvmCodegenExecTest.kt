@@ -577,7 +577,7 @@ class LlvmCodegenExecTest {
         "after",
         main(
             """
-            assert 1 + 1 == 2 { "math is broken" }
+            assert 1 + 1 == 2 panic "math is broken"
             println("after")
             """.trimIndent()
         )

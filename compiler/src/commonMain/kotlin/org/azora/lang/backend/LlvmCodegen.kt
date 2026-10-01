@@ -2219,9 +2219,18 @@ class LlvmCodegen {
      *
      * A scalar is already a value and passes through untouched.
      */
-    private fun emitIsolatedCopy(arg: IrExpr): String {
-        val value = emitExpr(arg)
-        val named = arg.type as? IrType.Named ?: return value
+    private fun emitIsolatedCopy(arg: IrExpr): String = isolatedCopy(emitExpr(arg), arg.type)
+
+    /**
+     * [value], of [type], duplicated as `__isolated` promises. A pack is
+     * copied one level deep, as above. An array owns its buffer, so the buffer is
+     * copied whole and each element that is itself an array or a pack is copied
+     * in turn: `[1, 2, 3].clone()` must not share the slots it was copied from
+     * (OWNERSHIP_BORROWING_DIP: both values "own independent state").
+     */
+    private fun isolatedCopy(value: String, type: IrType): String {
+        if (type is IrType.Array) return isolatedArrayCopy(value, type.element)
+        val named = type as? IrType.Named ?: return value
         if (named.name !in structDefs) return value
         val st = "%struct.${sanitizeName(named.name)}"
         // sizeof via the getelementptr-on-null idiom, as struct construction does.
@@ -2238,6 +2247,59 @@ class LlvmCodegen {
         val ptr = nextTmp()
         emit("  $ptr = bitcast i8* $raw to $st*")
         return ptr
+    }
+
+    private fun copiesOnIsolation(type: IrType): Boolean =
+        type is IrType.Array || (type is IrType.Named && type.name in structDefs)
+
+    /** A copy of the array at [raw]: its length, its slots, and copies of what they own. */
+    private fun isolatedArrayCopy(raw: String, element: IrType): String {
+        val len = emitArrayLengthI64(raw)
+        val bytes = nextTmp()
+        emit("  $bytes = mul i64 $len, ${sizeOfScalar(element)}")
+        val size = nextTmp()
+        emit("  $size = add i64 $bytes, 8")
+        val copy = emitHeapAlloc(size)
+        usesMemcpy = true
+        val copied = nextTmp()
+        emit("  $copied = call i8* @memcpy(i8* $copy, i8* $raw, i64 $size)")
+        if (!copiesOnIsolation(element)) return copy
+
+        val et = mapType(element)
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $copy, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+        val condLabel = nextLabel("isolate_cond")
+        val bodyLabel = nextLabel("isolate_body")
+        val doneLabel = nextLabel("isolate_done")
+        val nextIndex = "%isolate_next_${labelCounter++}"
+        // The body may copy nested arrays, which opens blocks of its own, so the
+        // back edge comes from whichever block the body ends in; it is written
+        // into the phi once that is known.
+        val backEdge = "__isolate_back_edge_${labelCounter++}__"
+        val preheader = currentBlock
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val idx = nextTmp()
+        emit("  $idx = phi i64 [ 0, %$preheader ], [ $nextIndex, %$backEdge ]")
+        val inRange = nextTmp()
+        emit("  $inRange = icmp ult i64 $idx, $len")
+        emitTerminator("  br i1 $inRange, label %$bodyLabel, label %$doneLabel")
+        startBlock(bodyLabel)
+        val slot = nextTmp()
+        emit("  $slot = getelementptr $et, $et* $data, i64 $idx")
+        val item = nextTmp()
+        emit("  $item = load $et, $et* $slot, align 1")
+        val itemCopy = isolatedCopy(item, element)
+        emit("  store $et $itemCopy, $et* $slot, align 1")
+        emit("  $nextIndex = add i64 $idx, 1")
+        val at = out.indexOf(backEdge)
+        // setRange, not replace: the latter is JVM-only and this is commonMain.
+        out.setRange(at, at + backEdge.length, currentBlock)
+        emitTerminator("  br label %$condLabel")
+        startBlock(doneLabel)
+        return copy
     }
 
     private fun emitHeapAlloc(size: String): String {

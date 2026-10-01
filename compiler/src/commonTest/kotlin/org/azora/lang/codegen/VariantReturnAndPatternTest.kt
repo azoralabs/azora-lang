@@ -95,6 +95,17 @@ class VariantReturnAndPatternTest {
         """),
     )
 
+    /** `= expr` is `{ return expr }`, the shorthand included. */
+    @Test fun anExpressionBodyFailsOrReturnsTheSameWay() = assertEquals("num 2\nfailed", run("""
+        import std.io
+        $declarations
+        func at(k: Int): Value ?! ParseError = if k < 0 then .Bad else .Num(k)
+        func main() {
+            println(show(at(2) catch Value.Nothing))
+            println(if (at(-2) catch Value.Num(-1)) == Value.Num(-1) { "failed" } else { "succeeded" })
+        }
+    """))
+
     @Test fun aNameBothDeclareIsAmbiguous() = rejects("""
         error Problem {
             Missing

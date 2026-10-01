@@ -1118,6 +1118,12 @@ class WasmCodegen {
             // panic reporter. `unreachable` is Wasm's bottom instruction.
             return "(block (result i32) (drop ${emitExpr(expr.args.single())}) unreachable)"
         }
+        // The compiler-supplied `clone` (and a `Copy` aggregate's copy). This
+        // target has no copy of a pack or an array yet; saying so here is better
+        // than a call to nothing that the assembler then refuses.
+        if (expr.name == "__isolated") {
+            error("WebAssembly cannot copy a ${expr.args.single().type} for 'clone' yet")
+        }
         when (expr.name) {
             "__alloc" -> return emitPointerAlloc(expr)
             "__allocBuffer" -> return emitPointerBufferAlloc(expr)

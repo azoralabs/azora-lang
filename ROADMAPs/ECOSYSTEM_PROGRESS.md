@@ -2794,3 +2794,114 @@ The functions are unchanged.
 ./gradlew :compiler:desktopTest --offline --console=plain
 ./gradlew :azls:test --offline
 ```
+
+## 2026-10-01 — String indices are `Int`; a failable `= expr` body is a return
+
+Committed by the user as `0b25a97` on `0.1.0-dev`, which now carries all work.
+The decision recorded above was taken: string indices are `Int`, as in
+Kotlin, Java, C#, Swift and Go.
+
+- `strCharAt` and `strSlice` take `Int` again. That matches `strLength`,
+  `charAt` and `substring`, which they call and which their callers pass
+  through. A negative index is out of bounds, like one past the end.
+  `strSlice`'s precondition now states the whole range,
+  `0 <= start <= end <= length`. `std.decimal` compiles.
+- *Found by the new test:* `strCharAt` was written
+  `= if … then .IndexOutOfBounds else charAt(…)`. A function's `= expr` body
+  became a plain `return expr`, which skipped the parsing that recognizes
+  `.Variant` in an `if` or `when` branch. In a function that declares `?!`,
+  `= expr` is now read as `return expr`, so its branches fail or return as
+  they would after `return` (`parseReturnTail`).
+
+### Evidence
+
+- `StdStringIndexTest` (2), new:
+  - a length used as an index;
+  - `-1`, `length` and an empty string are out of bounds.
+- `VariantReturnAndPatternTest.anExpressionBodyFailsOrReturnsTheSameWay`, new.
+- `DecimalStdlibTest` 6/6, previously 0/6. `StringIndexTest` 4/4.
+- Full compiler run: **2,675 tests, 2,537 passed, 138 failed, 0 skipped**,
+  against 2,672 / 144. The six decimal tests now pass, none newly fails, and
+  the three added tests pass. AZLS: 91/91.
+
+## 2026-10-01 — 008 assertion fixtures, `alloc [..]` literals, array `clone`
+
+On `0.1.0-dev`, after the string-index entry above (2,675 / 138).
+
+### 008: the removed `assert cond { "msg" }` form
+
+33 failing tests did not reach what they test. Their programs still wrote the
+message form step 004 removed (`Expected 'panic' after assert condition, got
+'{'`). 46 assertions in 7 files became `assert cond panic "msg"`, inline ones
+included. Every condition and message is kept, and the program around them
+is unchanged:
+
+- `TestAssertTraceTest`, `ContractsTest`, `TestMethodTest`, `TestScopeTest`;
+- `WebsiteExamplesTest` and `PlaygroundExamplesTest`;
+- `LlvmCodegenExecTest`.
+
+`assert_messageMustBeString` keeps its non-`String` message (`panic 42`), which
+is what it checks. Passing tests that check the old form is rejected were not
+touched. All 33 now reach their own assertions and pass. The website and
+playground pages these examples mirror may still show the removed form; they
+live in other repositories.
+
+### `alloc [10, 20, 30]` read its literal as one pointee
+
+`var p: Int^ = alloc^ [10, 20, 30]` reported `type 'Int' does not define a
+sequence literal factory`. The literal was seeded with the pointee type `Int`,
+so 010.C3's factory lookup asked `Int` for a sequence factory.
+`alloc .(a, b, c)` already treats its arguments as the run of slots the
+pointer points at. A literal under `alloc` is now seeded the same way, as
+`Array<pointee>`. Six pointer-arithmetic tests pass: `Tier3MemoryTest` ×4,
+`PlaygroundExamplesTest.pointers` and `WebsiteExamplesTest.ch29_pointer_arithmetic`.
+
+### `clone` on an array
+
+A pack is clonable without an import when its fields are, and the compiler
+supplies the body. `[1, 2, 3].clone()` reported `no method 'clone' on array`,
+with or without `import std.container.array`. `Array`'s `derives Clone` sits on
+the library declaration, which a program that never spells `Array` does not
+pull in. An array, set, map or tuple is now clonable by what it holds
+(`SymbolTable.isClonable`). That is the rule `SymbolCollector.fieldHasCapability`
+applies to a pack's fields, and the resolver and the IR generator both use it.
+
+That exposed the backends:
+
+- *LLVM aliased.* Its copy (`__isolated`) passed an array's pointer through,
+  so a clone shared its original's slots: `99|99` where `1|99` was meant. It
+  now copies the buffer. Each element that is an array or a pack is copied in
+  turn, matching the interpreter's deep copy on these programs. (The loop's
+  phi learns its back-edge block after the body is emitted, since a nested copy
+  opens blocks of its own.)
+- *WebAssembly* has no `__isolated` lowering at all, for packs as for arrays.
+  The assembler used to refuse a call to nothing. It now reports `WebAssembly
+  cannot copy a … for 'clone' yet`.
+
+### Not changed, recorded
+
+- *Copy depth differs between targets.* LLVM copies a pack one level deep, so
+  an array field stays shared with the original. The interpreter copies deep.
+  OWNERSHIP_BORROWING_DIP promises that both values "own independent state"
+  after `clone`. A pack's array field on LLVM does not keep that promise yet.
+- *`std.parallelism.channel` is broken.* Its members read `queue`, `mutex` and
+  `closed`, but its fields are `_queue`, `_mutex` and `_closed`.
+  `WebsiteExamplesTest.ch31_channel` and
+  `Tier4ConcurrencyTest.channelWithProducerTask` use an API that no longer
+  exists (`channel()`, an unparameterized `Channel`). Both are 049 work.
+
+### Evidence
+
+- `ArrayCloneTest` (2) and `ArrayCloneExecTest` (2), new:
+  - independent slots;
+  - growth through `add`;
+  - nested arrays and packs, on the interpreter and on LLVM, raw and optimized;
+  - the WebAssembly diagnostic.
+- Now pass:
+  - all 33 assertion-form tests;
+  - `Tier3MemoryTest`'s two `clone` tests and four pointer tests;
+  - `WebsiteExamplesTest.ch29_clone` and `ch29_pointer_arithmetic`;
+  - `PlaygroundExamplesTest.pointers`.
+- Full compiler run: **2,679 tests, 2,583 passed, 96 failed, 0 skipped**,
+  against 2,675 / 138. 42 earlier failures pass, none newly fails, and the four
+  added tests pass. AZLS: 91/91.

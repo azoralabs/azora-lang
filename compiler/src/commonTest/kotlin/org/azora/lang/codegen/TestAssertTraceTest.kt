@@ -35,7 +35,7 @@ class TestAssertTraceTest {
         val result = compile("""
             import std.io
             test "addition" {
-                assert 1 + 1 == 2 { "math is broken" }
+                assert 1 + 1 == 2 panic "math is broken"
             }
             func main() {
                 println("hello")
@@ -64,7 +64,7 @@ class TestAssertTraceTest {
         val result = compile("""
             import std.io
             test "my test" {
-                assert 1 == 1 { "fail" }
+                assert 1 == 1 panic "fail"
             }
             func main() {}
         """.trimIndent())
@@ -80,7 +80,7 @@ class TestAssertTraceTest {
         val output = run("""
             import std.io
             func main() {
-                assert 1 + 1 == 2 { "math broken" }
+                assert 1 + 1 == 2 panic "math broken"
                 println("ok")
             }
         """.trimIndent())
@@ -92,7 +92,7 @@ class TestAssertTraceTest {
         val result = compile("""
             import std.io
             func main() {
-                assert 1 == 2 { "bad math" }
+                assert 1 == 2 panic "bad math"
             }
         """.trimIndent())
         try {
@@ -108,7 +108,7 @@ class TestAssertTraceTest {
         val errors = expectFailure("""
             import std.io
             func main() {
-                assert 42 { "not bool" }
+                assert 42 panic "not bool"
             }
         """.trimIndent())
         assertTrue(errors.any { "Bool" in it }, "Should require Bool condition, got: $errors")
@@ -119,7 +119,7 @@ class TestAssertTraceTest {
         val errors = expectFailure("""
             import std.io
             func main() {
-                assert true { 42 }
+                assert true panic 42
             }
         """.trimIndent())
         assertTrue(errors.any { "String" in it }, "Should require String message, got: $errors")
@@ -130,7 +130,7 @@ class TestAssertTraceTest {
         val result = compile("""
             import std.io
             func main() {
-                assert 1 == 1 { "ok" }
+                assert 1 == 1 panic "ok"
             }
         """.trimIndent())
         assertTrue("abort" in result.llvm || "br i1" in result.llvm,
@@ -313,7 +313,7 @@ class TestAssertTraceTest {
         val result = compile("""
             import std.io
             inline fin X = 5
-            inline assert X > 0 { "X must be positive" }
+            inline assert X > 0 panic "X must be positive"
             func main() {
                 println("ok")
             }
@@ -326,7 +326,7 @@ class TestAssertTraceTest {
         val errors = expectFailure("""
             import std.io
             inline fin X = -1
-            inline assert X > 0 { "X must be positive" }
+            inline assert X > 0 panic "X must be positive"
             func main() {}
         """.trimIndent())
         assertTrue(errors.any { "X must be positive" in it }, "Should contain assertion message, got: $errors")
@@ -338,7 +338,7 @@ class TestAssertTraceTest {
             import std.io
             func main() {
                 inline fin x = 5
-                inline assert x > 0 { "x must be positive" }
+                inline assert x > 0 panic "x must be positive"
                 println("ok")
             }
         """.trimIndent())
@@ -350,7 +350,7 @@ class TestAssertTraceTest {
         val result = compile("""
             import std.io
             inline fin X = 5
-            inline assert X > 0 { "ok" }
+            inline assert X > 0 panic "ok"
             func main() {
                 println("hello")
             }
@@ -472,7 +472,7 @@ class TestAssertTraceTest {
     fun test_carriesItsMethodIntoTheIr() {
         val result = compile("""
             test "a name" {
-                assert 1 == 1 { "one is one" }
+                assert 1 == 1 panic "one is one"
             }
             func main() {}
         """.trimIndent())
@@ -487,11 +487,11 @@ class TestAssertTraceTest {
     fun testAll_saysSoAndNamesWhatItGathered() {
         val result = compile("""
             test "first" {
-                assert 1 == 1 { "one is one" }
+                assert 1 == 1 panic "one is one"
             }
 
             test "second" {
-                assert 2 == 2 { "two is two" }
+                assert 2 == 2 panic "two is two"
             }
 
             test .All "everything"

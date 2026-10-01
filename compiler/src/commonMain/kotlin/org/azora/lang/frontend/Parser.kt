@@ -6033,6 +6033,8 @@ class Parser(
             body = when {
                 check(TokenType.INLINE) -> listOf(parseInlineBlock())
                 check(TokenType.DEEPINLINE) -> listOf(parseDeepInlineBlock())
+                // `func at(i: Int): Char ?! E = if bad then .OutOfRange else c`
+                currentFailSets.isNotEmpty() -> listOf(parseReturnTail(peek()))
                 else -> {
                     val expr = parseExpr()
                     consumeNewline()
@@ -10517,6 +10519,21 @@ class Parser(
     private fun parseReturn(): Stmt {
         val start = peek()
         consume(TokenType.RETURN, "Expected 'return'")
+        if (!check(TokenType.WHEN) && !check(TokenType.IF) &&
+            (check(TokenType.NEWLINE) || check(TokenType.R_BRACE) || isAtEnd())
+        ) {
+            consumeNewline()
+            return Stmt.Return(null, start.line, start.column)
+        }
+        return parseReturnTail(start)
+    }
+
+    /**
+     * What a `return` returns. Also a failable function's `= expr` body, which
+     * is `{ return expr }` - `.Variant` in it fails the function as it would
+     * after `return`, in an `if` branch too.
+     */
+    private fun parseReturnTail(start: Token): Stmt {
         // `return when …` / `return if …` - a branching construct in return
         // position, where every branch carries a value rather than a block.
         if (check(TokenType.WHEN)) {
@@ -10524,10 +10541,6 @@ class Parser(
         }
         if (check(TokenType.IF)) {
             return parseReturnIf(start)
-        }
-        if (check(TokenType.NEWLINE) || check(TokenType.R_BRACE) || isAtEnd()) {
-            consumeNewline()
-            return Stmt.Return(null, start.line, start.column)
         }
         val stmt = parseReturnedValue(start)
         consumeNewline()

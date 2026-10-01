@@ -30,7 +30,7 @@ class TestScopeTest {
             }
 
             test "the fixture is reachable from a test" {
-                assert fixture() == 7 { "fixture should be usable from a test" }
+                assert fixture() == 7 panic "fixture should be usable from a test"
             }
 
             func main() { }
@@ -59,7 +59,7 @@ class TestScopeTest {
             }
 
             test "siblings compose" {
-                assert fixture() == 7 { "a test-scope member may call another" }
+                assert fixture() == 7 panic "a test-scope member may call another"
             }
 
             func main() { }

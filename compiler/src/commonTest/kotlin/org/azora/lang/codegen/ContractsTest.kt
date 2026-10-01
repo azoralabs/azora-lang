@@ -27,7 +27,7 @@ class ContractsTest {
         val twoIn = Compiler().compile(
             """
             func f(a: Int): Int
-            in { assert a > 0 { "a" } } in { assert a < 9 { "b" } } scope { return a }
+            in { assert a > 0 panic "a" } in { assert a < 9 panic "b" } scope { return a }
             func main() {}
             """.trimIndent(),
         )
@@ -37,7 +37,7 @@ class ContractsTest {
         val twoOut = Compiler().compile(
             """
             func f(a: Int): Int
-            out { assert it > 0 { "a" } } out { assert it < 9 { "b" } } scope { return a }
+            out { assert it > 0 panic "a" } out { assert it < 9 panic "b" } scope { return a }
             func main() {}
             """.trimIndent(),
         )
@@ -51,10 +51,10 @@ class ContractsTest {
             import std.io
             func clamp(x: Int, lo: Int, hi: Int): Int
             in {
-                assert lo <= hi { "lo must be <= hi" }
+                assert lo <= hi panic "lo must be <= hi"
             } out { r ->
-                assert r >= lo { "result must be >= lo" }
-                assert r <= hi { "result must be <= hi" }
+                assert r >= lo panic "result must be >= lo"
+                assert r <= hi panic "result must be <= hi"
             } scope {
                 if x < lo { return lo }
                 if x > hi { return hi }
@@ -76,7 +76,7 @@ class ContractsTest {
                 import std.io
                 func value(x: Int): Int
                 in {
-                    assert x > 0 { "x must be positive" }
+                    assert x > 0 panic "x must be positive"
                 } scope {
                     return x
                 }
@@ -93,7 +93,7 @@ class ContractsTest {
                 import std.io
                 func value(): Int
                 out { r ->
-                    assert r > 10 { "result too small" }
+                    assert r > 10 panic "result too small"
                 } scope {
                     return 3
                 }
@@ -109,7 +109,7 @@ class ContractsTest {
             import std.io
             func choose(flag: Bool): Int
             out { r ->
-                assert r >= 10 { "branch result too small" }
+                assert r >= 10 panic "branch result too small"
             } scope {
                 if flag {
                     return 12
@@ -132,9 +132,9 @@ class ContractsTest {
             impl Counter {
                 prop &.current: Int
                 in {
-                    assert self.value >= 0 { "counter must not be negative" }
+                    assert self.value >= 0 panic "counter must not be negative"
                 } out { result ->
-                    assert result == self.value { "property returned stale data" }
+                    assert result == self.value panic "property returned stale data"
                 } scope {
                     return self.value
                 }
@@ -151,9 +151,9 @@ class ContractsTest {
         compile("""
             async func load(value: Int): Int
             in {
-                assert value >= 0 { "task input must be non-negative" }
+                assert value >= 0 panic "task input must be non-negative"
             } out { result ->
-                assert result >= 0 { "task result must be non-negative" }
+                assert result >= 0 panic "task result must be non-negative"
             } scope {
                 return value
             }

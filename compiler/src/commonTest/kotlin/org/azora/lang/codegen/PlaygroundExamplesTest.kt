@@ -169,8 +169,8 @@ func factorial(n: Int): Int {
     if n <= 1 { return 1 }
     return n * factorial(n - 1)
 }
-test "factorial of 5 is 120" { assert factorial(5) == 120 { "5! should be 120" } }
-test "factorial of 0 is 1" { assert factorial(0) == 1 { "0! should be 1" } }
+test "factorial of 5 is 120" { assert factorial(5) == 120 panic "5! should be 120" }
+test "factorial of 0 is 1" { assert factorial(0) == 1 panic "0! should be 1" }
 func main() { println("running tests...") }"""))
 
     @Test fun codegenWorks() {

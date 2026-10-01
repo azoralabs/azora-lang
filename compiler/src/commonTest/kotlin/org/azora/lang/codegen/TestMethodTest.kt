@@ -43,13 +43,13 @@ class TestMethodTest {
     }
 
     @Test fun testDefaultsToThis() {
-        val test = parse("test \"one\" { assert true { \"ok\" } }")
+        val test = parse("test \"one\" { assert true panic \"ok\" }")
             .items.filterIsInstance<TopLevel.Test>().single()
         assertEquals(TestMethod.This, test.method)
     }
 
     @Test fun explicitThisParses() {
-        val test = parse("test .This \"one\" { assert true { \"ok\" } }")
+        val test = parse("test .This \"one\" { assert true panic \"ok\" }")
             .items.filterIsInstance<TopLevel.Test>().single()
         assertEquals(TestMethod.This, test.method)
     }
@@ -75,11 +75,11 @@ class TestMethodTest {
         val ir = lower("""
             test "first" {
                 fin value = 1
-                assert value == 1 { "first" }
+                assert value == 1 panic "first"
             }
             test "second" {
                 fin value = 2
-                assert value == 2 { "second" }
+                assert value == 2 panic "second"
             }
             test .All "everything"
         """.trimIndent())
@@ -95,8 +95,8 @@ class TestMethodTest {
 
     @Test fun allRunsEveryChildAsOnePassingResult() {
         val results = IrInterpreter().runTests(lower("""
-            test "first" { assert true { "first" } }
-            test "second" { assert 2 + 2 == 4 { "second" } }
+            test "first" { assert true panic "first" }
+            test "second" { assert 2 + 2 == 4 panic "second" }
             test .All "everything"
         """.trimIndent()))
 
@@ -107,8 +107,8 @@ class TestMethodTest {
 
     @Test fun childFailureFailsTheAllSuite() {
         val results = IrInterpreter().runTests(lower("""
-            test "passing" { assert true { "passing" } }
-            test "failing" { assert false { "child failed" } }
+            test "passing" { assert true panic "passing" }
+            test "failing" { assert false panic "child failed" }
             test .All "everything"
         """.trimIndent()))
 
@@ -119,8 +119,8 @@ class TestMethodTest {
 
     @Test fun filesWithoutAllKeepIndependentTests() {
         val results = IrInterpreter().runTests(lower("""
-            test "first" { assert true { "first" } }
-            test "second" { assert true { "second" } }
+            test "first" { assert true panic "first" }
+            test "second" { assert true panic "second" }
         """.trimIndent()))
 
         assertEquals(listOf("first", "second"), results.map { it.name })

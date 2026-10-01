@@ -360,7 +360,7 @@ func main() { println("Hello, Azora!") }"""))
             func add(a: Int, b: Int): Int { return a + b }
             test "addition works" {
                 fin result = add(2, 3)
-                assert result == 5 { "2 + 3 should be 5" }
+                assert result == 5 panic "2 + 3 should be 5"
             }
             func main() { println("running") }
         """.trimIndent()))
@@ -369,7 +369,7 @@ func main() { println("Hello, Azora!") }"""))
     @Test fun ch13_divide_assert() = assertEquals("5", run("""
         import std.io
         func divide(a: Int, b: Int): Int {
-            assert b != 0 { "division by zero" }
+            assert b != 0 panic "division by zero"
             return a / b
         }
         func main() { println(divide(10, 2)) }
@@ -388,7 +388,7 @@ func main() { println("Hello, Azora!") }"""))
         import std.io
         func main() {
             inline fin SIZE = 16
-            inline assert SIZE > 0 { "SIZE must be positive" }
+            inline assert SIZE > 0 panic "SIZE must be positive"
             println(SIZE)
         }
     """.trimIndent()))

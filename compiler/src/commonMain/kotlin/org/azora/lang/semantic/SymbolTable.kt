@@ -522,6 +522,24 @@ class SymbolTable {
     fun conformsTo(typeName: String, contractName: String): Boolean =
         conformances.any { it.typeName == typeName && it.contractName == contractName }
 
+    /**
+     * Whether a value of [type] may be duplicated with the compiler-supplied
+     * `clone`. A declared type answers by its conformance. An array, set, map
+     * or tuple answers by what it holds, as a pack's fields do: a value no
+     * declared type opts out of is clonable. So `[1, 2, 3].clone()` needs no
+     * import, as `Box(1).clone()` does not.
+     */
+    fun isClonable(type: IrType): Boolean = when (type) {
+        is IrType.Array -> isClonable(type.element)
+        is IrType.Set -> isClonable(type.element)
+        is IrType.Map -> isClonable(type.key) && isClonable(type.value)
+        is IrType.Tuple -> type.elements.all(::isClonable)
+        is IrType.Nullable -> isClonable(type.inner)
+        is IrType.Named -> conformsTo(type.name, "Clone") ||
+            (lookupStruct(type.name) == null && lookupEnum(type.name) == null && lookupSlot(type.name) == null)
+        else -> true
+    }
+
     /** Returns all validated conformances. */
     fun allConformances(): List<TraitConformance> = conformances.toList()
 

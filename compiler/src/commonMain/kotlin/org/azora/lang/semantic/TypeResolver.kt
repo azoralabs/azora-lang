@@ -979,7 +979,11 @@ class TypeResolver(private val table: SymbolTable) {
                 elementOwnerName(pointee)?.let { owner ->
                     inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, owner, it.instance) }
                 }
-                seedExpectedValue(expr.value, pointee)
+                // `alloc [10, 20, 30]` - the literal is the run of slots the
+                // pointer points at, as `alloc .(…)`'s arguments are, not one
+                // pointee built from a literal.
+                val slots = expr.value is Expr.ArrayLiteral && pointee != null && pointee !is IrType.Array
+                seedExpectedValue(expr.value, if (slots) IrType.Array(pointee!!) else pointee)
             }
             // `.(…) * count` - the count is a number of its own; the expectation
             // belongs to the construction being repeated.
@@ -5275,7 +5279,8 @@ class TypeResolver(private val table: SymbolTable) {
         val receiver = resolveExpr(expr.target) ?: return null
         val name = cloneConformanceName(receiver) ?: return null
         if (table.lookupMethod(name, "clone") != null) return null
-        if (!table.conformsTo(name, "Clone")) return null
+        // An aggregate builtin is clonable by what it holds; see isClonable.
+        if (!table.conformsTo(name, "Clone") && (receiver is IrType.Named || !table.isClonable(receiver))) return null
         return receiver
     }
 

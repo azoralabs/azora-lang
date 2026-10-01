@@ -58,13 +58,17 @@ func strLength(s: String): Int = stringLength(s)
 /**
  * Returns the character at the given index.
  *
+ * An index is an `Int`, as [strLength] and `charAt` are - the convention of
+ * Kotlin, Java, C#, Swift and Go - so index arithmetic needs no conversions.
+ * A negative index is out of bounds like one past the end.
+ *
  * @param s The source string.
  * @param index The zero-based index.
  * @return The character at position index.
  */
 @Experimental(since: "0.1")
-func strCharAt(s: String, index: UInt): Char ?! StringError =
-    if index >= stringLength(s) then .IndexOutOfBounds else charAt(s, index)
+func strCharAt(s: String, index: Int): Char ?! StringError =
+    if index < 0 || index >= stringLength(s) then .IndexOutOfBounds else charAt(s, index)
 
 /**
  * Extracts a substring from start (inclusive) to end (exclusive).
@@ -75,9 +79,9 @@ func strCharAt(s: String, index: UInt): Char ?! StringError =
  * @return The extracted substring.
  */
 @Experimental(since: "0.1")
-func strSlice(s: String, start: UInt, end: UInt): String
+func strSlice(s: String, start: Int, end: Int): String
 in {
-    assert end >= start panic "End must be >= start"
+    assert 0 <= start && start <= end && end <= stringLength(s) panic "slice bounds must satisfy 0 <= start <= end <= length"
 } = substring(s, start, end)
 
 /**

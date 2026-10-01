@@ -3560,7 +3560,9 @@ class IrGenerator(private val table: SymbolTable) {
                         is IrType.Tuple -> "Tuple"
                         else -> t.toString()
                     }
-                    if (table.lookupMethod(name, "clone") == null && table.conformsTo(name, "Clone")) {
+                    val conforms = table.conformsTo(name, "Clone") ||
+                        (target.type !is IrType.Named && table.isClonable(target.type))
+                    if (table.lookupMethod(name, "clone") == null && conforms) {
                         return IrExpr.Call("__isolated", listOf(target), target.type)
                     }
                 }

@@ -171,13 +171,66 @@ class Tier3DiTest {
                 solo HttpClient("https://api") binds Api
             }
 
-            graph AppGraph includes [NetworkGraph] {
+            graph AppGraph includes (NetworkGraph) {
                 factory LoginViewModel("transient")
-                scope LoginViewModel("per-scope")
+                scoped LoginViewModel("per-scope")
             }
 
             func main() { println(inject Config.url) }
         """.trimIndent()))
     }
 
+    /**
+     * A field the `graph` registration leaves out keeps its declared default.
+     * The factory used to zero every field past the written arguments, so a
+     * `var level: Int = 1` singleton was injected with `level` at 0.
+     */
+    @Test
+    fun aGraphRegistrationKeepsFieldDefaults() {
+        assertEquals("1\nhttps://api\n8080", run("""
+            import std.io
+            solo pack Logger { var level: Int = 1 }
+            solo pack Server {
+                fin host: String = "localhost"
+                fin port: Int = 8080
+            }
+            graph AppGraph {
+                solo Logger()
+                solo Server("https://api")
+            }
+            func main() {
+                println(inject Logger.level)
+                fin server = inject Server
+                println(server.host)
+                println(server.port)
+            }
+        """.trimIndent()))
+    }
+
+    /**
+     * `binds Spec` makes `inject Spec` answer with the registered provider, the
+     * same instance `inject Type` returns. Only the type's own factory used to
+     * be emitted, so `inject Spec` stopped with "No singleton factory".
+     */
+    @Test
+    fun aBoundSpecInjectsTheSharedProvider() {
+        assertEquals("1005\n1006", run("""
+            import std.io
+            spec Clock { func &.now(): Int }
+            pack SystemClock { var offset: Int = 0 }
+            impl Clock for SystemClock {
+                func &.now(): Int = 1000 + self.offset
+            }
+            graph AppGraph {
+                solo SystemClock(5) binds Clock
+            }
+            func main() {
+                fin clock = inject Clock
+                println(clock.now())
+                var concrete = inject SystemClock
+                concrete.offset = 6
+                println(clock.now())
+            }
+        """.trimIndent()))
+    }
 }

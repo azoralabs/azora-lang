@@ -149,8 +149,8 @@ checking; `break`/`continue`.
 | `impl [A, B] for [Type::x, Type::y] {}` | the decorator/target cross-product |
 | `annot @Name binds Spec { fields }` | binds an annotation to a spec |
 | `solo pack Name { }` | a type there is one of |
-| `graph Graph { solo\|factory\|scope Type(args) [binds Spec] }` | a dependency graph; the first word is the provider's lifetime |
-| `graph Graph includes [A, B]` | graph composition |
+| `graph Graph { solo\|factory\|scoped Type(args) [binds Spec] }` | a dependency graph; the first word is the provider's lifetime |
+| `graph Graph includes (A, B)` | graph composition |
 | `inject Type` / `lazy fin value = inject Type` | resolve now / on first read |
 | `react func name() { }` | reactive owner |
 | `bridge target { func sigs }` | FFI extern declarations |

@@ -104,6 +104,29 @@ class RepeatedConstructionTest {
         )
     }
 
+    @Test fun aFilledSlotHoldsTheElementsZeroValue() {
+        // The element is written on the declaration, not on `.()`; the fill
+        // used to lose it and leave every slot null.
+        assertEquals(
+            "[0, 5, 0]\n[false, false]\n0.0",
+            run(
+                """
+                import std.io
+                import std.container.array
+                func main() {
+                    var counts: Array<Int> = .() * 3
+                    counts[1] = 5
+                    println(counts)
+                    var flags: Array<Bool> = .() * 2
+                    println(flags)
+                    var weights: Array<Double> = .() * 1
+                    println(weights[0])
+                }
+                """.trimIndent(),
+            ),
+        )
+    }
+
     // -- anything else runs its repeated ctor --------------------------------
 
     @Test fun aRepetitionRunsTheCtorThatDeclaredIt() {

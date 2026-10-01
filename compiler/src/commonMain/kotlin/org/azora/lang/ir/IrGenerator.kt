@@ -773,18 +773,32 @@ class IrGenerator(private val table: SymbolTable) {
         } +
         // Emit __singleton factories for `graph` registrations (DI wiring).
         program.items.filterIsInstance<TopLevel.Graph>().flatMap { graph ->
-            graph.registrations.mapNotNull { reg ->
-                val struct = table.lookupStruct(reg.typeName) ?: return@mapNotNull null
-                val loweredArgs = reg.args.map { lowerExpr(it) }
-                // Pad with type-based defaults for fields not covered by the construction args.
-                val fullArgs = loweredArgs + struct.fields.drop(loweredArgs.size).map { defaultValueForType(it.type) }
+            graph.registrations.flatMap { reg ->
+                val struct = table.lookupStruct(reg.typeName) ?: return@flatMap emptyList()
+                // A field the registration leaves out takes its declared default,
+                // as it would in `Name(args)`; only a field without one is zeroed.
+                val fullArgs = loweredFieldValues(struct, reg.args).mapIndexed { i, value ->
+                    if (i >= reg.args.size && struct.fields[i].default == null) defaultValueForType(struct.fields[i].type) else value
+                }
+                val type = IrType.Named(reg.typeName)
                 val factory = IrFunction(
                     "__singleton_${reg.typeName}",
                     emptyList(),
-                    IrType.Named(reg.typeName),
-                    listOf(IrStmt.Return(IrExpr.StructCtor(reg.typeName, struct.fields.map { it.name }, fullArgs, IrType.Named(reg.typeName))))
+                    type,
+                    listOf(IrStmt.Return(IrExpr.StructCtor(reg.typeName, struct.fields.map { it.name }, fullArgs, type)))
                 )
-                IrTopLevel.Func(factory)
+                // `binds Spec` lets `inject Spec` answer with this provider. The
+                // spec's factory injects the type rather than building a second
+                // one, so both names share the single instance.
+                val bound = reg.bindSpecs.map { spec ->
+                    IrFunction(
+                        "__singleton_$spec",
+                        emptyList(),
+                        IrType.Named(spec),
+                        listOf(IrStmt.Return(IrExpr.Call("__inject", listOf(IrExpr.StringLiteral(reg.typeName)), type)))
+                    )
+                }
+                (listOf(factory) + bound).map { IrTopLevel.Func(it) }
             }
         } +
         // Emit extern declarations for `bridge` (FFI) function signatures.
@@ -2432,7 +2446,11 @@ class IrGenerator(private val table: SymbolTable) {
         val struct = table.lookupStruct(call.callee) ?: return null
         val loweredCount = lowerExpr(count)
         if (struct.name == "Array") {
-            val element = call.typeArgs.firstOrNull()?.let { resolveType(it) } ?: IrType.Any
+            // `var xs: Array<Int> = .() * 4` writes the element on the
+            // declaration, not on the call; without it every slot is an `Any`.
+            val elementRef = call.typeArgs.firstOrNull()
+                ?: (stripRef(expectedRef) as? TypeRef.Named)?.takeIf { it.name == "Array" }?.args?.firstOrNull()
+            val element = elementRef?.let { resolveType(it) } ?: IrType.Any
             return IrExpr.Call(Intrinsics.ARRAY_FILL, listOf(loweredCount), IrType.Array(element))
         }
         val args = call.args.map { lowerExpr(it) }
@@ -3582,7 +3600,13 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 // Slot construction: SlotName.Variant(args)
                 if (expr.target is Expr.Identifier && table.lookupSlot(expr.target.name) != null) {
-                    val args = expr.args.map { lowerExpr(it) }
+                    // An unsuffixed literal takes its payload's width, as the
+                    // resolver typed it: `Shape.Circle(2.0)` stores a Double.
+                    val payloads = table.lookupSlot(expr.target.name)!!.find { it.first == expr.name }?.second.orEmpty()
+                    val args = expr.args.mapIndexed { i, arg ->
+                        val value = lowerExpr(arg)
+                        payloads.getOrNull(i)?.let { coerceToFloat(value, it) } ?: value
+                    }
                     val fieldNames = listOf("__tag") + args.indices.map { "__$it" }
                     val allArgs = listOf(IrExpr.StringLiteral(expr.name)) + args
                     return IrExpr.StructCtor(expr.target.name, fieldNames, allArgs, IrType.Named(expr.target.name))

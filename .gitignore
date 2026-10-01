@@ -34,6 +34,9 @@ CLAUDE.local.md
 .claude-api-key
 .claudeignore
 
+# Codex
+.codex
+
 # Binary artifacts
 *.so
 *.dylib

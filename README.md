@@ -4,7 +4,7 @@ A statically-typed, multi-target programming language with an IR-based compiler
 pipeline, an ownership model with no garbage collector, and compile-time
 execution.
 
-> **Status: pre-release (`0.0.5`).** The language is usable and heavily tested,
+> **Status: pre-release (`0.1.0-dev`).** The language is usable and heavily tested,
 > but nothing here is stable yet: syntax still changes between versions, the
 > standard library's APIs are not settled, and two of the three backends have
 > gaps. See `ROADMAPs/VERSION_0_1_ROADMAP.MD` for exactly what stands between

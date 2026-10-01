@@ -179,4 +179,44 @@ class VariantReturnAndPatternTest {
             }
         }
     """, "a `when` expression cannot destructure a slot payload")
+
+    /**
+     * A `.Variant(a, b) ->` arm starting a line is an arm, not a method call on
+     * the arm above it. Only `.name ->` and `.name(x) ->` with one binding used
+     * to be recognised, so a two-binding arm chained onto the previous value.
+     */
+    @Test fun aMultiBindingArmAfterANewlineStartsANewArm() = assertEquals("circle 5.0\nrect 3.0x4.0\npoint", run("""
+        import std.io
+        variant enum Shape {
+            Circle(radius: Double)
+            Rect(width: Double, height: Double)
+            Point
+        }
+        func describe(shape: Shape): String {
+            return when shape {
+                .Circle(radius) -> "circle ${'$'}{radius}"
+                .Rect(width, height) -> "rect ${'$'}{width}x${'$'}{height}"
+                else -> "point"
+            }
+        }
+        func main() {
+            println(describe(Shape.Circle(5.0)))
+            println(describe(Shape.Rect(3.0, 4.0)))
+            println(describe(Shape.Point))
+        }
+    """))
+
+    /** A float literal in a `Double` payload is a `Double`, as it is in a `Double` field. */
+    @Test fun aFloatLiteralTakesItsPayloadsWidth() = assertEquals("2.5", run("""
+        import std.io
+        variant enum Size {
+            Exact(Double)
+        }
+        func main() {
+            fin size = Size.Exact(2.5)
+            when size {
+                .Exact(v) -> { println(v) }
+            }
+        }
+    """))
 }

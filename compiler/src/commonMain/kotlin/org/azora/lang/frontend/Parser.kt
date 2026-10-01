@@ -11938,6 +11938,40 @@ class Parser(
     }
 
     /**
+     * True when the tokens at [index] open a `when` arm of leading-dot patterns:
+     * `.Startup ->`, `.Rect(w, h) ->`, or several of them, `.North, .South ->`.
+     * A payload's bindings sit between the name and the arrow, so they are
+     * skipped as one balanced group. Anything else that begins with a dot
+     * continues the expression above it.
+     */
+    private fun opensWhenArmAt(index: Int): Boolean {
+        var at = index
+        while (true) {
+            if (tokens.getOrNull(at)?.type != TokenType.DOT) return false
+            if (tokens.getOrNull(at + 1)?.type != TokenType.IDENTIFIER) return false
+            at += 2
+            if (tokens.getOrNull(at)?.type == TokenType.L_PAREN) {
+                var depth = 0
+                while (at < tokens.size) {
+                    when (tokens[at].type) {
+                        TokenType.L_PAREN -> depth++
+                        TokenType.R_PAREN -> if (--depth == 0) break
+                        TokenType.NEWLINE, TokenType.EOF -> return false
+                        else -> {}
+                    }
+                    at++
+                }
+                at++
+            }
+            when (tokens.getOrNull(at)?.type) {
+                TokenType.ARROW -> return true
+                TokenType.COMMA -> at++
+                else -> return false
+            }
+        }
+    }
+
+    /**
      * Postfix chain: member access (`a.b`), indexing (`a[i]`), and calls (`f(...)`,
      * `a.m(...)`). Repeated left-associatively, e.g. `a.b[i].c()`.
      */
@@ -11967,8 +12001,7 @@ class Parser(
             if (check(TokenType.NEWLINE)) {
                 var ahead = current
                 while (tokens.getOrNull(ahead)?.type == TokenType.NEWLINE) ahead++
-                val opensWhenArm = tokens.getOrNull(ahead + 2)?.type == TokenType.ARROW &&
-                    tokens.getOrNull(ahead + 1)?.type == TokenType.IDENTIFIER
+                val opensWhenArm = opensWhenArmAt(ahead)
                 if (tokens.getOrNull(ahead)?.type == TokenType.DOT &&
                     tokens.getOrNull(ahead + 1)?.type != TokenType.AMP &&
                     tokens.getOrNull(ahead + 1)?.type != TokenType.BANG &&

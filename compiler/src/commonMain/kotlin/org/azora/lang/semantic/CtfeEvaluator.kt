@@ -1803,111 +1803,126 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
 
         // Interpret the function body
-        return interpretBody(funcDecl.body, env, program, line)
+        return (interpretBody(funcDecl.body, env, program, line) as? BodyOutcome.Returned)?.value
     }
 
-    private fun interpretBody(body: List<Stmt>, env: MutableMap<String, Expr>, program: Program, line: Int): Expr? {
+    /**
+     * What interpreting a block came to. A block that runs off its end is not
+     * the same as one this evaluator could not follow: after the first the
+     * enclosing block carries on, after the second the whole call is left for
+     * runtime. Both used to be `null`, so `if id == 0 { return null }` - a
+     * `return` whose value is not a constant - read as the branch falling
+     * through, and the call folded to the `return` after it.
+     */
+    private sealed interface BodyOutcome {
+        data class Returned(val value: Expr) : BodyOutcome
+        data object FellThrough : BodyOutcome
+        data object Unknown : BodyOutcome
+    }
+
+    private fun interpretBody(body: List<Stmt>, env: MutableMap<String, Expr>, program: Program, line: Int): BodyOutcome {
         for (stmt in body) {
             when (stmt) {
                 is Stmt.Import -> Unit
                 is Stmt.VarDecl -> {
-                    val value = evalExpr(stmt.initializer, env, program) ?: return null
+                    val value = evalExpr(stmt.initializer, env, program) ?: return BodyOutcome.Unknown
                     env[stmt.name] = value
                 }
-                is Stmt.Exchange -> return null // runtime storage exchange is not a CTFE value
-                is Stmt.RemDecl -> return null // reactive state, not CTCE-evaluable
-                is Stmt.Effect -> return null // effects are not CTCE-evaluable
-                is Stmt.UsingContext -> return null // contextual dispatch is resolved semantically
+                is Stmt.Exchange -> return BodyOutcome.Unknown // runtime storage exchange is not a CTFE value
+                is Stmt.RemDecl -> return BodyOutcome.Unknown // reactive state, not CTCE-evaluable
+                is Stmt.Effect -> return BodyOutcome.Unknown // effects are not CTCE-evaluable
+                is Stmt.UsingContext -> return BodyOutcome.Unknown // contextual dispatch is resolved semantically
                 is Stmt.FinDecl -> {
-                    val value = evalExpr(stmt.initializer, env, program) ?: return null
+                    val value = evalExpr(stmt.initializer, env, program) ?: return BodyOutcome.Unknown
                     env[stmt.name] = value
                 }
                 is Stmt.Assignment -> {
-                    val value = evalExpr(stmt.value, env, program) ?: return null
+                    val value = evalExpr(stmt.value, env, program) ?: return BodyOutcome.Unknown
                     env[stmt.name] = value
                 }
                 is Stmt.Return -> {
-                    return if (stmt.value != null) evalExpr(stmt.value, env, program) else null
+                    val value = stmt.value?.let { evalExpr(it, env, program) }
+                    return if (value != null) BodyOutcome.Returned(value) else BodyOutcome.Unknown
                 }
                 is Stmt.ExprStmt -> {
                     // Side-effecting expressions can't be CTCE'd
-                    return null
+                    return BodyOutcome.Unknown
                 }
-                is Stmt.DerefAssign -> return null // pointer store is not CTCE-evaluable
-                is Stmt.Yield -> return null // generators are not CTCE-evaluable
+                is Stmt.DerefAssign -> return BodyOutcome.Unknown // pointer store is not CTCE-evaluable
+                is Stmt.Yield -> return BodyOutcome.Unknown // generators are not CTCE-evaluable
                 is Stmt.If -> {
-                    val cond = evalExpr(stmt.condition, env, program) ?: return null
-                    if (cond !is Expr.BoolLiteral) return null
+                    val cond = evalExpr(stmt.condition, env, program) ?: return BodyOutcome.Unknown
+                    if (cond !is Expr.BoolLiteral) return BodyOutcome.Unknown
                     val branch = if (cond.value) stmt.thenBranch else (stmt.elseBranch ?: continue)
                     val result = interpretBody(branch, env, program, line)
-                    if (result != null) return result
+                    if (result != BodyOutcome.FellThrough) return result
                 }
                 is Stmt.InlineIf -> {
-                    val cond = evalExpr(stmt.condition, env, program) ?: return null
-                    if (cond !is Expr.BoolLiteral) return null
+                    val cond = evalExpr(stmt.condition, env, program) ?: return BodyOutcome.Unknown
+                    if (cond !is Expr.BoolLiteral) return BodyOutcome.Unknown
                     val branch = if (cond.value) stmt.thenBranch else (stmt.elseBranch ?: continue)
                     val result = interpretBody(branch, env, program, line)
-                    if (result != null) return result
+                    if (result != BodyOutcome.FellThrough) return result
                 }
                 is Stmt.InlineFor -> {
-                    val range = stmt.iterable as? Expr.Range ?: return null
-                    val s = (evalExpr(range.from, env, program) as? Expr.IntLiteral)?.value ?: return null
-                    val e = (evalExpr(range.to, env, program) as? Expr.IntLiteral)?.value ?: return null
+                    val range = stmt.iterable as? Expr.Range ?: return BodyOutcome.Unknown
+                    val s = (evalExpr(range.from, env, program) as? Expr.IntLiteral)?.value ?: return BodyOutcome.Unknown
+                    val e = (evalExpr(range.to, env, program) as? Expr.IntLiteral)?.value ?: return BodyOutcome.Unknown
                     for (i in range.constantProgression(s, e)) {
                         env[stmt.name] = Expr.IntLiteral(i, stmt.line)
                         val result = interpretBody(stmt.body, env, program, line)
-                        if (result != null) return result
+                        if (result != BodyOutcome.FellThrough) return result
                     }
                 }
                 is Stmt.DeepInlineIf -> {
-                    val cond = evalExpr(stmt.condition, env, program) ?: return null
-                    if (cond !is Expr.BoolLiteral) return null
+                    val cond = evalExpr(stmt.condition, env, program) ?: return BodyOutcome.Unknown
+                    if (cond !is Expr.BoolLiteral) return BodyOutcome.Unknown
                     val branch = if (cond.value) stmt.thenBranch else (stmt.elseBranch ?: continue)
                     val result = interpretBody(branch, env, program, line)
-                    if (result != null) return result
+                    if (result != BodyOutcome.FellThrough) return result
                 }
                 is Stmt.InlineFin -> {
-                    val value = evalExpr(stmt.initializer, env, program) ?: return null
+                    val value = evalExpr(stmt.initializer, env, program) ?: return BodyOutcome.Unknown
                     env[stmt.name] = value
                 }
                 is Stmt.InlineLet -> {
-                    val value = evalExpr(stmt.initializer, env, program) ?: return null
+                    val value = evalExpr(stmt.initializer, env, program) ?: return BodyOutcome.Unknown
                     env[stmt.name] = value
                 }
                 is Stmt.InlineVar -> {
-                    val value = evalExpr(stmt.initializer, env, program) ?: return null
+                    val value = evalExpr(stmt.initializer, env, program) ?: return BodyOutcome.Unknown
                     env[stmt.name] = value
                 }
                 is Stmt.InlineAssignment -> {
-                    val value = evalExpr(stmt.value, env, program) ?: return null
+                    val value = evalExpr(stmt.value, env, program) ?: return BodyOutcome.Unknown
                     env[stmt.name] = value
                 }
                 is Stmt.InlineBlock -> {
                     val result = interpretBody(stmt.body, env, program, line)
-                    if (result != null) return result
+                    if (result != BodyOutcome.FellThrough) return result
                 }
                 is Stmt.DeepInlineBlock -> {
                     val result = interpretBody(stmt.body, env, program, line)
-                    if (result != null) return result
+                    if (result != BodyOutcome.FellThrough) return result
                 }
                 is Stmt.NoInline -> {
                     // In CTCE interpretation, noinline is just pass-through
                     val result = interpretBody(listOf(stmt.stmt), env, program, line)
-                    if (result != null) return result
+                    if (result != BodyOutcome.FellThrough) return result
                 }
                 is Stmt.LetDecl -> {
-                    val value = evalExpr(stmt.initializer, env, program) ?: return null
+                    val value = evalExpr(stmt.initializer, env, program) ?: return BodyOutcome.Unknown
                     env[stmt.name] = value
                 }
                 is Stmt.Scope -> {
                     val result = interpretBody(stmt.body, env, program, line)
-                    if (result != null) return result
+                    if (result != BodyOutcome.FellThrough) return result
                 }
-                is Stmt.Assert -> return null // side-effecting - can't CTCE
-                is Stmt.Trace -> return null // side-effecting - can't CTCE
+                is Stmt.Assert -> return BodyOutcome.Unknown // side-effecting - can't CTCE
+                is Stmt.Trace -> return BodyOutcome.Unknown // side-effecting - can't CTCE
                 is Stmt.InlineAssert -> {
-                    val cond = evalExpr(stmt.condition, env, program) ?: return null
-                    if (cond is Expr.BoolLiteral && !cond.value) return null
+                    val cond = evalExpr(stmt.condition, env, program) ?: return BodyOutcome.Unknown
+                    if (cond is Expr.BoolLiteral && !cond.value) return BodyOutcome.Unknown
                 }
                 is Stmt.InlineTrace -> {} // no-op during interpretation
                 is Stmt.While, is Stmt.For, is Stmt.Loop,
@@ -1915,10 +1930,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 is Stmt.IndexAssign, is Stmt.MemberAssign,
                 is Stmt.When,
                 is Stmt.Throw, is Stmt.Try, is Stmt.Panic,
-                is Stmt.Defer -> return null // can't be evaluated at compile time
+                is Stmt.Defer -> return BodyOutcome.Unknown // can't be evaluated at compile time
             }
         }
-        return null
+        return BodyOutcome.FellThrough
     }
 
     private fun evalExpr(expr: Expr, env: Map<String, Expr>, program: Program): Expr? {

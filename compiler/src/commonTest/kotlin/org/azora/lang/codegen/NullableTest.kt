@@ -84,4 +84,20 @@ class NullableTest {
             }
         """.trimIndent()))
     }
+
+    /**
+     * `?.size` on a `String?` is typed `Int?`, as `?.length` is, but the
+     * interpreter only answered `length` and stopped with "no member 'size'".
+     */
+    @Test fun safeSizeOfANullableString() {
+        assertEquals("3\n0", run("""
+            import std.io
+            func main() {
+                var name: String? = "Ada"
+                println(name?.size ?? 0)
+                name = null
+                println(name?.size ?? 0)
+            }
+        """.trimIndent()))
+    }
 }

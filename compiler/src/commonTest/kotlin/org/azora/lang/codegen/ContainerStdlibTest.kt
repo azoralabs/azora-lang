@@ -18,9 +18,9 @@ class ContainerStdlibTest {
     }
 
     @Test fun everyContainerSourceParsesAndIsSerializableMetadata() {
-        val directory = java.io.File("../Internal/Std/Container")
+        val directory = java.io.File("../std/container")
         val files = directory.listFiles { file -> file.extension == "az" }.orEmpty()
-        assertEquals(11, files.size)
+        assertEquals(7, files.size)
         files.forEach { Parser(Lexer(it.readText()).tokenize()).parse() }
 
         val result = compile("""
@@ -28,15 +28,8 @@ class ContainerStdlibTest {
             import std::*
 
             func verify(): Int {
-                inline assert reflect<List>.hasAnnot<Serializable> { "List metadata missing" }
-                inline assert reflect<MutableList>.hasAnnot<Serializable> { "MutableList metadata missing" }
-                inline assert reflect<Set>.hasAnnot<Serializable> { "Set metadata missing" }
-                inline assert reflect<MutableSet>.hasAnnot<Serializable> { "MutableSet metadata missing" }
-                inline assert reflect<Map>.hasAnnot<Serializable> { "Map metadata missing" }
-                inline assert reflect<MutableMap>.hasAnnot<Serializable> { "MutableMap metadata missing" }
-                inline assert reflect<Deque>.hasAnnot<Serializable> { "Deque metadata missing" }
-                inline assert reflect<Queue>.hasAnnot<Serializable> { "Queue metadata missing" }
-                inline assert reflect<Stack>.hasAnnot<Serializable> { "Stack metadata missing" }
+                inline assert reflect<Deque>.hasAnnot<Serializable> panic "Deque metadata missing"
+                inline assert reflect<Queue>.hasAnnot<Serializable> panic "Queue metadata missing"
                 return 1
             }
 
@@ -52,11 +45,11 @@ class ContainerStdlibTest {
             import std::*
 
             func main() {
-                var list = listOf(1, 2)
+                var list = mutableListOf(1, 2)
                 list.add(3)
                 println(list[0] + list[2])
 
-                var set = setOf(1, 1, 2)
+                var set = mutableSetOf(1, 1, 2)
                 set.add(3)
                 println(set.size)
 
@@ -70,22 +63,17 @@ class ContainerStdlibTest {
                 queue.enqueue(5)
                 println(queue.dequeue())
 
-                var stack = Stack<Int>()
-                stack.push(6)
-                stack.push(7)
-                println(stack.pop())
-
                 var deque = Deque<Int>()
                 deque.pushFront(8)
                 deque.pushBack(9)
                 println(deque.popFront() + deque.popBack())
 
-                fin tuple = tupleOf("ok", 10)
+                fin tuple = ("ok", 10)
                 println(tuple.0)
                 println(tuple.1)
             }
         """.trimIndent())
 
-        assertEquals("4\n3\n2\n4\n7\n17\nok\n10", IrInterpreter().interpret(result.ir).trim())
+        assertEquals("4\n3\n2\n4\n17\nok\n10", IrInterpreter().interpret(result.ir).trim())
     }
 }

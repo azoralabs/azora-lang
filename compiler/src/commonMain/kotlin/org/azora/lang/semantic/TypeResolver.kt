@@ -3273,7 +3273,10 @@ class TypeResolver(private val table: SymbolTable) {
                                 return null
                             }
                             for (i in expr.args.indices) {
-                                val at = resolveContextualArgument(expr.args[i], variant.second[i]) ?: return null
+                                val resolved = resolveContextualArgument(expr.args[i], variant.second[i]) ?: return null
+                                // `Shape.Circle(2.0)` - an unsuffixed literal takes the
+                                // payload's width, as it does a field's or a parameter's.
+                                val at = adoptLiteralType(expr.args[i], resolved, variant.second[i])
                                 if (!isCompatible(variant.second[i], at)) {
                                     errors.add("line ${expr.line}: payload ${i+1} of '${expr.name}': expected ${variant.second[i]}, got $at")
                                 }

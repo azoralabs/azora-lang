@@ -123,7 +123,20 @@ class IrInterpreter {
         "trunc" to { a -> kotlin.math.truncate(a[0] as Double) },
         "cbrt" to { a -> kotlin.math.cbrt(a[0] as Double) },
         "exp2" to { a -> 2.0.pow(a[0] as Double) },
+        // `std.time`'s host hooks. A native or WebAssembly build links its own
+        // runtime's clocks; without these the interpreter could not tell the time.
+        "azoraTimeUnixNanoseconds" to { _ -> unixNanoseconds() },
+        "azoraTimeMonotonicNanoseconds" to { _ -> monotonicOrigin.elapsedNow().inWholeNanoseconds },
     )
+
+    /** The reading `azoraTimeMonotonicNanoseconds` counts from; only differences between readings matter. */
+    private val monotonicOrigin = kotlin.time.TimeSource.Monotonic.markNow()
+
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    private fun unixNanoseconds(): Long {
+        val now = kotlin.time.Clock.System.now()
+        return now.epochSeconds * 1_000_000_000L + now.nanosecondsOfSecond
+    }
 
     /**
      * The intrinsic behind a `bridge func`, found by name.
@@ -1717,7 +1730,7 @@ class IrInterpreter {
                     else -> error("no member '$fieldName' on array")
                 }
                 is String -> when (fieldName) {
-                    "length" -> target.length.toLong()
+                    "length", "size" -> target.length.toLong()
                     "isEmpty" -> target.isEmpty()
                     "isNotEmpty" -> target.isNotEmpty()
                     else -> error("no member '$fieldName' on string")
@@ -1846,10 +1859,19 @@ class IrInterpreter {
             return (args[0] as List<Char>).joinToString("")
         }
         if (expr.name.isIntrinsic("isAlpha")) return (args[0] as Char).isLetter()
-        // `Array::fill<T>(count)` - allocate `count` default (null) slots.
+        // `Array::fill<T>(count)` - allocate `count` slots holding T's zero value,
+        // the one a field without a default starts at.
         if (expr.name.isIntrinsic("Array_fill")) {
             val count = (args[0] as Number).toInt()
-            return MutableList<Any?>(count) { null }
+            val zero: Any? = when ((expr.type as? IrType.Array)?.element) {
+                is IrType.Integer, is IrType.ISize, is IrType.USize -> 0L
+                is IrType.Double, is IrType.Float -> 0.0
+                is IrType.String -> ""
+                is IrType.Bool -> false
+                is IrType.Char -> '\u0000'
+                else -> null
+            }
+            return MutableList<Any?>(count) { zero }
         }
         if (expr.name.isIntrinsic("async")) {
             val thunk = args.firstOrNull() as? Closure ?: error("async expects a task body")

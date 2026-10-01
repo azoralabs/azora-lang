@@ -18,7 +18,7 @@ class TimeStdlibTest {
     }
 
     @Test fun timeSourceAndAllEmbeddedTestsParse() {
-        val source = java.io.File("../Internal/Std/Time.az").readText()
+        val source = java.io.File("../std/time.az").readText()
         val program = Parser(Lexer(source).tokenize()).parse()
 
         assertTrue(program.tests.size >= 30, "expected a broad Time.az suite, got ${program.tests.size}")
@@ -83,4 +83,20 @@ class TimeStdlibTest {
 
         assertEquals("-1", IrInterpreter().interpret(output.ir).trim())
     }
+    @Test fun interpreterProvidesSystemClockHooks() {
+        val output = compile("""
+            import std.time
+            import std.io
+
+            func main() {
+                println(now().epochSecond > 1700000000)
+                fin first = monotonicNow()
+                fin second = monotonicNow()
+                fin elapsed = second.elapsedSince(first) catch Duration(-1)
+                println(elapsed.seconds >= 0)
+            }
+        """.trimIndent())
+        assertEquals("true\ntrue", IrInterpreter().interpret(output.ir).trim())
+    }
+
 }

@@ -86,7 +86,7 @@ impl Queue<T> {
      * @throws AssertionError if the queue is empty.
      */
     @Experimental(since: "0.1")
-    func &.dequeue(): T
+    func !.dequeue(): T
     in {
         assert self.size > 0 panic "Queue is empty"
     } scope {

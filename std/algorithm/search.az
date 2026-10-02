@@ -61,7 +61,8 @@ func<T: Order> linearSearch(arr: Array<T>, target: T): Int {
  */
 @Experimental(since: "0.1")
 func<T: Order> binarySearch(arr: Array<T>, target: T): Int {
-    var {lo, hi}: Int = {0, arr.size - 1}
+    var lo: Int = 0
+    var hi: Int = arr.size - 1
     while lo <= hi {
         fin mid = (lo + hi) / 2
         if arr[mid] == target then return mid

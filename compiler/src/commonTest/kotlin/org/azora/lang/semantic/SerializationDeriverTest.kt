@@ -102,7 +102,8 @@ class SerializationDeriverTest {
     @Test fun ignoreAndRequiredOnOneFieldAreRejected() {
         val result = derive("""
             @Serializable pack User { fin password: String = "" }
-            impl [SerialIgnore, SerialRequired] for User::password {}
+            impl SerialIgnore for User::password {}
+            impl SerialRequired for User::password {}
         """.trimIndent())
 
         assertTrue(result.errors.any { "both SerialIgnore and SerialRequired" in it }, result.errors.toString())

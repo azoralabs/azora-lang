@@ -148,27 +148,5 @@ class DeclarationBodyTest {
         assertIs<Stmt.Assert>(scope.body.single())
     }
 
-    @Test fun groupedIfBindingsAcceptThenWithoutAddingAnOuterBlock() {
-        val function = parse("""
-            func main() {
-                var {sign, index}: Int = if negative
-                then {-1, 1}
-                else {1, 0}
-            }
-        """).functions.single()
-        val condition = assertIs<Stmt.FinDecl>(function.body[0])
-        val bindings = function.body.filterIsInstance<Stmt.VarDecl>()
-        assertEquals(listOf("sign", "index"), bindings.map { it.name })
-        for (binding in bindings) {
-            val value = assertIs<Expr.IfExpr>(binding.initializer)
-            assertEquals(condition.name, assertIs<Expr.Identifier>(value.condition).name)
-        }
-    }
 
-    @Test fun groupedIfBindingsStillCheckBranchArity() {
-        val error = assertFailsWith<IllegalStateException> {
-            parse("func main() { var {a, b}: Int = if ready then {1} else {2, 3} }")
-        }
-        assertTrue("one value per name" in error.message.orEmpty(), error.message)
-    }
 }

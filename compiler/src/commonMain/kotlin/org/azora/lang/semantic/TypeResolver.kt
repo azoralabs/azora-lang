@@ -936,7 +936,7 @@ class TypeResolver(private val table: SymbolTable) {
             is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
             else -> null
         } ?: return
-        inferredHead(argument)?.let { table.defineInferredMember(it.line, it.column, owner, it.instance) }
+        inferredHead(argument)?.let { table.defineInferredMember(it.line, it.column, owner) }
     }
 
     /**
@@ -977,7 +977,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Alloc -> {
                 val pointee = (expected as? IrType.Pointer)?.inner ?: expected
                 elementOwnerName(pointee)?.let { owner ->
-                    inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, owner, it.instance) }
+                    inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, owner) }
                 }
                 // `alloc [10, 20, 30]` - the literal is the run of slots the
                 // pointer points at, as `alloc .(…)`'s arguments are, not one
@@ -1114,7 +1114,7 @@ class TypeResolver(private val table: SymbolTable) {
             is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
             // An annotation argument was matched to its field before this pass,
             // so the type it chose is already recorded.
-            else -> table.lookupInferredMember(expr.line, expr.column, expr.instance)
+            else -> table.lookupInferredMember(expr.line, expr.column)
         }
         if (owner == null) {
             errors.add(
@@ -1123,7 +1123,7 @@ class TypeResolver(private val table: SymbolTable) {
             )
             return null
         }
-        table.defineInferredMember(expr.line, expr.column, owner, expr.instance)
+        table.defineInferredMember(expr.line, expr.column, owner)
         expr.ctorArgs?.let { args ->
             // The name a type is registered under, which is not always the one it
             // is written by: a type declared in a scope is keyed by its qualified
@@ -2184,7 +2184,7 @@ class TypeResolver(private val table: SymbolTable) {
         // A bridge pack cannot be constructed, so `.()` into one is not a
         // construction: `T*` erases to `Any*`, and what the pointer holds is the
         // run of values, not one `Any`.
-        val owner = table.lookupInferredMember(member.line, member.column, member.instance)
+        val owner = table.lookupInferredMember(member.line, member.column)
         if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
         return Expr.ArrayLiteral(args, member.line, member.column, member.length)
     }
@@ -2192,7 +2192,7 @@ class TypeResolver(private val table: SymbolTable) {
     /** What one slot of an allocated repetition holds, or null if nothing said. */
     private fun repeatedElementType(construct: Expr): IrType? {
         val name = when (construct) {
-            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column, construct.instance)
+            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column)
             is Expr.Call -> construct.callee
             else -> null
         } ?: return null
@@ -3164,7 +3164,7 @@ class TypeResolver(private val table: SymbolTable) {
                     // (`resolveBinaryType`); a property has to, for the same
                     // reason and on the same grounds.
                     targetType == IrType.Any -> IrType.Any
-                    // `Hash`'s member on a built-in. `impl [… Hash] for Integers`
+                    // `Hash`'s member on a built-in. A primitive's `Hash` conformance
                     // states the conformance in std; the value comes from the
                     // backend rather than from a written member, so there is
                     // nothing in the method table to find.
@@ -3189,44 +3189,6 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.MethodCall -> {
-                // `{2, 3}.add()` - a grouping call supplying several contextual receivers.
-                val groupTarget = expr.target as? Expr.TupleLit
-                if (groupTarget != null) {
-                    val given = groupTarget.elements.map { resolveExpr(it) ?: return null }
-                    val owner = given.firstOrNull() as? IrType.Named
-                    val methodSymbol = owner?.let { table.lookupMethod(it.name, expr.name) }
-                    val method = methodSymbol?.let(table::lookupFunction)
-                    if (method != null && method.contextualParams == given.size - 1) {
-                        val expectedReceivers = method.params.take(given.size).map { it.second }
-                        expectedReceivers.zip(given).forEachIndexed { index, (expected, actual) ->
-                            if (!isCompatible(expected, actual)) {
-                                errors.add("line ${expr.line}: receiver ${index + 1} of '${expr.name}' expects $expected, got $actual")
-                            }
-                        }
-                        val written = method.params.drop(given.size)
-                        if (expr.args.size != written.size) {
-                            errors.add("line ${expr.line}: method '${expr.name}' expects ${written.size} args, got ${expr.args.size}")
-                            return null
-                        }
-                        expr.args.zip(written).forEachIndexed { index, (argument, parameter) ->
-                            val actual = resolveContextualArgument(argument, parameter.second) ?: return null
-                            if (!isCompatible(parameter.second, adoptLiteralType(argument, actual, parameter.second))) {
-                                errors.add("line ${expr.line}: arg ${index + 1} of '${expr.name}': expected ${parameter.second}, got $actual")
-                            }
-                        }
-                        return method.returnType
-                    }
-                    val callable = table.lookupVariable(expr.name)?.type as? IrType.Function
-                    if (callable != null && callable.receivers.isNotEmpty()) {
-                        return resolveCallableArguments(
-                            expr.name,
-                            callable,
-                            expr.args,
-                            expr.line,
-                            explicitReceivers = given,
-                        )
-                    }
-                }
                 // `#expr` (oper#) - hash; returns ULong regardless of operand type
                 // (the operand may be a generic K erased to Any, whose concrete type
                 // supplies oper# at runtime).

@@ -697,9 +697,9 @@ and still emit a token so parser/highlighter work continues.
 ### 7.3 Parser
 
 Variants cover unexpected tokens with bounded expectations, missing delimiters,
-invalid modifier combinations, invalid assignment targets, malformed grouping,
+invalid modifier combinations, invalid assignment targets, malformed expressions,
 collection, tuple, pattern, or generic syntax, invalid type tuples such as
-`derives (...)`/`impl (...)`, duplicate named arguments/bindings, illegal
+`derives Spec`/`impl Spec for Type`, duplicate named arguments/bindings, illegal
 expression/type positions, ownership syntax, and recovery limits.
 
 Receiver-specific parser variants distinguish named groups
@@ -735,7 +735,7 @@ Variants cover missing/ambiguous macro arms, failed matching, recursion/size
 limits, invalid expanded syntax, unsupported derives, generated member
 conflicts, and generated type/visibility/ownership failures.
 
-For `pack Point derives (Equal, Hash, Display)`, failure in generated `Hash`
+For `pack Point derives Equal derives Hash derives Display`, failure in generated `Hash`
 code points primarily to `Hash`; generated member and derive definition are
 related locations.
 
@@ -750,8 +750,7 @@ receiver types. The duplicate-receiver variant records both receiver spans, the
 normalized base type, whether equality appeared only after generic
 substitution, and fixes that suggest a wrapper context or an ordinary
 parameter. It is used consistently for named receiver heads, lambda headers,
-callable receiver types, expanded variadic receiver packs, `using` clauses, and
-direct brace receiver groups.
+callable receiver types, expanded variadic receiver packs, and `using` clauses.
 
 Candidates are produced by semantic lookup. The renderer may say “did you
 mean,” while fixes store exact spelling and symbol identity.
@@ -923,26 +922,6 @@ branch transfer related. Loop analysis accounts for the next iteration. After a
 root ownership error, poisoned state suppresses compatible downstream cascades
 until an assignment restores a defined state.
 
-### 8.11 Group fan-out and one-shot broadcast
-
-```azora
-fin {x, y} = next()   // next() evaluates once for each declaration
-fin {x, y} <- next()  // next() evaluates once and broadcasts
-```
-
-Repeated evaluation can produce two independently owned results. One-shot `<-`
-cannot silently create two owners for a non-copyable value:
-
-- a `Copy` value may be copied to each target;
-- a shared borrow may feed compatible shared-borrow targets;
-- tuple/group destructuring moves distinct projections and is semantically
-  different from broadcast;
-- a non-`Copy` owned value cannot feed multiple owning bindings.
-
-`AZ-OWN-0012` underlines `<-`, relates the targets, and offers choices: repeated
-evaluation with `=`, shared borrowing, explicit selected clones, or tuple
-destructuring. No automatic clone is inserted.
-
 ### 8.12 Proposed ownership codes
 
 | Code | Meaning |
@@ -958,7 +937,6 @@ destructuring. No automatic clone is inserted.
 | `AZ-OWN-0009` | destruction obligation unmet |
 | `AZ-OWN-0010` | double destruction/purge |
 | `AZ-OWN-0011` | forbidden transfer boundary |
-| `AZ-OWN-0012` | one-shot broadcast creates multiple owners |
 | `AZ-BOR-0001` | unstable place/temporary borrowed |
 | `AZ-BOR-0002` | shared borrow conflicts with exclusive loan |
 | `AZ-BOR-0003` | exclusive borrow conflicts with active loan |
@@ -1687,7 +1665,7 @@ diagnostics, poison cascade control, caps, and removal after root repair.
 
 Test straight-line code, branches, loops, early returns, errors, closures,
 fields, indexes, tuple projections, take/lend, shared/exclusive loans, await,
-destruction, one-shot broadcast, and interprocedural return contracts. Assert
+destruction and interprocedural return contracts. Assert
 both violating and causal locations.
 
 ### 23.5 Rendering

@@ -641,7 +641,7 @@ class StdlibInjectionTest {
 
     @Test fun derivingASpecNeedsItsImport() {
         val result = Compiler().compile("""
-            pack Point derives (Equal) {
+            pack Point derives Equal {
                 x: Int
             }
         """.trimIndent())
@@ -657,7 +657,7 @@ class StdlibInjectionTest {
             import std.io
             import std.traits::Equal
 
-            pack Point derives (Equal) {
+            pack Point derives Equal {
                 x: Int
             }
 

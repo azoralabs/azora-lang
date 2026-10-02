@@ -354,13 +354,6 @@ sealed class Expr {
          * the type's constructor instead of one of its members.
          */
         val ctorArgs: List<Expr>? = null,
-        /**
-         * Which copy of a source position this is. A grouped assignment writes
-         * its value once and gives each target its own copy
-         * (`self.{keys, hashes} = alloc .() * n`); each copy is resolved against
-         * its own target, so what `.` means is recorded per copy.
-         */
-        val instance: Int = 0,
     ) : Expr()
 
     data class Member(
@@ -398,23 +391,12 @@ sealed class Expr {
      */
     data class StringTemplate(val parts: List<StringTemplatePart>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /**
-     * Tuple literal `(a, b, c)` or a grouped receiver `{a, b, c}`.
-     *
-     * Grouped receivers keep [grouped] set while postfix operations are read;
-     * the statement parser can then broadcast the complete operation pairwise
-     * instead of treating the values as an ordinary tuple.
-     */
+    /** Tuple value `(a, b, c)`. */
     data class TupleLit(
         val elements: List<Expr>,
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
-        val grouped: Boolean = false,
-        /** True for `receiver.{call(), call()}` sequencing groups. */
-        val sequence: Boolean = false,
-        /** The receiver expression written before a sequencing group, if any. */
-        val sequenceReceiver: Expr? = null,
     ) : Expr()
 
     /** Variant literal `var(a, b, c)` - constructs a `Var<...>` holding exactly one of the given

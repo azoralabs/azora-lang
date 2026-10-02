@@ -149,7 +149,8 @@ impl Path {
     /** The final segment without its extension: `a/b/c.az` → `c`. */
     @Experimental(since: "0.1")
     prop &.stem: String {
-        fin {name, dot}: {String, Int} = {self.fileName, _lastDot(name)}
+        fin name: String = self.fileName
+        fin dot: Int = _lastDot(name)
         return if dot <= 0 then name else substring(name, 0, dot)
     }
 
@@ -161,14 +162,16 @@ impl Path {
      */
     @Experimental(since: "0.1")
     prop &.extension: String {
-        fin {name, dot}: {String, Int} = {self.fileName, _lastDot(name)}
+        fin name: String = self.fileName
+        fin dot: Int = _lastDot(name)
         return if dot <= 0 then "" else substring(name, dot + 1, stringLength(name))
     }
 
     /** This path with its extension replaced (or added when it had none). */
     @Experimental(since: "0.1")
     func &.withExtension(extension: String): Path {
-        fin {base, name}: {Path, String} = self.{parent, stem}
+        fin base: Path = self.parent
+        fin name: String = self.stem
         fin renamed: String = if stringLength(extension) == 0 then name else name + "." + extension
         return if self.parent.text == "." && _lastSeparator(self.text) < 0 then .(renamed)
         else base.join(renamed)

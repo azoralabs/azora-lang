@@ -34,10 +34,12 @@ import std.traits::Order
 func<T: Order> mergeSort(arr: Array<T>): Array<T> {
     if arr.size <= 1 then return arr
     var mid: Int = arr.size / 2
-    var {left, right}: Array<T> = {.() * mid, .() * arr.size - mid}
+    var left: Array<T> = .() * mid
+    var right: Array<T> = .() * arr.size - mid
     for i: Int in 0..<mid then left[i] = arr[i]
     for j: Int in 0..<arr.size - mid then right[j] = arr[mid + j]
-    var {sortedLeft, sortedRight}: Array<T> = mergeSort{(left), (right)}
+    var sortedLeft: Array<T> = mergeSort(left)
+    var sortedRight: Array<T> = mergeSort(right)
     return merge(sortedLeft, sortedRight)
 }
 
@@ -47,7 +49,9 @@ func<T: Order> mergeSort(arr: Array<T>): Array<T> {
 @Experimental(since: "0.1")
 func<T: Order> merge(a: Array<T>, b: Array<T>): Array<T> {
     var result: Array<T> = .() * a.size + b.size
-    var {ri, ai, bi}: Int = 0
+    var ri: Int = 0
+    var ai: Int = 0
+    var bi: Int = 0
     while ai < a.size && bi < b.size then result[ri++] = if a[ai] <= b[bi] then a[ai++] else b[bi++]
     while ai < a.size then result[ri++] = a[ai++]
     while bi < b.size then result[ri++] = b[bi++]
@@ -98,7 +102,9 @@ out {
             if mid > count then mid = count
             var hi = lo + width + width
             if hi > count then hi = count
-            var {left, right, at}: Int = {lo, mid, lo}
+            var left: Int = lo
+            var right: Int = mid
+            var at: Int = lo
             while at < hi {
                 fin takeLeft: Bool = when {
                     left >= mid -> false
@@ -159,9 +165,13 @@ func<T> groupBy(arr: Array<T>, key: (T) -> T): Array<T> {
 @Experimental(since: "0.1")
 func<T> interleave(a: Array<T>, b: Array<T>): Array<T> {
     var result: Array<T> = .() * a.size + b.size
-    var {ri, maxLen}: Int = {0, a.size}
+    var ri: Int = 0
+    var maxLen: Int = a.size
     if b.size > maxLen then maxLen = b.size
-    for i: Int in 0..<maxLen then if i < {a, b}.size then result[ri++] = {a, b}[i]
+    for i: Int in 0..<maxLen {
+        if i < a.size then result[ri++] = a[i]
+        if i < b.size then result[ri++] = b[i]
+    }
     return result
 }
 
@@ -172,7 +182,8 @@ func<T> interleave(a: Array<T>, b: Array<T>): Array<T> {
 func<T> windows(arr: Array<T>, size: Int): Array<T> {
     fin count: Int = if arr.size >= size then arr.size - size + 1 else 0
     var result: Array<T> = .() * count
-    var {ri, i}: Int = 0
+    var ri: Int = 0
+    var i: Int = 0
     while i + size <= arr.size {
         var w: Array<T> = .() * size
         for j: Int in 0..<size then w[j] = arr[i + j]

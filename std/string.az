@@ -34,7 +34,7 @@ import std.traits::{PartialEqual, Equal, Order, Hash}
 
 /** A string of Unicode code points, ordered lexicographically by code point. */
 @Since("0.1")
-bridge pack String derives (PartialEqual, Equal, Order, Hash)
+bridge pack String derives PartialEqual derives Equal derives Order derives Hash
 
 /**
  *
@@ -400,7 +400,8 @@ impl StringBuilder {
      */
     @Since("0.1")
     func !.clear(): Unit {
-        self.{parts, count} = {.() * 16, 0}
+        self.parts = .() * 16
+        self.count = 0
     }
 }
 

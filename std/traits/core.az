@@ -71,7 +71,8 @@ inline for Ty in Numbers {
      * values, so duplicating one is a register move and cannot alias.
      */
     @Since("0.1")
-    derive (Clone, Copy) for Ty
+    derive Clone for Ty
+    derive Copy for Ty
 }
 
 inline for Ty in [Bool, Char, String] {
@@ -84,5 +85,6 @@ inline for Ty in [Bool, Char, String] {
      * which is not a thing.
      */
     @Since("0.1")
-    derive (Clone, Copy) for Ty
+    derive Clone for Ty
+    derive Copy for Ty
 }

@@ -343,12 +343,18 @@ impl HashMap<K, V> {
     }
 
     func !._rehash(newCapacity: Int) {
-        fin {oldKeys, oldValues, oldHashes, oldOccupied, oldCapacity} = using self {
-            {keys, values, hashes, occupied, capacity}
-        }
+        fin oldKeys = self.keys
+        fin oldValues = self.values
+        fin oldHashes = self.hashes
+        fin oldOccupied = self.occupied
+        fin oldCapacity = self.capacity
 
-        self.{keys, values, hashes, occupied} = alloc .() * newCapacity
-        self.{capacity, _size} = {newCapacity, 0}
+        self.keys = alloc .() * newCapacity
+        self.values = alloc .() * newCapacity
+        self.hashes = alloc .() * newCapacity
+        self.occupied = alloc .() * newCapacity
+        self.capacity = newCapacity
+        self._size = 0
 
         for i in 0..<newCapacity {
             self.occupied[i] = false
@@ -620,9 +626,9 @@ impl LinkedHashMap<K, V> {
         }
         fin previous = self.values[found]
         for i in found..<self._size - 1 {
-            self.{keys[i], values[i], hashes[i]} = using self {
-                {keys[i + 1], values[i + 1], hashes[i + 1]}
-            }
+            self.keys[i] = self.keys[i + 1]
+            self.values[i] = self.values[i + 1]
+            self.hashes[i] = self.hashes[i + 1]
         }
         self._size -= 1
         self._rebuildBuckets(self.bucketCapacity)
@@ -773,25 +779,32 @@ impl TreeMap<K, V> {
 
     func !._grow() {
         fin newCapacity = self.capacity * 2
-        let {
-            newKeys: K*
-            newValues: V*
-            newLeft: Int*
-            newRight: Int*
-            newParent: Int*
-            newHeights: Int*
-            newFreeNext: Int*
-        } = alloc .() * newCapacity
+        let newKeys: K* = alloc .() * newCapacity
+        let newValues: V* = alloc .() * newCapacity
+        let newLeft: Int* = alloc .() * newCapacity
+        let newRight: Int* = alloc .() * newCapacity
+        let newParent: Int* = alloc .() * newCapacity
+        let newHeights: Int* = alloc .() * newCapacity
+        let newFreeNext: Int* = alloc .() * newCapacity
 
         for i in 0..<self.elemCount {
-            {newKeys[i], newValues[i], newLeft[i], newRight[i]
-            newParent[i], newHeights[i], newFreeNext[i]} = using self {
-                {keys[i], values[i], left[i], right[i], parent[i], heights[i], freeNext[i]}
-            }
+            newKeys[i] = self.keys[i]
+            newValues[i] = self.values[i]
+            newLeft[i] = self.left[i]
+            newRight[i] = self.right[i]
+            newParent[i] = self.parent[i]
+            newHeights[i] = self.heights[i]
+            newFreeNext[i] = self.freeNext[i]
         }
         using self { purge [keys, values, left, right, parent, heights, freeNext] }
-        self.{keys, values, left, right, parent, heights, freeNext, capacity} =
-            {newKeys, newValues, newLeft, newRight, newParent, newHeights, newFreeNext, newCapacity}
+        self.keys = newKeys
+        self.values = newValues
+        self.left = newLeft
+        self.right = newRight
+        self.parent = newParent
+        self.heights = newHeights
+        self.freeNext = newFreeNext
+        self.capacity = newCapacity
     }
 
     func !._allocateNode(key: K, value: V, parent: Int): Int {
@@ -805,14 +818,19 @@ impl TreeMap<K, V> {
             elem = self.elemCount
             self.elemCount += 1
         }
-        self.{keys[elem], values[elem], left[elem], right[elem], parent[elem], heights[elem]} =
-            {key, value, -1, -1, parent, 1}
+        self.keys[elem] = key
+        self.values[elem] = value
+        self.left[elem] = -1
+        self.right[elem] = -1
+        self.parent[elem] = parent
+        self.heights[elem] = 1
         self._size += 1
         return elem
     }
 
     func !._releaseNode(elem: Int) {
-        self.{freeNext[elem], freeHead} = {self.freeHead, elem}
+        self.freeNext[elem] = self.freeHead
+        self.freeHead = elem
         self._size -= 1
     }
 
@@ -830,12 +848,15 @@ impl TreeMap<K, V> {
     }
 
     func !._rotateLeft(elem: Int): Int {
-        fin {pivot, oldParent}: Int = {self.right[elem], self.parent[elem]}
+        fin pivot: Int = self.right[elem]
+        fin oldParent: Int = self.parent[elem]
         self.right[elem] = self.left[pivot]
         if self.right[elem] >= 0 {
             self.parent[self.right[elem]] = elem
         }
-        self.{left[pivot], parent[elem], parent[pivot]} = {elem, pivot, oldParent}
+        self.left[pivot] = elem
+        self.parent[elem] = pivot
+        self.parent[pivot] = oldParent
         self._replaceParentChild(oldParent, elem, pivot)
         self._updateHeight(elem)
         self._updateHeight(pivot)
@@ -843,12 +864,15 @@ impl TreeMap<K, V> {
     }
 
     func !._rotateRight(elem: Int): Int {
-        fin {pivot, oldParent}: Int = {self.left[elem], self.parent[elem]}
+        fin pivot: Int = self.left[elem]
+        fin oldParent: Int = self.parent[elem]
         self.left[elem] = self.right[pivot]
         if self.left[elem] >= 0 {
             self.parent[self.left[elem]] = elem
         }
-        self.{right[pivot], parent[elem], parent[pivot]} = {elem, pivot, oldParent}
+        self.right[pivot] = elem
+        self.parent[elem] = pivot
+        self.parent[pivot] = oldParent
         self._replaceParentChild(oldParent, elem, pivot)
         self._updateHeight(elem)
         self._updateHeight(pivot)

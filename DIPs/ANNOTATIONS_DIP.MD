@@ -6,7 +6,7 @@ compile-time metadata, drive derive generators, and are queried via reflection.
 ## Grammar
 
 ```
-DECL  ::= @[DECORATORS] VISIBILITY [bridge] annot @NAME [for TARGETS] [bind BINDINGS] [{ FIELDS }]
+DECL  ::= DECORATORS* VISIBILITY [bridge] annot @NAME [for TARGETS] [bind BINDINGS] [{ FIELDS }]
 
 TARGETS  ::= .Target | [.Target, .Target, …] | .*
 BINDINGS ::= Spec | [Spec, …] | [Spec for .Target, …]
@@ -14,7 +14,6 @@ FIELDS   ::= (fin | var) NAME : Type [= default]         // decorator arguments
 
 APPLY ::= @Name
         | @Name(arg, name: arg)
-        | @[Name, Name(args), …]                          // grouped, one row
 ```
 
 Targets (`DecoTarget`, declared in `std/core.az`): `.Pack`, `.Func`,
@@ -48,23 +47,25 @@ pack Account { … }
 func step() { … }
 ```
 
-### 2.1 Stacked and grouped
+### 2.1 Stacked decorators
 
 ```azora
 @First
 @Second
 pack A { … }
 
-@[First, Second]                 // grouped - equivalent to stacking
+@First
+@Second
 pack B { … }
 
-@[Component, System(.Update)]    // grouped with arguments
+@Component
+@System(.Update)
 func moveSystem(world: World&) { … }
 ```
 
 ## 3. Targets
 
-`for TARGETS` restricts where a decorator may be applied. A grouped decorator may
+`for TARGETS` restricts where a decorator may be applied. A decorator may
 route bindings by target:
 
 ```azora

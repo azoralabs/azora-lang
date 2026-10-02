@@ -2399,7 +2399,7 @@ class IrGenerator(private val table: SymbolTable) {
         // A bridge pack cannot be constructed, so `.()` into one is not a
         // construction: `T*` erases to `Any*`, and what the pointer holds is the
         // run of values, not one `Any`.
-        val owner = table.lookupInferredMember(member.line, member.column, member.instance)
+        val owner = table.lookupInferredMember(member.line, member.column)
         if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
         return Expr.ArrayLiteral(args, member.line, member.column, member.length)
     }
@@ -2407,7 +2407,7 @@ class IrGenerator(private val table: SymbolTable) {
     /** What one slot of an allocated repetition holds; see the resolver's twin. */
     private fun repeatedElementType(construct: Expr): IrType? {
         val name = when (construct) {
-            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column, construct.instance)
+            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column)
             is Expr.Call -> construct.callee
             else -> null
         } ?: return null
@@ -2549,7 +2549,7 @@ class IrGenerator(private val table: SymbolTable) {
             // no longer has.
             is Expr.InferredMember -> lowerInferredMember(
                 expr,
-                table.lookupInferredMember(expr.line, expr.column, expr.instance)
+                table.lookupInferredMember(expr.line, expr.column)
                     ?: error("line ${expr.line}: '.${expr.name}' was never resolved to a type"),
             )
             // Only a macro arm taking `[...${key: value}]` can consume one, and the
@@ -3534,34 +3534,6 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Member(target, expr.name, memberType)
             }
             is Expr.MethodCall -> {
-                // `{2, 3}.add()` - the receiver call with several receivers. The
-                // closure's convention is parameters first, receivers after, so the
-                // bracket list lowers to the trailing arguments.
-                val groupTarget = expr.target as? Expr.TupleLit
-                if (groupTarget != null) {
-                    val receivers = groupTarget.elements.map { lowerExpr(it) }
-                    val owner = receivers.firstOrNull()?.type as? IrType.Named
-                    val methodSymbol = owner?.let { table.lookupMethod(it.name, expr.name) }
-                    val method = methodSymbol?.let(table::lookupFunction)
-                    if (method != null && method.contextualParams == receivers.size - 1) {
-                        return IrExpr.Call(
-                            methodSymbol,
-                            receivers + expr.args.map { lowerExpr(it) },
-                            method.returnType,
-                        )
-                    }
-                    val callable = table.lookupVariable(expr.name)?.type as? IrType.Function
-                    if (callable != null && callable.receivers.isNotEmpty()) {
-                        val args = expr.args.map { lowerExpr(it) } +
-                            receivers
-                        return IrExpr.Call(
-                            "",
-                            args,
-                            callable.ret,
-                            receiver = IrExpr.Var(resolveName(expr.name), callable),
-                        )
-                    }
-                }
                 // `x.clone()` with no written member - the compiler-provided
                 // `Clone` default is an independent deep copy.
                 if (expr.name == "clone" && expr.args.isEmpty()) {

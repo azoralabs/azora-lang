@@ -64,7 +64,7 @@ class AssertionSemanticsTest {
             }
         """.trimIndent()
 
-        internal val groupedConditionProgram = """
+        internal val sharedConditionProgram = """
             pack Counter { var value: Int }
             func choose(counter: Counter!): Bool {
                 counter.value = counter.value + 1
@@ -72,12 +72,13 @@ class AssertionSemanticsTest {
             }
             func main() {
                 var counter = Counter(0)
-                var {sign, index}: Int = if choose(counter)
-                then {-1, 1}
-                else {1, 0}
+                fin selected = choose(counter)
+                var sign: Int = if selected then -1 else 1
+                var index: Int = if selected then 1 else 0
                 assert sign == -1 && index == 1 panic "wrong selected values"
                 assert counter.value == 1 panic "condition evaluated more than once"
-                var {positive, start}: Int = if false then {-1, 1} else {1, 0}
+                var positive: Int = if false then -1 else 1
+                var start: Int = if false then 1 else 0
                 assert positive == 1 && start == 0 panic "wrong alternative values"
             }
         """.trimIndent()
@@ -182,9 +183,9 @@ class AssertionSemanticsTest {
         }
     }
 
-    @Test fun groupedConditionIsEvaluatedOnceForAllBindings() {
+    @Test fun explicitConditionIsEvaluatedOnceForAllBindings() {
         for (optimized in listOf(false, true)) {
-            assertEquals("", IrInterpreter().interpret(lower(groupedConditionProgram, optimized)))
+            assertEquals("", IrInterpreter().interpret(lower(sharedConditionProgram, optimized)))
         }
     }
 

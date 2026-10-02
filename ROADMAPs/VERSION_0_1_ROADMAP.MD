@@ -60,7 +60,7 @@ Hard blockers. `0.1` does not ship with any of these open.
 Each lets a program be silently wrong. This list must be empty to ship.
 
 - ⬜ **Derivation is not checked against field capabilities.**
-  `pack Sample { var value: Double }` with `impl [Order] for Sample` is
+  `pack Sample { var value: Double }` with `derive Order for Sample` is
   *accepted*, claiming a total order over a field that has only a partial one.
   `sort` then takes it and NaN sorts as if ordered.
 - ⬜ **`hash` disagrees between backends.** LLVM hashes anything behind a
@@ -192,7 +192,7 @@ lines).
 - ✅ `<=>`, with `<` `<=` `>` `>=` rewritten from it and `!=` from `==`
 - ✅ `Compare` / `PartialCompare` and their members
 - ✅ `PartialEqual` / `Equal` / `PartialOrder` / `Order` / `Hash`
-- ✅ Derivation from a bodyless `impl [Equal, Order, Hash]`
+- ✅ Derivation from a bodyless `derive Equal; derive Order; derive Hash`
 - ✅ `==` without a conformance is a compile error
 - ✅ Operator families: `Arithmetic` `Neg` `Bitwise` `Logical` `Indexable`
   `Deref` / `DerefMut`, each implementable in part
@@ -442,8 +442,8 @@ generation. Every form the parser accepts:
 ### 3.6 Annotations
 
 - ✅ `annot`, `@Name(args)`, targeted application, annotation impls on fields
-- ✅ Field wildcards and cross-product target lists
-- ✅ Serialization derives (value tree, AZON) resolved at compile time
+- ✅ Individual field applications and field wildcards
+- ✅ Serialization derives value-tree and AZON methods at compile time
 - ⬜ `ANNOTATIONS_DIP.MD` covers syntax; runtime semantics need an audit
 
 ### 3.7 Dynamic execution (`std.dynamic`)

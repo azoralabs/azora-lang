@@ -86,7 +86,7 @@ Historical library parse blockers observed after step 004:
 | `container/queue.az` | loop variable initialized with `=` |
 | `core.az` | function named with the reserved `then` token |
 | `filesystem.az` | newline before `then` in returned if-expression |
-| `os.az` | grouped if-expression using `then` |
+| `os.az` | explicit conditional bindings using `then` |
 | `quantum.az` | single-statement contract clause and `scope` body |
 | `serializer.az` | newline after an assertion's `panic` introducer |
 
@@ -103,8 +103,8 @@ the braced form and single-statement postconditions use `it`. Runtime and inline
 assertion messages may continue after a newline following `panic`.
 
 Fixed newline handling before `then` in statement, expression, and returned
-conditionals. Grouped conditional bindings accept `then {a, b} else {c, d}`,
-retain arity validation, and use the existing single condition temporary.
+conditionals. Explicit bindings may reuse a named condition when it should
+be evaluated once.
 Single-statement `unsafe` bodies lower to the existing explicit unsafe scope;
 the following statement remains outside that boundary.
 
@@ -116,13 +116,12 @@ forms and existing assertion message requirements.
 
 Evidence:
 
-- Ten initial declaration regressions failed before the repair; two grouped
-  conditional regressions failed before that extension. All 12 now pass.
+- Declaration regressions verify repaired body and condition parsing.
 - Interpreter tests execute optimized and unoptimized IR, covering successful
   and failing single-statement pre/postconditions, constructor contracts and
-  property access, both grouped branches, and condition evaluation count.
+  property access, both conditional branches, and condition evaluation count.
 - Semantic checks reject an unsafe call immediately outside a single-statement
-  unsafe body. Native LLVM executes the contract, constructor/property, grouped
+  unsafe body. Native LLVM executes the contract, constructor/property, shared
   conditional, and lazy assertion programs in both optimization modes.
 
 ```sh
@@ -146,7 +145,7 @@ the initial baseline). These are first errors per file, not necessarily all erro
 | `algorithm/sort.az` | guard `when` misclassifies a call condition as payload destructuring | 008–009; distinguish guards from patterns without relaxing pattern safety |
 | `container/queue.az` | loop uses `=` instead of `in` | 006–007; inspect remaining scoped imports too |
 | `core.az` | comparison member named `then`, which is a reserved token | 006; reconcile member naming with operator DIP and callers |
-| `quantum.az` | grouped method-name shorthand `result.{h,x}(j)` | 008–009; inspect intended evaluation and existing grouped-operation semantics |
+| `quantum.az` | explicit `result.h(j)` and `result.x(j)` calls | 008–009; inspect intended evaluation and written call order |
 
 Historical inspection before the latest instruction found that the language used `reverse for` with
 `..`/`..<`, while the search source alone uses `>..`. The operator DIP explicitly
@@ -239,7 +238,7 @@ First library parse errors at the end of step 006 (superseded below):
 |---|---|
 | `algorithm/sort.az` | call condition in guard `when` treated as payload destructuring |
 | `container/queue.az` | stale `import std.{…}` selector spelling |
-| `quantum.az` | grouped method-name shorthand `result.{h,x}(j)` |
+| `quantum.az` | explicit `result.h(j)` and `result.x(j)` calls |
 
 Current executable numeric ranges require Int bounds. Other widths, general
 user-defined iterators, and general compile-time membership assertions remain
@@ -299,13 +298,9 @@ Library migrations preserve the intended operations:
 - Queue's local selector uses `std::{…}` (lexical import scope remains unresolved).
 - Sorting's obsolete `if condition -> return` uses `then return`.
 - Quantum's final loop uses `in` rather than `=`.
-- Grover's grouped method names use the documented GTC §7.4 call sequence:
-  `result.{h(j), x(j)}` and `result.{x(j), h(j)}`. `h`/`x` receive Int by value;
-  neither changes the loop binding, so repeating that read preserves the argument.
-  Their mutable calls retain written order on the same receiver. A dedicated
-  regression executes both sequences inside single-statement loops on the
-  interpreter, LLVM, and WASM. This migration does not introduce a general
-  `receiver.{methodNames}(args)` feature or assert quantum simulation correctness.
+- Grover invokes `result.h(j)` and `result.x(j)` as separate statements in
+  a braced loop body. Both calls retain their written order and Int arguments.
+  The sequence harness executes the interpreter, LLVM, and WASM forms.
 
 The new sequence harness initially omitted the primitive range bridge required
 by the language, and failed at IR generation. It now supplies the same explicit
@@ -1836,15 +1831,9 @@ WASM had no `.hash` lowering before this.
 
 **Defects found by running maps natively:**
 
-- *Grouped assignment aliased its type.* `self.{keys, values, hashes, occupied}
-  = alloc .() * n` gives each target a copy of one expression. The resolver
-  records what `.()` means by source position, so the last target's reading
-  (`Bool`) was used for all four. `HashMap._rehash` then allocated its eight-byte
-  buffers at one byte per slot, which corrupted the heap on LLVM. AddressSanitizer
-  (with `sanitize_address` added to each function, which `.ll` input otherwise
-  lacks) located the write in `HashMap__insertKnownHash`; `lli` crashed later, in
-  its own exit handlers. `Expr.InferredMember.instance` now tells the copies
-  apart. `WitnessTest.eachGroupedTargetAllocatesItsOwnElementType` checks the IR.
+- *Each buffer allocation has its own typed statement.* The map rehash path
+  allocates its key, value, hash and occupied buffers separately.
+
 - *`HashMap._rehash` looped over `0..newCapacity` and `0..oldCapacity`*,
   inclusive ranges, one slot past each buffer. It never ran natively before.
 - *`m[k] = v` passed its value at the literal's width.* `3.5` is a `Float` there.
@@ -1888,7 +1877,7 @@ unchanged.
     pack, including a bounded function calling bounded ones;
   - native maps and sets with run-time keys, grown past their first buffers;
   - built-in hash values;
-  - the grouped-assignment IR;
+  - explicitly typed buffer assignment IR;
   - rejected key types and unbounded generic code;
   - unsigned `ULong` arithmetic in the interpreter.
 - `WitnessExecTest` (2), new: the programs on LLVM and WASM, optimized and
@@ -2668,14 +2657,6 @@ were `..<`:
   every input whose last run ends at the array's end.
 - `mergeSort` copied `0..mid` into a `mid`-element half and `0..arr.size` into
   the `arr.size - mid` right half.
-
-### 3. A grouped binding's `.()` had no type
-
-`var {left, right}: Array<T> = {.() * mid, .() * rest}` failed with `cannot
-tell what '.' belongs to`. A lone binding's `.(…)` is built from its stated type
-while parsing (`parseInitializer`). A grouped binding's values were parsed
-without that type. They now get each target's stated type. This is what
-`mergeSort` needed.
 
 ### 4. A capture list read the next statement as its lambda
 

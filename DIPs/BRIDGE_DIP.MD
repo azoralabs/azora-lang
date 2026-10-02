@@ -241,7 +241,7 @@ bridge spec Clone { func &.clone(): Self }
 ```
 
 Implementing a bridge spec does not require writing its members - the compiler
-supplies the default. `impl [Clone] for Point` is a complete implementation, and
+supplies the default. `derive Clone for Point` is a complete implementation, and
 `Point.clone()` resolves to the compiler's deep copy.
 
 For a non-bridge spec the members are required, and their absence is reported at

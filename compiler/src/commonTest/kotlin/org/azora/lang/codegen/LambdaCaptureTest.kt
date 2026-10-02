@@ -386,12 +386,12 @@ class LambdaCaptureTest {
         assertTrue(found.any { "excluded from this lambda's captures" in it && "without secret" in it }, found.toString())
     }
 
-    @Test fun groupedCaptureExclusionsAreEquivalent() {
+    @Test fun repeatedCaptureExclusionsRejectEachName() {
         val found = errors("""
             func main() {
                 var secret = 9
                 var key = 2
-                fin read = [&, without (secret, key)] { key }
+                fin read = [&, without secret, without key] { key }
             }
         """.trimIndent())
         assertTrue(found.any { "excluded from this lambda's captures" in it && "without key" in it }, found.toString())

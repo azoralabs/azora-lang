@@ -37,7 +37,7 @@ class WitnessTest {
                 var a: Int
                 var b: Int
             }
-            derive (Equal) for Key
+            derive Equal for Key
             func<T> sameHash(a: T, b: T): Bool where T: Hash { return a.hash == b.hash }
             func<T> equalAll(a: T, b: T): Bool where T: Equal { return a == b }
             func<T> forwarded(a: T, b: T): Bool where T: Hash { return sameHash(a, b) && equalAll(a, b) }
@@ -134,12 +134,12 @@ class WitnessTest {
     }
 
     /**
-     * Each target of a grouped assignment gets the value's expression typed by
-     * that target: a buffer of `Bool` for one and of `ULong` for the other.
+     * Each explicit assignment uses its target's element type: a buffer of `Bool`
+     * for one and of `ULong` for the other.
      * Before, the last target's reading was used for all of them, so `HashMap`
      * grew its eight-byte buffers at one byte per slot.
      */
-    @Test fun eachGroupedTargetAllocatesItsOwnElementType() {
+    @Test fun eachExplicitTargetAllocatesItsOwnElementType() {
         val ir = compile("""
             pack Mixed {
                 var flags: Bool* = alloc .() * 2
@@ -147,7 +147,8 @@ class WitnessTest {
             }
             impl Mixed {
                 func !.fresh(n: Int) {
-                    self.{flags, wide} = alloc .() * n
+                    self.flags = alloc .() * n
+                    self.wide = alloc .() * n
                 }
             }
             func main() {
@@ -156,7 +157,7 @@ class WitnessTest {
             }
         """.trimIndent(), optimized = false)
         val fresh = ir.items.filterIsInstance<IrTopLevel.Func>().single { it.function.name.endsWith("fresh") }
-        val writes = (fresh.function.body.single() as IrStmt.Scope).body.filterIsInstance<IrStmt.MemberAssign>()
+        val writes = fresh.function.body.filterIsInstance<IrStmt.MemberAssign>()
         assertEquals(
             listOf("flags" to IrType.Pointer(IrType.Bool), "wide" to IrType.Pointer(IrType.ULong)),
             writes.map { it.name to (it.value as IrExpr.Call).type },

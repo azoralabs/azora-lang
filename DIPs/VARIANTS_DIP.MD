@@ -21,7 +21,7 @@ For a union that does **not** record which case is live, see the Unions DIP.
 ## Grammar
 
 ```
-@[DECORATORS] VISIBILITY variant (enum | error) NAME <...GENERICS>? {
+DECORATORS* VISIBILITY variant (enum | error) NAME <...GENERICS>? {
     CASE
     …
 }

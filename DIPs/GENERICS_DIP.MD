@@ -341,8 +341,8 @@ where T: (Equal, Hash) {
 }
 ```
 
-This follows the language-wide decision that type groups use parentheses, as in
-`derives (Equal, Hash, Display)`. The older `[Order, Clone]` bound-list spelling
+Capability constraints compose in bound expressions; each derivation clause
+names its own spec. The older `[Order, Clone]` bound-list spelling
 is deprecated and migrated to `(Order, Clone)`.
 
 Independent constraints are joined only with `&&`:
@@ -1259,7 +1259,7 @@ purge it remains a negative occurrence and is forbidden for `out T`.
 Generic capability derivation is conditional:
 
 ```azora
-pack Box<T> derives (Clone)
+pack Box<T> derives Clone
 ```
 
 is semantically equivalent to a generated implementation like:

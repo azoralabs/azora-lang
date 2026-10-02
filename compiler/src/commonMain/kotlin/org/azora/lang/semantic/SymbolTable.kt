@@ -551,14 +551,14 @@ class SymbolTable {
      * reads what the resolver decided - so the two cannot disagree about which
      * type a leading dot meant.
      */
-    private val inferredMembers = mutableMapOf<Triple<Int, Int, Int>, String>()
+    private val inferredMembers = mutableMapOf<Pair<Int, Int>, String>()
 
-    fun defineInferredMember(line: Int, column: Int, typeName: String, instance: Int = 0) {
-        inferredMembers[Triple(line, column, instance)] = typeName
+    fun defineInferredMember(line: Int, column: Int, typeName: String) {
+        inferredMembers[line to column] = typeName
     }
 
-    fun lookupInferredMember(line: Int, column: Int, instance: Int = 0): String? =
-        inferredMembers[Triple(line, column, instance)]
+    fun lookupInferredMember(line: Int, column: Int): String? =
+        inferredMembers[line to column]
 
     fun defineLambdaType(line: Int, column: Int, type: IrType.Function) {
         lambdaTypes[line to column] = type

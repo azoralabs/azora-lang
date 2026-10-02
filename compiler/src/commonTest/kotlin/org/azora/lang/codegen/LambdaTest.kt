@@ -475,8 +475,7 @@ class LambdaTest {
 
     /**
      * A contextual receiver is not an argument. There are two ways to supply one:
-     * a `using` block, or the receiver call - `2.scale(7)` for one, `{2, 3}.add()`
-     * for several (LAMBDA_CONTEXT_CAPTURE_DIP.MD §2).
+     * a `using` block, or a single receiver call such as `2.scale(7)` (LAMBDA_CONTEXT_CAPTURE_DIP.MD §2).
      */
     @Test fun aReceiverIsSuppliedByUsingOrByAReceiverCall() {
         assertEquals("10\n14\n5\n5", run("""
@@ -490,8 +489,17 @@ class LambdaTest {
                 using 5 { println(scale(2)) }
                 println(2.scale(7))
                 using (Left(2), Right(3)) { println(add()) }
-                println({Left(2), Right(3)}.add())
+                using (Left(2), Right(3)) { println(add()) }
             }
+        """.trimIndent()))
+    }
+
+    @Test fun aTupleDoesNotSupplySeveralReceivers() {
+        assertIs<CompilationResult.Failure>(Compiler().compile("""
+            pack Left { fin value: Int }
+            pack Right { fin value: Int }
+            fin add: (Left&, Right&).() -> Int = [&] (x, y) { x.value + y.value }
+            func main() { (Left(2), Right(3)).add() }
         """.trimIndent()))
     }
 

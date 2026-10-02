@@ -75,74 +75,21 @@ class ThenSyntaxTest {
     }
 
     @Test
-    fun `member operation groups preserve order and expand nested brace arguments`() {
-        val scope = assertIs<Stmt.Scope>(
-            function("value.{enqueue({1, 2}), clear(), enqueue(8)}").decl.body.single(),
-        )
-        assertEquals(4, scope.body.size)
-        val first = assertIs<Stmt.ExprStmt>(scope.body[0]).expr
-        val second = assertIs<Stmt.ExprStmt>(scope.body[1]).expr
-        val third = assertIs<Stmt.ExprStmt>(scope.body[2]).expr
-        val fourth = assertIs<Stmt.ExprStmt>(scope.body[3]).expr
-        assertIs<Expr.MethodCall>(first).also {
-            assertEquals("enqueue", it.name)
-            assertEquals("value", (it.target as Expr.Identifier).name)
-            assertEquals(1L, (it.args.single() as Expr.IntLiteral).value)
-        }
-        assertIs<Expr.MethodCall>(second).also { assertEquals(2L, (it.args.single() as Expr.IntLiteral).value) }
-        assertIs<Expr.MethodCall>(third).also {
-            assertEquals("clear", it.name)
-            assertEquals("value", (it.target as Expr.Identifier).name)
-        }
-        assertIs<Expr.MethodCall>(fourth).also { assertEquals(8L, (it.args.single() as Expr.IntLiteral).value) }
-    }
-
-    @Test
-    fun `operation groups can nest`() {
-        val scope = assertIs<Stmt.Scope>(
-            function("value.{value.{enqueue({1, 2})}, clear()}").decl.body.single(),
-        )
-        assertEquals(3, scope.body.size)
-    }
-
-    @Test
-    fun `operation group allows newline separators`() {
-        val scope = assertIs<Stmt.Scope>(
-            function(
-                """
-                value.{
-                    enqueue(1)
-                    clear()
-                    enqueue(8)
-                }
-                """.trimIndent(),
-            ).decl.body.single(),
-        )
-        assertEquals(3, scope.body.size)
-    }
-
-    @Test
-    fun `complex sequence receiver is evaluated through one temporary`() {
-        val scope = assertIs<Stmt.Scope>(
-            function("make().{clear(), enqueue(1)}").decl.body.single(),
-        )
-        assertIs<Stmt.LetDecl>(scope.body.first())
-        assertEquals(2, scope.body.drop(1).size)
-    }
-
-    @Test
-    fun `contract scope accepts one unbraced grouped assignment`() {
+    fun `contract scope accepts a block of explicit assignments`() {
         val implementation = Parser(
             Lexer(
                 """
                 impl Counter {
-                    func !.reset() scope self.{offset, allocCount} = 0
+                    func !.reset() scope {
+                        self.offset = 0
+                        self.allocCount = 0
+                    }
                 }
                 """.trimIndent(),
             ).tokenize(),
         ).parse().items.filterIsInstance<TopLevel.Impl>().single()
         val declaration = implementation.methods.single()
-        val body = assertIs<Stmt.Scope>(declaration.body.single()).body
+        val body = declaration.body
         assertEquals(2, body.size)
         assertTrue(body.all { it is Stmt.MemberAssign })
     }
@@ -241,8 +188,8 @@ class ThenSyntaxTest {
     }
 
     @Test
-    fun groupedBindingsFanOutOrdinaryCalls() {
-        val body = function("var {left, right}: Int = mergeSort{(left), (right)}").decl.body
+    fun explicitBindingsCallIndependently() {
+        val body = function("var left: Int = mergeSort(left)\nvar right: Int = mergeSort(right)").decl.body
         val first = assertIs<Stmt.VarDecl>(body[0])
         val second = assertIs<Stmt.VarDecl>(body[1])
         assertEquals("left", first.name)
@@ -252,8 +199,8 @@ class ThenSyntaxTest {
     }
 
     @Test
-    fun groupedMemberAccessAndTupleTypeAnnotatePositions() {
-        val body = function("fin {base, name}: {Path, String} = self.{parent, stem}").decl.body
+    fun explicitMemberBindingsRetainTheirTypes() {
+        val body = function("fin base: Path = self.parent\nfin name: String = self.stem").decl.body
         val base = assertIs<Stmt.FinDecl>(body[0])
         val name = assertIs<Stmt.FinDecl>(body[1])
         assertEquals("Path", (base.type as TypeAnnotation.Explicit).ref.toString())
@@ -263,8 +210,8 @@ class ThenSyntaxTest {
     }
 
     @Test
-    fun groupedReceiverPostfixesBroadcastInsideForThen() {
-        val body = function("for i: Int in 0..<maxLen then if i < {a, b}.size then result[ri++] = {a, b}[i]").decl.body
+    fun explicitBranchesInsideForRetainTheirReceivers() {
+        val body = function("for i: Int in 0..<maxLen {\nif i < a.size then result[ri++] = a[i]\nif i < b.size then result[ri++] = b[i]\n}").decl.body
         val loop = assertIs<Stmt.For>(body.single())
         assertEquals(2, loop.body.size)
         loop.body.forEachIndexed { index, raw ->
@@ -278,8 +225,8 @@ class ThenSyntaxTest {
     }
 
     @Test
-    fun filesystemGroupedBindingsParse() {
-        val body = function("fin {name, dot}: {String, Int} = {self.fileName, _lastDot(name)}").decl.body
+    fun filesystemExplicitBindingsParse() {
+        val body = function("fin name: String = self.fileName\nfin dot: Int = _lastDot(name)").decl.body
         assertEquals(2, body.size)
     }
 }

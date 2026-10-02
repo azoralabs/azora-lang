@@ -139,8 +139,6 @@ One more rule must be, in a public module like "module a" we can have "exposed f
 * self.offset = 0
 * self.allocCount = 0
 * self.peakUsage = 0
-  can be written as self.[offset, allocCount, peakUsage] = 0 // 0 will go to all of them
-  or self.[a, b, c] ‎ =  [1, "2", true] - just a nice sugar and ofc, if each element on newline, comma can be avoided
 - bug "self.offset = offset - size" self must be required everywhere like this "self.offset = self.offset - size"
 - make sure x++ and x-- works
 - no more impl ctor and impl dtor please, they must be inside impl block
@@ -419,12 +417,8 @@ one surfaces as its predecessor is fixed.
     `scope fmt { fin newline = "\n" … }` - exactly the `fin`-only scope of S3.1
   - `primitive.az:135` `got 'factory' at top level` -> **S5.7, done as `direct spec`**
   - `primitive.az:147` `Expected 'prop', 'func', … in impl block` -> **S5.1 (bindings)**
-  - `primitive.az:170` `Decorator implementation lists require 'for Target'` ->
-    **impl target lists**
   - `serializer.az:762` `Expected test name string, got 'scope'` -> **`test scope`**
   - `serializer.az:802` `Expected 'for' after derived specs` -> **`derive` with values**
-  - `serializer.az:840` `Expected ']' after implementation targets` -> **newline-separated
-    targets**. This one closed the queue.
 - **Re-measure after every landed step** and diff the failing-test *names*, not just the
   count - a count can hold steady while one test swaps for another. `scratchpad/collect.py`
   dumps the set from `compiler/build/test-results/desktopTest/*.xml`.
@@ -824,13 +818,10 @@ to say, or relaxing a list to separate its elements as every other list does:
   - no receiver, so it belongs to the type; it leaves mangled as `Byte__minValue`, which
   is what `impl Byte:: { … }` produced. All four mutabilities accepted. (This is the
   binding half of **S5.1**.)
-- **`impl [Byte, UByte] { … }`** - one body, given to each type named. A bracket list
-  *before* `for` still names decorators; one standing on its own names targets. The body
-  is re-read per target, so a grouped impl is the single impl it stands for, N times.
+
 - **`test scope { … }`** replaces `realm test { … }` (both parse until S3.2).
 - **`derive Serializable(ignoreUnknownFields: true) for T`** - a derive may carry the
   values the decorator takes when applied by name, since the two say the same thing.
-- **Bracketed impl/derive target lists separate on a newline**, comma optional.
 - **Accepted** `frontend/ImplAndDeriveFormsTest.kt`, 15 tests.
 
 ### S5.8 `[DROP]` Remove `impl Spec for Ty::`
@@ -842,13 +833,13 @@ to say, or relaxing a list to separate its elements as every other list does:
 - **Do** The rule is scoped to *inherent* impls: for each type `X` declared in a file,
   at most one bare `impl X { }`. Not counted, and unlimited:
   - `impl Spec for X { }` - spec implementations, any number.
-  - `derives [...]` and every compiler-synthesised impl (`CastDeriver`,
+  - `derives Spec` and every compiler-synthesised impl (`CastDeriver`,
     `ComparisonDeriver`, `DisplayDeriver`, `SerializationDeriver`).
   - inherent impls for *different* types in the same file.
   Error on the second `TopLevel.Impl` with an empty `spec` target and the same type name,
   pointing at the first: *"`X` already has an inherent impl at line N; merge the members"*.
 - **Accept** `ImplPerFileTest`: two `impl X {}` errors; `impl X {}` + three
-  `impl S for X {}` + `derives [Clone, Display]` compiles; `impl X {}` + `impl Y {}` compiles.
+  `impl S for X {}` + `derives Clone derives Display` compiles; `impl X {}` + `impl Y {}` compiles.
 - **Note** measure the stdlib cost before committing:
   `grep -cE '^impl [A-Z][A-Za-z0-9_<>, ]*\{' std/**/*.az`
 
@@ -1006,35 +997,6 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
 
 ## Phase 7 - Statements, sugar, naming
 
-### S7.1 `[ADD]` Grouped field assignment `self.[a, b, c] = ...` - **DONE 2026-08-18**
-- **Touched** `Parser.kt` only - no `Ast.kt`, no `IrGenerator.kt`, no backend.
-- **Did** Both forms, desugared at parse time to ordinary `Stmt.MemberAssign`es:
-  - `self.[offset, allocCount] = 0` - one value to each member.
-  - `self.[a, b, c] = [1, "2", true]` - positional, arity-checked.
-  Commas separate names on a line and are unnecessary across lines, in the group and in
-  the value list alike. Any receiver works (`config.[w, h]`, `self.window.[w, h]`).
-- **How** A new arm in the postfix loop catches `.` followed by `[`, reads the names, and
-  hands the receiver back through two parser fields (`allowMemberGroup` gates where a
-  group is legal, `pendingMemberGroup` carries the names). `parseExprStmt` sees the
-  pending names and builds the assignments. **No `Expr` node was added** - a grouped
-  target is never a value, and a new `Expr` variant would have forced every exhaustive
-  `when` over `Expr` in the compiler to grow a case for something no later pass can see.
-- **The fan-out form binds a temporary first** (`fin __groupN = <value>`): the value is
-  *written* once so it must be *evaluated* once, whatever it lands in - `self.[a, b] =
-  next()` must call `next()` once. That temporary is why the result is a `Stmt.Scope`
-  (`shared = false`, the documented compiler-built kind): two grouped assignments in one
-  body must not collide on it. The positional form binds nothing, having nothing to share.
-- **Rejected, each with a test:** arity mismatch (names the counts), a member named twice,
-  an empty group, a group used as a value (`fin x = self.[a, b]`), a group with no `=`.
-- **Accepted** new `frontend/GroupedAssignTest.kt`, 17 tests, all pass.
-- **Suite** 1609 failed / 1785. The single delta is `EnumWhenTest` again - see the
-  accidental-pass note in Baseline; its `"C"` has nothing to match in the new message.
-- **Next stdlib blocker moved on:** `allocator/allocator.az:223` -> **`:306`,
-  `Expected '{' after dtor, got '('`** - the file then used legacy
-  `dtor[self: Self!]()`. Under the finalized lifecycle grammar this migrates to
-  `dtor .()`: owned destruction always has the empty parameter list and never has a
-  shared or mutable-reference receiver.
-
 ### S7.2 `[FIX]` `self.` is mandatory on both sides - **DONE 2026-08-20**
 - **Touch** `TypeResolver.kt` (identifier resolution inside methods)
 - **Do** Bug: `self.offset = offset - size` currently resolves the bare `offset` to the
@@ -1094,7 +1056,7 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
   the original baseline** (`EnumWhenTest` went back to passing, still accidentally: its
   `"C"` now matches `(L_BRACKET)` in the new stdlib error).
 - **Next stdlib blocker moved on:** `allocator/allocator.az:165` -> **`:223`,
-  `Expected member name after '.', got '['`** (`self.[offset, allocCount] = 0`), which is
+  `Expected member name after a receiver`**, which is
   **S7.1**.
 
 ### S7.4 `[DROP]` `await handle`, not `await(handle)`
@@ -1143,9 +1105,7 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
 - **Done** Give `using` its standalone contextual-receiver grammar:
   `using value { ... }` for one receiver and `using (a, b, ...) { ... }` for
   several. The parenthesized list is syntax owned by `using`, not a tuple value.
-  Also parse `{a, b, ...}.method()` as one direct receiver-group call. The brace
-  group is not a runtime value; `(a, b).method()` remains a tuple method and
-  `[a, b].method()` remains a collection method.
+  `(a, b).method()` is a tuple method and `[a, b].method()` is a collection method.
 - **Preserve** Its legal macro-name positions, exactly like `with` / `without` / `by`:
   - infix macro name: `macro $a @using $b => …` (`parseMacroName`, `Parser.kt:4633`,
     already accepts keyword lexemes after `@` - verify `using` flows through and add the case)
@@ -1153,8 +1113,8 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
 - **Do** Remove `use` entirely, including the `use as` spec-member alias. Its last user is
   the compact one-line spec form ([[Azora spec member alias]]) - replace that with the
   `inline prop to${T.typeName}: T = into<T>` spelling **first**, or the compact form breaks.
-- **Accept** Parser/semantic tests cover single and multiple `using`, direct
-  brace receiver calls, tuple/collection non-equivalence, receiver-type
+- **Accept** Parser/semantic tests cover single and multiple `using`,
+  tuple/collection non-equivalence, receiver-type
   uniqueness, ownership/borrowing, and retained macro-name use. `use` as an
   import and both removed `use as` spellings still error naming their
   replacement.

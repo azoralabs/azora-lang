@@ -20,11 +20,11 @@ Quick orientation on the sigils this document uses:
 ## Grammar
 
 ```
-@[DECORATORS] VISIBILITY SAFETY ASYNC? func GENERICS? RECEIVER_HEAD? NAME (...PARAMS) : RETURN_TYPE ?! [...FAILS]
+DECORATORS* VISIBILITY SAFETY ASYNC? func GENERICS? RECEIVER_HEAD? NAME (...PARAMS) : RETURN_TYPE ?! [...FAILS]
     where [...CLAUSE]
 { BODY }
 
-DECORATORS   ::= Name | Name(args) | @[Name, Name(args), …]
+DECORATORS   ::= @Name | @Name(args)
 VISIBILITY   ::= expose | confine | protect            (default: expose)
 SAFETY       ::= inline | unsafe | (nothing)
 ASYNC        ::= async
@@ -556,7 +556,7 @@ the lambda/context capture form `[context: Ctx&] { ... }` as a function
 declaration; that is a separate expression grammar.
 
 A dot call supplies the sole receiver naturally: `counter.get()`. A declaration
-with several receivers has two non-value call forms:
+with several receivers supplies them through a lexical context:
 
 ```azora
 using (source, destination) {
@@ -564,19 +564,16 @@ using (source, destination) {
     copyTo(20)
 }
 
-{source, destination}.copyTo(10)      // one direct grouped-receiver call
+using (source, destination) { copyTo(10) } // supply both contexts
 ```
 
 The parentheses after `using` are a keyword-delimited receiver list, not a tuple
-expression. The braces before `.copyTo` are source-level group syntax, not a
-runtime value. Consequently `(source, destination).copyTo()` calls a method on
+expression. `(source, destination).copyTo()` calls a method on
 one tuple, while `[source, destination].copyTo()` calls a method on one
 collection; neither supplies two receivers.
 
 `using` evaluates each receiver expression once, left to right, when entering
-the lexical context and keeps a stable receiver slot for the block. A direct
-brace call evaluates each entry once, left to right, immediately before the
-call. Neither form allocates or drops an intermediate tuple/group. Function
+the lexical context and keeps a stable receiver slot for the block. This does not create an intermediate tuple. Function
 entry acquires each requested borrow; sequential calls in a `using` block borrow
 sequentially. An owned slot becomes unavailable after the call that consumes it,
 so a second consuming call in the same block is a normal use-after-move error.
@@ -586,7 +583,7 @@ that can be moved, and the source becomes unusable after the call. Context
 resolution never inserts `clone()`, `take`, or a borrow-strength conversion.
 
 The same type-uniqueness rule applies to the active receiver list created by a
-single `using` clause or direct brace receiver group. If two values have the
+single `using` clause. If two values have the
 same canonical receiver base type, the clause is rejected rather than resolving
 by name or position. Put them in a
 single wrapper context, make one an ordinary argument, or introduce a genuinely
@@ -629,7 +626,7 @@ prop (model: Model&, theme: Theme&).label: String
 - Generic property parameters remain attached to the property name:
   `prop &.into<T>: T`.
 - Multiple named or unnamed property receivers follow the same type-uniqueness,
-  `using`, direct brace-group, and positional `self.N` rules as functions, but
+  `using` and positional `self.N` rules as functions, but
   every receiver must be `T&`. A `T!` or owned `T` slot is rejected.
 - A borrowed property result uses an origin fence, for example
   `String&|self|`; bracket-delimited origin fences are rejected.
@@ -746,13 +743,13 @@ async func delayed(ms: Int): Int { … }
 @Experimental(since: "0.1")
 func api() { … }
 
-@[Component, System(.Update)]        // grouped: applies both in one row
+@Component
+@System(.Update)
 func moveSystem(world: World&) { … }
 ```
 
 - `@Name` / `@Name(args)` applies a single decorator.
-- `@[A, B(args), C]` applies several decorators at once - equivalent to stacking
-  `@A` / `@B(args)` / `@C`.
+- Stack `@A`, `@B(args)`, and `@C` on separate lines to apply several decorators.
 - Decorator names must start with an uppercase letter.
 
 ---

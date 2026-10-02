@@ -224,7 +224,7 @@ class AzHighlighterRolesTest {
     fun `grouped import selections and uses retain their type role`() {
         val source = """
             import std.traits::{PartialEqual, Equal, Order, Hash}
-            bridge pack Char derives (PartialEqual, Equal, Order, Hash)
+            bridge pack Char derives PartialEqual derives Equal derives Order derives Hash
         """.trimIndent()
         val types = setOf("PartialEqual", "Equal", "Order", "Hash")
         val spans = AzHighlighter.highlight(source, visibleTypes = types)

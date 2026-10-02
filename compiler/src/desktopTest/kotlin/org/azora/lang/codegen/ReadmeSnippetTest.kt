@@ -53,6 +53,12 @@ class ReadmeSnippetTest {
 
         // Bindings shown at statement level.
         "var count = 0" to Context(prelude = "func main() {", epilogue = "}"),
+        "purge buffer" to Context(
+            prelude = "func main() {\n    let buffer: Int* = alloc .() * 1\n" +
+                "    let keys: Int* = alloc .() * 1\n    let values: Int* = alloc .() * 1\n" +
+                "    let hashes: Int* = alloc .() * 1\n",
+            epilogue = "}",
+        ),
 
         // An impl needs its pack.
         "impl Point {" to Context(prelude = "pack Point {\n    var x: Int\n    var y: Int\n}\n"),
@@ -61,7 +67,7 @@ class ReadmeSnippetTest {
         // The comparison example carries its own pack; the derive and Display
         // examples need one.
         "impl Order for Version" to emptyMain,
-        "derive (Equal, Order) for Point" to Context(
+        "derive Equal for Point" to Context(
             prelude = "import std.traits\npack Point {\n    var x: Int\n    var y: Int\n}\n",
         ),
         "impl Arithmetic for Matrix" to Context(

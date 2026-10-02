@@ -173,7 +173,9 @@ bridge func _commandParts(command: String): String
 @Experimental(since: "0.1")
 func _decimalValue(text: String): Int {
     if stringLength(text) == 0 then return 0
-    var {sign, start}: Int = if charAt(text, 0) == '-' then {-1, 1} else {1, 0}
+    fin negative = charAt(text, 0) == '-'
+    var sign: Int = if negative then -1 else 1
+    var start: Int = if negative then 1 else 0
     var value: Int = 0
     for index: Int in start..<stringLength(text) {
         fin digit: Char = charAt(text, index)

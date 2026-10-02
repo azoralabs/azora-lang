@@ -150,7 +150,9 @@ func<T: Order> _mergeRange(
     hi: Int
     ascending: Bool
 ) {
-    var {left, right, at}: Int = {lo, mid, lo}
+    var left: Int = lo
+    var right: Int = mid
+    var at: Int = lo
     while at < hi {
         into[at++] = when {
             left >= mid -> values[right++]
@@ -257,7 +259,8 @@ in {
 @Experimental(since: "0.1")
 func<T> rotateLeft(arr: Array<T>, n: Int): Array<T> {
     if arr.size == 0 then return .()
-    fin {len, shift}: Int = {arr.size, ((n % len) + len) % len}
+    fin len: Int = arr.size
+    fin shift: Int = ((n % len) + len) % len
     var result: Array<T> = .() * len
     for i: Int in 0..<len then result[i] = arr[(i + shift) % len]
     return result
@@ -303,7 +306,9 @@ test "sorting an empty or single-element array is a no-op" {
 
 test "sorting does not modify the original" {
     var values: Array<Int> = .() * 3
-    values[{0, 1, 2}] = {3, 1, 2}
+    values[0] = 3
+    values[1] = 1
+    values[2] = 2
     fin sorted: Array<Int> = sort(values)
     assert values[0] == 3 panic "the input array must be left alone"
     assert sorted[0] == 1 panic "the returned array must be the sorted one"

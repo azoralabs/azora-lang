@@ -9,7 +9,7 @@ transport, so failable functions have no representational overhead on success.
 ## Grammar
 
 ```
-ERRSET   ::= @[DECORATORS] VISIBILITY fail NAME { Variant, Variant, … }
+ERRSET   ::= DECORATORS* VISIBILITY fail NAME { Variant, Variant, … }
 FAILABLE ::= … : RETURN_TYPE ?! E             // one error set
            | … : RETURN_TYPE ?! [E1, E2]      // several
 RAISE    ::= return .Variant                   // fail the current function

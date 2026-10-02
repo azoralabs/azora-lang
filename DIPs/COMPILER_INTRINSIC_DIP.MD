@@ -180,7 +180,7 @@ The preferred mechanism. A decorator or a bodyless `impl` asks the compiler to
 | deriver                | trigger                     | writes                                                     |
 |------------------------|-----------------------------|------------------------------------------------------------|
 | `SerializationDeriver` | `@Serializable`, `@Azon…`   | `toSerialValue` / `fromSerialValue`, `toAzon` / `fromAzon` |
-| `ComparisonDeriver`    | `impl [Equal, Order] for T` | `oper==`, `oper<=>`, `hash`                                |
+| `ComparisonDeriver`    | `derive Equal for T; derive Order for T` | `oper==`, `oper<=>`, `hash`                                |
 | `CastDeriver`          | a cast spec implementation  | renames `_cast` to `operas@Target`                         |
 | `DisplayDeriver`       | a `Display` implementation  | `prop __displayString`                                     |
 

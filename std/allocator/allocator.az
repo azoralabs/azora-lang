@@ -104,7 +104,7 @@ bridge spec Allocator
  *     // everything freed here
  */
 @Since("0.1")
-pack Arena derives (Display, Allocator) {
+pack Arena derives Display derives Allocator {
     var capacity: Int = 0
     var offset: Int = 0
     var allocCount: Int = 0
@@ -203,13 +203,21 @@ impl Arena {
      * All pointers obtained from previous allocations become invalid.
      */
     @Since("0.1")
-    func !.reset() scope self.{offset, allocCount} = 0
+    func !.reset() {
+        self.offset = 0
+        self.allocCount = 0
+    }
 
     /**
      * Resets the arena and zeroes the peak usage counter.
      */
     @Since("0.1")
-    func !.resetAll() scope self.{offset, allocCount, peakUsage, totalAllocated} = 0
+    func !.resetAll() {
+        self.offset = 0
+        self.allocCount = 0
+        self.peakUsage = 0
+        self.totalAllocated = 0
+    }
 
     /**
      * Returns a diagnostic summary of arena state.
@@ -335,7 +343,8 @@ impl Pool {
     @Experimental(since: "0.1")
     func !.reset() {
         for i: Int in 0..<self.slotCount then self.freeStack.*[i] = self.slotCount - 1 - i
-        self.{freeCount, acquiredCount} = {self.slotCount, 0}
+        self.freeCount = self.slotCount
+        self.acquiredCount = 0
     }
 
     /**
@@ -376,7 +385,7 @@ impl Pool {
  *     stack.free(64)   // frees a
  */
 @Since("0.1")
-pack StackAllocator derives (Display, Allocator) {
+pack StackAllocator derives Display derives Allocator {
     var capacity: Int = 0
     var offset: Int = 0
     var allocCount: Int = 0
@@ -453,13 +462,20 @@ impl StackAllocator {
      * Resets the stack, freeing all allocations.
      */
     @Since("0.1")
-    func !.reset() scope self.{offset, allocCount} = 0
+    func !.reset() {
+        self.offset = 0
+        self.allocCount = 0
+    }
 
     /**
      * Resets the stack and clears peak tracking.
      */
     @Since("0.1")
-    func !.resetAll() scope self.{offset, allocCount, peakUsage} = 0
+    func !.resetAll() {
+        self.offset = 0
+        self.allocCount = 0
+        self.peakUsage = 0
+    }
 
     /**
      * Returns a diagnostic summary.

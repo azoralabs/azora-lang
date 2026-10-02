@@ -270,9 +270,15 @@ in {
     fin rounds: Int = groverIterations(qubits)
     for i: Int in 0..<rounds {
         result.markState(markedState)
-        for j: Int in 0..<qubits then result.{h(j), x(j)}
+        for j: Int in 0..<qubits {
+            result.h(j)
+            result.x(j)
+        }
         result.markState(0)
-        for j: Int in 0..<qubits then result.{x(j), h(j)}
+        for j: Int in 0..<qubits {
+            result.x(j)
+            result.h(j)
+        }
     }
     for i: Int in 0..<qubits then result.measure(i, MeasurementBasis.Z)
     return result

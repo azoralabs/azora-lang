@@ -122,26 +122,14 @@ fin limit: Int = 10    // fixed, frozen
 
 `threadlocal var` and `threadlocal fin` give per-thread storage.
 
-### Grouping
+### Releasing values
 
-A bracketed list stands for the lines it would have been written as. It works
-on either side, and nothing past the parser knows about it.
+`purge` releases one value or a list of values in order:
 
 ```azora
-fin [oldKeys, oldValues] = using self { [keys, values] }  // read members of one value
-let [keys: K*, values: V*] = alloc .() * capacity         // each name may state its type
-fin [a, b] = [1, 2]                                       // one value per name
-
-self.[keys, values] = alloc .() * capacity                // the expression, per member
-self.[capacity, size] = [newCapacity, 0]                  // one value per member
-self.[keys[i], values[i]] = using self { [keys[i + 1], values[i + 1]] }
-[newKeys[i], newValues[i]] = using self { [keys[i], values[i]] }
-purge [oldKeys, oldValues]                                // release several at once
+purge buffer
+purge [keys, values, hashes]
 ```
-
-One expression on the right is *written* to each target rather than evaluated
-once and shared: `alloc .() * n` allocates per member, which is the only reading
-under which four buffers are four buffers.
 
 ## Functions
 
@@ -271,7 +259,8 @@ fourth case, `Unordered`, so `NaN` makes all four relational operators false.
 Derivation is explicit and separate from manual implementation:
 
 ```azora
-derive (Equal, Order) for Point  // == , <=> , < <= > >= , != , hash
+derive Equal for Point  // ==, !=, hash
+derive Order for Point  // <=>, <, <=, >, >=
 ```
 
 `==` on a pack that never said what equal means is a **compile error**, not a
@@ -492,8 +481,8 @@ Constant folding, constant propagation and dead-code elimination run on the IR.
 
 - `annot @Name { fields }` declares an annotation, optionally `binds` it to a spec
 - `@Name`, `@Name(args)`, `@target:Name`
-- Decorator applications may target fields individually, as a list, or with a wildcard;
-  target lists form a cross-product
+- Each decorator application targets one declaration or field; a field wildcard
+  applies it to every field declared by the pack
 - Serialization decorators generate value-tree and AZON methods at
   compile time
 

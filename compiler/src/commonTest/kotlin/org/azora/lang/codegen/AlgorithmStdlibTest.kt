@@ -12,7 +12,7 @@ import kotlin.test.assertIs
  * `std.algorithm`'s `mergeSort` and `sortBy`, on inputs long enough to need
  * several merge passes.
  *
- * `mergeSort` did not compile: its grouped binding's `.() * n` had no type to
+ * `mergeSort` did not compile: its initializer `.() * n` had no type to
  * build, and its halves were copied with inclusive ranges, one past each end.
  * `sortBy` stepped its merge windows by writing a `for` loop's variable, which
  * never advanced the loop, so it merged every overlapping window.

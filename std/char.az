@@ -38,7 +38,7 @@ import std.traits::{PartialEqual, Equal, Order, Hash}
  * `<` does.
  */
 @Since("0.1")
-bridge pack Char derives (PartialEqual, Equal, Order, Hash)
+bridge pack Char derives PartialEqual derives Equal derives Order derives Hash
 
 /*impl Into<Int> for Char {
     prop<Int> &.into: Int {
@@ -151,7 +151,8 @@ func hexDigitToInt(c: Char&): Int
 in assert charIsHexDigit(c) panic "Character must be a hex digit"
 scope {
     fin code: Int = ord(c.&)
-    if code >= {48, 65} && code <= {57, 70} then return code - {48, 55}
+    if code >= 48 && code <= 57 then return code - 48
+    if code >= 65 && code <= 70 then return code - 55
     return code - 87
 }
 

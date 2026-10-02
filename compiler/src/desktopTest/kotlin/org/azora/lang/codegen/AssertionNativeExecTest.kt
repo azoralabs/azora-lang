@@ -21,7 +21,7 @@ class AssertionNativeExecTest {
         for (source in listOf(
             AssertionSemanticsTest.singleStatementContractProgram,
             AssertionSemanticsTest.singleStatementMemberProgram,
-            AssertionSemanticsTest.groupedConditionProgram,
+            AssertionSemanticsTest.sharedConditionProgram,
         )) {
             for (optimized in listOf(false, true)) {
                 val ir = AssertionSemanticsTest.lower(source, optimized)

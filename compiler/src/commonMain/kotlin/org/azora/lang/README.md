@@ -129,8 +129,8 @@ checking; `break`/`continue`.
 | Construct | Purpose |
 |-----------|---------|
 | `pack Name { fields }` / `pack Empty` | struct; empty packs may omit `{ }` |
-| `pack Name derives (A, B) { fields }` | struct plus generated spec implementations |
-| `derive (A, B) for ExistingType` | request generated implementations outside the type declaration |
+| `pack Name derives A derives B { fields }` | struct plus generated spec implementations |
+| `derive A for ExistingType` | request generated implementations outside the type declaration |
 | `pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
 | `variant enum Option { Some(Int); None }` | tagged union |
@@ -146,7 +146,6 @@ checking; `break`/`continue`.
 | `impl Annot for Type {}` | marker conformance with an explicit empty body |
 | `impl Annot(field: value) for Type {}` | conformance with compile-time metadata |
 | `impl Annot for Type::field {}` / `Type::* {}` | decorates one field / every field |
-| `impl [A, B] for [Type::x, Type::y] {}` | the decorator/target cross-product |
 | `annot @Name binds Spec { fields }` | binds an annotation to a spec |
 | `solo pack Name { }` | a type there is one of |
 | `graph Graph { solo\|factory\|scoped Type(args) [binds Spec] }` | a dependency graph; the first word is the provider's lifetime |
@@ -329,15 +328,17 @@ The compiler applies the same field-name, duplicate-argument, required-field,
 and type validation used by `@Serializable(...)`. Value arguments are rejected
 on ordinary spec implementations because only decorators define metadata.
 
-Decorator implementations can also select pack fields. Lists are normalized to
-one application for every decorator/target pair, and `Pack::*` selects only the
-fields declared by that pack:
+Decorator implementations can also select pack fields. Each declaration applies
+one decorator to its target. `Pack::*` selects only fields declared by that pack:
 
 ```azora
 impl SerialName(value: "login") for User::name {}
-impl [SerialName, SerialRequired] for User::name {}
-impl SerialIgnore for [User::name, User::password] {}
-impl [SerialName, SerialRequired] for User::* {}
+impl SerialName for User::name {}
+impl SerialRequired for User::name {}
+impl SerialIgnore for User::name {}
+impl SerialIgnore for User::password {}
+impl SerialName for User::* {}
+impl SerialRequired for User::* {}
 ```
 
 Member selectors and wildcards are decorator-only and require an explicitly empty

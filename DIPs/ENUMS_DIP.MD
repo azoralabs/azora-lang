@@ -8,7 +8,7 @@ naming that form.
 ## Grammar
 
 ```
-@[DECORATORS] VISIBILITY enum NAME <...GENERICS>? {
+DECORATORS* VISIBILITY enum NAME <...GENERICS>? {
     VARIANT
     VARIANT
     …

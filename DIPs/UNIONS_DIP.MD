@@ -9,7 +9,7 @@ Variants DIP.
 ## Grammar
 
 ```
-@[DECORATORS] VISIBILITY unsafe union NAME <...GENERICS>? {
+DECORATORS* VISIBILITY unsafe union NAME <...GENERICS>? {
     NAME : Type
     …
 }

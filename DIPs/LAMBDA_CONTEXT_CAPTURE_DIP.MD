@@ -430,23 +430,10 @@ missing capture, while `[&, without e]` captures `g` automatically. Choose the
 first form for a tightly audited closure boundary and the second when only
 specific values must never cross the boundary.
 
-Repeated and grouped exclusions are equivalent:
+Use a separate `without` entry for each excluded binding:
 
 ```azora
 [&, without e, without f] { ... }
-[&, without (e, f)] { ... }
-```
-
-The parenthesized form is a list owned by `without`; it does not construct a
-tuple. Physical newlines may separate names without commas:
-
-```azora
-[&,
-    without (
-        e
-        f
-    )
-] { ... }
 ```
 
 An exclusion is a hard fence, not a low-priority preference. If the lambda body
@@ -530,7 +517,7 @@ A lambda has zero or one square-bracket ownership header:
 [!, cache.&] context { ... }          // mutable default, shared cache override
 [&, cache.!] context { ... }          // shared default, mutable cache override
 [&, without secret] context { ... }   // shared default; secret may not be captured
-[&, without (e, f)] context { ... }   // grouped hard exclusions
+[&, without e, without f] context { ... }   // hard exclusions
 ```
 
 Receiver names, when present, follow that header. Capture overrides stay inside
@@ -695,14 +682,12 @@ using 5 {
 }
 ```
 
-Several receivers use the language's multi-receiver forms:
+Several receivers are supplied through a lexical context:
 
 ```azora
 using (source, destination) {
     transfer(16)
 }
-
-{source, destination}.transfer(16)
 ```
 
 `(source, destination).transfer(16)` calls a member on one tuple.

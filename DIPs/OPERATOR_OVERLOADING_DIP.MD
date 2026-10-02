@@ -181,7 +181,7 @@ written today.
 parses now (`Parser.kt:2948`), with receiver, operands, return type, `where`
 clause, overload suffix, expression body and bodyless form. Trait generic
 arguments (`impl PartialEqual<Vec2I> for Vec2`) are read at `Parser.kt:2739`.
-Bodyless grouped impls already queue conformances (`:2764`). And an impl member
+Bodyless derives already record conformances. An impl member
 already takes its return type from the spec it implements
 (`SymbolCollector.kt:630`).
 
@@ -547,7 +547,7 @@ A language that ties them together makes those types unwritable.
 
 So: a type that declares only `oper<=>` gets `<`, `<=`, `>`, `>=` and nothing
 else. `==` on it is the §8 error until it says. The exception is derivation  - 
-`impl [Order] for T` (§7) generates *both*, because there the author asked
+`derive Order for T` (§7) generates *both*, because there the author asked
 for the memberwise default of everything.
 
 ---
@@ -684,18 +684,12 @@ That leaves **one** axis, and it is the body:
 
 | what you write                            | what you get                           |
 |-------------------------------------------|----------------------------------------|
-| `impl [Equal, Order] for Vec2I` - no body | the compiler writes the members (§7)   |
+| `derive Equal for Vec2I; derive Order for Vec2I` - no body | the compiler writes the members (§7)   |
 | `impl Order for Version { oper<=> … }`    | your members, checked against the spec |
 
-Bodyless is derive. With a body is yours. One syntax, one rule, and it is
-already the syntax `std/traits/core.az:31` uses for `impl [Clone, Copy] for Ty`.
-
-Rust needs two constructs here - `#[derive(PartialOrd, Ord)]` above the type and
-`impl Ord for T { fn cmp }` below it - and they look nothing alike. C++ needs
-`auto operator<=>(const T&) const = default;` and a written one, which at least
-share a declaration but differ by a keyword in the body position. Azora's
-existing bodyless-impl rule collapses both into the presence or absence of
-braces.
+`derive Spec for Type` asks the compiler to generate the members. A manual
+`impl Spec for Type { ... }` supplies a body checked against that spec. Each
+spec and target has its own declaration.
 
 ### 6.5 A comparison operator outside a spec impl is an error
 
@@ -737,7 +731,8 @@ pack Point {
 }
 
 @Since("0.1")
-impl [Equal, Order] for Point
+derive Equal for Point
+derive Order for Point
 ```
 
 generates, for `Point`:
@@ -883,7 +878,8 @@ pack Vec2I {
 }
 
 @Since("0.1")
-impl [Equal, Order] for Vec2I
+derive Equal for Vec2I
+derive Order for Vec2I
 ```
 
 No braces, so the compiler writes the members (§6.4) - `oper==`, `oper<=>`
@@ -938,7 +934,7 @@ The §2.4 defect, fixed:
 
 ```
 line 42: cannot compare two 'Vec2' values - Vec2 does not implement PartialEqual
-  add 'impl [Equal] for Vec2' to compare it field by field, or write it out:
+  add 'derive Equal for Vec2' to compare it field by field, or write it out:
     impl PartialEqual for Vec2 { oper== &.(rhs: Self&) { … } }
 ```
 
@@ -955,7 +951,7 @@ get their conformance in §10.1 and compare as they always have.
 ### Migration
 
 Any pack currently compared with `==` and relying on the backend's accidental
-answer now fails to build until it states `impl [Equal] for T`. That is the
+answer now fails to build until it states `derive Equal for T`. That is the
 intended outcome and the fix is one line per type. A `--warn-implicit-equality`
 transition flag downgrades it to a warning for one release; `0.0.6` removes the
 flag.
@@ -1021,35 +1017,32 @@ a partial order rather than hiding it behind a comparison that lies at `NaN`.
 
 ### 10.1 Primitives - `std/primitive.az`, `std/traits/core.az`
 
-The type lists are already there (`primitive.az:403`–`:419`), and
-`impl Spec for TypeList` already works (`:423`), so this is three lines:
+Each primitive states each conformance explicitly. Compile-time iteration can
+apply the same independent derivation declarations to a list of primitive types:
 
 ```azora
-@Since("0.1")
-impl [PartialEqual, Equal, Order] for Integers
-
-@Since("0.1")
-impl [PartialEqual, PartialOrder] for FloatingPoints
-
-@Since("0.1")
-impl [PartialEqual, Equal, Order] for [Bool, Char, String]
+inline for Ty in Integers {
+    derive PartialEqual for Ty
+    derive Equal for Ty
+    derive Order for Ty
+}
+inline for Ty in FloatingPoints {
+    derive PartialEqual for Ty
+    derive PartialOrder for Ty
+}
+derive PartialEqual for Bool
+derive Equal for Bool
+derive Order for Bool
+derive PartialEqual for Char
+derive Equal for Char
+derive Order for Char
+derive PartialEqual for String
+derive Equal for String
+derive Order for String
 ```
 
-Bodyless, so §6.4 applies - but for a primitive the "derivation" is the
-backend's native comparison rather than a generated field walk. `Compare` for
-the integers because `Order` is in the list; `PartialCompare` for the floats
-because it is not (§5.3.1). The conformance is the entire declaration, exactly
-as `impl [Clone, Copy] for Ty` is today (`traits/core.az:31`).
-
-Note there is no `inline for Ty in …` loop and no `bridge oper<=>` line. An
-earlier draft of this DIP wrote one, which was a leftover of the free-operator
-model: with the operator inside the spec's impl, a bodyless
-`impl Order for Integers` says *both* things at once - that the conformance
-holds and that the compiler supplies the member.
-
-`Bool` orders `false < true`. `Char` orders by code point. `String` orders
-lexicographically by code point, which is `Order` and not a collation - a
-locale-aware collation is a separate function and should never be what `<` does.
+For primitives, the backend supplies native comparisons. `Order` requires total
+comparison; floating-point types instead declare `PartialOrder`.
 
 ### 10.2 Algorithms - `std/algorithm/`
 
@@ -1162,8 +1155,7 @@ func<T: Order> min(a: T, b: T): T
 func<T: PartialEqual<U>, U> indexOf(haystack: Array<T>, needle: U&): Int?
 ```
 
-Several bounds on one parameter use the bracket list Azora already uses for
-`impl [A, B] for T`:
+Several bounds on one parameter form a capability requirement list:
 
 ```azora
 func<K> sortedKeys(m: Map<K, V>): Array<K> where K: [Order, Clone]
@@ -1483,10 +1475,10 @@ bridge spec Hash requires Equal {
 }
 ```
 
-`bridge`, so a bodyless `impl [Hash] for Point` generates the field-wise hash;
+`bridge`, so a bodyless `derive Hash for Point` generates the field-wise hash;
 an `impl Hash for Point { prop hash … }` with a body supplies it instead (§6.4).
 
-**`impl [Equal] for T` also derives `Hash`**, over the same fields in the same
+**`derive Equal for T` also derives `Hash`**, over the same fields in the same
 order, unless the type wrote its own. §7.3 gives the reasoning: a type whose
 `==` and `#` disagree is inserted into a `HashMap` and never found again, and
 generating both from one declaration is the only way to make that impossible.
@@ -1719,7 +1711,7 @@ The messages are most of the value of this proposal, so they are specified.
 
 ```
 line 42: cannot compare two 'Vec2' values - Vec2 does not implement PartialEqual
-  add 'impl [Equal] for Vec2' to compare it field by field, or write it out:
+  add 'derive Equal for Vec2' to compare it field by field, or write it out:
     impl PartialEqual for Vec2 { oper== &.(rhs: Self&) { … } }
 
 line 61: 'Vec2' implements PartialOrder but not PartialEqual
@@ -1729,7 +1721,7 @@ line 61: 'Vec2' implements PartialOrder but not PartialEqual
 
 line 88: cannot derive 'Order' for 'Sample': field 'value: Double' is not Order
   Double is PartialOrder - NaN does not relate to anything
-  use 'impl [PartialOrder] for Sample', or store the value as a Long
+  use 'derive PartialOrder for Sample', or store the value as a Long
 
 line 104: sort<T> requires 'T: Order', but T = Double is only PartialOrder
   NaN does not relate to anything, so there is no order to sort by
@@ -1750,14 +1742,14 @@ line 164: 'impl Order for Vec2' declares '<=>' returning PartialCompare
 
 line 177: 'Key' implements PartialEqual but has no 'hash', and is a HashMap key
   a key whose equality and hash disagree is inserted and never found
-  add 'prop Key&.hash: ULong', or derive both with 'impl [Equal] for Key'
+  add 'prop Key&.hash: ULong', or derive both with 'derive Equal for Key'
 
 line 203: 'Matrix' has no '%' - its 'impl Arithmetic' does not declare 'oper%'
   an operator family implements the part it wants; add 'oper%' to that impl
 
 line 211: 'Matrix' has 'oper+=' but no '+', and Matrix is not Clone
   '+' from '+=' needs a copy to add into
-  add 'impl [Clone] for Matrix', or declare 'oper+' directly
+  add 'derive Clone for Matrix', or declare 'oper+' directly
 
 line 224: sum<T> requires 'T: Arithmetic[+]', which 'Token' does not have
   Token implements Arithmetic, but its impl declares only 'oper*'
@@ -1786,7 +1778,7 @@ written until this exists.
 This is the **only** half of the impl/spec pairing that is missing. The other
 half already works: `impl Spec for Type { oper<SYM> … }` parses today
 (`Parser.kt:2948`), trait generic arguments are read and kept
-(`Parser.kt:2739`, `traitArgs`), bodyless grouped impls queue conformances
+(`Parser.kt:2739`, `traitArgs`), bodyless derives record conformances
 (`:2764`), and an impl member already inherits its return type from the spec
 (`SymbolCollector.kt:630`) - which is what §5.3.1 rests on. So the whole surface
 in §5.3 costs one `when` branch in `parseSpec` plus the matching check.
@@ -1811,7 +1803,7 @@ bound form (§11.2), enforcement of the already-parsed `<T: Spec>` list form, an
 §6.3's widening rule.
 
 **Phase 6 - derivation.** Extend `SymbolCollector`'s field-wise pass to
-`impl [Equal]`, `impl [Order]` and `impl [Hash]`, over packs, enums and variant
+`derive Equal`, `derive Order` and `derive Hash`, over packs, enums and variant
 enums, including the `Equal`→`Hash` pairing of §7.3.
 
 **Phase 7 - the errors.** §8 (`==` with no conformance), behind
@@ -1927,7 +1919,7 @@ Worth doing whether or not the rest lands:
    and orders non-ASCII by encoding. The alternative is refusing `<` on strings
    entirely and forcing a named comparison. Every language that tried the
    second reverted. Proposed: `Order`, documented as code-point order.
-2. **Should `impl [Order] for T` derive `==` when the author wrote
+2. **Should `derive Order for T` derive `==` when the author wrote
    `oper<=>` but not `oper==`?** §7.1 says both are generated; §5.6 says an
    explicit `<=>` derives nothing. The half-and-half case - explicit `<=>`,
    derived `==` - is currently an error, and it might reasonably generate a

@@ -72,7 +72,7 @@ What *is* real and can be built on:
   but never `Copy`.
 - `Shared<T>`, `Unique<T>`, `Weak<T>` - the single-thread counterparts.
 - The capability machinery itself: `bridge spec`, `requires`,
-  `impl [A, B] for T`, field-wise derivation, and `where T is C` as a generic
+  `derive A for T; derive B for T`, field-wise derivation, and `where T is C` as a generic
   constraint.
 
 ---
@@ -346,7 +346,7 @@ scope std {
      * someone remembers.
      */
     @Since("0.1")
-    pack Guard<T> derives (Deref, DerefMut) {
+    pack Guard<T> derives Deref derives DerefMut {
         var _owner: Mutex<T>*
     }
 
@@ -518,7 +518,8 @@ those, and only those:
  * handle is opaque to us, so the derivation cannot see what makes this sound.
  */
 @Since("0.1")
-unsafe impl [Send, Sync] for FfiHandle
+unsafe impl Send for FfiHandle
+unsafe impl Sync for FfiHandle
 ```
 
 `unsafe impl` is new syntax and is the *only* way to claim either capability by

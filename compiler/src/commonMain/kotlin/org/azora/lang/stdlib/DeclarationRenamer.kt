@@ -378,7 +378,6 @@ internal class DeclarationRenamer(
         })
         is Expr.TupleLit -> e.copy(
             elements = e.elements.map { expr(it, scope) },
-            sequenceReceiver = e.sequenceReceiver?.let { expr(it, scope) },
         )
         is Expr.VariantLit -> e.copy(elements = e.elements.map { expr(it, scope) })
         is Expr.TupleAccess -> e.copy(target = expr(e.target, scope))

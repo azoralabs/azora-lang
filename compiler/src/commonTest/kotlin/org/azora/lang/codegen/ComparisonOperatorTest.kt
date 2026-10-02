@@ -309,7 +309,7 @@ class ComparisonOperatorTest {
                 var major: Int
                 var minor: Int
             }
-            derive (Order) for Version
+            derive Order for Version
             func main() {
                 println("${'$'}{Version(1, 2) <=> Version(1, 9)}")
                 println(Version(1, 2) < Version(1, 9))
@@ -328,7 +328,7 @@ class ComparisonOperatorTest {
                 var major: Int
                 var minor: Int
             }
-            derive (Order) for Version
+            derive Order for Version
             func main() {
                 println("${'$'}{Version(2, 0) <=> Version(1, 99)}")
                 println("${'$'}{Version(1, 1) <=> Version(1, 2)}")
@@ -345,7 +345,7 @@ class ComparisonOperatorTest {
                 var a: Int
                 var b: Int
             }
-            derive (Equal) for Key
+            derive Equal for Key
             func main() {
                 println(Key(1, 2).hash == Key(1, 2).hash)
                 println(Key(1, 2).hash == Key(2, 1).hash)
@@ -362,7 +362,7 @@ class ComparisonOperatorTest {
                 var a: Int
                 var b: Int
             }
-            derive (Equal) for Loose
+            derive Equal for Loose
             impl Equal for Loose {
                 oper== &.(rhs: Self&): Bool {
                     return self.a == rhs.a
@@ -407,7 +407,7 @@ class ComparisonOperatorTest {
                 var x: Int
                 var y: Int
             }
-            derive (Equal) for Vec2
+            derive Equal for Vec2
             func main() {
                 println(Vec2(1, 2) == Vec2(1, 2))
             }

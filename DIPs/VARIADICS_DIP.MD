@@ -277,8 +277,7 @@ parameters, and neither is inferred from being absent.
 ### 5.3 None of it means anything yet
 
 Nothing supplies a variable number of contextual receivers: `using` takes a fixed
-list, and the receiver-call forms (`2.scale(7)`, `{2, "three"}.combine()`) each supply
-exactly as many receivers as the type declares. So the type parses and no call
+list, and dot calls such as `2.scale(7)` supply one receiver. So the type parses and no call
 can satisfy it.
 
 - ⬜ **Variadic receivers are a parsed type with no semantics.** No call form

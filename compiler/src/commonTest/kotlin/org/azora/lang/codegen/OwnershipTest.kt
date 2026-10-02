@@ -73,7 +73,8 @@ class OwnershipTest {
         spec B
         spec C requires [A, B]
         pack P { var x: Int }
-        derive (A, B) for P
+        derive A for P
+        derive B for P
         impl C for P {}
     """)
 

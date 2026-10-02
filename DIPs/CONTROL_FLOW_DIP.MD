@@ -45,17 +45,6 @@ then 1
 else -1
 ```
 
-Grouped bindings use one source group per branch. Their condition is evaluated
-once for all the names, and each branch must supply the same number of values
-as there are names:
-
-```azora
-var {sign, index}: Int = if negative then {-1, 1} else {1, 0}
-```
-
-A braced branch can explicitly contain its source group (`{ {a, b} }`);
-`else then {a, b}` is also explicit about using a single source group.
-
 ## 2. Loops
 
 ```azora

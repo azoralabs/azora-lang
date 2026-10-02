@@ -104,27 +104,24 @@ class ImplAndDeriveFormsTest {
         assertEquals(ParamModifier.SHARED, reflected.methods.single().receiverModifier)
     }
 
-    // -- one body, several types --------------------------------------------
+    // -- explicit implementations -------------------------------------------
 
-    @Test fun aTupleTargetListGivesEachTypeTheBody() {
-        // `impl (Byte, UByte) { … }` - written once, given to each.
-        val items = parse("impl (Byte, UByte) {\n    inline fin sizeBytes: Int = 1\n}")
+    @Test fun explicitImplementationsDefineEachTypesStatics() {
+        val items = parse("impl Byte {\n    inline fin sizeBytes: Int = 1\n}\nimpl UByte {\n    inline fin sizeBytes: Int = 1\n}")
         assertEquals(
             listOf("Byte__sizeBytes", "UByte__sizeBytes"),
             items.filterIsInstance<TopLevel.InlineFin>().map { it.name },
         )
     }
 
-    @Test fun aTupleTargetListRepeatsMethodsToo() {
-        val impls = impls("impl (A, B) {\n    func &.f(): Int { return 1 }\n}")
+    @Test fun explicitImplementationsDefineEachTypesMethods() {
+        val impls = impls("impl A {\n    func &.f(): Int { return 1 }\n}\nimpl B {\n    func &.f(): Int { return 1 }\n}")
         assertEquals(listOf("A", "B"), impls.map { it.typeName })
         assertTrue(impls.all { it.methods.map { m -> m.name } == listOf("f") })
     }
 
-    @Test fun aTupleBeforeForStillNamesDecorators() {
-        // The brace is what says the list named targets; a `for` says it named
-        // decorators, and that reading is untouched.
-        val impls = impls("derive (Debug, Display) for Point")
+    @Test fun explicitDerivesApplyEachDecorator() {
+        val impls = impls("derive Debug for Point\nderive Display for Point")
         assertEquals(listOf("Debug", "Display"), impls.map { it.traitName })
         assertTrue(impls.all { it.typeName == "Point" })
     }
@@ -186,21 +183,19 @@ class ImplAndDeriveFormsTest {
         val e = assertFailsWith<IllegalStateException> {
             parse("derive (A, B)(x: 1) for Fixture")
         }
-        assertTrue("single spec" in e.message.orEmpty(), e.message.orEmpty())
+        assertTrue("Expected a spec name" in e.message.orEmpty(), e.message.orEmpty())
     }
 
-    @Test fun aPlainDeriveIsUnchanged() {
-        val impls = impls("derive (Clone, Copy) for (A, B)")
+    @Test fun explicitDerivesApplyEachSpecToEachType() {
+        val impls = impls("derive Clone for A\nderive Copy for A\nderive Clone for B\nderive Copy for B")
         assertEquals(4, impls.size)
     }
 
-    @Test fun targetsMayBeSeparatedByNewlinesAlone() {
+    @Test fun explicitMemberDerivesRetainTheirTargets() {
         val impls = impls(
             """
-            derive (SerialName) for (
-                Fixture::name
-                Fixture::password
-            )
+            derive SerialName for Fixture::name
+            derive SerialName for Fixture::password
             """.trimIndent(),
         )
         assertEquals(2, impls.size)
@@ -209,7 +204,7 @@ class ImplAndDeriveFormsTest {
     // -- a `derives` clause on the declaration itself ------------------------
 
     @Test fun aDeclarationCarriesItsOwnConformances() {
-        val impls = impls("bridge pack Char derives (PartialEqual, Equal, Order, Hash)")
+        val impls = impls("bridge pack Char derives PartialEqual derives Equal derives Order derives Hash")
         assertEquals(listOf("PartialEqual", "Equal", "Order", "Hash"), impls.map { it.traitName })
         assertTrue(impls.all { it.typeName == "Char" })
     }
@@ -220,7 +215,7 @@ class ImplAndDeriveFormsTest {
         val impls = impls(
             """
             bridge pack Int<N: UInt = 32>(__int)
-            derives (Integer, SignedInteger, SignedNumber)
+            derives Integer derives SignedInteger derives SignedNumber
             """.trimIndent(),
         )
         assertEquals(listOf("Integer", "SignedInteger", "SignedNumber"), impls.map { it.traitName })

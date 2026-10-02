@@ -267,14 +267,14 @@ An unfiltered query lists its yielded components directly:
 @query<Transform!, Velocity&>
 ```
 
-The square brackets are grouping syntax used only when `@with` or `@without`
+The square brackets delimit the macro operand list when `@with` or `@without`
 filters follow the yielded component list:
 
 ```azora
 @query<[CapturePoint!, Team&] @without Disabled>
 ```
 
-Without that grouping, the macro could not distinguish yielded component terms
+The operand boundary lets the macro distinguish yielded component terms
 from the filter expression which follows them. Brackets are unnecessary and
 should not be written when there is no filter.
 

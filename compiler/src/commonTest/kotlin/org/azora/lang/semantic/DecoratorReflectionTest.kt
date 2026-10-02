@@ -349,7 +349,7 @@ class DecoratorReflectionTest {
         assertTrue(wrongType.errors.any { "field 'enabled' expects Bool" in it }, wrongType.errors.toString())
     }
 
-    @Test fun decoratorImplSupportsFieldListsDecoratorListsAndWildcards() {
+    @Test fun explicitDecoratorImplementationsCoverMembersAndWildcards() {
         val result = analyze("""
             annot @First for .Field
             annot @Second for .Field
@@ -358,19 +358,25 @@ class DecoratorReflectionTest {
             impl First for Direct::name {}
 
             pack DecoratorGroup { fin name: String = "" }
-            impl [First, Second] for DecoratorGroup::name {}
+            impl First for DecoratorGroup::name {}
+            impl Second for DecoratorGroup::name {}
 
             pack TargetGroup { fin name: String = "", fin password: String = "" }
-            impl First for [TargetGroup::name, TargetGroup::password] {}
+            impl First for TargetGroup::name {}
+            impl First for TargetGroup::password {}
 
             pack CrossProduct { fin name: String = "", fin password: String = "" }
-            impl [First, Second] for [CrossProduct::name, CrossProduct::password] {}
+            impl First for CrossProduct::name {}
+            impl Second for CrossProduct::name {}
+            impl First for CrossProduct::password {}
+            impl Second for CrossProduct::password {}
 
             pack OneWildcard { fin name: String = "", fin password: String = "" }
             impl First for OneWildcard::* {}
 
             pack GroupWildcard { fin name: String = "", fin password: String = "" }
-            impl [First, Second] for GroupWildcard::* {}
+            impl First for GroupWildcard::* {}
+            impl Second for GroupWildcard::* {}
 
             func covered(): Int {
                 inline if reflect<Direct::name>.hasAnnot<First> &&

@@ -118,7 +118,7 @@ annot @SerialName for [.Pack, .Enum, .Field] {
      * Name written to and read from the serialized representation.
      *
      * An empty value retains the declaration's source name. This makes the
-     * marker form usable in grouped decorator implementations while an
+     * marker form usable in decorator implementations while an
      * explicit non-empty value performs an actual rename.
      */
     fin value: String = ""
@@ -953,28 +953,30 @@ test scope {
 
     derive SerialName(value: "display_name") for _DirectFieldDecoratorFixture::name
 
-    pack _GroupedDecoratorFixture {
+    pack _ExplicitDecoratorFixture {
         fin name: String = ""
     }
 
-    derive (SerialName, SerialRequired) for _GroupedDecoratorFixture::name
+    derive SerialName for _ExplicitDecoratorFixture::name
+    derive SerialRequired for _ExplicitDecoratorFixture::name
 
-    pack _GroupedTargetFixture {
-        fin name: String = ""
-        fin password: String = ""
-    }
-
-    derive SerialIgnore for (_GroupedTargetFixture::name, _GroupedTargetFixture::password)
-
-    pack _CrossProductDecoratorFixture {
+    pack _ExplicitTargetFixture {
         fin name: String = ""
         fin password: String = ""
     }
 
-    derive (SerialName, SerialRequired) for (
-        _CrossProductDecoratorFixture::name
-        _CrossProductDecoratorFixture::password
-    )
+    derive SerialIgnore for _ExplicitTargetFixture::name
+    derive SerialIgnore for _ExplicitTargetFixture::password
+
+    pack _MemberDecoratorFixture {
+        fin name: String = ""
+        fin password: String = ""
+    }
+
+    derive SerialName for _MemberDecoratorFixture::name
+    derive SerialRequired for _MemberDecoratorFixture::name
+    derive SerialName for _MemberDecoratorFixture::password
+    derive SerialRequired for _MemberDecoratorFixture::password
 
     pack WildcardDecoratorFixture {
         fin name: String = ""
@@ -983,12 +985,13 @@ test scope {
 
     derive SerialIgnore for WildcardDecoratorFixture::*
 
-    pack _GroupedWildcardDecoratorFixture {
+    pack _WildcardRequiredFixture {
         fin name: String = ""
         fin password: String = ""
     }
 
-    derive (SerialName, SerialRequired) for _GroupedWildcardDecoratorFixture::*
+    derive SerialName for _WildcardRequiredFixture::*
+    derive SerialRequired for _WildcardRequiredFixture::*
 }
 
 test "serializer decorator is visible at compile time" {
@@ -1078,24 +1081,24 @@ test "decorator impl targets one pack field" {
 }
 
 test "decorator impl accepts a decorator list" {
-    inline assert reflect<_GroupedDecoratorFixture::name>.hasAnnot<SerialName> panic
+    inline assert reflect<_ExplicitDecoratorFixture::name>.hasAnnot<SerialName> panic
         "decorator lists must apply every listed decorator"
-    inline assert reflect<_GroupedDecoratorFixture::name>.hasAnnot<SerialRequired> panic
+    inline assert reflect<_ExplicitDecoratorFixture::name>.hasAnnot<SerialRequired> panic
         "decorator lists must preserve all marker contracts"
 }
 
 test "decorator impl accepts a field target list" {
-    inline assert reflect<_GroupedTargetFixture::name>.hasAnnot<SerialIgnore> panic
+    inline assert reflect<_ExplicitTargetFixture::name>.hasAnnot<SerialIgnore> panic
         "target lists must decorate their first field"
-    inline assert reflect<_GroupedTargetFixture::password>.hasAnnot<SerialIgnore> panic
+    inline assert reflect<_ExplicitTargetFixture::password>.hasAnnot<SerialIgnore> panic
         "target lists must decorate every selected field"
 }
 
 test "decorator and target lists form a cross product" {
-    inline assert reflect<_CrossProductDecoratorFixture::name>.hasAnnot<SerialName> &&
-        reflect<_CrossProductDecoratorFixture::name>.hasAnnot<SerialRequired> &&
-        reflect<_CrossProductDecoratorFixture::password>.hasAnnot<SerialName> &&
-        reflect<_CrossProductDecoratorFixture::password>.hasAnnot<SerialRequired> panic
+    inline assert reflect<_MemberDecoratorFixture::name>.hasAnnot<SerialName> &&
+        reflect<_MemberDecoratorFixture::name>.hasAnnot<SerialRequired> &&
+        reflect<_MemberDecoratorFixture::password>.hasAnnot<SerialName> &&
+        reflect<_MemberDecoratorFixture::password>.hasAnnot<SerialRequired> panic
         "each listed decorator must apply to each listed field"
 }
 
@@ -1106,10 +1109,10 @@ test "field wildcard applies a decorator to every pack field" {
 }
 
 test "field wildcard accepts a decorator list" {
-    inline assert reflect<_GroupedWildcardDecoratorFixture::name>.hasAnnot<SerialName> &&
-        reflect<_GroupedWildcardDecoratorFixture::name>.hasAnnot<SerialRequired> &&
-        reflect<_GroupedWildcardDecoratorFixture::password>.hasAnnot<SerialName> &&
-        reflect<_GroupedWildcardDecoratorFixture::password>.hasAnnot<SerialRequired> panic
+    inline assert reflect<_WildcardRequiredFixture::name>.hasAnnot<SerialName> &&
+        reflect<_WildcardRequiredFixture::name>.hasAnnot<SerialRequired> &&
+        reflect<_WildcardRequiredFixture::password>.hasAnnot<SerialName> &&
+        reflect<_WildcardRequiredFixture::password>.hasAnnot<SerialRequired> panic
         "decorator lists must apply to every field selected by Pack::*"
 }
 

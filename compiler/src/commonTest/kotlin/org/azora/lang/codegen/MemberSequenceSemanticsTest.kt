@@ -17,9 +17,15 @@ class MemberSequenceSemanticsTest {
             }
             func main() {
                 var result = CircuitProbe(0)
-                for j: Int in 1..<2 then result.{h(j), x(j)}
+                for j: Int in 1..<2 {
+                    result.h(j)
+                    result.x(j)
+                }
                 assert result.order == 12 panic "H then X order changed"
-                for j: Int in 1..<2 then result.{x(j), h(j)}
+                for j: Int in 1..<2 {
+                    result.x(j)
+                    result.h(j)
+                }
                 assert result.order == 1221 panic "X then H order changed"
             }
         """.trimIndent()

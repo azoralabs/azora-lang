@@ -6,7 +6,7 @@ plus the Rust-style dynamic dispatch that ties them together.
 ## Grammar
 
 ```
-@[DECORATORS] VISIBILITY (opaque)? pack NAME <...GENERICS> [where CLAUSE] {
+DECORATORS* VISIBILITY (opaque)? pack NAME <...GENERICS> [where CLAUSE] {
     FIELD_VISIBILITY (var | fin) NAME : Type [= default]
     …
 }

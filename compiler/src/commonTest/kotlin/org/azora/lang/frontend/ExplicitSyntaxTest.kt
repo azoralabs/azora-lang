@@ -40,6 +40,22 @@ class ExplicitSyntaxTest {
         }
     }
 
+    @Test fun packDerivesUsesABareSingleSpecOrOneListOfSeveralSpecs() {
+        for (source in listOf(
+            "pack NavOwnerId derives Copy derives Clone derives Equal derives Hash {}",
+            "pack NavOwnerId derives (Copy, Clone) derives Equal {}",
+            "pack NavOwnerId derives (Copy, Clone)\nderives (Equal, Hash) {}",
+            "pack NavOwnerId derives Copy, Clone {}",
+            "pack NavOwnerId derives (Copy) {}",
+            "pack NavOwnerId derives () {}",
+        )) {
+            assertFailsWith<IllegalStateException>(source) { parse(source) }
+        }
+        val program = parse("pack NavOwnerId derives (Copy, Clone, Equal, Hash) {}")
+        assertEquals(listOf("Copy", "Clone", "Equal", "Hash"), program.items.filterIsInstance<TopLevel.Impl>().map { it.traitName })
+        assertEquals("Equal", parse("pack Point derives Equal {}").items.filterIsInstance<TopLevel.Impl>().single().traitName)
+    }
+
     @Test fun parenthesizedDerivesPreserveEverySpecAndItsOrder() {
         val implementations = parse("pack Text derives (Copy, Clone, Equal, Hash, Compose)")
             .items.filterIsInstance<TopLevel.Impl>()

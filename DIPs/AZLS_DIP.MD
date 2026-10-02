@@ -735,7 +735,7 @@ Variants cover missing/ambiguous macro arms, failed matching, recursion/size
 limits, invalid expanded syntax, unsupported derives, generated member
 conflicts, and generated type/visibility/ownership failures.
 
-For `pack Point derives Equal derives Hash derives Display`, failure in generated `Hash`
+For `pack Point derives (Equal, Hash, Display)`, failure in generated `Hash`
 code points primarily to `Hash`; generated member and derive definition are
 related locations.
 

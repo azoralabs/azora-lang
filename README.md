@@ -486,6 +486,10 @@ derive (Equal, Order) for (Point, Size)
 impl (First, Second) for Account::name {}
 ```
 
+A pack has at most one `derives` clause. Use a bare spec for one, such as
+`pack Point derives Equal`, and parentheses for several, such as
+`pack Text derives (Copy, Clone, Equal, Hash)`.
+
 Import selectors use braces: `import std.traits::{Copy, Clone}`. Array literals
 and indexing use brackets: `[1, 2, 3]`, `values[i]`.
 

@@ -2121,8 +2121,17 @@ class Parser(
             null
         }
         constParamEnums = tp.constEnums
-        val derives = mutableListOf<ContractHead>()
-        while (matchContinued(TokenType.DERIVES)) derives.addAll(parseDeriveHeads())
+        val derives = if (matchContinued(TokenType.DERIVES)) {
+            val parenthesized = check(TokenType.L_PAREN)
+            val heads = parseDeriveHeads()
+            if (parenthesized && heads.size == 1) {
+                error("A single derived spec does not use parentheses; write 'pack $name derives ${heads.single().name}' at line ${peek().line}")
+            }
+            if (matchContinued(TokenType.DERIVES)) {
+                error("Use one derives clause containing all specs: 'pack $name derives (Spec, Other)' at line ${peek().line}")
+            }
+            heads
+        } else emptyList()
         if (isUnion && derives.isNotEmpty()) {
             error("an unsafe union cannot derive field-wise implementations at line ${start.line}")
         }

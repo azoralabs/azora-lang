@@ -204,7 +204,7 @@ class ImplAndDeriveFormsTest {
     // -- a `derives` clause on the declaration itself ------------------------
 
     @Test fun aDeclarationCarriesItsOwnConformances() {
-        val impls = impls("bridge pack Char derives PartialEqual derives Equal derives Order derives Hash")
+        val impls = impls("bridge pack Char derives (PartialEqual, Equal, Order, Hash)")
         assertEquals(listOf("PartialEqual", "Equal", "Order", "Hash"), impls.map { it.traitName })
         assertTrue(impls.all { it.typeName == "Char" })
     }
@@ -215,7 +215,7 @@ class ImplAndDeriveFormsTest {
         val impls = impls(
             """
             bridge pack Int<N: UInt = 32>(__int)
-            derives Integer derives SignedInteger derives SignedNumber
+            derives (Integer, SignedInteger, SignedNumber)
             """.trimIndent(),
         )
         assertEquals(listOf("Integer", "SignedInteger", "SignedNumber"), impls.map { it.traitName })

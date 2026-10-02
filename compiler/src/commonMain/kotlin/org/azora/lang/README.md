@@ -129,7 +129,7 @@ checking; `break`/`continue`.
 | Construct | Purpose |
 |-----------|---------|
 | `pack Name { fields }` / `pack Empty` | struct; empty packs may omit `{ }` |
-| `pack Name derives A derives B { fields }` | struct plus generated spec implementations |
+| `pack Name derives (A, B) { fields }` | struct plus generated spec implementations |
 | `derive A for ExistingType` | request generated implementations outside the type declaration |
 | `pack Tuple<...T> where (...T).length >= 2 { inline for Ty in ...T with index { mixin "$index: $Ty" } }` | variadic tuple template |
 | `enum Color { Red; Green }` | enum |
@@ -143,7 +143,7 @@ checking; `break`/`continue`.
 | `typealias T = U` | type alias |
 | `error ErrSet { V1, V2 }` | error-set declaration |
 | `annot @Name { fin field: Type }` | annotation type; metadata fields are immutable |
-| `pack Name derives (Spec, Other)` | derives each listed spec |
+| `pack Name derives Spec` / `pack Name derives (Spec, Other)` | derives one spec or each spec in a list |
 | `derive (Spec, Other) for (A, B)` | independent spec/target derivations |
 | `impl (Annot, Other) for (Type::x, Type::y) {}` | applies each decorator to each target |
 | `impl Annot for Type {}` | marker conformance with an explicit empty body |

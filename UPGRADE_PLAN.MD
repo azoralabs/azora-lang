@@ -839,7 +839,7 @@ to say, or relaxing a list to separate its elements as every other list does:
   Error on the second `TopLevel.Impl` with an empty `spec` target and the same type name,
   pointing at the first: *"`X` already has an inherent impl at line N; merge the members"*.
 - **Accept** `ImplPerFileTest`: two `impl X {}` errors; `impl X {}` + three
-  `impl S for X {}` + `derives Clone derives Display` compiles; `impl X {}` + `impl Y {}` compiles.
+  `impl S for X {}` + `derives (Clone, Display)` compiles; `impl X {}` + `impl Y {}` compiles.
 - **Note** measure the stdlib cost before committing:
   `grep -cE '^impl [A-Z][A-Za-z0-9_<>, ]*\{' std/**/*.az`
 

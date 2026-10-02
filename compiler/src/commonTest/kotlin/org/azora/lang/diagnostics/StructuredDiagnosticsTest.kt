@@ -225,7 +225,7 @@ class StructuredDiagnosticsTest {
     }
 
     @Test fun compilerResolverOwnsDistinctContractRangesAndImportFixes() {
-        val text = "bridge pack Glyph derives PartialEqual derives Equal derives Order derives Hash\n"
+        val text = "bridge pack Glyph derives (PartialEqual, Equal, Order, Hash)\n"
         val source = SourceUnit(
             SourceId("glyph"), "file:///workspace/glyph.az", "glyph.az", text, DocumentVersion(3),
         )
@@ -248,7 +248,7 @@ class StructuredDiagnosticsTest {
         val text = """
             exposed module std.char
             import std.traits::{Order, Hash, Equal}
-            bridge pack Char derives PartialEqual derives Equal derives Order derives Hash
+            bridge pack Char derives (PartialEqual, Equal, Order, Hash)
         """.trimIndent() + "\n"
         val source = SourceUnit(
             SourceId("char"), "file:///workspace/std/char.az", "std/char.az", text, DocumentVersion(4),

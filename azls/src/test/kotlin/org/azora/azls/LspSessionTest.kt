@@ -73,7 +73,7 @@ class LspSessionTest {
         LspSession(notifications::add).use { session ->
             initialize(session)
             val uri = "file:///workspace/contracts.az"
-            val source = "bridge pack Glyph derives PartialEqual derives Equal derives Order derives Hash\n"
+            val source = "bridge pack Glyph derives (PartialEqual, Equal, Order, Hash)\n"
             session.handle(open(uri, 6, source))
             val diagnostics = awaitPublish(notifications, version = 6)
                 .params().jsonObject["diagnostics"]!!.jsonArray
@@ -163,7 +163,7 @@ class LspSessionTest {
                     fin right: U = other
                     return PartialCompare.Less
                 }
-                bridge pack Glyph derives PartialEqual derives Equal derives Order derives Hash
+                bridge pack Glyph derives (PartialEqual, Equal, Order, Hash)
             """.trimIndent()
             session.handle(open(uri, 1, source))
             val response = assertNotNull(session.handle(request(
@@ -545,7 +545,7 @@ class LspSessionTest {
             @Supress(.Unused)
             exposed module std.char
             @Since("0.1")
-            bridge pack Char derives PartialEqual derives Equal derives Order derives Hash
+            bridge pack Char derives (PartialEqual, Equal, Order, Hash)
         """.trimIndent() + "\n"
         Files.writeString(char, withoutImport)
 

@@ -67,7 +67,12 @@ class ReadmeSnippetTest {
         // The comparison example carries its own pack; the derive and Display
         // examples need one.
         "impl Order for Version" to emptyMain,
-        "derive Equal for Point" to Context(
+        "pack Text derives" to Context(
+            prelude = "import std.traits\nannot @First for .Field\nannot @Second for .Field\n" +
+                "pack Point { fin value: Int }\npack Size { fin value: Int }\n" +
+                "pack Account { fin name: String }\n",
+        ),
+        "derive (Equal, Order) for Point" to Context(
             prelude = "import std.traits\npack Point {\n    var x: Int\n    var y: Int\n}\n",
         ),
         "impl Arithmetic for Matrix" to Context(

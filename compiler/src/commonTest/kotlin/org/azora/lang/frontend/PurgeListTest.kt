@@ -17,17 +17,18 @@
 package org.azora.lang.frontend
 
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
  * Releasing a type's buffers is one act, so it is one statement.
  *
- * `purge [a, b, c]` names the things released in the order they are released,
+ * `purge (a, b, c)` names the things released in the order they are released,
  * and `using self` supplies the receiver once instead of on every line:
  *
  * ```
- * using self { purge [keys, values, hashes, occupied] }
+ * using self { purge (keys, values, hashes, occupied) }
  * ```
  *
  * A `using` scope always has braces, even when its body is one statement.
@@ -60,11 +61,29 @@ class PurgeListTest {
         val statements = body(
             """
             func release(self: Buffers!) {
-                purge [self.keys, self.values, self.hashes]
+                purge (self.keys, self.values, self.hashes)
             }
             """.trimIndent()
         )
         assertEquals(listOf("self.keys", "self.values", "self.hashes"), purged(statements))
+    }
+
+    @Test fun listDelimitersAreParentheses() {
+        for (source in listOf("purge [a, b]", "purge {a, b}", "purge ()")) {
+            assertFailsWith<IllegalStateException>(source) { body("func release() { $source }") }
+        }
+    }
+
+    @Test fun multilineListsAllowATrailingComma() {
+        val statements = body("""
+            func release() {
+                purge (
+                    a,
+                    b,
+                )
+            }
+        """.trimIndent())
+        assertEquals(listOf("a", "b"), purged(statements))
     }
 
     @Test fun aSingleTargetStillParses() {
@@ -82,7 +101,7 @@ class PurgeListTest {
         val statements = body(
             """
             func release(self: Buffers!) {
-                using self { purge [keys, values, hashes, occupied] }
+                using self { purge (keys, values, hashes, occupied) }
             }
             """.trimIndent()
         )
@@ -96,7 +115,7 @@ class PurgeListTest {
             """
             func release(self: Buffers!) {
                 using self {
-                    purge [keys, values]
+                    purge (keys, values)
                 }
             }
             """.trimIndent()

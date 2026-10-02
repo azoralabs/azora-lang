@@ -2678,7 +2678,7 @@ class IrGenerator(private val table: SymbolTable) {
                 constructionBindings?.get(expr.name)?.let { return it }
                 // A member a `using` block opened stands closer than a global of
                 // the same name, as the resolver typed it: inside
-                // `using self { purge [keys, values] }`, `values` is the field.
+                // `using self { purge (keys, values) }`, `values` is the field.
                 if (table.isGlobalOnly(expr.name)) {
                     contextualValues.asReversed().filter { it.prefersMembers }.forEach { frame ->
                         frame.values.forEach { value ->

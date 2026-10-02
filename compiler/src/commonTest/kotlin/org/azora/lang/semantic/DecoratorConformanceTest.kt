@@ -192,7 +192,7 @@ class DecoratorConformanceTest {
         val result = analyze("""
             spec Serializer<T>
             spec AzonSerializer<T>
-            annot @Serializable for .Pack binds [Serializer, AzonSerializer] {
+            annot @Serializable for .Pack binds (Serializer, AzonSerializer) {
                 fin ignoreUnknownFields: Bool = false
                 fin encodeDefaults: Bool = true
             }

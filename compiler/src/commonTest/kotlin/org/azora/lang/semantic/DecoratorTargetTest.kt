@@ -40,18 +40,18 @@ class DecoratorTargetTest {
 
     @Test fun allRequestedBindingFormsParse() {
         assertEquals(setOf(DecoTarget.Pack), parseDeco("annot @A for .Pack binds X").targets)
-        assertEquals(setOf(DecoTarget.Pack, DecoTarget.Func), parseDeco("annot @A for [.Pack, .Func] binds X").targets)
-        assertTrue(parseDeco("annot @A for [.Pack, .Func]").bindings.isEmpty())
+        assertEquals(setOf(DecoTarget.Pack, DecoTarget.Func), parseDeco("annot @A for (.Pack, .Func) binds X").targets)
+        assertTrue(parseDeco("annot @A for (.Pack, .Func)").bindings.isEmpty())
 
-        val filtered = parseDeco("annot @A for [.Pack, .Func] binds X for .Pack")
+        val filtered = parseDeco("annot @A for (.Pack, .Func) binds X for .Pack")
         assertEquals(setOf(DecoTarget.Pack), filtered.bindings.single().targets)
 
-        val list = parseDeco("annot @A for [.Pack, .Func] binds [X for .Pack, Y for .Func]")
+        val list = parseDeco("annot @A for (.Pack, .Func) binds (X for .Pack, Y for .Func)")
         assertEquals(listOf("X", "Y"), list.bindings.map { it.name })
         assertEquals(setOf(DecoTarget.Func), list.bindings[1].targets)
 
         assertEquals(setOf(DecoTarget.Pack), parseDeco("annot @A binds X for .Pack").bindings.single().targets)
-        assertEquals(2, parseDeco("annot @A binds [X for .Pack, Y for .Func]").bindings.size)
+        assertEquals(2, parseDeco("annot @A binds (X for .Pack, Y for .Func)").bindings.size)
         assertEquals("X", parseDeco("annot @A binds X").bindings.single().name)
     }
 
@@ -68,8 +68,8 @@ class DecoratorTargetTest {
             annot @A binds X
             annot @B binds Y
             annot @C binds A
-            annot @D binds [A, B]
-            annot @E binds [X, B]
+            annot @D binds (A, B)
+            annot @E binds (X, B)
             @C pack P
             @D pack Q
             @E pack R
@@ -98,7 +98,7 @@ class DecoratorTargetTest {
             spec X<T>
             annot @A binds X
             annot @B binds X
-            annot @D binds [A, B]
+            annot @D binds (A, B)
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "duplicate decorator binding" in it }, result.errors.toString())
@@ -109,7 +109,7 @@ class DecoratorTargetTest {
             annot @Shared
             annot @A binds Shared
             annot @B binds Shared
-            annot @Root binds [A, B]
+            annot @Root binds (A, B)
             func main() {}
         """.trimIndent())
         assertTrue(result.errors.any { "duplicate decorator binding 'Shared'" in it }, result.errors.toString())

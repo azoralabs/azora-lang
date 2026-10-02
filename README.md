@@ -128,7 +128,7 @@ fin limit: Int = 10    // fixed, frozen
 
 ```azora
 purge buffer
-purge [keys, values, hashes]
+purge (keys, values, hashes)
 ```
 
 ## Functions
@@ -259,8 +259,7 @@ fourth case, `Unordered`, so `NaN` makes all four relational operators false.
 Derivation is explicit and separate from manual implementation:
 
 ```azora
-derive Equal for Point  // ==, !=, hash
-derive Order for Point  // <=>, <, <=, >, >=
+derive (Equal, Order) for Point  // ==, !=, hash, <=>, <, <=, >, >=
 ```
 
 `==` on a pack that never said what equal means is a **compile error**, not a
@@ -477,12 +476,25 @@ Constant folding, constant propagation and dead-code elimination run on the IR.
 - `inject Type` resolves where evaluated; `lazy fin value = inject Type`
   defers the entire initializer to first read
 
+## Declaration lists
+
+Parentheses collect related specs or declaration targets:
+
+```azora
+pack Text derives (Copy, Clone, PartialEqual, Equal, Hash)
+derive (Equal, Order) for (Point, Size)
+impl (First, Second) for Account::name {}
+```
+
+Import selectors use braces: `import std.traits::{Copy, Clone}`. Array literals
+and indexing use brackets: `[1, 2, 3]`, `values[i]`.
+
 ## Decorators
 
 - `annot @Name { fields }` declares an annotation, optionally `binds` it to a spec
-- `@Name`, `@Name(args)`, `@target:Name`
-- Each decorator application targets one declaration or field; a field wildcard
-  applies it to every field declared by the pack
+- `@Name`, `@Name(args)`, `@(First, Second(args))`, `@target:Name`
+- Parenthesized decorator and target lists apply each decorator to each target;
+  a field wildcard selects every field declared by the pack
 - Serialization decorators generate value-tree and AZON methods at
   compile time
 

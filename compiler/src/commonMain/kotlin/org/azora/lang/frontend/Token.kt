@@ -157,7 +157,7 @@ enum class TokenType {
 
     // Provider lifetimes inside a `graph`, and graph composition.
     // `factory Type(args)` - a new owned value per resolution.
-    // `graph G includes [A, B]` - compose graphs.
+    // `graph G includes (A, B)` - compose graphs.
     FACTORY,
 
     // Reserved ahead of use: nothing parses it yet, but no program may take

@@ -392,7 +392,7 @@ bridge annot @Deprecated {
 bridge annot @EnforceNumFields for .Pack
 
 @Experimental(since: "0.1")
-bridge annot @UncheckedCast for [.Func, .AsyncFunc, .Prop, .AsyncProp, .Var, .Fin, .Oper]
+bridge annot @UncheckedCast for (.Func, .AsyncFunc, .Prop, .AsyncProp, .Var, .Fin, .Oper)
 
 /**
  * Marks a function that may only be reached through a signature.
@@ -404,7 +404,7 @@ bridge annot @UncheckedCast for [.Func, .AsyncFunc, .Prop, .AsyncProp, .Var, .Fi
  * alone - which of two callers may run beside the other.
  */
 @Experimental(since: "0.1")
-bridge annot @SignatureOnly for [.Func, .AsyncFunc]
+bridge annot @SignatureOnly for (.Func, .AsyncFunc)
 
 /**
  * Marks a function that carries out access a parameter already declares.
@@ -416,7 +416,7 @@ bridge annot @SignatureOnly for [.Func, .AsyncFunc]
  * implementation and refuse it there.
  */
 @Experimental(since: "0.1")
-bridge annot @ProvidesAccess for [.Func, .AsyncFunc, .Prop]
+bridge annot @ProvidesAccess for (.Func, .AsyncFunc, .Prop)
 
 /**
  * Marks a decorator whose functions declare their access in their signature.

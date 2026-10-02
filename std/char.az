@@ -38,7 +38,7 @@ import std.traits::{PartialEqual, Equal, Order, Hash}
  * `<` does.
  */
 @Since("0.1")
-bridge pack Char derives PartialEqual derives Equal derives Order derives Hash
+bridge pack Char derives (PartialEqual, Equal, Order, Hash)
 
 /*impl Into<Int> for Char {
     prop<Int> &.into: Int {

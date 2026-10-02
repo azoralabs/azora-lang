@@ -113,7 +113,7 @@ annot @AzonSerializable for .Pack binds AzonSerializer {
 /** Overrides the serialized name of a field or type. */
 @Experimental(since: "0.1")
 @Derive(generator: "serializer", role: "name")
-annot @SerialName for [.Pack, .Enum, .Field] {
+annot @SerialName for (.Pack, .Enum, .Field) {
     /**
      * Name written to and read from the serialized representation.
      *

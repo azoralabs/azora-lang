@@ -29,10 +29,7 @@ import std.traits::*
 /** Boolean truth value: `true` or `false`, ordered `false < true`. */
 @Since("0.1")
 bridge pack Bool
-derives PartialEqual
-derives Equal
-derives Order
-derives Hash
+derives (PartialEqual, Equal, Order, Hash)
 
 /**
  * Signed integer of `N` bits. The default integer type is `Int<32>`.
@@ -44,24 +41,12 @@ derives Hash
  */
 @Since("0.1")
 bridge pack Int<N: __uint = 32>(__int)
-derives Integer
-derives SignedInteger
-derives SignedNumber
-derives PartialEqual
-derives Equal
-derives Order
-derives Hash
+derives (Integer, SignedInteger, SignedNumber, PartialEqual, Equal, Order, Hash)
 
 /** Unsigned integer of `N` bits. */
 @Since("0.1")
 bridge pack UInt<N: __uint = 32>(__uint)
-derives Integer
-derives UnsignedInteger
-derives UnsignedNumber
-derives PartialEqual
-derives Equal
-derives Order
-derives Hash
+derives (Integer, UnsignedInteger, UnsignedNumber, PartialEqual, Equal, Order, Hash)
 
 /**
  * Signed integer as wide as a pointer on the target.
@@ -72,24 +57,12 @@ derives Hash
  */
 @Experimental(since: "0.1")
 bridge pack ISize(__int)
-derives Integer
-derives SignedInteger
-derives SignedNumber
-derives PartialEqual
-derives Equal
-derives Order
-derives Hash
+derives (Integer, SignedInteger, SignedNumber, PartialEqual, Equal, Order, Hash)
 
 /** Unsigned integer as wide as a pointer on the target. */
 @Experimental(since: "0.1")
 bridge pack USize(__uint)
-derives Integer
-derives UnsignedInteger
-derives UnsignedNumber
-derives PartialEqual
-derives Equal
-derives Order
-derives Hash
+derives (Integer, UnsignedInteger, UnsignedNumber, PartialEqual, Equal, Order, Hash)
 
 /** Marker spec for the integer types (signed and unsigned). */
 @Since("0.1")
@@ -215,11 +188,7 @@ inline for name in ["Half", "Float", "Double", "Quad"] with index {
     /** ${16 << index}-bit IEEE-754 binary floating-point number. */
     @Since("0.1")
     bridge pack $name(__float)
-    derives FloatingPoint
-    derives SignedNumber
-    derives UnsignedNumber
-    derives PartialEqual
-    derives PartialOrder
+    derives (FloatingPoint, SignedNumber, UnsignedNumber, PartialEqual, PartialOrder)
 
     /**
      * $name limits and special values.

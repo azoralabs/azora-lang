@@ -199,7 +199,7 @@ knowing a library's module paths or decorator names:
     providerModule: "std.serializer",
     deferGeneric: true
 )
-annot @Serializable for .Pack bind [Serializer, AzonSerializer] { … }
+annot @Serializable for .Pack bind (Serializer, AzonSerializer) { … }
 ```
 
 `generator` selects an installed generator; `role` says how this decorator

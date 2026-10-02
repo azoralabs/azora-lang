@@ -34,7 +34,7 @@ import std.traits::{PartialEqual, Equal, Order, Hash}
 
 /** A string of Unicode code points, ordered lexicographically by code point. */
 @Since("0.1")
-bridge pack String derives PartialEqual derives Equal derives Order derives Hash
+bridge pack String derives (PartialEqual, Equal, Order, Hash)
 
 /**
  *

@@ -2236,7 +2236,7 @@ class TypeResolver(private val table: SymbolTable) {
                 checkCapture(expr.name, expr.line)
                 val found = table.lookupVariable(expr.name)
                     ?: throughTypeAlias(expr.name)?.let { table.lookupVariable(it) }
-                // `using self { purge [keys, values] }` names its receiver once
+                // `using self { purge (keys, values) }` names its receiver once
                 // and reaches into it for the rest of the form - that is
                 // the whole point of `using`, and the names inside it are
                 // already qualified by the line they are written on. A member it

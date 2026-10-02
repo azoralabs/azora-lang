@@ -224,7 +224,7 @@ fin api: Api = inject Api        // resolves to the HttpClient
 `bind` says the definition also answers injections of that spec. Several:
 
 ```azora
-HttpClient(inject Config) bind [Api, Closeable]
+HttpClient(inject Config) bind (Api, Closeable)
 ```
 
 `bind` is already a keyword and already means this. `annot @Serializable bind

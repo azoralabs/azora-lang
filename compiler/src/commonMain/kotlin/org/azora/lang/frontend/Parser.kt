@@ -1134,6 +1134,12 @@ class Parser(
         val result = mutableListOf<Annotation>()
         while (check(TokenType.AT)) {
             val at = advance()
+            val row = parseParenthesizedList("decorator") { parseOneAnnotation(at.line, at.column) }
+            if (row != null) {
+                result.addAll(row)
+                skipNewlines()
+                continue
+            }
             result.add(parseOneAnnotation(at.line, at.column))
             skipNewlines()
         }
@@ -1213,13 +1219,7 @@ class Parser(
                 error("Duplicate decorator target '.${target.name}' at line ${token.line}")
             }
         }
-        if (match(TokenType.L_BRACKET)) {
-            if (check(TokenType.R_BRACKET)) error("Expected at least one decorator target at line ${peek().line}")
-            do { parseOne() } while (match(TokenType.COMMA))
-            consume(TokenType.R_BRACKET, "Expected ']' after decorator targets")
-        } else {
-            parseOne()
-        }
+        if (parseParenthesizedList("decorator target", ::parseOne) == null) parseOne()
         return targets
     }
 
@@ -1248,16 +1248,9 @@ class Parser(
         }
         val targets = if (match(TokenType.FOR)) parseDecoTargets() else emptySet()
         val bindings = if (match(TokenType.BINDS)) {
-            if (match(TokenType.L_PAREN)) {
-                val result = mutableListOf<DecoratorBinding>()
-                if (check(TokenType.R_PAREN)) error("Expected at least one decorator binding at line ${peek().line}")
-                do { result.add(parseDecoratorBinding()) } while (match(TokenType.COMMA))
-                consume(TokenType.R_PAREN, "Expected ')' after decorator bindings")
-                result
-            } else {
-                listOf(parseDecoratorBinding())
-            }
+            parseParenthesizedList("decorator binding", ::parseDecoratorBinding) ?: listOf(parseDecoratorBinding())
         } else emptyList()
+
 
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
@@ -1314,7 +1307,7 @@ class Parser(
         // bracketed form binds each variable to its own list at the same index.
         val loopVars = mutableListOf<String>()
         if (match(TokenType.L_BRACKET)) {
-            do { loopVars.add(consumeIdentifierLike("Expected loop variable in 'inline for [...]'")) }
+            do { loopVars.add(consumeIdentifierLike("Expected loop variable in 'inline for (...)'")) }
             while (match(TokenType.COMMA))
             consume(TokenType.R_BRACKET, "Expected ']' after 'inline for' variables")
         } else {
@@ -2129,7 +2122,7 @@ class Parser(
         }
         constParamEnums = tp.constEnums
         val derives = mutableListOf<ContractHead>()
-        while (matchContinued(TokenType.DERIVES)) derives.add(parseDeriveHead())
+        while (matchContinued(TokenType.DERIVES)) derives.addAll(parseDeriveHeads())
         if (isUnion && derives.isNotEmpty()) {
             error("an unsafe union cannot derive field-wise implementations at line ${start.line}")
         }
@@ -2236,11 +2229,36 @@ class Parser(
         val length: Int = name.length,
     )
 
-    /** One spec following `derives` / `derive`. */
+    /** Parses a nonempty parenthesized syntax list, separate from tuple values. */
+    private fun <T> parseParenthesizedList(description: String, element: () -> T): List<T>? {
+        if (!match(TokenType.L_PAREN)) return null
+        val close = TokenType.R_PAREN
+        skipNewlines()
+        if (check(close)) error("Expected at least one $description at line ${peek().line}")
+        val result = mutableListOf<T>()
+        while (!isAtEnd()) {
+            result.add(element())
+            val lastLine = tokens.getOrNull(current - 1)?.line ?: peek().line
+            val separated = check(TokenType.NEWLINE) || peek().line > lastLine
+            skipNewlines()
+            when {
+                match(TokenType.COMMA) -> { skipNewlines(); if (check(close)) break }
+                check(close) -> break
+                separated -> Unit
+                else -> error("Expected ',' or a new line between $description entries at line ${peek().line}")
+            }
+        }
+        consume(close, "Expected ')' after $description list")
+        return result
+    }
+
     private fun parseDeriveHead(): ContractHead {
         val head = parseContractName("Expected a spec name to derive")
         return head.copy(args = parseGenericTypeArgsIfPresent())
     }
+
+    private fun parseDeriveHeads(): List<ContractHead> =
+        parseParenthesizedList("derived spec", ::parseDeriveHead) ?: listOf(parseDeriveHead())
 
     private fun derivedImpl(
         target: String,
@@ -2279,18 +2297,30 @@ class Parser(
         heads.forEach { pendingTopLevels.add(derivedImpl(target, it, start, typeParams, variadicParam)) }
     }
 
-    /** `derive Spec for Target` may carry the values of a decorator. */
+    /** `derive (Spec, Other) for (Target, OtherTarget)` expands independent derivations. */
     private fun parseDeriveDecl(): TopLevel.Impl {
         val start = consume(TokenType.DERIVE, "Expected 'derive'")
-        val head = parseDeriveHead()
+        val heads = parseDeriveHeads()
         val (decoratorArgs, decoratorNamedArgs) =
             if (check(TokenType.L_PAREN)) parseDecoratorArguments()
             else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
-        consume(TokenType.FOR, "Expected 'for' after derived spec")
-        val target = parseImplTarget()
+        if (heads.size > 1 && (decoratorArgs.isNotEmpty() || decoratorNamedArgs.isNotEmpty())) {
+            error("Derived values require a single spec at line ${start.line}")
+        }
+        consume(TokenType.FOR, "Expected 'for' after derived specs")
+        val targets = expandTypeListTargets(parseImplTargets())
         consumeNewline()
-        return derivedImpl(target, head, start,
-            decoratorArgs = decoratorArgs, decoratorNamedArgs = decoratorNamedArgs)
+        val implementations = targets.flatMap { target ->
+            heads.map {
+                derivedImpl(
+                    target, it, start,
+                    decoratorArgs = decoratorArgs,
+                    decoratorNamedArgs = decoratorNamedArgs,
+                )
+            }
+        }
+        pendingTopLevels.addAll(implementations.drop(1))
+        return implementations.first()
     }
 
     /** `inline for <loopVar> in <packVar> with index { <fields> }` - a variadic pack's field template. */
@@ -2513,7 +2543,7 @@ class Parser(
         consume(TokenType.FOR, "Expected 'for'")
         val loopVars = mutableListOf<String>()
         if (match(TokenType.L_BRACKET)) {
-            do { loopVars.add(consumeIdentifierLike("Expected loop variable in 'inline for [...]'")) }
+            do { loopVars.add(consumeIdentifierLike("Expected loop variable in 'inline for (...)'")) }
             while (match(TokenType.COMMA))
             consume(TokenType.R_BRACKET, "Expected ']' after 'inline for' variables")
         } else {
@@ -3149,6 +3179,79 @@ class Parser(
         return "$owner.$member"
     }
 
+    /** Expands any compile-time type-list variable target into its member types. */
+    private fun expandTypeListTargets(targets: List<String>): List<String> =
+        targets.flatMap { comptimeList(it) ?: listOf(it) }
+
+    /**
+     * True when `impl (A, B) {` opens here - a type tuple standing on its own.
+     *
+     * An implementation list followed by a body names inherent implementation
+     * targets; a list followed by `for` names specs or decorators.
+     */
+    private fun isImplTargetListAhead(): Boolean {
+        val open = TokenType.L_PAREN
+        val close = TokenType.R_PAREN
+        if (!check(open)) return false
+        var i = current
+        var depth = 0
+        while (i < tokens.size) {
+            when (tokens[i].type) {
+                open -> depth++
+                close -> {
+                    depth--
+                    if (depth == 0) { i++; break }
+                }
+                else -> Unit
+            }
+            i++
+        }
+        while (tokens.getOrNull(i)?.type == TokenType.NEWLINE) i++
+        return tokens.getOrNull(i)?.type == TokenType.L_BRACE
+    }
+
+    private fun parseImplTargets(): List<String> =
+        parseParenthesizedList("implementation target", ::parseImplTarget) ?: listOf(parseImplTarget())
+
+    private fun queueExpandedImpls(
+        traits: List<ContractHead>,
+        targets: List<String>,
+        start: Token,
+        args: List<Expr>,
+        namedArgs: List<Pair<String, Expr>>,
+        isBridge: Boolean = false,
+        annotations: List<Annotation> = emptyList(),
+        typeParams: List<String> = emptyList(),
+        variadicParam: String? = null,
+        hasBody: Boolean,
+    ): TopLevel.Impl {
+        val implementations = targets.flatMap { target ->
+            traits.map { head ->
+                TopLevel.Impl(
+                    typeName = target,
+                    methods = emptyList(),
+                    traitName = head.name,
+                    line = start.line,
+                    column = start.column,
+                    traitArgs = head.args,
+                    traitQualifier = head.qualifier,
+                    traitLine = head.line,
+                    traitColumn = head.column,
+                    traitLength = head.length,
+                    decoratorArgs = args,
+                    decoratorNamedArgs = namedArgs,
+                    annotations = annotations,
+                    isBridge = isBridge,
+                    typeParams = typeParams,
+                    variadicParam = variadicParam,
+                    hasBody = hasBody,
+                )
+            }
+        }
+        pendingTopLevels.addAll(implementations.drop(1))
+        return implementations.first()
+    }
+
     /** `impl Type { methods }` or `impl Trait for Type { methods }`. */
     private fun parseImpl(isBridge: Boolean = false, annotations: List<Annotation> = emptyList()): TopLevel.Impl {
         val start = peek()
@@ -3304,22 +3407,64 @@ class Parser(
                     "beside its type, as 'oper[] Type&.(index: Int): T { … }'",
             )
         }
+        // `impl (Byte, UByte) { … }` - one body, given to each type named. A
+        // tuple *before* `for` names decorators; one standing on its own
+        // names targets, and the body is written once instead of copied per type.
+        if (isImplTargetListAhead()) {
+            val targets = expandTypeListTargets(parseImplTargets())
+            skipNewlines()
+            consume(TokenType.L_BRACE, "Expected '{' after 'impl (<types>)'")
+            skipNewlines()
+            val bodyTokens = captureBraceBody()
+            consumeNewline()
+            // Re-read the body as `impl <target> { … }` per target, so a grouped
+            // impl is the single impl it stands for, however many times over.
+            val produced = targets.flatMap { target ->
+                Parser(
+                    listOf(
+                        Token(TokenType.IMPL, "impl", start.line, start.column),
+                        Token(TokenType.IDENTIFIER, target, start.line, start.column),
+                        Token(TokenType.L_BRACE, "{", start.line, start.column),
+                    ) + bodyTokens + listOf(
+                        Token(TokenType.R_BRACE, "}", start.line, start.column),
+                        Token(TokenType.NEWLINE, "\n", start.line, start.column),
+                        Token(TokenType.EOF, "", start.line, start.column),
+                    ),
+                    typeListEnv, declaredEnums, typeListScope = typeListScope,
+                ).parse().items
+            }
+            val first = produced.firstOrNull { it is TopLevel.Impl } as? TopLevel.Impl
+            produced.forEach { if (it !== first) pendingTopLevels.add(it) }
+            return first ?: TopLevel.Impl(targets.first(), emptyList(), null, start.line, start.column)
+        }
         val isPackImpl = match(TokenType.PACK)
-        val head = parseContractName("Expected type or trait name after 'impl'")
-        val firstHead = head.copy(args = parseGenericTypeArgsIfPresent())
+        val traitHeads = parseParenthesizedList("implementation spec") {
+            val head = parseContractName("Expected spec or decorator name in implementation list")
+            head.copy(args = parseGenericTypeArgsIfPresent())
+        } ?: run {
+            val head = parseContractName("Expected type or trait name after 'impl'")
+            listOf(head.copy(args = parseGenericTypeArgsIfPresent()))
+        }
+        val firstHead = traitHeads.first()
         val first = firstHead.name
         val firstArgs = firstHead.args
         val (decoratorArgs, decoratorNamedArgs) = if (check(TokenType.L_PAREN)) parseDecoratorArguments()
         else emptyList<Expr>() to emptyList<Pair<String, Expr>>()
+        if (traitHeads.size > 1 && (decoratorArgs.isNotEmpty() || decoratorNamedArgs.isNotEmpty())) {
+            error("Decorator implementation values require a single decorator at line ${start.line}")
+        }
         var typeName = first
         var traitName: String? = null
         var traitArgs = emptyList<TypeRef>()
+        var implementationTargets = listOf(first)
         if (match(TokenType.FOR)) {
             if (isPackImpl) error("'impl pack' cannot be used for prot implementations at line ${peek().line}")
             traitName = first
             traitArgs = firstArgs
-            typeName = parseImplTarget()
-
+            implementationTargets = expandTypeListTargets(parseImplTargets())
+            typeName = implementationTargets.first()
+        } else if (traitHeads.size > 1) {
+            error("Decorator implementation lists require 'for Target' at line ${start.line}")
         } else if (decoratorArgs.isNotEmpty() || decoratorNamedArgs.isNotEmpty()) {
             error("Decorator implementation arguments require 'for Type' at line ${start.line}")
         }
@@ -3366,31 +3511,40 @@ class Parser(
         }
         consume(TokenType.L_BRACE, "Expected '{' after impl type")
         skipNewlines()
-        // A member decorator has an explicitly empty implementation body.
-        if (traitName != null && check(TokenType.R_BRACE) && typeName.contains('.')) {
+        // Decorator applications are manual implementations too, so they carry an
+        // explicit body. A marker's body is empty; grouped decorators and grouped
+        // targets expand to the cross-product while preserving that source body.
+        if (traitName != null && check(TokenType.R_BRACE) &&
+            (traitHeads.size > 1 || implementationTargets.size > 1 || typeName.contains('.'))
+        ) {
             consume(TokenType.R_BRACE, "Expected '}' after implementation body")
             consumeNewline()
-            return TopLevel.Impl(
-                typeName, emptyList(), traitName, start.line, start.column,
-                traitArgs = traitArgs, traitQualifier = firstHead.qualifier,
-                traitLine = firstHead.line, traitColumn = firstHead.column,
-                traitLength = firstHead.length, decoratorArgs = decoratorArgs,
-                decoratorNamedArgs = decoratorNamedArgs, isBridge = isBridge,
-                annotations = annotations, typeParams = implTypeParams.names,
-                variadicParam = implTypeParams.variadic, hasBody = true,
+            return queueExpandedImpls(
+                traitHeads,
+                implementationTargets,
+                start,
+                decoratorArgs,
+                decoratorNamedArgs,
+                isBridge,
+                annotations,
+                implTypeParams.names,
+                implTypeParams.variadic,
+                hasBody = true,
             )
         }
         // `impl Spec for scope::Type { members }` names a scope-qualified type.
         // An explicitly empty body remains ambiguous until declarations are known,
         // and ScopeQualifiedImplTargets resolves that case after parsing.
         if (traitName != null &&
+            implementationTargets.size == 1 &&
             typeName.count { it == '.' } == 1 &&
             !typeName.endsWith(".*")
         ) {
             typeName = typeName.substringAfter('.')
+            implementationTargets = listOf(typeName)
         }
-        if (typeName.contains('.')) {
-            error("Member-target implementations must have an empty body at line ${start.line}")
+        if (traitHeads.size > 1 || implementationTargets.size > 1 || typeName.contains('.')) {
+            error("Grouped and member-target implementations must have an empty body at line ${start.line}")
         }
         // `impl Into<String> for ArrayList<T> { self& -> … }` - the in-brace
         // receiver the bracket redesign replaced. A receiver is declared where
@@ -7710,36 +7864,16 @@ class Parser(
         return Stmt.Scope(body, start.line, start.column, unsafe = true)
     }
 
-    /** `purge <expr>` - release a heap value; calls `__drop(value)` which triggers dtor if present. */
+    /** Releases one heap value or each value in `purge (a, b, c)`, in order. */
     private fun parsePurge(): Stmt {
-        val start = peek()
-        consume(TokenType.PURGE, "Expected 'purge'")
-        if (!check(TokenType.L_BRACKET)) {
-            val value = parseExpr()
-            consumeNewline()
-            return Stmt.ExprStmt(purgeCall(value, start), start.line, start.column)
+        val start = consume(TokenType.PURGE, "Expected 'purge'")
+        if (check(TokenType.L_BRACKET)) {
+            error("Purge lists use parentheses; write 'purge (a, b)' at line ${start.line}")
         }
-        // `purge [a, b, c]` - releasing what one value owns is one act, and one
-        // statement says it. The list is read here because a bare `[…]` is not
-        // an expression anywhere else in the language.
-        consume(TokenType.L_BRACKET, "Expected '[' after 'purge'")
-        skipNewlines()
-        val values = mutableListOf<Expr>()
-        if (!check(TokenType.R_BRACKET)) {
-            do {
-                skipNewlines()
-                values.add(parseExpr())
-                skipNewlines()
-            } while (match(TokenType.COMMA))
-        }
-        consume(TokenType.R_BRACKET, "Expected ']' after purge list")
+        val values = parseParenthesizedList("purge target", ::parseExpr) ?: listOf(parseExpr())
         consumeNewline()
-        if (values.isEmpty()) {
-            error("'purge []' releases nothing at line ${start.line}; name what to release")
-        }
         val purges = values.map { Stmt.ExprStmt(purgeCall(it, start), start.line, start.column) }
-        return purges.singleOrNull()
-            ?: Stmt.Scope(purges, start.line, start.column, shared = true)
+        return purges.singleOrNull() ?: Stmt.Scope(purges, start.line, start.column, shared = true)
     }
 
     private fun purgeCall(value: Expr, start: Token): Expr =
@@ -11971,11 +12105,15 @@ class Parser(
         return Param(name, annotated)
     }
 
-    /** One excluded capture following `without`. */
+    /** `without name` or an explicit list inside a lambda ownership header. */
     private fun parseLambdaCaptureExclusions(): List<CaptureExclusion> {
         val keyword = consume(TokenType.WITHOUT, "Expected 'without'")
-        val name = consumeIdentifierLike("Expected a binding name after 'without'")
-        return listOf(CaptureExclusion(name, keyword.line, keyword.column))
+        return parseParenthesizedList("excluded capture") {
+            val token = peek()
+            CaptureExclusion(consumeIdentifierLike("Expected an excluded binding name"), token.line, token.column)
+        } ?: listOf(CaptureExclusion(
+            consumeIdentifierLike("Expected a binding name after 'without'"), keyword.line, keyword.column,
+        ))
     }
 
     /** True when the cursor is on a bare `=` / `&` / `!` / `take` default. */

@@ -104,7 +104,7 @@ bridge spec Allocator
  *     // everything freed here
  */
 @Since("0.1")
-pack Arena derives Display derives Allocator {
+pack Arena derives (Display, Allocator) {
     var capacity: Int = 0
     var offset: Int = 0
     var allocCount: Int = 0
@@ -385,7 +385,7 @@ impl Pool {
  *     stack.free(64)   // frees a
  */
 @Since("0.1")
-pack StackAllocator derives Display derives Allocator {
+pack StackAllocator derives (Display, Allocator) {
     var capacity: Int = 0
     var offset: Int = 0
     var allocCount: Int = 0

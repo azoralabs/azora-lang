@@ -183,7 +183,7 @@ class ImplAndDeriveFormsTest {
         val e = assertFailsWith<IllegalStateException> {
             parse("derive (A, B)(x: 1) for Fixture")
         }
-        assertTrue("Expected a spec name" in e.message.orEmpty(), e.message.orEmpty())
+        assertTrue("require a single spec" in e.message.orEmpty(), e.message.orEmpty())
     }
 
     @Test fun explicitDerivesApplyEachSpecToEachType() {

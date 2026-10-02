@@ -1930,8 +1930,8 @@ short name.
   are never renamed; `fin value: Map<Int, Int> = data` then accepted a standard
   map (`CollectionTargetSafetyTest.keyedValuesCannotMasqueradeAsNamedMaps`).
   A compiler-known name the program declares now takes its module's identity.
-- *A `using` block's members lost to globals.* Inside `using self { purge [keys,
-  values, …] }`, `values` resolved to a global of that name rather than the
+- *A `using` block's members lost to globals.* Inside `using self { purge (keys,
+  values, …) }`, `values` resolved to a global of that name rather than the
   field, so any program with a global named `values` failed as soon as the map's
   destructor was injected. A member a `using` block opens now stands closer than
   a global (and a parameter or local closer than either), in the resolver and in

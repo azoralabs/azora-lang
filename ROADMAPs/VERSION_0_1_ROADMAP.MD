@@ -624,8 +624,8 @@ The surface removed:
   Both entry points now take `(value, options)`
 - ✅ `SerializationDeriver.kt`: the `json` role, `FormatSet`, and the format
   cross-product. `appendFormatMethods` collapses to `appendTextMethods`
-- ✅ `@Serializable`'s `bind [Serializer, JsonSerializer, AzonSerializer]`
-  collapses to `bind [Serializer, AzonSerializer]`
+- ✅ `@Serializable`'s `bind (Serializer, JsonSerializer, AzonSerializer)`
+  collapses to `bind (Serializer, AzonSerializer)`
 - ✅ Tests: `SerializationDeriverTest`, `AnnotratorConformanceTest`,
   `StdlibInjectionTest`
 - ✅ `compiler/…/README.md`, `README.md`, `ANNOTATIONS_DIP.MD`

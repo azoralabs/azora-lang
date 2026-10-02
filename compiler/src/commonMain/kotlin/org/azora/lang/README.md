@@ -143,6 +143,9 @@ checking; `break`/`continue`.
 | `typealias T = U` | type alias |
 | `error ErrSet { V1, V2 }` | error-set declaration |
 | `annot @Name { fin field: Type }` | annotation type; metadata fields are immutable |
+| `pack Name derives (Spec, Other)` | derives each listed spec |
+| `derive (Spec, Other) for (A, B)` | independent spec/target derivations |
+| `impl (Annot, Other) for (Type::x, Type::y) {}` | applies each decorator to each target |
 | `impl Annot for Type {}` | marker conformance with an explicit empty body |
 | `impl Annot(field: value) for Type {}` | conformance with compile-time metadata |
 | `impl Annot for Type::field {}` / `Type::* {}` | decorates one field / every field |
@@ -328,17 +331,14 @@ The compiler applies the same field-name, duplicate-argument, required-field,
 and type validation used by `@Serializable(...)`. Value arguments are rejected
 on ordinary spec implementations because only decorators define metadata.
 
-Decorator implementations can also select pack fields. Each declaration applies
-one decorator to its target. `Pack::*` selects only fields declared by that pack:
+Decorator implementations can also select pack fields. Parenthesized decorator
+and target lists apply each decorator to each target. `Pack::*` selects only fields declared by that pack:
 
 ```azora
 impl SerialName(value: "login") for User::name {}
-impl SerialName for User::name {}
-impl SerialRequired for User::name {}
-impl SerialIgnore for User::name {}
-impl SerialIgnore for User::password {}
-impl SerialName for User::* {}
-impl SerialRequired for User::* {}
+impl (SerialName, SerialRequired) for User::name {}
+impl SerialIgnore for (User::name, User::password) {}
+impl (SerialName, SerialRequired) for User::* {}
 ```
 
 Member selectors and wildcards are decorator-only and require an explicitly empty

@@ -53,7 +53,7 @@ class ReflectDecoExpanderTest {
     }
 
     private val marked = """
-        annot @Marked for [.Pack, .Func] {
+        annot @Marked for (.Pack, .Func) {
             fin order: Int = 0
             fin tag: String = "none"
         }

@@ -12,9 +12,13 @@
 |---|---|---|
 | `{ ... }` | Bodies and import selector groups | `func f() { ... }`, `import a.b::{x, y}` |
 | `[ ... ]` | Collection literals and indexing | `[1, 2]`, `["a": 1]`, `items[i]` |
-| `( ... )` | Calls, expression parentheses, tuples and positional patterns | `f(x)`, `(x + y)`, `(1, "two")`, `fin (x, y) = pair` |
+| `( ... )` | Calls, declaration/release lists, tuples and positional patterns | `f(x)`, `(x + y)`, `(1, "two")`, `fin (x, y) = pair` |
 
-`purge [a, b]` is a dedicated release list; it releases each listed value in order.
+`purge (a, b)` is a dedicated release list; it releases each listed value in order.
+
+Declaration lists such as `pack Text derives (Copy, Clone)` and
+`derive (Equal, Hash) for (A, B)` use parentheses. Decorator rows may use
+`@(First, Second)`. These are syntax lists, not tuple values.
 
 Every binding declares its own initializer. Every assignment and call states its
 own target. To retain one result for several later uses, bind it explicitly.

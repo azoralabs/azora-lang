@@ -65,7 +65,7 @@ class EngineArchitectureSyntaxTest {
         }
 
         enum SystemPhase { Update }
-        annot @Component for [.Pack, .Enum]
+        annot @Component for (.Pack, .Enum)
         annot @System for .Func {
             fin phase: SystemPhase
         }

@@ -302,7 +302,7 @@ impl HashMap<K, V> {
     }
 
     dtor .() {
-        using self { purge [keys, values, hashes, occupied] }
+        using self { purge (keys, values, hashes, occupied) }
     }
 
     func &._bucketFor(hash: ULong): Int {
@@ -531,7 +531,7 @@ impl LinkedHashMap<K, V> {
     }
 
     dtor .() {
-        using self { purge [keys, values, hashes, buckets] }
+        using self { purge (keys, values, hashes, buckets) }
     }
 
     func &._findIndex(key: K&): Int {
@@ -754,7 +754,7 @@ impl TreeMap<K, V> {
     }
 
     dtor .() {
-        using self { purge [keys, values, left, right, parent, heights, freeNext] }
+        using self { purge (keys, values, left, right, parent, heights, freeNext) }
     }
 
     func &._elemHeight(elem: Int): Int {
@@ -796,7 +796,7 @@ impl TreeMap<K, V> {
             newHeights[i] = self.heights[i]
             newFreeNext[i] = self.freeNext[i]
         }
-        using self { purge [keys, values, left, right, parent, heights, freeNext] }
+        using self { purge (keys, values, left, right, parent, heights, freeNext) }
         self.keys = newKeys
         self.values = newValues
         self.left = newLeft

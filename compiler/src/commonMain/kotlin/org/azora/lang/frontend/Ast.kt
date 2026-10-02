@@ -2838,7 +2838,7 @@ sealed class TopLevel {
     )
 
     /**
-     * `graph Name [includes [A, B]] { <lifetime> Type(args) [binds Spec] … }` - a
+     * `graph Name [includes (A, B)] { <lifetime> Type(args) [binds Spec] … }` - a
      * dependency graph.
      *
      * @property included graphs whose definitions this one also contains.

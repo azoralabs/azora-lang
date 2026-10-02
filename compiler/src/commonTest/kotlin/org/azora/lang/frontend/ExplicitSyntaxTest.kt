@@ -21,20 +21,64 @@ class ExplicitSyntaxTest {
     @Test fun rejectsReceiverAndCallFanOut() {
         for (statement in listOf(
             "{a, b}.run()", "f({a, b})", "self.{run(), stop()}",
-            "fin value: {Int, String} = pair", "fin f = [&, without (a, b)] { 1 }",
+            "fin value: {Int, String} = pair",
         )) {
             assertFailsWith<IllegalStateException>(statement) { parse("func main() { $statement }") }
         }
     }
 
-    @Test fun rejectsDecoratorAndImplementationLists() {
+    @Test fun declarationListsRejectBracesAndBrackets() {
         for (source in listOf(
-            "@[First, Second] pack Item", "impl (A, B) {}", "impl (First, Second) for Item {}",
-            "derive (Clone, Copy) for Item", "derive Clone for (A, B)",
-            "pack Item derives (Clone, Copy)", "pack Item derives [Clone, Copy]",
+            "@[First, Second] pack Item", "@{First, Second} pack Item",
+            "impl [A, B] {}", "impl {A, B} {}",
+            "impl [First, Second] for Item {}", "impl First for [A, B] {}",
+            "derive [Clone, Copy] for Item", "derive {Clone, Copy} for Item",
+            "derive Clone for [A, B]", "derive Clone for {A, B}",
+            "pack Item derives [Clone, Copy]", "pack Item derives {Clone, Copy}",
         )) {
             assertFailsWith<IllegalStateException>(source) { parse(source) }
         }
+    }
+
+    @Test fun parenthesizedDerivesPreserveEverySpecAndItsOrder() {
+        val implementations = parse("pack Text derives (Copy, Clone, Equal, Hash, Compose)")
+            .items.filterIsInstance<TopLevel.Impl>()
+        assertEquals(listOf("Copy", "Clone", "Equal", "Hash", "Compose"), implementations.map { it.traitName })
+        assertEquals(List(5) { "Text" }, implementations.map { it.typeName })
+    }
+
+    @Test fun parenthesizedListsExpandDerivationsAndDecoratorTargets() {
+        val program = parse("""
+            @(First, Second(value: 1)) pack Item
+            derive (Copy, Clone) for (A, B)
+            impl (First, Second) for (Item::x, Item::y) {}
+        """.trimIndent())
+        assertEquals(listOf("First", "Second"), program.items.filterIsInstance<TopLevel.Pack>().single().annotations.map { it.name })
+        val implementations = program.items.filterIsInstance<TopLevel.Impl>()
+        assertEquals(listOf("A", "A", "B", "B", "Item.x", "Item.x", "Item.y", "Item.y"), implementations.map { it.typeName })
+    }
+
+    @Test fun parenthesizedInherentImplementationsKeepTheirMembers() {
+        val implementations = parse("impl (A, B) { func &.value(): Int = 1 }")
+            .items.filterIsInstance<TopLevel.Impl>()
+        assertEquals(listOf("A", "B"), implementations.map { it.typeName })
+        assertEquals(listOf(listOf("value"), listOf("value")), implementations.map { it.methods.map { method -> method.name } })
+    }
+
+    @Test fun declarationListsSupportMultilineTrailingCommasAndGenericSpecs() {
+        val implementations = parse("""
+            pack Item<T>
+            derives (
+                Clone,
+                Iterator<T>,
+            )
+        """.trimIndent()).items.filterIsInstance<TopLevel.Impl>()
+        assertEquals(listOf("Clone", "Iterator"), implementations.map { it.traitName })
+        assertEquals(1, implementations.last().traitArgs.size)
+    }
+
+    @Test fun lambdaCaptureExclusionsKeepParenthesizedLists() {
+        parse("func main() { fin f = [&, without (a, b)] { 1 } }")
     }
 
     @Test fun preservesImportGroupsAndTupleValues() {

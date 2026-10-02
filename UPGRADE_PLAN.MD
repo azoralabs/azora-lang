@@ -1014,7 +1014,7 @@ in a *test*, none in `std/`. So this is a test-side removal, not a stdlib one.
   lenient - the bug in the plan is one word doing two things on *one* line, and it took
   only the read half to make that happen.
 - **A contextual receiver is the exception, and had to be.** The contextual
-  member-purge form is now `using self { purge [keys, values, hashes] }`,
+  member-purge form is now `using self { purge (keys, values, hashes) }`,
   (S7.1) resolves those names as bare identifiers, and the first cut of this step rejected
   every one of them in `map.az`. A `using` scope names its receiver *on purpose* - that is what
   the form is for - so both branches now let a `prefersMembers` frame answer and reject

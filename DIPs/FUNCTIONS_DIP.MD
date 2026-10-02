@@ -24,7 +24,7 @@ DECORATORS* VISIBILITY SAFETY ASYNC? func GENERICS? RECEIVER_HEAD? NAME (...PARA
     where [...CLAUSE]
 { BODY }
 
-DECORATORS   ::= @Name | @Name(args)
+DECORATORS   ::= @Name | @Name(args) | @(Name, Name(args), ...)
 VISIBILITY   ::= expose | confine | protect            (default: expose)
 SAFETY       ::= inline | unsafe | (nothing)
 ASYNC        ::= async

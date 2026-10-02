@@ -129,7 +129,7 @@ class AzoraLanguageServerTest {
     @Test
     fun derivesIsAReservedPackKeyword() {
         val source = """
-            pack Player<T> derives Copy derives Hash where T: Copy
+            pack Player<T> derives (Copy, Hash) where T: Copy
             func derives(): Unit {}
         """.trimIndent()
         val all = spans(source)
@@ -166,14 +166,14 @@ class AzoraLanguageServerTest {
         // on the same line.
         val source = """
             bridge pack Int<N: __uint = 32>(__int)
-            derives Integer derives SignedInteger
+            derives (Integer, SignedInteger)
             bridge pack Bool derives Equal
         """.trimIndent()
         val kinds = spans(source)
             .filter { source.substring(it.start, it.end) == "derives" }
             .map { it.type }
 
-        assertEquals(listOf("keyword", "keyword", "keyword"), kinds)
+        assertEquals(listOf("keyword", "keyword"), kinds)
     }
 
     @Test

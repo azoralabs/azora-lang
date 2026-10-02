@@ -88,7 +88,7 @@ class DecoratorReflectionTest {
 
     @Test fun hasAnnotRecognizesDeclarationTargets() {
         val result = analyze("""
-            annot @Seen for [.Func, .Prop, .Field, .Param]
+            annot @Seen for (.Func, .Prop, .Field, .Param)
 
             pack Box {
                 @Seen fin value: Int
@@ -506,7 +506,7 @@ class DecoratorReflectionTest {
         assertTrue("members use '::'" in dottedField.message.orEmpty(), dottedField.message)
 
         val reflected = analyze("""
-            annot @Marker for [.Pack, .Field]
+            annot @Marker for (.Pack, .Field)
             @Marker pack Feature { @Marker fin value: Int = 0 }
             func probe(): Int {
                 inline if reflect<Feature>.hasAnnot<Marker> &&

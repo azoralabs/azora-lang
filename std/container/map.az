@@ -228,10 +228,10 @@ spec MutableSortedMap<K, V> : SortedMap<K, V> {
 /** Hash table with unspecified iteration order. `K` requires `Hash` and `oper==`. */
 @Experimental(since: "0.1")
 pack HashMap<K, V> where K: Hash {
-    var keys: K* = alloc .() * 16
-    var values: V* = alloc .() * 16
-    var hashes: ULong* = alloc .() * 16
-    var occupied: Bool* = alloc .() * 16
+    var keys: K^ = alloc^ .() * 16
+    var values: V^ = alloc^ .() * 16
+    var hashes: ULong^ = alloc^ .() * 16
+    var occupied: Bool^ = alloc^ .() * 16
     var _size: Int = 0
     var capacity: Int = 16
 }
@@ -239,10 +239,10 @@ pack HashMap<K, V> where K: Hash {
 /** Hash table whose dense entry storage preserves insertion order. */
 @Experimental(since: "0.1")
 pack LinkedHashMap<K, V> where K: Hash {
-    var keys: K* = alloc .() * 16
-    var values: V* = alloc .() * 16
-    var hashes: ULong* = alloc .() * 16
-    var buckets: Int* = alloc .() * 32
+    var keys: K^ = alloc^ .() * 16
+    var values: V^ = alloc^ .() * 16
+    var hashes: ULong^ = alloc^ .() * 16
+    var buckets: Int^ = alloc^ .() * 32
     var _size: Int = 0
     var capacity: Int = 16
     var bucketCapacity: Int = 32
@@ -251,13 +251,13 @@ pack LinkedHashMap<K, V> where K: Hash {
 /** AVL tree map ordered exclusively through `oper<` for `K`. */
 @Experimental(since: "0.1")
 pack TreeMap<K, V> where K: Order {
-    var keys: K* = alloc .() * 16
-    var values: V* = alloc .() * 16
-    var left: Int* = alloc .() * 16
-    var right: Int* = alloc .() * 16
-    var parent: Int* = alloc .() * 16
-    var heights: Int* = alloc .() * 16
-    var freeNext: Int* = alloc .() * 16
+    var keys: K^ = alloc^ .() * 16
+    var values: V^ = alloc^ .() * 16
+    var left: Int^ = alloc^ .() * 16
+    var right: Int^ = alloc^ .() * 16
+    var parent: Int^ = alloc^ .() * 16
+    var heights: Int^ = alloc^ .() * 16
+    var freeNext: Int^ = alloc^ .() * 16
     var root: Int = -1
     var freeHead: Int = -1
     var elemCount: Int = 0
@@ -359,10 +359,10 @@ impl HashMap<K, V> {
         fin oldOccupied = self.occupied
         fin oldCapacity = self.capacity
 
-        self.keys = alloc .() * newCapacity
-        self.values = alloc .() * newCapacity
-        self.hashes = alloc .() * newCapacity
-        self.occupied = alloc .() * newCapacity
+        self.keys = alloc^ .() * newCapacity
+        self.values = alloc^ .() * newCapacity
+        self.hashes = alloc^ .() * newCapacity
+        self.occupied = alloc^ .() * newCapacity
         self.capacity = newCapacity
         self._size = 0
 
@@ -570,7 +570,7 @@ impl LinkedHashMap<K, V> {
 
     func !._rebuildBuckets(newCapacity: Int) {
         fin oldBuckets = self.buckets
-        self.buckets = alloc .() * newCapacity
+        self.buckets = alloc^ .() * newCapacity
         self.bucketCapacity = newCapacity
         var i = 0
         while i < newCapacity {
@@ -587,9 +587,9 @@ impl LinkedHashMap<K, V> {
 
     func !._growEntries() {
         fin newCapacity = self.capacity * 2
-        let newKeys: K* = alloc .() * newCapacity
-        let newValues: V* = alloc .() * newCapacity
-        let newHashes: ULong* = alloc .() * newCapacity
+        let newKeys: K^ = alloc^ .() * newCapacity
+        let newValues: V^ = alloc^ .() * newCapacity
+        let newHashes: ULong^ = alloc^ .() * newCapacity
         for i in 0..<self._size {
             newKeys[i] = self.keys[i]
             newValues[i] = self.values[i]
@@ -789,13 +789,13 @@ impl TreeMap<K, V> {
 
     func !._grow() {
         fin newCapacity = self.capacity * 2
-        let newKeys: K* = alloc .() * newCapacity
-        let newValues: V* = alloc .() * newCapacity
-        let newLeft: Int* = alloc .() * newCapacity
-        let newRight: Int* = alloc .() * newCapacity
-        let newParent: Int* = alloc .() * newCapacity
-        let newHeights: Int* = alloc .() * newCapacity
-        let newFreeNext: Int* = alloc .() * newCapacity
+        let newKeys: K^ = alloc^ .() * newCapacity
+        let newValues: V^ = alloc^ .() * newCapacity
+        let newLeft: Int^ = alloc^ .() * newCapacity
+        let newRight: Int^ = alloc^ .() * newCapacity
+        let newParent: Int^ = alloc^ .() * newCapacity
+        let newHeights: Int^ = alloc^ .() * newCapacity
+        let newFreeNext: Int^ = alloc^ .() * newCapacity
 
         for i in 0..<self.elemCount {
             newKeys[i] = self.keys[i]
@@ -1005,7 +1005,7 @@ impl TreeMap<K, V> {
 
     func &._entrySnapshot(): Array<MapEntry<K, V>> {
         var result: Array<MapEntry<K, V>> = .() * self._size
-        let stack: Int* = alloc .() * self._size
+        let stack: Int^ = alloc^ .() * self._size
         var stackSize = 0
         var elem = self.root
         var output = 0

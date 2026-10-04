@@ -3,12 +3,17 @@
 Plan: [150-step delivery plan](ECOSYSTEM_DELIVERY_PLAN.md).
 Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 
-## Current status — 2026-10-03
+## Current status — 2026-10-04
 
-- Latest: 2,758 compiler tests, 12 failing after the follow-up entry's last
-  fixes (15 in its last full run); AZLS 91/91. See the two 2026-10-03 entries
-  at the end for what changed and what is open, including the integer-overflow
-  decision and the anonymous `Var<…>` question.
+See [the foundation repair inventory](FOUNDATION_REPAIR_2026_10_04.md) for the
+current measured results, repaired defects and remaining native qualification
+work. Earlier entries below are historical observations.
+
+Studio's required architecture is Azora compiled through LLVM to native code,
+with no JAR/JVM runtime or tooling dependency in the installed product. The
+existing Kotlin/Compose Studio is a legacy prototype and does not meet that gate.
+Engine package/template compatibility and native Studio implementation remain
+open; green language suites alone do not establish readiness for either product.
 
 ## Status — 2026-09-19
 

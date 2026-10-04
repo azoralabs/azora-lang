@@ -18,13 +18,17 @@ package org.azora.lang.codegen
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+import org.azora.lang.Compiler
+import org.azora.lang.CompilationResult
 
 /**
  * `delay <ms>` suspends the current task.
  *
  * On LLVM it lowers to libc's `usleep`; the Wasm MVP target has no host clock to
- * sleep against, so it degrades to a no-op there - in both cases the program has
- * to still run and produce its output, which is what these check.
+ * sleep against, so it reports an unsupported-target diagnostic. A program
+ * requiring a delay must never compile to a silent no-op.
  */
 class DelayExecTest {
 
@@ -43,8 +47,9 @@ class DelayExecTest {
         assertEquals("start\nend", LlvmExec.run(program, optimized = true), "optimized IR")
     }
 
-    @Test fun delayRunsOnWasm() {
-        if (!WasmExec.available) return
-        assertEquals("start\nend", WasmExec.run(program))
+    @Test fun wasmDelayRequiresAHostClock() {
+        val r = assertIs<CompilationResult.Success>(Compiler().compile(program))
+        assertTrue(r.backendErrors["wasm"]?.contains("host clock") == true, r.backendErrors.toString())
+        assertEquals("", r.wasm)
     }
 }

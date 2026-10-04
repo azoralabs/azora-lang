@@ -30,13 +30,14 @@ import std.serializer::Serializable
 @Since("0.1")
 @Serializable
 pack Queue<T> {
-    var data: T* = alloc .() * 8
+    var data: T^ = alloc^ .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
 
 /** Queue operations: enqueue, dequeue, peek, clear, and string conversion. */
 impl Queue<T> {
+    dtor .() { purge self.data }
     // --- Properties ---
 
     /** Whether the queue contains no elements. */
@@ -53,7 +54,7 @@ impl Queue<T> {
     @Experimental(since: "0.1")
     func !.growQueue() {
         fin newCap = self.capacity * 2
-        let newData: T* = alloc .() * newCap
+        let newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
             newData[i] = self.data[i]
         }
@@ -111,7 +112,7 @@ impl Queue<T> {
     @Experimental(since: "0.1")
     func !.clear() {
         fin oldData = self.data
-        self.data = alloc .() * 8
+        self.data = alloc^ .() * 8
         self.size = 0
         self.capacity = 8
         purge oldData

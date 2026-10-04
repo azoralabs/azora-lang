@@ -1160,7 +1160,7 @@ test "serial long extraction rejects overflow" {
 
 test "serial long extraction accepts the minimum value" {
     fin minimum = serialAsLong(SerialValue.Number("-9223372036854775808")) catch 0
-    assert minimum == 0 - 9223372036854775807 - 1 panic "serialAsLong must preserve the full signed Long range"
+    assert minimum == Long(0) - Long(9223372036854775807) - Long(1) panic "serialAsLong must preserve the full signed Long range"
 }
 
 test "serial integer extraction rejects narrowing overflow" {

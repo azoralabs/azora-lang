@@ -163,14 +163,14 @@ spec MutableList<T> : List<T> {
 /**
  * Dynamic-array pack backing both `List<T>` and `MutableList<T>`.
  *
- * Storage is a contiguous `T*` buffer that doubles on demand. Internal
+ * Storage is a contiguous `T^` buffer that doubles on demand. Internal
  * fields are not exposed outside the pack.
  *
  * @generic T The element type.
  */
 @Experimental(since: "0.1")
 pack ArrayList<T> {
-    var _data: T* = null
+    var _data: T^ = null
     var _size: Int = 0
     var _capacity: Int = 0
 } // default constructor is .()
@@ -180,7 +180,7 @@ pack ArrayList<T> {
 impl ArrayList<T> {
     // this is .() * 7
     ctor .() * count {
-        self._data = alloc .() * count
+        self._data = alloc^ .() * count
         self._size = count
         self._capacity = count
     }
@@ -194,7 +194,7 @@ impl ArrayList<T> {
 
     // this is .(5) * 10
     ctor .(fill: T) * count {
-        self._data = alloc .(fill) * count
+        self._data = alloc^ .(fill) * count
         self._size = count
         self._capacity = count
     }
@@ -233,7 +233,7 @@ impl ArrayList<T> {
         assert self._capacity >= 0 panic "List capacity must be non-negative"
         assert self._capacity <= 1073741823 panic "List capacity overflow"
         fin newCap = if self._capacity == 0 then 8 else self._capacity * 2
-        let newData: T* = alloc .() * newCap
+        let newData: T^ = alloc^ .() * newCap
         for i in 0..<self._size {
             newData[i] = self._data[i]
         }
@@ -445,7 +445,7 @@ impl MutableList<T> for ArrayList<T> {
 
     func !.clear() {
         fin oldData = self._data
-        self._data = alloc .() * 8
+        self._data = alloc^ .() * 8
         self._size = 0
         self._capacity = 8
         purge oldData

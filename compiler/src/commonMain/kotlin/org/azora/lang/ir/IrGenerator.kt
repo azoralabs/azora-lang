@@ -1852,7 +1852,7 @@ class IrGenerator(private val table: SymbolTable) {
         return when (val argument = expr.args.single()) {
             is Expr.IntLiteral ->
                 if (kind == Literals.INT || kind == Literals.UINT) {
-                    IrExpr.IntLiteral(argument.value, type, argument.text)
+                    IrExpr.IntLiteral(argument.value, type, argument.magnitude ?: argument.text)
                 } else {
                     null
                 }
@@ -2774,15 +2774,15 @@ class IrGenerator(private val table: SymbolTable) {
                 "line ${expr.line}: 'key: value' is only an argument of a macro that takes " +
                     "'[...\${key: value}]' - no macro arm matched this invocation",
             )
-            is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, IrType.defaultInt, expr.text)
+            is Expr.IntLiteral -> IrExpr.IntLiteral(expr.value, IrType.defaultInt, expr.magnitude ?: expr.text)
             is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(expr.value, IrType.defaultFloat, expr.text)
             is Expr.StringLiteral -> IrExpr.StringLiteral(expr.value)
             is Expr.BoolLiteral -> IrExpr.BoolLiteral(expr.value)
             is Expr.NullLiteral -> IrExpr.Var("__null", IrType.Any)
             is Expr.NamedArg -> lowerExpr(expr.value)
             is Expr.Cast -> {
-                val inner = lowerExpr(expr.expr)
                 val target = resolveType(expr.targetType)
+                val inner = literalAtDeclaredType(expr.expr, target) ?: lowerExpr(expr.expr)
                 // Numeric casts convert the value. Pointer-carrying values
                 // (String, arrays, packs, Any, pointers) cast to/from integer
                 // types for FFI (`window as Long`); native backends lower these
@@ -3706,8 +3706,9 @@ class IrGenerator(private val table: SymbolTable) {
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)
                         if (func != null && func.params.size == 1 && func.memberCallStyle != MemberCallStyle.METHOD) {
-                            // It's a prop - lower to a method call Type_name(self).
-                            return IrExpr.Call(mangled, listOf(target), func.returnType)
+                            // A generic prop reads its owner's concrete arguments.
+                            val typed = instantiateMember(table, tt2, func)
+                            return IrExpr.Call(mangled, listOf(target), typed.returnType)
                         }
                     }
                     // A property required by a spec (`list.size` where `list: List<T>`)
@@ -4489,8 +4490,9 @@ class IrGenerator(private val table: SymbolTable) {
     private fun literalAtDeclaredType(expr: Expr, declared: IrType?): IrExpr? {
         val type = declared ?: return null
         return when {
+            expr is Expr.Grouping -> literalAtDeclaredType(expr.expr, type)
             expr is Expr.IntLiteral && IrType.isInteger(type) ->
-                IrExpr.IntLiteral(expr.value, type, expr.text)
+                IrExpr.IntLiteral(expr.value, type, expr.magnitude ?: expr.text)
             expr is Expr.DoubleLiteral && type in IrType.floatTypes ->
                 IrExpr.DoubleLiteral(expr.value, type, expr.text)
             expr is Expr.Unary && expr.op == TokenType.MINUS ->
@@ -4512,7 +4514,7 @@ class IrGenerator(private val table: SymbolTable) {
             // minimum into a different number entirely.
             is Expr.IntLiteral -> IrExpr.IntLiteral(
                 -operand.value,
-                text = operand.text?.let { "-$it" },
+                text = (operand.magnitude ?: operand.text)?.let { "-$it" },
             )
             is Expr.DoubleLiteral -> IrExpr.DoubleLiteral(-operand.value, text = operand.text?.let { "-$it" })
             else -> null

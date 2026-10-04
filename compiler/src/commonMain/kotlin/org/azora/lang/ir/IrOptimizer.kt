@@ -136,11 +136,11 @@ class IrOptimizer {
                     IrBinaryOp.LT, IrBinaryOp.LTE, IrBinaryOp.GT, IrBinaryOp.GTE
                 )) return null
             return when (op) {
-                IrBinaryOp.ADD -> IrExpr.IntLiteral(left.value + right.value, resultType)
-                IrBinaryOp.SUB -> IrExpr.IntLiteral(left.value - right.value, resultType)
-                IrBinaryOp.MUL -> IrExpr.IntLiteral(left.value * right.value, resultType)
-                IrBinaryOp.DIV -> if (right.value != 0L) IrExpr.IntLiteral(left.value / right.value, resultType) else null
-                IrBinaryOp.MOD -> if (right.value != 0L) IrExpr.IntLiteral(left.value % right.value, resultType) else null
+                IrBinaryOp.ADD -> IrExpr.IntLiteral(resultType.wrapInteger(left.value + right.value), resultType)
+                IrBinaryOp.SUB -> IrExpr.IntLiteral(resultType.wrapInteger(left.value - right.value), resultType)
+                IrBinaryOp.MUL -> IrExpr.IntLiteral(resultType.wrapInteger(left.value * right.value), resultType)
+                IrBinaryOp.DIV -> if (right.value != 0L) IrExpr.IntLiteral(resultType.wrapInteger(left.value / right.value), resultType) else null
+                IrBinaryOp.MOD -> if (right.value != 0L) IrExpr.IntLiteral(resultType.wrapInteger(left.value % right.value), resultType) else null
                 IrBinaryOp.EQ -> IrExpr.BoolLiteral(left.value == right.value)
                 IrBinaryOp.NEQ -> IrExpr.BoolLiteral(left.value != right.value)
                 IrBinaryOp.LT -> IrExpr.BoolLiteral(left.value < right.value)
@@ -183,7 +183,7 @@ class IrOptimizer {
     }
 
     private fun tryFoldUnary(op: IrUnaryOp, operand: IrExpr, resultType: IrType): IrExpr? {
-        if (op == IrUnaryOp.NEG && operand is IrExpr.IntLiteral) return IrExpr.IntLiteral(-operand.value, resultType)
+        if (op == IrUnaryOp.NEG && operand is IrExpr.IntLiteral) return IrExpr.IntLiteral(resultType.wrapInteger(-operand.value), resultType)
         if (op == IrUnaryOp.NEG && operand is IrExpr.DoubleLiteral) return IrExpr.DoubleLiteral(-operand.value, resultType)
         if (op == IrUnaryOp.NOT && operand is IrExpr.BoolLiteral) return IrExpr.BoolLiteral(!operand.value)
         return null

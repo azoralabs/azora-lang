@@ -78,7 +78,7 @@ class UnitNothingSemanticsTest {
             func main() { fin impossible: Nothing = null }
         """))
         assertTrue(
-            result.errors.any { "declared Nothing but initializer is Any" in it },
+            result.errors.any { "declared Nothing but initializer is Nothing?" in it },
             result.errors.toString(),
         )
     }

@@ -17,7 +17,7 @@ module std.memory.slice
 
 @Since("0.1")
 pack Slice<T> {
-    var _raw: T*
+    var _raw: T^
     var count: Int
 }
 
@@ -44,7 +44,7 @@ impl Slice<T> {
 
     /** Returns the raw underlying `T*`. */
     @Since("0.1")
-    prop &.ptr: T* = self._raw
+    prop &.ptr: T^ = self._raw
 
     /** Returns a sub-slice `[start, start+count)`; asserts bounds. */
     @Experimental(since: "0.1")
@@ -58,12 +58,12 @@ impl Slice<T> {
 
 /** Constructs a `Slice<T>` over [length] elements starting at [ptr]. */
 @Experimental(since: "0.1")
-func<T> sliceOf(ptr: T*, length: Int): Slice<T> {
+func<T> sliceOf(ptr: T^, length: Int): Slice<T> {
     return Slice(ptr, length)
 }
 
 /** Alias of [sliceOf]. */
 @Experimental(since: "0.1")
-func<T> ptrSlice(ptr: T*, length: Int): Slice<T> {
+func<T> ptrSlice(ptr: T^, length: Int): Slice<T> {
     return sliceOf(ptr, length)
 }

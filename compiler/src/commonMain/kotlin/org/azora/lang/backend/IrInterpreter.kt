@@ -31,13 +31,13 @@ import org.azora.lang.ir.mangleMethodSymbol
 import org.azora.lang.ir.binaryOperatorSymbol
 import org.azora.lang.ir.Intrinsics.NULL_COALESCE
 import org.azora.lang.ir.IrUnaryOp
+import org.azora.lang.ir.wrapInteger
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 import kotlin.math.pow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.produce
@@ -1090,7 +1090,7 @@ class IrInterpreter {
     }
 
     private suspend fun evalExpr(expr: IrExpr): Any? {
-        return when (expr) {
+        val value = when (expr) {
             IrExpr.UnitLiteral -> kotlin.Unit
             is IrExpr.IntLiteral -> expr.text?.let {
                 // The interpreter's integers are `Long`s. A 128-bit literal is
@@ -1122,7 +1122,7 @@ class IrInterpreter {
             is IrExpr.IncDec -> {
                 val old = lookupVar(expr.target.name)
                 val updated = when (old) {
-                    is Long -> old + expr.delta
+                    is Long -> expr.type.wrapInteger(old + expr.delta)
                     is Double -> old + expr.delta.toDouble()
                     is Float -> old + expr.delta.toFloat()
                     else -> error("Cannot increment or decrement $old")
@@ -1442,16 +1442,11 @@ class IrInterpreter {
                             else -> error("no method '${expr.name}' on array")
                         }
                     }
-                    receiver is AzoraChannel -> when (expr.name) {
-                        "send" -> { receiver.channel.send(args[0]); null }
-                        "receive" -> receiver.channel.receive()
-                        "close" -> { receiver.channel.close(); null }
-                        else -> error("no method '${expr.name}' on channel")
-                    }
                     else -> error("no method '${expr.name}' on $receiver")
                 }
             }
         }
+        return if (value is Long) expr.type.wrapInteger(value) else value
     }
 
     private fun materializeDeclared(type: IrType, value: Any?): Any? {
@@ -1610,6 +1605,25 @@ class IrInterpreter {
                 } else error("spread requires an array, got $arr")
             } else {
                 args.add(evalExpr(argExpr))
+            }
+        }
+
+        val atomic = listOf("_atomicLoad", "_atomicStore", "_atomicAdd", "_atomicCas")
+            .firstOrNull { expr.name.isIntrinsic(it) }
+        if (atomic != null) {
+            val pointer = args[0] as? Pointer ?: error("atomic operation needs an allocated word")
+            return azSync(pointer.buffer) {
+                val old = pointer.buffer[pointer.index] as Long
+                when (atomic) {
+                    "_atomicLoad" -> old
+                    "_atomicStore" -> { pointer.buffer[pointer.index] = IrType.Int.wrapInteger(args[1] as Long); kotlin.Unit }
+                    "_atomicAdd" -> { pointer.buffer[pointer.index] = IrType.Int.wrapInteger(old + (args[1] as Long)); old }
+                    else -> {
+                        val matches = old == args[1]
+                        if (matches) pointer.buffer[pointer.index] = IrType.Int.wrapInteger(args[2] as Long)
+                        matches
+                    }
+                }
             }
         }
 
@@ -1885,10 +1899,6 @@ class IrInterpreter {
             (args.firstOrNull() as? TaskHandle)?.deferred?.cancel()
             return null
         }
-        if (expr.name.isIntrinsic("channel")) {
-            // A buffered channel (effectively unbounded) for task-to-task communication.
-            return AzoraChannel(Channel<Any?>(Channel.UNLIMITED))
-        }
         if (expr.name == "__delay") {
             // Cooperative: the task yields the thread for the duration, so other
             // tasks in the same scope make progress.
@@ -2148,9 +2158,6 @@ class IrInterpreter {
         } else {
             Pointer(mutableListOf(value), 0)
         }
-
-    /** A communication channel between tasks, wrapping a kotlinx.coroutines channel. */
-    private class AzoraChannel(val channel: Channel<Any?>)
 
     /** A mutable reference cell for `ref`/`out` parameters - auto-unwrapped by lookupVar/assignVar. */
     private class RefCell(var value: Any?)

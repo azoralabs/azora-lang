@@ -134,6 +134,8 @@ sealed class CompilationResult {
         val effects: List<EffectChecker.EffectInfo>,
         val warnings: List<String> = emptyList(),
         override val diagnostics: List<AzoraDiagnostic> = emptyList(),
+        /** A target with an entry here has no executable output. Semantic checking can still succeed. */
+        val backendErrors: Map<String, String> = emptyMap(),
     ) : CompilationResult()
 
     /**
@@ -783,12 +785,13 @@ class Compiler(
         // (e.g. indirect value calls) degrades only that target's output rather
         // than failing the whole compilation, so the interpreter and other targets
         // remain usable.
+        val backendErrors = linkedMapOf<String, String>()
         val wasm = if (!generateBackends) "" else try { WasmCodegen().generate(backendIr) }
-            catch (e: IllegalStateException) { "(; WebAssembly codegen unsupported: ${e.message} ;)" }
+            catch (e: IllegalStateException) { backendErrors["wasm"] = e.message ?: "unsupported operation"; "" }
 
         // 12. IR → LLVM IR
         val llvm = if (!generateBackends) "" else try { LlvmCodegen().generate(backendIr) }
-            catch (e: IllegalStateException) { "; LLVM codegen unsupported: ${e.message}" }
+            catch (e: IllegalStateException) { backendErrors["llvm"] = e.message ?: "unsupported operation"; "" }
 
         return CompilationResult.Success(
             wasm,
@@ -799,6 +802,7 @@ class Compiler(
             semantic.effects,
             warnings,
             diagnostics = shorthandDiagnostics,
+            backendErrors = backendErrors,
         )
     }
 }

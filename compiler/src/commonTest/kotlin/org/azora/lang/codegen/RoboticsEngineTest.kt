@@ -36,33 +36,33 @@ class RoboticsEngineTest {
                 import std.io
 
                 func main() {
-                    fin rotation = quaternion(0.0, 0.0, 0.0, 2.0)
-                    fin moved = pose(vector3(1.0, 2.0, 3.0), rotation)
-                    fin point = transformPoint(moved, vector3(1.0, 0.0, 0.0))
+                    fin rotation = engine::quaternion(0.0, 0.0, 0.0, 2.0)
+                    fin moved = engine::pose(engine::vector3(1.0, 2.0, 3.0), rotation)
+                    fin point = engine::transformPoint(moved, engine::vector3(1.0, 0.0, 0.0))
                     println(point.x)
                     println(point.y)
                     println(point.z)
 
-                    fin limit = JointLimit("arm", -1.0, 1.0, 2.0, 4.0)
-                    println(withinLimit(0.5, limit))
-                    fin command = boundedPositionCommand("arm", 5.0, Long(100), limit)
+                    fin limit = engine::JointLimit("arm", -1.0, 1.0, 2.0, 4.0)
+                    println(engine::withinLimit(0.5, limit))
+                    fin command = engine::boundedPositionCommand("arm", 5.0, Long(100), limit)
                     println(command.value)
 
                     fin names: Array<String> = ["arm"]
                     fin positions: Array<Double> = [0.0]
                     fin velocities: Array<Double> = [0.0]
-                    fin point0 = TrajectoryPoint(0.0, positions, velocities)
-      fin points: Array<TrajectoryPoint> = [take point0]
-                    fin trajectory = Trajectory(names, points)
-                    println(validTrajectory(trajectory))
+                    fin point0 = engine::TrajectoryPoint(0.0, positions, velocities)
+      fin points: Array<engine::TrajectoryPoint> = [take point0]
+                    fin trajectory = engine::Trajectory(names, points)
+                    println(engine::validTrajectory(trajectory))
 
       fin badNames: Array<String> = ["arm"]
       fin badPositions: Array<Double> = [0.0]
       fin badVelocities: Array<Double> = [0.0]
-      fin badPoint = TrajectoryPoint(-1.0, badPositions, badVelocities)
-      fin badPoints: Array<TrajectoryPoint> = [take badPoint]
-      fin badTrajectory = Trajectory(badNames, badPoints)
-                    println(validTrajectory(badTrajectory))
+      fin badPoint = engine::TrajectoryPoint(-1.0, badPositions, badVelocities)
+      fin badPoints: Array<engine::TrajectoryPoint> = [take badPoint]
+      fin badTrajectory = engine::Trajectory(badNames, badPoints)
+                    println(engine::validTrajectory(badTrajectory))
                 }
                 """,
             ),

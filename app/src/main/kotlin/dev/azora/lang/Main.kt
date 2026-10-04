@@ -277,6 +277,14 @@ private fun handleCompile(args: List<String>) {
             // In debug mode emit code from the un-optimized IR so backend output
             // reflects the program exactly (useful for backend debugging).
             val backendIr = if (debug) result.ir else result.optimizedIr
+            val backend = when (target) {
+                "wasm", "wat" -> "wasm"
+                "llvm", "ll" -> "llvm"
+                else -> null
+            }
+            result.backendErrors[backend]?.let { reason ->
+                exitWith(ExitStatus.COMPILE_ERROR, "$backend target is unsupported for this program: $reason")
+            }
             val output = when (target) {
                 "wasm", "wat" -> if (debug) org.azora.lang.backend.WasmCodegen().generate(backendIr) else result.wasm
                 "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen().generate(backendIr) else result.llvm

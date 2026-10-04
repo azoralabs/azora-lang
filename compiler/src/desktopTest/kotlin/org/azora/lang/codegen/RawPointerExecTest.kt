@@ -144,16 +144,12 @@ class RawPointerExecTest {
         }
     }
 
-    // Releasing the same block twice stops the program on both native targets:
-    // the WASM allocator traps, and libc aborts LLVM's second free.
-    @Test fun aSecondPurgeStopsTheProgram() {
+    // Ownership checking catches destruction twice before either backend can
+    // emit a double free. Runtime allocator checks remain defense in depth.
+    @Test fun aSecondPurgeIsRejectedBeforeCodeGeneration() {
         for (optimized in listOf(false, true)) {
-            val ir = compile(purgedTwice, optimized)
-            if (LlvmExec.available) {
-                val failure = assertFailsWith<AssertionError> { LlvmExec.runIr(LlvmCodegen().generate(ir)) }
-                assertTrue("lli exited with code" in failure.message.orEmpty(), failure.message)
-            }
-            if (WasmExec.available) WasmExec.runWatExpectingTrap(WasmCodegen().generate(ir))
+            val r = assertIs<CompilationResult.Failure>(Compiler().compile(purgedTwice, release = optimized))
+            assertTrue(r.errors.any { "use of taken value 'values'" in it }, r.errors.toString())
         }
     }
 
@@ -164,22 +160,20 @@ class RawPointerExecTest {
         }
     }
 
-    // Only a raw pointer names a heap block. Anything else is refused rather
-    // than lowered to a purge that releases nothing.
-    @Test fun nativeTargetsRejectPurgingAValueThatIsNotAPointer() {
+    // Scalars have no owned heap allocation to release.
+    @Test fun nativeTargetsRejectPurgingAScalar() {
         val ir = compile(
             """
-                pack Box { var v: Int }
                 func main() {
-                    fin box = Box(1)
-                    purge box
+                    fin number = 1
+                    purge number
                 }
             """.trimIndent(),
             optimized = false,
         )
         val wasm = assertFailsWith<IllegalStateException> { WasmCodegen().generate(ir) }
-        assertTrue("purge of Box is not supported by the WebAssembly target" in wasm.message.orEmpty(), wasm.message)
+        assertTrue("purge of Int is not supported by the WebAssembly target" in wasm.message.orEmpty(), wasm.message)
         val llvm = assertFailsWith<IllegalStateException> { LlvmCodegen().generate(ir) }
-        assertTrue("purge of Box is not supported by the LLVM target" in llvm.message.orEmpty(), llvm.message)
+        assertTrue("purge of Int is not supported by the LLVM target" in llvm.message.orEmpty(), llvm.message)
     }
 }

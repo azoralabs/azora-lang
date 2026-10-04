@@ -26,7 +26,7 @@ class ReceiverOnlyCtorTest {
             pack Counter {
                 var x: Int = 1
                 var runs: Int = 0
-                var buf: Int* = alloc .() * 4
+                var buf: Int^ = alloc^ .() * 4
             }
             impl Counter {
                 ctor .() {
@@ -121,7 +121,7 @@ class ReceiverOnlyCtorTest {
                 var n: Int = 3
             }
             pack Box<T> {
-                var items: T* = alloc .() * 2
+                var items: T^ = alloc^ .() * 2
                 var tag: Int = 0
             }
             impl Box<T> { ctor .() { self.tag = 99 } }
@@ -152,9 +152,9 @@ class ReceiverOnlyCtorTest {
         val table = """
             import std.io
             pack Table<V> {
-                var keys: Int* = alloc .() * 8
-                var values: V* = alloc .() * 8
-                var buckets: Int* = alloc .() * 8
+                var keys: Int^ = alloc^ .() * 8
+                var values: V^ = alloc^ .() * 8
+                var buckets: Int^ = alloc^ .() * 8
                 var size: Int = 0
             }
             impl Table<V> {

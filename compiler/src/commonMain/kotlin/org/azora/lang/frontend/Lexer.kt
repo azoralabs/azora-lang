@@ -464,13 +464,29 @@ class Lexer(private val source: String) {
             // digits travel with the literal and the value carries the low 64
             // bits for the readers that only ever look at small numbers.
             var digits: String? = null
-            fun parseBits(text: String, radix: Int): Long =
-                text.toLongOrNull(radix)
-                    ?: text.toULongOrNull(radix)?.toLong()
-                    ?: run {
-                        digits = numericText
-                        text.fold(0L) { acc, c -> acc * radix + c.digitToInt(radix) }
-                    }
+            var magnitude: String? = null
+            fun parseBits(text: String, radix: Int): Long {
+                val signed = text.toLongOrNull(radix)
+                if (signed != null) return signed
+                // Preserve the magnitude even when its low bits fit ULong.
+                // Semantic range checks cannot infer it from a negative Long.
+                var decimal = "0"
+                for (digit in text) {
+                    var carry = digit.digitToInt(radix)
+                    decimal = decimal.reversed().map { c ->
+                        val next = c.digitToInt() * radix + carry
+                        carry = next / 10
+                        ('0'.code + next % 10).toChar()
+                    }.joinToString("").let { low ->
+                        var high = ""
+                        while (carry != 0) { high += ('0'.code + carry % 10).toChar(); carry /= 10 }
+                        low + high
+                    }.reversed()
+                }
+                magnitude = decimal.trimStart('0').ifEmpty { "0" }
+                if (text.toULongOrNull(radix) == null) digits = numericText
+                return text.fold(0L) { acc, c -> acc * radix + c.digitToInt(radix) }
+            }
             val value = when (base) {
                 16 -> parseBits(numericText.removePrefix("0x").removePrefix("0X"), 16)
                 8 -> parseBits(numericText.removePrefix("0o").removePrefix("0O"), 8)
@@ -478,7 +494,7 @@ class Lexer(private val source: String) {
                 else -> parseBits(numericText, 10)
             }
             tokens.add(
-                Token(TokenType.INT_LITERAL, text, line, startColumn, NumericLiteral(value, digits)),
+                Token(TokenType.INT_LITERAL, text, line, startColumn, NumericLiteral(value, digits, magnitude)),
             )
         }
     }

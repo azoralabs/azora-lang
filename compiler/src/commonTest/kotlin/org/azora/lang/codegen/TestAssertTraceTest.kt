@@ -371,7 +371,7 @@ class TestAssertTraceTest {
         val ir = result.ir.prettyPrint()
         assertFalse("BUILD" in ir, "inline var should be removed from IR, got:\n$ir")
         assertFalse("ANSWER" in ir, "inline fin should be removed from IR, got:\n$ir")
-        assertTrue("return 43" in ir, "inline values should be folded into runtime IR, got:\n$ir")
+        assertTrue("return 43" in org.azora.lang.ir.IrOptimizer().optimize(result.ir).prettyPrint(), "typed optimization should fold inline values, got:\n${result.optimizedIr.prettyPrint()}")
     }
 
     // -----------------------------------------------------------------------

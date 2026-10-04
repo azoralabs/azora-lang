@@ -37,7 +37,15 @@ object WasmExec {
     private val npx: String? by lazy { findTool("npx") }
 
     /** `true` when Node.js is present and the `wat2wasm` assembler can be invoked. */
-    val available: Boolean by lazy { node != null && npx != null && wat2wasmWorks() }
+    private val assembler: List<String>? by lazy {
+        findTool("wat2wasm")?.let { listOf(it) }
+            ?: npx?.let { listOf(it, "--yes", "-p", "wabt", "wat2wasm") }
+    }
+    val available: Boolean by lazy {
+        val found = node != null && assembler != null && wat2wasmWorks()
+        check(found || System.getenv("AZORA_REQUIRE_NATIVE_TESTS") != "1") { "Native qualification requires node and wat2wasm" }
+        found
+    }
 
     private fun findTool(name: String): String? {
         val candidates = mutableListOf<String>()
@@ -49,9 +57,9 @@ object WasmExec {
     }
 
     private fun wat2wasmWorks(): Boolean = runCatching {
-        val proc = ProcessBuilder(npx, "--yes", "-p", "wabt", "wat2wasm", "--version")
+        val proc = ProcessBuilder(assembler.orEmpty() + "--version")
             .redirectErrorStream(true).start()
-        proc.waitFor() == 0
+        if (!proc.waitFor(30, TimeUnit.SECONDS)) { proc.destroyForcibly(); false } else proc.exitValue() == 0
     }.getOrDefault(false)
 
     private val driverJs = """
@@ -115,7 +123,7 @@ object WasmExec {
 
     private fun execute(wat: String, outcome: (exit: Int, stdout: String, stderr: String) -> String): String {
         val nodeTool = node ?: error("node not available")
-        val npxTool = npx ?: error("npx not available")
+        val assemblerTool = assembler ?: error("wat2wasm not available")
         val dir = File.createTempFile("azora_wat_", "").let { it.delete(); it.mkdirs(); it }
         try {
             val watFile = File(dir, "program.wat")
@@ -124,7 +132,7 @@ object WasmExec {
             val driverFile = File(dir, "driver.js")
             driverFile.writeText(driverJs)
 
-            val asmProc = ProcessBuilder(npxTool, "--yes", "-p", "wabt", "wat2wasm", watFile.absolutePath, "-o", wasmFile.absolutePath)
+            val asmProc = ProcessBuilder(assemblerTool + listOf(watFile.absolutePath, "-o", wasmFile.absolutePath))
                 .redirectErrorStream(true).start()
             val asmOut = asmProc.inputStream.bufferedReader().readText()
             if (asmProc.waitFor() != 0) fail("wat2wasm failed:\n$asmOut\n--- WAT ---\n$wat")

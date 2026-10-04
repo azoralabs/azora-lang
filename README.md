@@ -7,8 +7,8 @@ execution.
 > **Status: pre-release (`0.1.0-dev`).** The language is usable and heavily tested,
 > but nothing here is stable yet: syntax still changes between versions, the
 > standard library's APIs are not settled, and two of the three backends have
-> gaps. See `ROADMAPs/VERSION_0_1_ROADMAP.MD` for exactly what stands between
-> today and a production release.
+> gaps. See [the measured foundation repair inventory](ROADMAPs/FOUNDATION_REPAIR_2026_10_04.md)
+> for current evidence and the remaining Engine/Studio readiness gates.
 
 ## Quick Start
 

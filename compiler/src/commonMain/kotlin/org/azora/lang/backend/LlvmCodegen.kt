@@ -1861,10 +1861,14 @@ class LlvmCodegen {
     /**
      * Native definitions for the referenced compiler string bridge intrinsics.
      * The simple ones map to libc; a few text transforms and array-returning ones
-     * are best-effort placeholders (they return their input / empty) so programs
+     * fail code generation with a target diagnostic rather than producing programs
      * that only compare or slice strings work while richer text ops mature.
      */
     private fun buildStringIntrinsics(sb: StringBuilder) {
+        val unsupported = neededIntrinsics.keys.intersect(setOf("toUpper", "toLower", "trim", "replace", "split", "toChars"))
+        check(unsupported.isEmpty()) {
+            "LLVM text operation(s) ${unsupported.joinToString()} are not implemented; use the interpreter until native text support is available"
+        }
         fun def(name: String, body: String) {
             val symbol = neededIntrinsics[name] ?: return
             // The bodies are written against the bare name; the program calls the
@@ -1977,19 +1981,8 @@ class LlvmCodegen {
             no:
               ret i32 -1
             }""")
-        // Best-effort placeholders: text transforms return their input; the
-        // collection-returning ops return null (valid IR - full support pending).
-        def("toUpper", "define i8* @toUpper(i8* %s) {\n  ret i8* %s\n}")
-        def("toLower", "define i8* @toLower(i8* %s) {\n  ret i8* %s\n}")
-        def("trim", "define i8* @trim(i8* %s) {\n  ret i8* %s\n}")
-        def("replace", "define i8* @replace(i8* %s, i8* %a, i8* %b) {\n  ret i8* %s\n}")
-        def("split", "define i8* @split(i8* %s, i8* %d) {\n  ret i8* null\n}")
-        def("toChars", "define i8* @toChars(i8* %s) {\n  ret i8* null\n}")
-        // `fromChars` is the one collection op that cannot be a null placeholder:
-        // it returns a *string*, and the very next thing a caller does is
-        // concatenate it - so returning null crashed inside strlen rather than
-        // degrading. An `Array<Char>` is `[ i64 length, i8 × length ]`, which is
-        // a NUL away from being the string already.
+        // `Array<Char>` stores a length followed by bytes. Copy those bytes to
+        // a NUL-terminated allocation for the native string representation.
         if ("fromChars" in neededIntrinsics) { usesMalloc = true; usesMemcpy = true }
         def("fromChars", """
             define i8* @fromChars(i8* %c) {
@@ -4886,6 +4879,34 @@ class LlvmCodegen {
         // Keyed by the bare name, remembering the mangled symbol the call used,
         // so the definition is emitted under the name the caller asks for.
         stringIntrinsicOf(expr.name)?.let { neededIntrinsics[it] = expr.name }
+        val atomic = listOf("_atomicLoad", "_atomicStore", "_atomicAdd", "_atomicCas")
+            .firstOrNull { symbolDenotes(expr.name, it) }
+        if (atomic != null) {
+            val raw = emitExpr(expr.args[0])
+            val word = nextTmp()
+            emit("  $word = bitcast i8* $raw to i32*")
+            if (atomic == "_atomicStore") {
+                val value = emitExpr(expr.args[1])
+                emit("  store atomic i32 $value, i32* $word seq_cst, align 4")
+                return "void"
+            }
+            return when (atomic) {
+                "_atomicLoad" -> nextTmp().also {
+                    emit("  $it = load atomic i32, i32* $word seq_cst, align 4")
+                }
+                "_atomicAdd" -> {
+                    val value = emitExpr(expr.args[1])
+                    nextTmp().also { emit("  $it = atomicrmw add i32* $word, i32 $value seq_cst") }
+                }
+                else -> {
+                    val expected = emitExpr(expr.args[1])
+                    val replacement = emitExpr(expr.args[2])
+                    val pair = nextTmp()
+                    emit("  $pair = cmpxchg i32* $word, i32 $expected, i32 $replacement seq_cst seq_cst")
+                    nextTmp().also { emit("  $it = extractvalue { i32, i1 } $pair, 1") }
+                }
+            }
+        }
         // `Array::fill<T>(count)` allocates `[ i64 length, T×count ]` (the array
         // layout used by `emitArrayLiteral`); handled inline since element size
         // varies per instantiation.
@@ -4958,15 +4979,26 @@ class LlvmCodegen {
             return "void"
         }
         if (expr.name == "__purge") {
-            // Releases the pointer's storage only; elements a container has
-            // moved out are not destroyed a second time.
             val value = expr.args.single()
             val type = value.type
-            check(type is IrType.Pointer || (type is IrType.Nullable && type.inner is IrType.Pointer)) {
-                "purge of $type is not supported by the LLVM target; only raw pointers are released"
+            val emitted = emitExpr(value)
+            if (type is IrType.Named && type.name in structDefs) {
+                val dtor = "${type.name}_dtor"
+                funcParamTypes[dtor]?.singleOrNull()?.let { receiver ->
+                    val argument = coerceNumeric(emitted, type, receiver)
+                    emit("  call void @$dtor(${mapType(receiver)} $argument)")
+                }
+                val raw = nextTmp()
+                emit("  $raw = bitcast ${mapType(type)} $emitted to i8*")
+                usesAllocatorRuntime = true
+                emit("  call void @__azora_free(i8* $raw)")
+            } else {
+                check(type is IrType.Pointer || (type is IrType.Nullable && type.inner is IrType.Pointer)) {
+                    "purge of $type is not supported by the LLVM target"
+                }
+                usesAllocatorRuntime = true
+                emit("  call void @__azora_free(i8* $emitted)")
             }
-            usesAllocatorRuntime = true
-            emit("  call void @__azora_free(i8* ${emitExpr(value)})")
             return "void"
         }
         if (symbolDenotes(expr.name, "concurrency_cancel")) {

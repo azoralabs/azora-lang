@@ -532,18 +532,21 @@ func main() { println("Hello, Azora!") }"""))
 
     @Test fun ch31_channel() = assertEquals("10\n20", run("""
         import std.io
-        func produce(ch: Channel): Int {
-            ch.send(10)
-            ch.send(20)
-            ch.close()
-            return 0
+        import std.parallelism.channel
+        func produce(ch: Channel<Int>): Channel<Int> {
+            var owned = take ch
+            owned.send(10)
+            owned.send(20)
+            owned.close()
+            return take owned
         }
         func main() {
-            var ch = channel()
-            var p = async { produce(ch) }
-            await p
-            println(ch.receive())
-            println(ch.receive())
+            var ch = channel<Int>()
+            var p = async [take ch] { produce(take ch) }
+            var received = await p
+            println(received.receive())
+            println(received.receive())
+            purge received
         }
     """.trimIndent()))
 

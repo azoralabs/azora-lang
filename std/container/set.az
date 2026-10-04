@@ -134,7 +134,7 @@ spec MutableSet<T> : Set<T> {
 /**
  * Hash set pack backing both `Set<T>` and `MutableSet<T>`.
  *
- * Stores unique elements in insertion order in a contiguous `T*` buffer
+ * Stores unique elements in insertion order in a contiguous `T^` buffer
  * that doubles on demand. Uniqueness and equality use `oper==` for `T`.
  * Internal fields are not exposed outside the pack.
  *
@@ -143,7 +143,7 @@ spec MutableSet<T> : Set<T> {
 @Experimental(since: "0.1")
 @Serializable
 pack LinkedHashSet<T> where T: Equal {
-    var data: T* = alloc .() * 8
+    var data: T^ = alloc^ .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
@@ -162,7 +162,7 @@ impl LinkedHashSet<T> {
     @Experimental(since: "0.1")
     func !.growSet() {
         fin newCap = self.capacity * 2
-        let newData: T* = alloc .() * newCap
+        let newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
             newData[i] = self.data[i]
         }
@@ -283,7 +283,7 @@ impl MutableSet<T> for LinkedHashSet<T> {
 
     func !.clear() {
         fin oldData = self.data
-        self.data = alloc .() * 8
+        self.data = alloc^ .() * 8
         self.size = 0
         self.capacity = 8
         purge oldData
@@ -350,7 +350,7 @@ func<T> emptyLinkedHashSet(): MutableSet<T> where T: Equal {
 @Experimental(since: "0.1")
 @Serializable
 pack HashSet<T> where T: Hash {
-    var data: T* = alloc .() * 8
+    var data: T^ = alloc^ .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
@@ -398,7 +398,7 @@ impl HashSet<T> {
     @Experimental(since: "0.1")
     func !.growSet() {
         fin newCap = self.capacity * 2
-        let newData: T* = alloc .() * newCap
+        let newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
             newData[i] = self.data[i]
         }
@@ -522,7 +522,7 @@ impl MutableSet<T> for HashSet<T> {
 
     func !.clear() {
         fin oldData = self.data
-        self.data = alloc .() * 8
+        self.data = alloc^ .() * 8
         self.size = 0
         self.capacity = 8
         purge oldData
@@ -569,7 +569,7 @@ oper!= HashSet<T>&.(rhs: Set<T>): Bool {
 @Experimental(since: "0.1")
 @Serializable
 pack TreeSet<T> where T: Order {
-    var data: T* = alloc .() * 8
+    var data: T^ = alloc^ .() * 8
     var size: Int = 0
     var capacity: Int = 8
 }
@@ -596,7 +596,7 @@ impl TreeSet<T> {
     @Experimental(since: "0.1")
     func !.growSet() {
         fin newCap = self.capacity * 2
-        let newData: T* = alloc .() * newCap
+        let newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
             newData[i] = self.data[i]
         }
@@ -720,7 +720,7 @@ impl MutableSet<T> for TreeSet<T> {
 
     func !.clear() {
         fin oldData = self.data
-        self.data = alloc .() * 8
+        self.data = alloc^ .() * 8
         self.size = 0
         self.capacity = 8
         purge oldData

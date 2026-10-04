@@ -181,6 +181,7 @@ class TypeResolver(private val table: SymbolTable) {
                 expectedLambdaReceiverTypes = declared.receivers
             }
             val actual = resolveExpr(initializer)
+            if (actual != null) checkIntegerLiteral(initializer, declared ?: actual)
             expectedLambdaParamTypes = savedParams
             expectedLambdaReceiverTypes = savedReceivers
             if (declared != null && actual != null &&
@@ -331,7 +332,17 @@ class TypeResolver(private val table: SymbolTable) {
                     )
                     val savedShared = sharedBorrowedNames
                     sharedBorrowedNames = sharedBorrowedNamesOf(method, receiver = method.receiverName)
+                    val savedMethodMoves = movedBindings.toMap()
+                    movedBindings.clear()
+                    val savedMethodTypeParams = currentFuncTypeParams
+                    currentFuncTypeParams = method.typeParams.toSet() + table.lookupStruct(item.typeName)?.typeParams.orEmpty()
+                    val savedGenericReturn = nonNullGenericReturn
+                    nonNullGenericReturn = (method.returnType as? TypeAnnotation.Explicit)?.ref?.let(::isNonNullGenericPosition) == true
                     resolveBody(method.body, func.returnType)
+                    nonNullGenericReturn = savedGenericReturn
+                    currentFuncTypeParams = savedMethodTypeParams
+                    movedBindings.clear()
+                    movedBindings.putAll(savedMethodMoves)
                     borrowedNames = savedBorrowed
                     sharedBorrowedNames = savedShared
                     leaveSuspendable(savedSuspendable)
@@ -475,7 +486,9 @@ class TypeResolver(private val table: SymbolTable) {
             val modifier = func.params.getOrNull(i)?.modifier ?: ParamModifier.NONE
             val mutable = modifier.writable
             val shared = func.params.getOrNull(i)?.let(::isSharedBorrow) == true
-            table.defineVariable(VariableSymbol(name, type, mutable, sharedBorrow = shared))
+            val ref = func.params.getOrNull(i)?.type as? TypeRef.Named
+            table.defineVariable(VariableSymbol(name, type, mutable, sharedBorrow = shared,
+                nonNullGeneric = ref?.name in func.typeParams))
         }
 
         // `T ?! ErrSet` enforcement: track the function's declared error set so that
@@ -507,7 +520,10 @@ class TypeResolver(private val table: SymbolTable) {
         borrowedNames = borrowedNamesOf(func, receiver = null)
         val savedShared = sharedBorrowedNames
         sharedBorrowedNames = sharedBorrowedNamesOf(func, receiver = null)
+        val savedGenericReturn = nonNullGenericReturn
+        nonNullGenericReturn = (func.returnType as? TypeAnnotation.Explicit)?.ref?.let(::isNonNullGenericPosition) == true
         resolveBody(func.body, symbol.returnType)
+        nonNullGenericReturn = savedGenericReturn
         borrowedNames = savedBorrowed
         sharedBorrowedNames = savedShared
         leaveSuspendable(savedSuspendable)
@@ -731,6 +747,10 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Type parameters of the function currently being resolved (erased to `Any` in types). */
     private var currentFuncTypeParams: Set<String> = emptySet()
+    private var nonNullGenericReturn = false
+
+    private fun isNonNullGenericPosition(ref: TypeRef): Boolean =
+        ref is TypeRef.Named && ref.args.isEmpty() && ref.name in currentFuncTypeParams
 
     /**
      * The type of the member [name] declared on the meta-type, or null.
@@ -1697,7 +1717,8 @@ class TypeResolver(private val table: SymbolTable) {
                 if (resolvesInPlace(stmt.compoundOp, stmt.value, varSym.type)) return
                 if (stmt.compoundOp == null) seedExpectedValue(stmt.value, varSym.type)
                 val valueType = resolveExpr(stmt.value) ?: return
-                if (!isCompatible(varSym.type, adoptLiteralType(stmt.value, valueType, varSym.type))) {
+                if ((varSym.nonNullGeneric && valueType is IrType.Nullable) ||
+                    !isCompatible(varSym.type, adoptLiteralType(stmt.value, valueType, varSym.type))) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to '${stmt.name}' of type ${varSym.type}")
                 }
             }
@@ -1735,7 +1756,8 @@ class TypeResolver(private val table: SymbolTable) {
                     if (capturing != null) {
                         // Inferring a lambda's return type - record it, skip declared-type checking.
                         capturing.add(valueType)
-                    } else if (!isCompatible(returnType, adoptLiteralType(stmt.value!!, valueType, returnType))) {
+                    } else if ((nonNullGenericReturn && valueType is IrType.Nullable) ||
+                        !isCompatible(returnType, adoptLiteralType(stmt.value!!, valueType, returnType))) {
                         val undeclared = undeclaredReturnOf
                         if (undeclared != null && returnType == IrType.Unit) {
                             errors.add(
@@ -1976,9 +1998,19 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 // Pointer index-assign: `ptr[i] = value` (C++-style *(ptr+i) = value).
                 if (targetType is IrType.Pointer) {
+                    if (!targetType.mutable) {
+                        errors.add("line ${stmt.line}: cannot write through '$targetType' - use a mutable '^' pointer")
+                        return
+                    }
                     seedExpectedValue(stmt.value, targetType.inner)
-                    resolveExpr(stmt.index) ?: return
-                    resolveExpr(stmt.value) ?: return
+                    val indexType = resolveExpr(stmt.index) ?: return
+                    if (!IrType.isInteger(indexType)) {
+                        errors.add("line ${stmt.line}: pointer index must be an integer, got $indexType")
+                    }
+                    val valueType = resolveExpr(stmt.value) ?: return
+                    if (!isCompatible(targetType.inner, adoptLiteralType(stmt.value, valueType, targetType.inner))) {
+                        errors.add("line ${stmt.line}: cannot assign $valueType through pointer to ${targetType.inner}")
+                    }
                     return
                 }
                 // Primitive set index-assign: `s[i] = value` (list-backed, by position).
@@ -2010,8 +2042,15 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Stmt.DerefAssign -> {
                 val target = resolveExpr(stmt.target) ?: return
-                if (target is IrType.Pointer) seedExpectedValue(stmt.value, target.inner)
-                resolveExpr(stmt.value) ?: return
+                if (target !is IrType.Pointer) {
+                    errors.add("line ${stmt.line}: cannot dereference-assign to $target (not a pointer)")
+                    return
+                }
+                seedExpectedValue(stmt.value, target.inner)
+                val valueType = resolveExpr(stmt.value) ?: return
+                if (!isCompatible(target.inner, adoptLiteralType(stmt.value, valueType, target.inner))) {
+                    errors.add("line ${stmt.line}: cannot assign $valueType through pointer to ${target.inner}")
+                }
                 // `p.^ = v` writes through the pointer, which a `T*` does not permit.
                 // The sigil at the write site already says which one this is.
                 if (target is IrType.Pointer && !target.mutable) {
@@ -2025,6 +2064,10 @@ class TypeResolver(private val table: SymbolTable) {
                 unionNameOf(inferredTargetType(stmt.target))?.let { requireUnsafeForUnion(it, stmt.line) }
                 if (!checkValueMutable(stmt.target, stmt.line, "assign to member '${stmt.name}'")) return
                 val resolvedTarget = resolveExpr(stmt.target) ?: return
+                if (resolvedTarget is IrType.Pointer && !resolvedTarget.mutable) {
+                    errors.add("line ${stmt.line}: cannot write through '$resolvedTarget' - use a mutable '^' pointer")
+                    return
+                }
                 // Auto-deref: assigning through a pointer writes through it (`p.v = x` == `(*p).v = x`).
                 var targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
                 // The field states what the value must be, so a `.()` or `.Variant`
@@ -2196,6 +2239,7 @@ class TypeResolver(private val table: SymbolTable) {
                     "and this is not one",
             )
         }
+        checkIntegerLiteral(expr.args.single(), width)
         return width
     }
 
@@ -2311,7 +2355,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.DoubleLiteral -> IrType.defaultFloat
             is Expr.StringLiteral -> IrType.String
             is Expr.BoolLiteral -> IrType.Bool
-            is Expr.NullLiteral -> IrType.Any  // null is compatible with any nullable type
+            is Expr.NullLiteral -> IrType.Nullable(IrType.Nothing)
             is Expr.CharLiteral -> IrType.Char
             is Expr.Identifier -> {
                 checkNotMoved(expr.name, expr.line)
@@ -2520,6 +2564,15 @@ class TypeResolver(private val table: SymbolTable) {
                 // and `4` is already one, so naming the width is the whole
                 // difference between this and writing `4`.
                 literalWidthOf(expr)?.let { return it }
+                if (expr.callee == "__purge" && expr.args.size == 1) {
+                    val value = expr.args.single()
+                    // purge itself consumes ownership; callers do not spell
+                    // take a second time. Use the same alias/lifetime checks
+                    // as every other move, including use after destruction.
+                    if (value is Expr.Isolated && value.op == OwnershipOp.TAKE) resolveExpr(value)
+                    else resolveOwnershipOp(Expr.Isolated(value, expr.line, op = OwnershipOp.TAKE))
+                    return IrType.Unit
+                }
                 // `delay <ms>` parses as a call; it suspends like an `await`.
                 if (expr.callee == "__delay") noteSuspension()
                 // Value call `receiver(args)` - the receiver must be a function value.
@@ -2880,17 +2933,8 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${expr.line}: call to unsafe '${expr.callee}' requires an unsafe block or unsafe function")
                     return null
                 }
-                // `println(value)` prints what `"${value}"` would read, so it asks
-                // the same of the value.
-                if (symbolDenotes(expr.callee, Intrinsics.PRINTLN) || symbolDenotes(expr.callee, Intrinsics.PRINT)) {
-                    for (argument in expr.args) {
-                        val shown = resolveExpr(argument) ?: return null
-                        undisplayable(shown)?.let {
-                            errors.add("line ${expr.line}: cannot print $it")
-                            return null
-                        }
-                    }
-                }
+                val printCall = symbolDenotes(expr.callee, Intrinsics.PRINTLN) ||
+                    symbolDenotes(expr.callee, Intrinsics.PRINT)
                 if (!requireReactiveCaller(func, expr.line)) return null
                 if (!requireTestCaller(func.name, expr.line)) return null
                 // Handle named arguments - reorder to param order
@@ -3000,6 +3044,10 @@ class TypeResolver(private val table: SymbolTable) {
                         array.element
                     } else resolveContextualArgument(arg, paramType) ?: return null
                     argTypes.add(argType)
+                    if (printCall) undisplayable(argType)?.let {
+                        errors.add("line ${expr.line}: cannot print $it")
+                        return null
+                    }
                     // `f(x)` where the parameter is `p!` borrows x exclusively, so
                     // the callee may write through it - which a `val`/`fin` binding
                     // does not permit.
@@ -3338,7 +3386,7 @@ class TypeResolver(private val table: SymbolTable) {
                                         reportInaccessible(expr.line, "property", targetType.name, expr.name, func.visibility)
                                         null
                                     } else {
-                                        func.returnType
+                                        instantiateMember(table, targetType, func).returnType
                                     }
                                 }
                                 else {
@@ -3847,9 +3895,10 @@ class TypeResolver(private val table: SymbolTable) {
                     expr.right,
                     if (leftType is IrType.Nullable) leftType.inner else leftType,
                 )
-                resolveExpr(expr.right) ?: return null
-                // Result type is the non-nullable version of left, or right's type
-                if (leftType is IrType.Nullable) leftType.inner else leftType
+                val rightType = resolveExpr(expr.right) ?: return null
+                // A null literal contributes no possible non-null result.
+                if (leftType == IrType.Nullable(IrType.Nothing)) rightType
+                else if (leftType is IrType.Nullable) leftType.inner else leftType
             }
             is Expr.SafeMember -> {
                 val targetType = resolveExpr(expr.target) ?: return null
@@ -4308,10 +4357,26 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
     private fun isCompatible(declared: IrType, actual: IrType): Boolean {
+        // Nullable values may reach an erased Any position (for example
+        // println), but cannot satisfy a non-null primitive or generic T.
+        // Null is the nullable bottom value. Raw pointers retain their null
+        // representation for FFI and uninitialized backing storage.
+        if (actual == IrType.Nullable(IrType.Nothing)) {
+            return declared is IrType.Nullable || declared is IrType.Pointer || declared == IrType.Any
+        }
+        if (actual is IrType.Nullable && declared !is IrType.Nullable && declared != IrType.Any) return false
         // Identity ignores type arguments, so storage can stay erased (IrNode's
         // `Named`); what may be stored where is still decided by them.
         if (typeArgumentsConflict(declared, actual)) return false
         if (declared == actual) return true
+        // A readonly view may discard write capability. Pointees remain
+        // invariant: recursively weakening nested pointers would let a caller
+        // store a readonly pointer into a slot that promises a mutable one.
+        if (declared is IrType.Pointer && actual is IrType.Pointer) {
+            return (!declared.mutable || actual.mutable) &&
+                declared.inner == actual.inner &&
+                !typeArgumentsConflict(declared.inner, actual.inner)
+        }
         // `Nothing` is the uninhabited bottom type. An expression with this
         // type never produces a value, so it is valid in every value position
         // without converting into or pretending to contain the destination.
@@ -4612,6 +4677,8 @@ class TypeResolver(private val table: SymbolTable) {
     private fun joinExpressionTypes(first: IrType, second: IrType, line: Int, construct: String): IrType? = when {
         first == IrType.Nothing -> second
         second == IrType.Nothing -> first
+        first == IrType.Nullable(IrType.Nothing) -> if (second is IrType.Nullable) second else IrType.Nullable(second)
+        second == IrType.Nullable(IrType.Nothing) -> if (first is IrType.Nullable) first else IrType.Nullable(first)
         isCompatible(first, second) -> first
         isCompatible(second, first) -> second
         else -> first
@@ -4743,11 +4810,11 @@ class TypeResolver(private val table: SymbolTable) {
                 op == TokenType.PLUS || op == TokenType.MINUS ->
                     if (IrType.isInteger(right)) left else { errors.add("line $line: pointer arithmetic requires Int offset, got $right"); null }
                 op == TokenType.EQUAL_EQUAL || op == TokenType.BANG_EQUAL ->
-                    if (right is IrType.Pointer || right == IrType.Any) IrType.Bool else { errors.add("line $line: pointer comparison requires Pointer or null, got $right"); null }
+                    if (right is IrType.Pointer || right == IrType.Any || right == IrType.Nullable(IrType.Nothing)) IrType.Bool else { errors.add("line $line: pointer comparison requires Pointer or null, got $right"); null }
                 else -> { errors.add("line $line: unsupported pointer operation '$op'"); null }
             }
         }
-        if (left == IrType.Any && right is IrType.Pointer && (op == TokenType.EQUAL_EQUAL || op == TokenType.BANG_EQUAL)) {
+        if ((left == IrType.Any || left == IrType.Nullable(IrType.Nothing)) && right is IrType.Pointer && (op == TokenType.EQUAL_EQUAL || op == TokenType.BANG_EQUAL)) {
             return IrType.Bool
         }
         if (IrType.isInteger(left) && right is IrType.Pointer && op == TokenType.PLUS) {
@@ -4783,7 +4850,8 @@ class TypeResolver(private val table: SymbolTable) {
                 // `Any?`; either compares against anything at runtime.
                 val leftBare = if (left is IrType.Nullable) left.inner else left
                 val rightBare = if (right is IrType.Nullable) right.inner else right
-                val nullCompare = leftBare == IrType.Any || rightBare == IrType.Any
+                val nullCompare = leftBare == IrType.Any || rightBare == IrType.Any ||
+                    left == IrType.Nullable(IrType.Nothing) || right == IrType.Nullable(IrType.Nothing)
                 val nullableMatch = (left is IrType.Nullable && left.inner == right) ||
                     (right is IrType.Nullable && right.inner == left)
                 // A pack that never said what equal means used to compare anyway,
@@ -5098,6 +5166,7 @@ class TypeResolver(private val table: SymbolTable) {
                 literalElementCompatible(expected.element, actual.element))
 
     private fun adoptLiteralType(expr: Expr, own: IrType, wanted: IrType): IrType {
+        checkIntegerLiteral(expr, wanted)
         // `1.0` is written the same whether it means a `Double` or a `Float`, so an
         // unsuffixed real literal takes the floating-point type asked for.
         if (own in IrType.floatTypes && wanted in IrType.floatTypes && isUntypedDoubleLiteral(expr)) return wanted
@@ -5108,6 +5177,43 @@ class TypeResolver(private val table: SymbolTable) {
         // where nothing does, it is an `Int`, which is what `add(4, 5)` means
         // by `add<Int, Int>`.
         return wanted
+    }
+
+    private fun checkIntegerLiteral(expr: Expr, type: IrType) {
+        val integer = type as? IrType.Integer ?: return
+        val text = integerLiteralText(expr) ?: return
+        val negative = text.startsWith("-")
+        val magnitude = text.removePrefix("-").trimStart('0').ifEmpty { "0" }
+        // Compare decimal digits, not the truncated Long carried beside a
+        // wide literal. This also checks the full ULong/Cent/UCent ranges.
+        var power = "1"
+        repeat(integer.bits - if (integer.signed) 1 else 0) {
+            var carry = 0
+            power = power.reversed().map { c ->
+                val doubled = c.digitToInt() * 2 + carry
+                carry = doubled / 10
+                ('0'.code + doubled % 10).toChar()
+            }.joinToString("").let { if (carry == 0) it else it + carry }.reversed()
+        }
+        val upperExclusive = if (integer.signed && negative) {
+            // Negative signed values also include -2^(width-1).
+            magnitude.length < power.length || magnitude.length == power.length && magnitude <= power
+        } else magnitude.length < power.length || magnitude.length == power.length && magnitude < power
+        if ((!integer.signed && negative && magnitude != "0") || !upperExclusive) {
+            val message = "line ${expr.line}: integer literal $text does not fit $integer"
+            if (message !in errors) errors.add(message)
+        }
+    }
+
+    private fun integerLiteralText(expr: Expr): String? = when (expr) {
+        is Expr.IntLiteral -> expr.magnitude ?: expr.text ?: expr.value.toString()
+        is Expr.Grouping -> integerLiteralText(expr.expr)
+        is Expr.Unary -> when (expr.op) {
+            TokenType.MINUS -> integerLiteralText(expr.operand)?.let { if (it.startsWith("-")) it.drop(1) else "-$it" }
+            TokenType.PLUS -> integerLiteralText(expr.operand)
+            else -> null
+        }
+        else -> null
     }
 
     /**
@@ -5271,6 +5377,10 @@ class TypeResolver(private val table: SymbolTable) {
     private fun checkValueMutable(target: Expr, line: Int, what: String): Boolean {
         val rootName = pathRoot(target)?.name
         if (rootName != null) checkCapture(rootName, line)
+        readonlyPointerOnWritePath(target)?.let { pointer ->
+            errors.add("line $line: cannot write through '$pointer' - use a mutable '^' pointer")
+            return false
+        }
         // A write that lands behind a pointer changes the memory pointed at, not
         // the value holding the pointer; the pointer's own type decides it.
         if (writesThroughPointer(target)) return true
@@ -5309,6 +5419,19 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
+    /** A readonly pointer crossed on the way to a mutated value. */
+    private fun readonlyPointerOnWritePath(target: Expr): IrType.Pointer? {
+        val owner = when (target) {
+            is Expr.Deref -> target.target
+            is Expr.Member -> target.target
+            is Expr.Index -> target.target
+            is Expr.Grouping -> return readonlyPointerOnWritePath(target.expr)
+            else -> return null
+        }
+        val pointer = pathType(owner) as? IrType.Pointer
+        return pointer?.takeIf { !it.mutable } ?: readonlyPointerOnWritePath(owner)
+    }
+
     /** Whether a write to [target] lands in memory a pointer on its path points at. */
     private fun writesThroughPointer(target: Expr): Boolean = when (target) {
         is Expr.Index -> pathType(target.target) is IrType.Pointer || writesThroughPointer(target.target)
@@ -5328,6 +5451,7 @@ class TypeResolver(private val table: SymbolTable) {
             else -> null
         }
         is Expr.Grouping -> pathType(expr.expr)
+        is Expr.Deref -> (pathType(expr.target) as? IrType.Pointer)?.inner
         else -> null
     }
 
@@ -5994,14 +6118,18 @@ class TypeResolver(private val table: SymbolTable) {
         // it is written right there on the binding.
         seedExpectedValue(initializer, declaredType)
         val initType = resolveExpr(initializer) ?: return
+        checkIntegerLiteral(initializer, declaredType ?: initType)
         expectedLambdaParamTypes = savedParams
         expectedLambdaReceiverTypes = savedReceivers
         when (typeAnn) {
             is TypeAnnotation.Explicit -> {
-                if (!isCompatible(declaredType!!, adoptLiteralType(initializer, initType, declaredType))) {
-                    errors.add("line $line: type mismatch in '$name': declared ${declaredType.shown()} but initializer is ${initType.shown()}")
+                val wanted = declaredType!!
+                if ((isNonNullGenericPosition(typeAnn.ref) && initType is IrType.Nullable) ||
+                    !isCompatible(wanted, adoptLiteralType(initializer, initType, wanted))) {
+                    errors.add("line $line: type mismatch in '$name': declared ${wanted.shown()} but initializer is ${initType.shown()}")
                 }
-                table.defineVariable(VariableSymbol(name, declaredType, mutable, valueMutable = valueMutable, hasStorageEffects = hasStorageEffects))
+                table.defineVariable(VariableSymbol(name, wanted, mutable, valueMutable = valueMutable,
+                    hasStorageEffects = hasStorageEffects, nonNullGeneric = isNonNullGenericPosition(typeAnn.ref)))
             }
             is TypeAnnotation.Inferred -> {
                 table.defineVariable(VariableSymbol(name, initType, mutable, valueMutable = valueMutable, hasStorageEffects = hasStorageEffects))

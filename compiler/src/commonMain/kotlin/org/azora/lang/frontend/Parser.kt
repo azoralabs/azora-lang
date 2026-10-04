@@ -11818,7 +11818,7 @@ class Parser(
             TokenType.INT_LITERAL -> {
                 advance()
                 val numLit = tok.literal as NumericLiteral
-                Expr.IntLiteral(numLit.value as Long, tok.line, tok.column, tok.lexeme.length, numLit.text)
+                Expr.IntLiteral(numLit.value as Long, tok.line, tok.column, tok.lexeme.length, numLit.text, numLit.magnitude)
             }
             TokenType.DOUBLE_LITERAL -> {
                 advance()

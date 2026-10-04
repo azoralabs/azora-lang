@@ -28,6 +28,43 @@
 @Supress(.Unused)
 module std.parallelism.sync
 
+
+// Sequentially consistent 32-bit atomics. Native LLVM uses aligned atomic
+// instructions; the interpreter serializes access to the same storage word.
+bridge func _atomicLoad(word: Int^): Int
+bridge func _atomicStore(word: Int^, value: Int)
+bridge func _atomicAdd(word: Int^, value: Int): Int
+bridge func _atomicCas(word: Int^, expected: Int, replacement: Int): Bool
+
+// Shared control blocks use these operations on live, aligned Int storage.
+// The caller must keep the allocation alive until all operations finish.
+func atomicLoadWord(word: Int^): Int { return _atomicLoad(word) }
+func atomicAddWord(word: Int^, value: Int): Int { return _atomicAdd(word, value) }
+
+pack Atomic {
+    var _word: Int^ = alloc^ 0
+}
+impl Atomic {
+    ctor .(initial: Int) { self._word[0] = initial }
+    func &.load(): Int { return _atomicLoad(self._word) }
+    func &.store(value: Int) { _atomicStore(self._word, value) }
+    // Returns the value before the addition, like LLVM atomicrmw.
+    func &.add(value: Int): Int { return _atomicAdd(self._word, value) }
+    func &.cas(expected: Int, replacement: Int): Bool {
+        return _atomicCas(self._word, expected, replacement)
+    }
+    dtor .() { purge self._word }
+}
+
+// An unfair, non-reentrant spin mutex. Critical sections must not suspend;
+// callers use defer to release on every function exit.
+pack Mutex { var _state: Atomic = .(0) }
+impl Mutex {
+    func &.lock() { while !self._state.cas(0, 1) {} }
+    func &.unlock() { self._state.store(0) }
+    dtor .() { purge self._state }
+}
+
 /**
  * A mutex-protected value that provides safe concurrent access.
  *
@@ -38,7 +75,7 @@ module std.parallelism.sync
  */
 @Since("0.1")
 pack Guard<T> {
-    var _mutex: Mutex = .(0)
+    var _mutex: Mutex = .()
     var _value: T
 }
 
@@ -50,9 +87,9 @@ impl Guard<T> {
      */
     @Experimental(since: "0.1")
     func &.read(action: (T) -> Unit) {
-        mutex.lock()
-        action(value)
-        mutex.unlock()
+        self._mutex.lock()
+        defer { self._mutex.unlock() }
+        action(self._value)
     }
 
     /**
@@ -62,9 +99,9 @@ impl Guard<T> {
      */
     @Experimental(since: "0.1")
     func !.write(action: (T) -> T) {
-        mutex.lock()
-        self._value = action(value)
-        mutex.unlock()
+        self._mutex.lock()
+        defer { self._mutex.unlock() }
+        self._value = action(self._value)
     }
 
     /**
@@ -74,9 +111,9 @@ impl Guard<T> {
      */
     @Experimental(since: "0.1")
     func &.get(): T {
-        mutex.lock()
-        fin v = value
-        mutex.unlock()
+        self._mutex.lock()
+        defer { self._mutex.unlock() }
+        fin v = self._value
         return v
     }
 }
@@ -99,14 +136,14 @@ impl CountDownLatch<T> {
      */
     @Experimental(since: "0.1")
     func !.countDown() {
-        self.atomic.add(1)
+        self._atomic.add(1)
     }
 
     /**
      * Whether the latch count has been reached.
      */
     @Experimental(since: "0.1")
-    prop &.isReached: Bool = self.atomic.load() >= self.count
+    prop &.isReached: Bool = self._atomic.load() >= self.count
 }
 
 /**
@@ -128,7 +165,7 @@ impl SpinLock<T> {
      */
     @Experimental(since: "0.1")
     func &.acquire() {
-        while !flag.cas(0, 1) { }
+        while !self._flag.cas(0, 1) { }
     }
 
     /**
@@ -136,7 +173,7 @@ impl SpinLock<T> {
      */
     @Experimental(since: "0.1")
     func &.release() {
-        flag.store(0)
+        self._flag.store(0)
     }
 
     /**
@@ -147,8 +184,8 @@ impl SpinLock<T> {
     @Experimental(since: "0.1")
     func &.withLock(action: () -> Unit) {
         self.acquire()
+        defer { self.release() }
         action()
-        self.release()
     }
 }
 
@@ -159,8 +196,20 @@ impl SpinLock<T> {
  * @param action The function to execute while holding the lock.
  */
 @Experimental(since: "0.1")
-func<T> withMutex(mutex: T, action: () -> Unit) {
+func withMutex(mutex: Mutex&, action: () -> Unit) {
     mutex.lock()
+    defer { mutex.unlock() }
     action()
-    mutex.unlock()
+}
+
+
+test "atomic operations update one shared word" {
+    var a = Atomic(3)
+    assert a.load() == 3 panic "initial atomic value"
+    assert a.add(2) == 3 && a.load() == 5 panic "fetch add"
+    assert !a.cas(3, 9) && a.load() == 5 panic "failed compare exchange"
+    assert a.cas(5, 7) && a.load() == 7 panic "successful compare exchange"
+    a.store(11)
+    assert a.load() == 11 panic "atomic store"
+    purge a
 }

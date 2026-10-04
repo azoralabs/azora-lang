@@ -28,18 +28,18 @@ class EmptyAllocationTest {
         """
         import std.io
         pack Holder {
-            var slots: Int* = alloc .()
+            var slots: Int^ = alloc^ .()
         }
         func main() {
             var h = Holder()
-            h.slots = alloc .() * 3
-            h.slots.*[2] = 7
-            println(h.slots.*[2])
+            h.slots = alloc^ .() * 3
+            h.slots.^[2] = 7
+            println(h.slots.^[2])
             var empty: Double* = alloc .()
             var n = 4
-            var q: Int* = alloc .() * n
-            q.*[3] = 9
-            println(q.*[3])
+            var q: Int^ = alloc^ .() * n
+            q.^[3] = 9
+            println(q.^[3])
         }
         """,
     ))

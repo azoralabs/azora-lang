@@ -56,31 +56,31 @@ class CollectionCtorTest {
 
     @Test fun var_direct_assign_and_when() = assertEquals("int 42", run("""
         import std.io
+        variant enum Value { Integer(Int) Real(Double) Text(String) }
         func main() {
-            var v: Var<Int, Double, String> = 42
+            fin v = Value.Integer(42)
             when v {
-                is Int -> { println("int " + v) }
-                is Double -> { println("real " + v) }
-                is String -> { println("str " + v) }
+                Value.Integer(n) -> { println("int " + n) }
+                Value.Real(n) -> { println("real " + n) }
+                Value.Text(n) -> { println("str " + n) }
             }
         }
     """.trimIndent()))
 
     @Test fun var_when_matches_held_type() = assertEquals("real\nstr", run("""
         import std.io
-        func describe(v: Var<Int, Double, String>): String {
+        variant enum Value { Integer(Int) Real(Double) Text(String) }
+        func describe(v: Value): String {
             when v {
-                is Int -> { return "int" }
-                is Double -> { return "real" }
-                is String -> { return "str" }
+                Value.Integer(n) -> { return "int" }
+                Value.Real(n) -> { return "real" }
+                Value.Text(n) -> { return "str" }
             }
             return "?"
         }
         func main() {
-            var a: Var<Int, Double, String> = 2.5
-            var b: Var<Int, Double, String> = "hi"
-            println(describe(a))
-            println(describe(b))
+            println(describe(Value.Real(Double(2.5))))
+            println(describe(Value.Text("hi")))
         }
     """.trimIndent()))
 
@@ -179,7 +179,7 @@ class CollectionCtorTest {
     @Test fun alloc_buffer_and_pointer_index() = assertEquals("10\n30\n99", run("""
         import std.io
         func main() {
-            var p: Int* = alloc Int*() * 3
+            var p: Int^ = alloc Int^() * 3
             p[0] = 10
             p[1] = 20
             p[2] = 30

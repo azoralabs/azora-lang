@@ -42,7 +42,11 @@ object LlvmExec {
     private val lli: String? by lazy { findTool("lli") }
 
     /** `true` when an `lli` executable is available to run the IR. */
-    val available: Boolean get() = lli != null
+    val available: Boolean get() {
+        val found = lli != null
+        check(found || System.getenv("AZORA_REQUIRE_NATIVE_TESTS") != "1") { "Native qualification requires lli on PATH" }
+        return found
+    }
 
     private fun findTool(name: String): String? {
         val candidates = mutableListOf<String>()

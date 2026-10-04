@@ -238,7 +238,7 @@ class RepeatedConstructionTest {
                 """
                 import std.io
                 func main() {
-                    var p: Int* = alloc .() * 4
+                    var p: Int^ = alloc^ .() * 4
                     p.*[0] = 7
                     println(p.*[0])
                 }
@@ -254,7 +254,7 @@ class RepeatedConstructionTest {
                 """
                 import std.io
                 func main() {
-                    var p: Int* = alloc Int*() * 4
+                    var p: Int^ = alloc^ Int^() * 4
                     p.*[2] = 5
                     println(p.*[2])
                 }
@@ -264,7 +264,7 @@ class RepeatedConstructionTest {
     }
 
     @Test fun aFieldTakesItsSlotTypeFromWhatItHolds() {
-        // `self.data = alloc .() * count` inside a ctor: the field states the
+        // `self.data = alloc^ .() * count` inside a ctor: the field states the
         // type, so the `.()` has something to read.
         assertEquals(
             "4\n9",
@@ -272,12 +272,12 @@ class RepeatedConstructionTest {
                 """
                 import std.io
                 pack Buf {
-                    var data: Int* = null
+                    var data: Int^ = null
                     var cap: Int = 0
                 }
                 impl Buf {
                     ctor .() * count {
-                        self.data = alloc .() * count
+                        self.data = alloc^ .() * count
                         self.cap = count
                     }
                 }
@@ -295,7 +295,7 @@ class RepeatedConstructionTest {
     @Test fun theBracketBufferFormIsGone() {
         // `alloc T[n]` said "a buffer of n" a second way. A buffer is a repeated
         // allocation, so it is spelled like one.
-        val result = Compiler().compile("func main() {\n    var p: Int* = alloc Int[3]\n}")
+        val result = Compiler().compile("func main() {\n    var p: Int^ = alloc Int[3]\n}")
         val failure = assertIs<CompilationResult.Failure>(result)
         assertTrue(
             failure.errors.any { "was removed" in it && "alloc Int*() * <count>" in it },
@@ -304,7 +304,7 @@ class RepeatedConstructionTest {
     }
 
     @Test fun theSlotTypeIsReadFromTheAnnotationEvenWhenItIsGeneric() {
-        // `let d: T* = alloc .() * n` inside a generic type - the shape most of
+        // `let d: T^ = alloc^ .() * n` inside a generic type - the shape most of
         // `std/container` is written in. `T` erases, so the buffer holds anything;
         // what matters is that the annotation is what states it.
         assertEquals(
@@ -313,7 +313,7 @@ class RepeatedConstructionTest {
                 """
                 import std.io
                 pack Box<T> {
-                    var _d: T* = null
+                    var _d: T^ = null
                     var _n: Int = 0
                 }
                 impl Box<T> {
@@ -328,7 +328,7 @@ class RepeatedConstructionTest {
                     }
 
                     ctor .() * count {
-                        let fresh: T* = alloc .() * count
+                        let fresh: T^ = alloc^ .() * count
                         self._d = fresh
                         self._n = count
                     }

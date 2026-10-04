@@ -168,3 +168,19 @@ Type macros are gone: a library can no longer invent type syntax, so a type is
 written with generics and always means the same thing regardless of what is
 imported. `List<T>` rather than `[T]`, `Map<K, V>` rather than `[K: V]`,
 `Tuple<A, B>` rather than `(A, B)`. See the Macro DIP for the full mapping.
+
+## Fixed-width integer execution (2026-10-04 repair)
+
+Integer arithmetic wraps modulo 2^width; signed results use two's complement.
+For example, `Int` maximum plus one is `-2147483648`, and `Byte(127) + Byte(1)`
+is `-128`. Interpreter evaluation, typed IR folding, LLVM, and WASM use this
+rule. Integer literals must fit the width of their declared position, including
+wide literals whose exact digits exceed a signed `Long`.
+
+Runtime integer arithmetic is folded after type resolution so an AST fold
+cannot turn a wrapping `Int` expression into a widened integer literal.
+Numeric casts retain their explicit conversion semantics. The test coverage
+for this repair qualifies 8/32-bit overflow, increments, minimum negation,
+64-bit unsigned division, and 128-bit literal preservation; it does not qualify
+all 128-bit execution, division edge cases, shift counts, or compile-time
+arithmetic across every width.

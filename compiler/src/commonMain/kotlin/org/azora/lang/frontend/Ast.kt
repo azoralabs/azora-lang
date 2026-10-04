@@ -115,7 +115,7 @@ sealed class Expr {
      * have a 128-bit integer write [text] out; the ones that do not say so
      * rather than truncating.
      */
-    data class IntLiteral(val value: Long, override val line: Int, override val column: Int = 0, override val length: Int = 0, val text: String? = null) : Expr()
+    data class IntLiteral(val value: Long, override val line: Int, override val column: Int = 0, override val length: Int = 0, val text: String? = null, val magnitude: String? = null) : Expr()
 
     /**
      * Floating-point literal expression (e.g. `3.14`, `3.14f`, `3.14D`).

@@ -119,6 +119,8 @@ data class VariableSymbol(
     val sharedBorrow: Boolean = false,
     /** The receiver of the member being resolved, for saying how to make it writable. */
     val receiver: Boolean = false,
+    /** A non-null T position retains this constraint after erasure to Any. */
+    val nonNullGeneric: Boolean = false,
 )
 
 /**

@@ -64,7 +64,7 @@ error AllocError {
  * to direct allocations to a specific backing store:
  *
  *     var arena: Arena = .(1024)
- *     var p: Point = alloc .(1.0, 2.0) in arena
+ *     var p: Point = alloc^ .(1.0, 2.0) in arena
  */
 @Since("0.1")
 bridge spec Allocator
@@ -91,15 +91,15 @@ bridge spec Allocator
  * Usage:
  *
  *     var arena = Arena(64 * 1024)
- *     var particles: Double* = alloc .() * 1000 in arena
- *     var transforms: Double* = alloc .() * 1000 in arena
+ *     var particles: Double^ = alloc^ .() * 1000 in arena
+ *     var transforms: Double^ = alloc^ .() * 1000 in arena
  *     // ... compute ...
  *     arena.reset()   // all allocations freed at once
  *
  * Or with region blocks:
  *
  *     region(32 * 1024) { alloc ->
- *         var verts: Double* = alloc .() * 600 in alloc
+ *         var verts: Double^ = alloc^ .() * 600 in alloc
  *     }
  *     // everything freed here
  */
@@ -276,7 +276,7 @@ pack Pool derives Allocator {
     var slotSize: Int = 0
     var slotCount: Int = 0
     var freeCount: Int = 0
-    var freeStack: Int* = alloc .()
+    var freeStack: Int^ = alloc^ .()
     var acquiredCount: Int = 0
     var peakAcquired: Int = 0
 }
@@ -296,7 +296,7 @@ impl Pool {
     } scope {
         self.slotSize = slotSize
         self.slotCount = slotCount
-        self.freeStack = alloc .() * slotCount
+        self.freeStack = alloc^ .() * slotCount
         self.freeCount = slotCount
         for i: Int in 0..<slotCount then self.freeStack.*[i] = slotCount - 1 - i
     }

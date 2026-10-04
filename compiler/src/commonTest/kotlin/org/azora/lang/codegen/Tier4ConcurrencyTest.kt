@@ -77,8 +77,9 @@ class Tier4ConcurrencyTest {
     @Test fun channelSendAndReceive() {
         assertEquals("1\n2", run("""
             import std.io
+            import std.parallelism.channel
             func main() {
-                var ch = channel()
+                var ch = channel<Int>()
                 ch.send(1)
                 ch.send(2)
                 println(ch.receive())
@@ -87,27 +88,25 @@ class Tier4ConcurrencyTest {
         """.trimIndent()))
     }
 
-    @Test fun channelWithProducerTask() {
-        // A producer task sends values; the consumer receives them via await ordering.
-        assertEquals("10\n20", run("""
-            import std.io
-            func produce(ch: Channel): Int {
-                ch.send(10)
-                ch.send(20)
-                ch.close()
-                return 0
-            }
-            func main() {
-                var ch = channel()
-                var p = async {
-                    produce(ch)
-                }
-                await p
-                println(ch.receive())
-                println(ch.receive())
-            }
-        """.trimIndent()))
-    }
+    @Test fun channelWithProducerTask() = assertEquals("10\n20", run("""
+        import std.io
+        import std.parallelism.channel
+        func produce(ch: Channel<Int>): Channel<Int> {
+            var owned = take ch
+            owned.send(10)
+            owned.send(20)
+            owned.close()
+            return take owned
+        }
+        func main() {
+            var ch = channel<Int>()
+            var p = async [take ch] { produce(take ch) }
+            var received = await p
+            println(received.receive())
+            println(received.receive())
+            purge received
+        }
+    """.trimIndent()))
 
     @Test fun parallelTasksAggregateResults() {
         // Two independent tasks run in parallel (Dispatchers.Default); both are awaited

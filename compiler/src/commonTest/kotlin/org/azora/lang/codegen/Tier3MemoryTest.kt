@@ -10,8 +10,8 @@ import kotlin.test.*
  *
  * Pointers are mutable cells (a `Pointer` wrapper) in the interpreter; `alloc`/`*ptr`/
  * `*ptr=v` lower to `__alloc`/`__deref`/`__derefAssign` runtime calls, so no new IR
- * expr/stmt nodes are needed. `unsafe { }` desugars to a `scope`, `drop` to evaluating
- * the expression (advisory free under GC).
+ * expr/stmt nodes are needed. `unsafe { }` desugars to a `scope`, `purge` consumes the pointer
+ * and prevents subsequent use.
  */
 class Tier3MemoryTest {
 
@@ -102,15 +102,15 @@ class Tier3MemoryTest {
         """.trimIndent()))
     }
 
-    @Test fun dropIsAdvisoryNoOp() {
-        assertEquals("5", run("""
-            import std.io
+    @Test fun aPurgedPointerCannotBeDereferenced() {
+        val r = assertIs<CompilationResult.Failure>(Compiler().compile("""
             func main() {
                 var p = alloc^ 5
                 purge p
-                println(*p)
+                fin freed = *p
             }
         """.trimIndent()))
+        assertTrue(r.errors.any { "use of taken value 'p'" in it }, r.errors.toString())
     }
 
     @Test fun pointerTypeAnnotation() {
@@ -168,7 +168,7 @@ class Tier3MemoryTest {
             import std.io
             import std.memory::*
             func main() {
-                var p = alloc Int^() * 3
+                var p = alloc^ Int^() * 3
                 p[0] = 7
                 p[1] = 8
                 p[2] = 9

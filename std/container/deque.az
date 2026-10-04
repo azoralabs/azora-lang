@@ -37,7 +37,7 @@ import std.serializer::Serializable
 @Since("0.1")
 @Serializable
 pack Deque<T> {
-    var data: T* = alloc .() * 8
+    var data: T^ = alloc^ .() * 8
     var head: Int = 0
     var tail: Int = 0
     var size: Int = 0
@@ -120,7 +120,7 @@ impl Deque<T> {
     @Experimental(since: "0.1")
     func !._growDeque(): Unit {
         var newCap: Int = self.capacity * 2
-        var newData: T* = alloc .() * newCap
+        var newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
             var idx: Int = (self.head + i) % self.capacity
             newData[i] = self.data[idx]

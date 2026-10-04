@@ -20,10 +20,10 @@
 | §21 derivation rules | **done** for packs, enums and tagged unions |
 | §22 diagnostics | **done** for the take / implicit-copy / rebind / mutate cases |
 | §17 optional `take` | **done** - `take opt.require()` and the `opt.take()` shorthand yield the value and leave the optional `null`; taking out of an empty optional is caught |
-| §18 smart pointers | **done** - `Unique`, `Shared`, `SyncShared` and `Weak` carry the capabilities that match how each one owns |
+| §18 smart pointers | **partial** - shared counter storage and atomic reference operations are implemented; automatic scope cleanup, owned pointee destruction and safe weak promotion remain unqualified |
 | §15 async ownership | **done** - a borrowed parameter still read after an `await` or `delay` is rejected, with the three fixes named; a borrow that ends before the suspension is an ordinary borrow |
 | §16 closure captures | **done** for what a body shows - borrow and clone captures are accepted, and a `take` inside a closure moves the outer binding, in an `async` closure as much as a plain one. Which closures *escape* is not analysed, so an escaping capture is not yet required to be explicit |
-| §14 destruction | **not implemented** |
+| §14 destruction | **partial** - explicit `purge` invokes written pack destructors on the interpreter, LLVM and WASM; automatic destruction on scope exit is not implemented |
 | §19 non-movable types | **removed** - every value is movable |
 
 Enforced today: which values may be duplicated, which may be given away, which
@@ -936,6 +936,14 @@ The returned view may not outlive `text`.
 ---
 
 ## 14. Destruction and scope exit
+
+**Implementation note (2026-10-04):** the automatic cleanup described below is
+still the target design. Current code must use explicit `purge`, normally in a
+`defer` block, to run a written pack destructor and free its allocation. The
+compiler rejects purging borrowed or already-consumed values. It does not yet
+insert scope-exit destruction, clean up failed partial construction, or generate
+recursive field destruction. A raw pointer purge frees its storage and does not
+invoke a destructor on each pointed-to value.
 
 Owned values are destroyed automatically when their ownership scope ends.
 

@@ -214,6 +214,8 @@ data class NumericLiteral(
     val value: Any,
     /** The exact digits, when they are wider than [value] can carry (a 128-bit literal). */
     val text: String? = null,
+    /** Decimal magnitude for range checks when signed Long carries only low bits. */
+    val magnitude: String? = null,
 )
 
 /**

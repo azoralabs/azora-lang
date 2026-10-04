@@ -1044,7 +1044,17 @@ class WasmCodegen {
 
     // ── Expressions (return a folded S-expression) ────────────────────────
 
-    private fun emitExpr(expr: IrExpr): String = when (expr) {
+    private fun emitExpr(expr: IrExpr): String {
+        val value = emitRawExpr(expr)
+        val integer = expr.type as? IrType.Integer ?: return value
+        if (integer.bits >= 32) return value
+        return if (integer.signed) {
+            val shift = 32 - integer.bits
+            "(i32.shr_s (i32.shl $value (i32.const $shift)) (i32.const $shift))"
+        } else "(i32.and $value (i32.const ${(1L shl integer.bits) - 1}))"
+    }
+
+    private fun emitRawExpr(expr: IrExpr): String = when (expr) {
         IrExpr.UnitLiteral -> "(i32.const 0)"
         // WebAssembly's widest integer is 64 bits, so a 128-bit literal has
         // nowhere to go and says so rather than arriving truncated.
@@ -1336,12 +1346,12 @@ class WasmCodegen {
     private fun emitAs(expr: IrExpr, type: IrType): String = coerceWasm(emitExpr(expr), expr.type, type)
 
     private fun emitCall(expr: IrExpr.Call): String {
+        check(listOf("_atomicLoad", "_atomicStore", "_atomicAdd", "_atomicCas").none { symbolDenotes(expr.name, it) }) {
+            "WebAssembly synchronization requires shared memory and atomic instructions, which this target does not support yet"
+        }
         if (expr.name == Intrinsics.NULL_COALESCE) return emitNullCoalesce(expr)
-        // The MVP target has no host clock to sleep against, so `delay` degrades
-        // to a no-op here rather than a call to a function that does not exist.
-        // Its operand is still evaluated, so any effect in it still happens.
-        if (expr.name == "__delay") {
-            return wrapCallResult(expr.type, "(drop ${emitExpr(expr.args.single())})")
+        check(expr.name != "__delay") {
+            "WebAssembly delay requires a host clock, which this target does not support yet"
         }
         if (expr.name == "__panic") {
             // The message is evaluated even though the MVP target has no host
@@ -1524,9 +1534,15 @@ class WasmCodegen {
      */
     private fun emitPurge(value: IrExpr): String {
         val type = value.type
-        val pointer = type is IrType.Pointer || (type is IrType.Nullable && type.inner is IrType.Pointer)
-        check(pointer) { "purge of $type is not supported by the WebAssembly target; only raw pointers are released" }
         usesAlloc = true
+        if (type is IrType.Named && type.name in structs) {
+            val stored = newTemp("i32")
+            val dtor = "${type.name}_dtor"
+            val call = if (dtor in functionParams) "(call \$$dtor (local.get $stored))" else ""
+            return "(block (local.set $stored ${emitExpr(value)}) $call (call \$__free (local.get $stored)))"
+        }
+        val pointer = type is IrType.Pointer || (type is IrType.Nullable && type.inner is IrType.Pointer)
+        check(pointer) { "purge of $type is not supported by the WebAssembly target" }
         return "(call \$__free ${emitExpr(value)})"
     }
 
@@ -2313,10 +2329,13 @@ class WasmCodegen {
     /**
      * Native Wasm definitions for referenced string bridge intrinsics. A Wasm
      * string is `[ i32 len, bytes… ]`; chars are i32. Simple ops are exact; the
-     * loop/allocation-heavy text transforms are best-effort placeholders (return
-     * their input / empty) so string comparison and indexing work.
+     * unsupported text transforms fail code generation with a target diagnostic.
      */
     private fun wasmStringIntrinsics(): String {
+        val unsupported = neededIntrinsics.intersect(setOf("substring", "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim", "replace", "split", "toChars", "fromChars"))
+        check(unsupported.isEmpty()) {
+            "WebAssembly text operation(s) ${unsupported.joinToString()} are not implemented; use the interpreter until WASM text support is available"
+        }
         val sb = StringBuilder()
         fun def(name: String, sig: String, body: String) {
             if (name in neededIntrinsics) sb.append("  (func \$$name $sig\n    $body)\n")
@@ -2331,19 +2350,6 @@ class WasmCodegen {
         def("isAlpha", "(param \$c i32) (result i32)",
             "(i32.or (i32.and (i32.ge_s (local.get \$c) (i32.const 65)) (i32.le_s (local.get \$c) (i32.const 90)))" +
                 " (i32.and (i32.ge_s (local.get \$c) (i32.const 97)) (i32.le_s (local.get \$c) (i32.const 122))))")
-        // Best-effort placeholders (full text/collection ops pending).
-        def("substring", "(param \$s i32) (param \$a i32) (param \$b i32) (result i32)", "(local.get \$s)")
-        def("startsWith", "(param \$s i32) (param \$p i32) (result i32)", "(i32.const 0)")
-        def("endsWith", "(param \$s i32) (param \$p i32) (result i32)", "(i32.const 0)")
-        def("contains", "(param \$s i32) (param \$p i32) (result i32)", "(i32.const 0)")
-        def("indexOf", "(param \$s i32) (param \$p i32) (result i32)", "(i32.const -1)")
-        def("toUpper", "(param \$s i32) (result i32)", "(local.get \$s)")
-        def("toLower", "(param \$s i32) (result i32)", "(local.get \$s)")
-        def("trim", "(param \$s i32) (result i32)", "(local.get \$s)")
-        def("replace", "(param \$s i32) (param \$a i32) (param \$b i32) (result i32)", "(local.get \$s)")
-        def("split", "(param \$s i32) (param \$d i32) (result i32)", "(i32.const 0)")
-        def("toChars", "(param \$s i32) (result i32)", "(i32.const 0)")
-        def("fromChars", "(param \$c i32) (result i32)", "(i32.const 0)")
         return sb.toString()
     }
 

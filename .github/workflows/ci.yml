@@ -14,117 +14,51 @@ permissions:
   contents: read
 
 jobs:
-  # ── Compiler unit tests (pure JVM, no external toolchains) ────────
-  compiler-tests:
-    name: Compiler Unit Tests
+  foundation:
+    name: Compiler, AZLS and native qualification
     runs-on: ubuntu-latest
-
+    env:
+      AZORA_REQUIRE_NATIVE_TESTS: '1'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install native execution tools
+        run: sudo apt-get update && sudo apt-get install -y llvm clang wabt
+      - name: Full compiler and AZLS regression suites
+        run: ./gradlew :compiler:desktopTest :azls:test :app:installDist :azls:fatJar --console=plain
+      - name: Strict standard library tests through the real CLI
+        run: ./app/build/install/azora/bin/azora test std --strict
+      - name: Real CLI target integrity and native cleanup
+        run: python3 tools/check-foundation.py --native
+      - name: Preserve qualification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundation-test-reports
+          path: |
+            compiler/build/reports/tests/desktopTest
+            azls/build/reports/tests/test
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Run compiler unit tests
-        run: |
-          ./gradlew :compiler:desktopTest \
-            --tests "org.azora.lang.codegen.ProgramTest" \
-            --tests "org.azora.lang.codegen.PrimitiveTypeTest" \
-            --tests "org.azora.lang.codegen.MetaprogrammingTest" \
-            --tests "org.azora.lang.codegen.SymbolTest" \
-            --tests "org.azora.lang.codegen.TestAssertTraceTest" \
-            --tests "org.azora.lang.codegen.ZoneTest" \
-            --tests "org.azora.lang.codegen.TupleVariadicTest" \
-            --tests "org.azora.lang.codegen.StdlibParseDiagnosticTest"
-
-  # ── `azora test` runs Internal/Testing `test` blocks via the CLI ──
-  azora-cli-tests:
-    name: Azora CLI Test Runner
-    runs-on: ubuntu-latest
-
+  platform:
+    name: ${{ matrix.os }} frontend and AZLS
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build the azora CLI
-        run: ./gradlew :app:installDist
-
-      # Runs every `test { … }` block under Internal/Testing through the
-      # interpreter. Exits non-zero only when a test's assertions fail — files
-      # that don't compile (not-yet-implemented features) are reported in the
-      # log but do not fail the job. Pass `--strict` locally to gate on those too.
-      - name: Run Internal/Testing test blocks
-        run: ./app/build/install/azora/bin/azora test Internal/Testing
-
-  # ── Cross-platform builds (compiler subset only) ──────────────────
-  build-macos:
-    name: macOS
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Compiler unit tests
-        run: |
-          ./gradlew :compiler:desktopTest \
-            --tests "org.azora.lang.codegen.ProgramTest" \
-            --tests "org.azora.lang.codegen.PrimitiveTypeTest" \
-            --tests "org.azora.lang.codegen.MetaprogrammingTest" \
-            --tests "org.azora.lang.codegen.SymbolTest" \
-            --tests "org.azora.lang.codegen.TestAssertTraceTest" \
-            --tests "org.azora.lang.codegen.ZoneTest" \
-            --tests "org.azora.lang.codegen.TupleVariadicTest"
-
-  build-windows:
-    name: Windows
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Compiler unit tests
-        run: |
-          ./gradlew :compiler:desktopTest `
-            --tests "org.azora.lang.codegen.ProgramTest" `
-            --tests "org.azora.lang.codegen.PrimitiveTypeTest" `
-            --tests "org.azora.lang.codegen.MetaprogrammingTest" `
-            --tests "org.azora.lang.codegen.SymbolTest" `
-            --tests "org.azora.lang.codegen.TestAssertTraceTest" `
-            --tests "org.azora.lang.codegen.ZoneTest" `
-            --tests "org.azora.lang.codegen.TupleVariadicTest"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Full compiler and AZLS suites
+        run: ./gradlew :compiler:desktopTest :azls:test --console=plain

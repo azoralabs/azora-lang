@@ -15,92 +15,97 @@
  */
 
 /**
- * @file std/memory/syncshared.az
- *
- * A shared pointer whose reference count is safe to touch from several threads
- * (`SyncShared<T>`).
- *
- * One heap allocation, many owners: `retain()` records a new owner, `release()`
- * gives one up and reclaims the allocation when the last one leaves. The count
- * is synchronised, which is the whole difference from [Shared] - reach for that
- * one when the owners all live on a single thread and you would rather not pay
- * for the synchronisation.
- *
- * @since 0.1
+ * Shared ownership using one counter allocation for every cloned handle.
+ * The counter uses sequentially consistent atomics; pointee access is not synchronized.
+ * Cleanup is explicit through release() or purge until automatic scope destruction
+ * is implemented. Each handle tracks its own retained references to prevent a
+ * released handle from decrementing another owner's reference.
  */
 @Supress(.Unused)
 module std.memory.syncshared
 
 import std.traits::Clone
-
-/**
- * A reference-counted pointer to a `T`, countable across threads.
- *
- * @generic T the pointee type.
- */
-@Since("0.1")
-pack SyncShared<T> {
-    var raw: T*
-    var count: Int
-}
+import std.parallelism.sync
 
 @Experimental(since: "0.1")
+pack SyncShared<T> {
+    var raw: T^
+    var count: Int^
+    var _references: Int = 1
+}
+
 oper.* SyncShared<T>&.(): T {
+    assert self._references > 0 panic "Shared owner was released"
     return self.raw.*
 }
 
-/**
- * Cloning a `SyncShared` produces another owner of the *same* value - it does
- * not duplicate the pointee. It is never `Copy`: a new owner is a change to
- * the reference count, and the model keeps that visible at the call site.
- *
- * The count is adjusted by `retain`/`release`, which take an exclusive
- * receiver; `clone` borrows shared, so a caller that keeps the clone past
- * the original's lifetime pairs it with a `retain`.
- */
-@Since("0.1")
 impl Clone for SyncShared<T> {
-    func &.clone() {
-        return SyncShared<T>(self.raw, self.count)
+    func &.clone(): SyncShared<T> {
+        assert self._references > 0 panic "Shared owner was released"
+        atomicAddWord(self.count, 1)
+        return SyncShared<T>(self.raw, self.count, 1)
     }
 }
 
 impl SyncShared<T> {
-    /** The pointed-to value. */
-    @Since("0.1")
-    prop &.get: T = self.raw.*
+    prop &.get: T {
+        assert self._references > 0 panic "Shared owner was released"
+        return self.raw.*
+    }
 
-    /** Replaces the pointed-to value without changing ownership. */
-    @Experimental(since: "0.1")
-    func !.set(value: T) { self.raw[0] = value }
+    // An exclusive handle alone does not establish exclusive pointee access.
+    // Callers must ensure that no other handle accesses the pointee concurrently.
+    func !.set(value: T) {
+        assert self._references > 0 panic "Shared owner was released"
+        self.raw[0] = value
+    }
 
-    /** Records a new shared owner. Returns the new reference count. */
-    @Experimental(since: "0.1")
+    // Records an extra reference held by this handle; pair it with release().
     func !.retain(): Int {
-        self.count = self.count + 1
-        return self.count
+        assert self._references > 0 panic "Shared owner was released"
+        atomicAddWord(self.count, 1)
+        self._references = self._references + 1
+        return atomicLoadWord(self.count)
     }
 
-    /** Drops a shared owner; reclaims the allocation when the count reaches zero. */
-    @Experimental(since: "0.1")
     func !.release(): Int {
-        self.count = self.count - 1
-        if self.count <= 0 {
+        assert self._references > 0 panic "Shared owner was released"
+        self._references = self._references - 1
+        fin previous = atomicAddWord(self.count, -1)
+        fin remaining = previous - 1
+        if remaining == 0 {
             purge self.raw
+            purge self.count
         }
-        return self.count
+        return remaining
     }
 
-    /** The current number of live references. */
-    @Since("0.1")
-    prop &.refCount: Int = self.count
+    prop &.refCount: Int {
+        assert self._references > 0 panic "Shared owner was released"
+        return atomicLoadWord(self.count)
+    }
 
-    /** The underlying `T*` (escapes the counting). */
-    @Since("0.1")
-    prop &.ptr: T* = self.raw
+    prop &.ptr: T* {
+        assert self._references > 0 panic "Shared owner was released"
+        return self.raw
+    }
+
+    dtor .() {
+        while self._references > 0 { self.release() }
+    }
 }
 
-@Experimental(since: "0.1")
 func<T> syncSharedOf(value: T): SyncShared<T> {
-    return SyncShared(alloc value, 1)
+    return SyncShared(alloc^ value, alloc^ 1, 1)
+}
+
+
+test "cloned handles share the owner count" {
+    var first = syncSharedOf(42)
+    var second = first.clone()
+    assert first.refCount == 2 && second.refCount == 2 panic "shared control block"
+    assert first.release() == 1 panic "original releases one owner"
+    assert second.get == 42 && second.refCount == 1 panic "clone remains alive"
+    purge first
+    purge second
 }

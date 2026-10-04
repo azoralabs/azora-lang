@@ -150,13 +150,6 @@ class SymbolCollector {
         // `toString` lives in std as `convert::toString`, and `println` as
         // `println`; neither is a free builtin, so neither is registered
         // here.
-        if (table.lookupFunction("channel") == null) {
-            // `channel()` - creates a buffered channel for task-to-task communication.
-            // NOTE: still a builtin - relocation to concurrency::channel is blocked
-            // until Channel.az's Mutex/Queue dependencies are restored (Mutex is currently
-            // undefined in the stdlib).
-            table.defineFunction(FunctionSymbol("channel", emptyList(), IrType.Named("Channel")))
-        }
         if (table.lookupFunction("__dbg") == null) {
             // Debug-build line marker (see frontend.DebugInstrumenter).
             table.defineFunction(FunctionSymbol("__dbg", listOf("line" to IrType.Int), IrType.Unit))

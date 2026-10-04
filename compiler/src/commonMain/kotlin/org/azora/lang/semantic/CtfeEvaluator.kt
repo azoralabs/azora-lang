@@ -1315,7 +1315,13 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.Binary -> {
                 val (left, lc) = foldExpr(expr.left, program)
                 val (right, rc) = foldExpr(expr.right, program)
-                val folded = tryFoldBinary(left, expr.op, right, expr.line)
+                // Runtime arithmetic needs its resolved width. Folding here
+                // would turn an overflowing Int expression into a wider
+                // untyped literal before typed IR can enforce wrapping.
+                val untypedRuntimeArithmetic = compileTimeDepth == 0 &&
+                    left is Expr.IntLiteral && right is Expr.IntLiteral &&
+                    expr.op in setOf(TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT)
+                val folded = if (untypedRuntimeArithmetic) null else tryFoldBinary(left, expr.op, right, expr.line)
                 if (folded != null) Pair(folded, true)
                 else Pair(expr.copy(left = left, right = right), lc || rc)
             }
@@ -1721,6 +1727,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 -operand.value,
                 line,
                 text = operand.text?.let { "-$it" },
+                magnitude = operand.magnitude?.let { "-$it" },
             )
         }
         if (op == TokenType.MINUS && operand is Expr.DoubleLiteral) {

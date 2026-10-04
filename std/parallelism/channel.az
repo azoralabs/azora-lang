@@ -17,45 +17,55 @@
 /**
  * @file std/parallelism/channel.az
  *
- * Thread-safe message channel.
+ * Owned, synchronized FIFO message channel.
  *
- * Provides a FIFO message queue for communication between threads,
- * with send, receive, and close operations protected by a mutex.
+ * Provides an owned FIFO with send, receive, and close protected by a mutex.
+ * Transfer the channel between tasks with take. receive requires a queued
+ * item; this API does not implement blocking receives or backpressure.
  *
  * @since 0.1
  */
 @Supress(.Unused)
 module std.parallelism.channel
 
+import std.container.queue::Queue
+import std.parallelism.sync::Mutex
+
+/** Creates an owned, synchronized FIFO. Transfer ownership to move it between tasks. */
+func<T> channel(): Channel<T> { return .() }
+
 /**
- * A thread-safe FIFO message channel for inter-thread communication.
- *
- * Channel provides a synchronized queue that allows threads to
- * send and receive messages safely.
+ * An owned FIFO message channel. Mutating operations require an exclusive
+ * receiver; a shared receiver can inspect state. Locks protect each operation,
+ * and defer releases them on early returns.
  *
  * @generic T The type of messages in this channel.
  */
 @Since("0.1")
 pack Channel<T> {
     var _queue: Queue<T> = .()
-    var _mutex: Mutex = .(0)
+    var _mutex: Mutex = .()
     var _closed: Bool = false
 }
 
 impl Channel<T> {
+    dtor .() {
+        purge self._queue
+        purge self._mutex
+    }
     // --- Capacity ---
 
     /** The number of messages currently in the channel. */
     @Since("0.1")
-    prop &.length: Int = queue.length
+    prop &.length: Int = self._queue.size
 
     /** Whether the channel has no messages. */
     @Since("0.1")
-    prop &.isEmpty: Bool = queue.isEmpty
+    prop &.isEmpty: Bool = self._queue.isEmpty
 
     /** Whether the channel has been closed. */
     @Since("0.1")
-    prop &.isClosed: Bool = closed
+    prop &.isClosed: Bool = self._closed
 
     // --- Operations ---
 
@@ -67,10 +77,10 @@ impl Channel<T> {
      */
     @Experimental(since: "0.1")
     func !.send(value: T) {
-        assert !closed panic "Cannot send on closed channel"
-        mutex.lock()
-        queue.enqueue(value)
-        mutex.unlock()
+        self._mutex.lock()
+        defer { self._mutex.unlock() }
+        assert !self._closed panic "Cannot send on closed channel"
+        self._queue.enqueue(value)
     }
 
     /**
@@ -81,28 +91,27 @@ impl Channel<T> {
      */
     @Experimental(since: "0.1")
     func !.receive(): T {
-        assert queue.isNotEmpty panic "Channel is empty"
-        mutex.lock()
-        fin value = queue.dequeue()
-        mutex.unlock()
+        self._mutex.lock()
+        defer { self._mutex.unlock() }
+        assert self._queue.isNotEmpty panic "Channel is empty"
+        fin value = self._queue.dequeue()
         return value
     }
 
     /**
-     * Attempts to receive a message without blocking.
+     * Attempts to receive a message using a fallback when empty.
      *
      * @param default The value to return if the channel is empty.
      * @return The next message, or the default value if empty.
      */
     @Experimental(since: "0.1")
     func !.tryReceive(default: T): T {
-        mutex.lock()
-        if queue.isEmpty {
-            mutex.unlock()
+        self._mutex.lock()
+        defer { self._mutex.unlock() }
+        if self._queue.isEmpty {
             return default
         }
-        fin value = queue.dequeue()
-        mutex.unlock()
+        fin value = self._queue.dequeue()
         return value
     }
 
@@ -111,6 +120,18 @@ impl Channel<T> {
      */
     @Since("0.1")
     func !.close() {
+        self._mutex.lock()
+        defer { self._mutex.unlock() }
         self._closed = true
     }
+}
+
+
+test "library channel preserves FIFO and closes" {
+    var ch: Channel<Int> = .()
+    ch.send(10)
+    ch.send(20)
+    ch.close()
+    assert ch.receive() == 10 && ch.receive() == 20 panic "channel FIFO"
+    assert ch.tryReceive(-1) == -1 && ch.isClosed panic "closed channel drains"
 }

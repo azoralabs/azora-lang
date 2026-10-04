@@ -49,6 +49,7 @@ import org.azora.lang.semantic.DisplayDeriver
 import org.azora.lang.semantic.ScopeQualifiedImplTargets
 import org.azora.lang.semantic.SerializationDeriver
 import org.azora.lang.semantic.VariadicMonomorphizer
+import org.azora.lang.diagnostics.SymbolCandidate
 import org.azora.lang.diagnostics.AnalysisCancelledException
 import org.azora.lang.diagnostics.AnalysisCompleteness
 import org.azora.lang.diagnostics.AnalysisMode
@@ -203,6 +204,7 @@ class Compiler(
         length: Int,
         namespace: SymbolNamespace,
         providerModule: String?,
+        candidates: List<SymbolCandidate> = emptyList(),
     ): UndefinedSymbol {
         val span = sourceSpan(source, line, column, length)
         val fixes = providerModule?.let { module ->
@@ -234,7 +236,7 @@ class Compiler(
         return UndefinedSymbol(
             symbol = name,
             namespace = namespace,
-            candidates = emptyList(),
+            candidates = candidates,
             providerModule = providerModule,
             primary = LabeledSpan(span, if (providerModule == null) "not found here" else "not imported here"),
             fixes = fixes,
@@ -294,18 +296,29 @@ class Compiler(
         source: SourceUnit,
         issue: SemanticUnresolvedSymbol,
         libraries: StdlibInjector,
-    ): UndefinedSymbol = undefinedSymbolDiagnostic(
-        source = source,
-        name = issue.sourceName,
-        line = issue.line,
-        column = issue.column,
-        length = issue.length,
-        namespace = when (issue.namespace) {
-            SemanticSymbolNamespace.FUNCTION -> SymbolNamespace.FUNCTION
-            SemanticSymbolNamespace.VALUE -> SymbolNamespace.VALUE
-        },
-        providerModule = libraries.moduleOf(issue.internalName),
-    )
+        program: Program,
+    ): UndefinedSymbol {
+        // A scope member of that name is what a bare use most plausibly meant -
+        // the program's own first, then one an imported module declares; a
+        // module to import is offered only when there is neither.
+        val alternatives = issue.scopeAlternatives.ifEmpty {
+            if (issue.sourceName == issue.internalName) libraries.importedScopeMembers(issue.sourceName, program)
+            else emptyList()
+        }
+        return undefinedSymbolDiagnostic(
+            source = source,
+            name = issue.sourceName,
+            line = issue.line,
+            column = issue.column,
+            length = issue.length,
+            namespace = when (issue.namespace) {
+                SemanticSymbolNamespace.FUNCTION -> SymbolNamespace.FUNCTION
+                SemanticSymbolNamespace.VALUE -> SymbolNamespace.VALUE
+            },
+            providerModule = if (alternatives.isEmpty()) libraries.moduleOf(issue.internalName) else null,
+            candidates = alternatives.map { SymbolCandidate(it) },
+        )
+    }
 
     private fun unresolvedTypeDiagnostic(
         source: SourceUnit,
@@ -643,7 +656,7 @@ class Compiler(
         }
 
         // 3. AST Validation: structural checks
-        val validationErrors = AstValidator().validate(ast)
+        val validationErrors = AstValidator(libraries.libraryDecorators()).validate(ast)
         if (validationErrors.isNotEmpty()) {
             return CompilationResult.Failure(validationErrors)
         }
@@ -658,10 +671,29 @@ class Compiler(
         // substitutes and what `T.typeName` reads.
         // A pack whose type parameter is bounded by `Hash`/`Equal` carries that
         // parameter's descriptor; see [Witnesses].
-        val semantic = SemanticPipeline().analyze(
+        var semantic = SemanticPipeline().analyze(
             InferredTypeArgs.apply(Witnesses.addDescriptorFields(ast)),
             defines = defines,
         )
+        // A tuple's behaviour is specialized for the shapes the program uses it
+        // on, which only type resolution can say - so it says, and analysis runs
+        // once more with those specializations in place.
+        if (semantic.tupleDemands.isNotEmpty()) {
+            val specialized = ReturnedVariants.resolve(
+                VariadicMonomorphizer.monomorphize(
+                    SpecDefaults.apply(
+                        CallbackImplNormalizer.normalize(
+                            libraries.inject(VariadicMonomorphizer.specializeTuples(ast, semantic.tupleDemands)),
+                        ),
+                    ),
+                ),
+            )
+            if (specialized.errors.isNotEmpty()) return CompilationResult.Failure(specialized.errors)
+            semantic = SemanticPipeline().analyze(
+                InferredTypeArgs.apply(Witnesses.addDescriptorFields(specialized.program)),
+                defines = defines,
+            )
+        }
         val shorthandDiagnostics = semantic.redundantVariantQualifiers.map {
             redundantVariantQualifierDiagnostic(sourceUnit, it)
         }
@@ -681,7 +713,7 @@ class Compiler(
             val unresolvedIssues = semantic.unresolvedSymbols
                 .distinctBy { listOf(it.namespace, it.internalName, it.line, it.column) }
             val unresolvedDiagnostics = unresolvedIssues
-                .map { unresolvedSemanticDiagnostic(sourceUnit, it, libraries) }
+                .map { unresolvedSemanticDiagnostic(sourceUnit, it, libraries, semantic.program) }
             val renderedByMessage = unresolvedIssues.zip(unresolvedDiagnostics)
                 .associate { (issue, diagnostic) ->
                     issue.renderedMessage to "line ${issue.line}: ${DiagnosticRenderer.summary(diagnostic)}"
@@ -729,11 +761,14 @@ class Compiler(
         // written, which is what the annotation promises. Done after analysis, so
         // what is spliced has already been checked where it was written.
         val inlined = InlineCallables.apply(semantic.program)
-        val ir = try {
+        val generated = try {
             IrGenerator(semantic.symbolTable).generate(inlined)
         } catch (e: WitnessError) {
             return CompilationResult.Failure(listOf(e.message.orEmpty()))
         }
+        // The library members the program never reaches leave in every mode; the
+        // program's own code stays as written until a release build shakes it.
+        val ir = IrOptimizer().shakeLibrary(generated)
 
         // 10. IR optimization passes (release mode only)
         val optimizedIr = if (release) IrOptimizer().optimize(ir) else ir

@@ -388,6 +388,19 @@ sealed class IrType {
                     }
                 }
                 else if (ref.name == "Var" && ref.args.size >= 2) Variant(ref.args.map { resolve(it, typeParams) })
+                // `Tuple<A, B>` is `(A, B)` (GTC §6.3). A variadic `Tuple<...T>`
+                // names the whole family, in an `impl` for every tuple; it can
+                // reach here as `Tuple<T>`, with `T` one of [typeParams].
+                else if (
+                    ref.name == "Tuple" && ref.args.isNotEmpty() &&
+                    ref.args.none { (it as? TypeRef.Named)?.variadic == true } &&
+                    !(ref.args.size == 1 && (ref.args[0] as? TypeRef.Named)?.name in typeParams)
+                ) {
+                    if (ref.args.size < 2) {
+                        error("a tuple has at least two elements, so 'Tuple<${ref.args.joinToString(", ")}>' is not a tuple type; write the element type itself")
+                    }
+                    Tuple(ref.args.map { resolve(it, typeParams) })
+                }
                 else if (ref.args.isEmpty() && isPrimitiveName(ref.name)) fromName(ref.name)
                 // Keep the type arguments: a generic pack erases its fields to
                 // pointer slots, so `Box<Double>` is the only remaining record
@@ -426,6 +439,35 @@ sealed class IrType {
             is TypeRef.Const -> Int
         }
     }
+}
+
+/**
+ * The type as a diagnostic names it: with its type arguments.
+ *
+ * `toString` leaves them out, as a `Named` type's identity does, and serves as a
+ * lookup key; a message rejecting a `Box<Int>` where a `Box<String>` is wanted
+ * has to show them, or it reads `expected Box, got Box`.
+ */
+fun IrType.shown(): String = displayed().toString()
+
+private fun IrType.displayed(): IrType = when (this) {
+    is IrType.Named -> if (args.isEmpty()) this else IrType.Named(
+        name + args.indices.joinToString(", ", "<", ">") { i -> constArgs.getOrNull(i)?.toString() ?: args[i].shown() },
+    )
+    is IrType.Array -> copy(element = element.displayed())
+    is IrType.Map -> copy(key = key.displayed(), value = value.displayed())
+    is IrType.Set -> copy(element = element.displayed())
+    is IrType.Function -> copy(
+        params = params.map { it.displayed() },
+        ret = ret.displayed(),
+        receivers = receivers.map { it.displayed() },
+    )
+    is IrType.Task -> copy(result = result.displayed())
+    is IrType.Tuple -> copy(elements = elements.map { it.displayed() })
+    is IrType.Variant -> copy(elements = elements.map { it.displayed() })
+    is IrType.Nullable -> copy(inner = inner.displayed())
+    is IrType.Pointer -> copy(inner = inner.displayed())
+    else -> this
 }
 
 // ---------------------------------------------------------------------------
@@ -1118,7 +1160,12 @@ sealed class IrStmt {
         val body: List<IrStmt>,
         /** Optional zero-based ordinal binding from `with index`. */
         val indexName: String? = null,
+        /** `outer: for x in xs` - what `break:outer` and `continue:outer` name. */
+        val label: String? = null,
     ) : IrStmt()
+
+    /** `outer: ` in front of a loop `break:outer` and `continue:outer` can name. */
+    private fun labelled(label: String?): String = label?.let { "$it: " }.orEmpty()
 
     /** Pretty-prints this statement as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
@@ -1166,7 +1213,7 @@ sealed class IrStmt {
                 sb.appendLine("${pad}trace ${level.prettyPrint()} { ${message.prettyPrint()} }")
             }
             is While -> {
-                sb.appendLine("${pad}while ${condition.prettyPrint()} {")
+                sb.appendLine("${pad}${labelled(label)}while ${condition.prettyPrint()} {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -1174,12 +1221,12 @@ sealed class IrStmt {
                 val op = if (descending) ">.." else if (inclusive) ".." else "..<"
                 val stepPart = if (step != null) " by ${step.prettyPrint()}" else ""
                 val indexPart = indexName?.let { " with $it" }.orEmpty()
-                sb.appendLine("${pad}for $counter in ${start.prettyPrint()}$op${end.prettyPrint()}$stepPart$indexPart {")
+                sb.appendLine("${pad}${labelled(label)}for $counter in ${start.prettyPrint()}$op${end.prettyPrint()}$stepPart$indexPart {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
             is Loop -> {
-                sb.appendLine("${pad}loop {")
+                sb.appendLine("${pad}${labelled(label)}loop {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -1220,7 +1267,7 @@ sealed class IrStmt {
             is Yield -> sb.appendLine("${pad}yield ${value.prettyPrint()}")
             is ForEach -> {
                 val indexPart = indexName?.let { " with $it" }.orEmpty()
-                sb.appendLine("${pad}for $elem in ${iterable.prettyPrint()}$indexPart {")
+                sb.appendLine("${pad}${labelled(label)}for $elem in ${iterable.prettyPrint()}$indexPart {")
                 for (s in body) s.prettyPrint(sb, indent + 1)
                 sb.appendLine("${pad}}")
             }
@@ -1269,6 +1316,14 @@ data class IrFunction(
     val isFailable: Boolean = false,
     /** A `react func` owns reactive bindings and effects. */
     val isReactive: Boolean = false,
+    /**
+     * Lowered from a library's declaration rather than the program's own.
+     *
+     * A program is handed the members of every library type it mentions, so
+     * most of these are never called; [IrOptimizer.shakeLibrary] removes the
+     * ones nothing reaches, while the program's own functions stay as written.
+     */
+    val isLibrary: Boolean = false,
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {
@@ -1414,7 +1469,12 @@ data class IrProgram(
         is IrTopLevel.Enum -> item.name
         is IrTopLevel.Test -> item.name
         is IrTopLevel.Struct -> item.name
-        is IrTopLevel.Global -> (item.stmt as? IrStmt.VarDecl)?.name
+        is IrTopLevel.Global -> when (val stmt = item.stmt) {
+            is IrStmt.VarDecl -> stmt.name
+            is IrStmt.FinDecl -> stmt.name
+            is IrStmt.LetDecl -> stmt.name
+            else -> null
+        }
         // A backend declaration is the toolchain's, never the file's.
         is IrTopLevel.Extern -> null
     }

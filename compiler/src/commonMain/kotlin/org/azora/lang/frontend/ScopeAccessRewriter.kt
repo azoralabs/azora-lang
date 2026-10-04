@@ -123,22 +123,6 @@ internal object ScopeAccessRewriter {
     }
 
     /**
-     * `std__math__floor` → `std__math`; a bare name with no `__` → null.
-     *
-     * A private declaration carries its leading underscore into the mangled
-     * name (`scope std { fin _cache = 1 }` → `std___cache`), so the separator is the last
-     * `__` that is not itself preceded by one. Splitting on the plain last `__`
-     * would yield `std_`, match no sibling, and silently leave every bare call in
-     * that member's body unrewritten.
-     */
-    private fun String.scopePrefix(): String? {
-        for (i in length - 2 downTo 1) {
-            if (this[i] == '_' && this[i + 1] == '_' && this[i - 1] != '_') return substring(0, i)
-        }
-        return null
-    }
-
-    /**
      * Names declared inside [item] (parameters + local bindings) that shadow a
      * same-named scope sibling and must therefore NOT be rewritten.
      */
@@ -389,4 +373,26 @@ internal object ScopeAccessRewriter {
         }
         else -> e
     }
+}
+
+/**
+ * `std__math__floor` → `std__math`; a bare name with no `__` → null.
+ *
+ * A private declaration carries its leading underscore into the mangled
+ * name (`scope std { fin _cache = 1 }` → `std___cache`), so the separator is the last
+ * `__` that is not itself preceded by one. Splitting on the plain last `__`
+ * would yield `std_`, match no sibling, and silently leave every bare call in
+ * that member's body unrewritten.
+ */
+internal fun String.scopePrefix(): String? {
+    for (i in length - 2 downTo 1) {
+        if (this[i] == '_' && this[i + 1] == '_' && this[i - 1] != '_') return substring(0, i)
+    }
+    return null
+}
+
+/** How the source names a scope member mangled as [this]: `Const__five` → `Const::five`. */
+internal fun String.scopeQualifiedSpelling(): String? {
+    val prefix = scopePrefix() ?: return null
+    return prefix.replace("__", "::") + "::" + substring(prefix.length + 2)
 }

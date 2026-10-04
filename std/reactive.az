@@ -43,6 +43,7 @@
 module std.reactive
 
 import std.container.list::*
+import std.serializer::Serializable
 
 /** Lifetime selected by a language-level reactive binding. */
 @Experimental(since: "0.1")
@@ -306,7 +307,7 @@ test "state notifies in registration order and disposal is idempotent" {
     var source = state(1)
     var observed = 0
     var calls = 0
-    var subscription = observe(source) { value: Int ->
+    var subscription = observe(source) [observed.!, calls.!] { value: Int ->
         observed = value
         calls += 1
     }
@@ -322,7 +323,7 @@ test "state notifies in registration order and disposal is idempotent" {
 test "derived state reads the latest inputs" {
     var left = 2
     var right = 3
-    fin total = computed { left + right }
+    fin total = computed [left.&, right.&] { left + right }
     assert total.value == 5 panic "derived value used incorrect initial inputs"
     right = 8
     assert total.value == 10 panic "derived value did not read the latest inputs"

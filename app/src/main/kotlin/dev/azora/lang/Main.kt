@@ -76,6 +76,7 @@ fun main(args: Array<String>) {
             } else {
                 System.err.println("Unknown command: ${args[0]}")
                 printUsage()
+                exitProcess(ExitStatus.USAGE)
             }
         }
     }
@@ -83,28 +84,53 @@ fun main(args: Array<String>) {
 
 // ── azora run <file.az> ─────────────────────────────────────────
 
+/**
+ * What `azora` exits with, so a script can tell a program that never ran from
+ * one that ran and failed by the status alone.
+ */
+private object ExitStatus {
+    /** The program has errors and was not run. */
+    const val COMPILE_ERROR = 1
+
+    /** The command line, or a file it names, is wrong; nothing was compiled. */
+    const val USAGE = 2
+
+    /** The program ran and failed: a panic, a failed assertion, an error nothing caught. */
+    const val RUNTIME_FAILURE = 101
+}
+
+/** Reports [message] on stderr and exits with [status]. */
+private fun exitWith(status: Int, message: String): Nothing {
+    System.err.println(message)
+    exitProcess(status)
+}
+
 private fun handleRun(args: List<String>) {
-    if (args.isEmpty()) {
-        System.err.println("Usage: azora run <file.az>")
-        return
-    }
-    val filePath = args.first { !it.startsWith("--") }
+    val filePath = args.firstOrNull { !it.startsWith("--") }
+        ?: exitWith(ExitStatus.USAGE, "Usage: azora run <file.az>")
     val file = File(filePath)
-    if (!file.exists()) {
-        System.err.println("File not found: $filePath")
-        return
-    }
+    if (!file.exists()) exitWith(ExitStatus.USAGE, "File not found: $filePath")
 
     val unit = resolveCompilation(file)
     val programArgs = args.drop(args.indexOf(filePath) + 1)
-    val result = Compiler(unit.libraries).compile(unit.source, defines = parseDefines(args))
-    when (result) {
+    when (val result = Compiler(unit.libraries).compile(unit.source, defines = parseDefines(args))) {
         is CompilationResult.Success -> {
-            val output = IrInterpreter().apply { this.programArgs = programArgs }.interpret(result.ir)
-            if (output.isNotBlank()) println(output)
+            // Output is written as the program writes it: a long-running program
+            // is seen while it runs, and one that fails keeps what it printed first.
+            val interpreter = IrInterpreter().apply {
+                this.programArgs = programArgs
+                outputSink = { text -> print(text); System.out.flush() }
+            }
+            try {
+                interpreter.interpret(result.ir)
+            } catch (failure: Exception) {
+                System.out.flush()
+                exitWith(ExitStatus.RUNTIME_FAILURE, failure.message ?: failure.toString())
+            }
         }
         is CompilationResult.Failure -> {
             result.errors.forEach { System.err.println(it) }
+            exitProcess(ExitStatus.COMPILE_ERROR)
         }
     }
 }
@@ -210,15 +236,10 @@ private fun resolveCompilation(entryFile: File): SourceCompilation {
 // ── azora check <file.az> ───────────────────────────────────────
 
 private fun handleCheck(args: List<String>) {
-    if (args.isEmpty()) {
-        System.err.println("Usage: azora check <file.az>")
-        return
-    }
-    val file = File(args.first())
-    if (!file.exists()) {
-        System.err.println("File not found: ${args.first()}")
-        return
-    }
+    val filePath = args.firstOrNull { !it.startsWith("-") }
+        ?: exitWith(ExitStatus.USAGE, "Usage: azora check <file.az>")
+    val file = File(filePath)
+    if (!file.exists()) exitWith(ExitStatus.USAGE, "File not found: $filePath")
 
     val unit = resolveCompilation(file)
     val result = Compiler(unit.libraries).compile(unit.source, defines = parseDefines(args))
@@ -226,7 +247,7 @@ private fun handleCheck(args: List<String>) {
         is CompilationResult.Success -> println("No errors found.")
         is CompilationResult.Failure -> {
             result.errors.forEach { System.err.println(it) }
-            exitProcess(1)
+            exitProcess(ExitStatus.COMPILE_ERROR)
         }
     }
 }
@@ -235,8 +256,7 @@ private fun handleCheck(args: List<String>) {
 
 private fun handleCompile(args: List<String>) {
     if (args.size < 2) {
-        System.err.println("Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] <file.az>")
-        return
+        exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] <file.az>")
     }
 
     val target = args[0]
@@ -245,12 +265,10 @@ private fun handleCompile(args: List<String>) {
     // question an editor asks. Everything else in the dump is the standard
     // library the file reached, injected because it was referenced.
     val fileOnly = args.any { it == "--file-only" }
-    val filePath = args.drop(1).first { !it.startsWith("-") }
+    val filePath = args.drop(1).firstOrNull { !it.startsWith("-") }
+        ?: exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] <file.az>")
     val file = File(filePath)
-    if (!file.exists()) {
-        System.err.println("File not found: $filePath")
-        return
-    }
+    if (!file.exists()) exitWith(ExitStatus.USAGE, "File not found: $filePath")
 
     val unit = resolveCompilation(file)
     val result = Compiler(unit.libraries).compile(unit.source, release = !debug, defines = parseDefines(args))
@@ -264,16 +282,13 @@ private fun handleCompile(args: List<String>) {
                 "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen().generate(backendIr) else result.llvm
                 "ir" -> backendIr.prettyPrint(if (fileOnly) declaredNames(result.ast, unit.source) else emptySet())
                 "ast" -> result.ast.dumpTree()
-                else -> {
-                    System.err.println("Unknown target: $target (use wasm, llvm, ir, or ast)")
-                    return
-                }
+                else -> exitWith(ExitStatus.USAGE, "Unknown target: $target (use wasm, llvm, ir, or ast)")
             }
             println(output)
         }
         is CompilationResult.Failure -> {
             result.errors.forEach { System.err.println(it) }
-            exitProcess(1)
+            exitProcess(ExitStatus.COMPILE_ERROR)
         }
     }
 }
@@ -429,25 +444,16 @@ private fun createTempDir(prefix: String): File =
  * library.
  */
 private fun handleTest(args: List<String>) {
-    if (args.isEmpty()) {
-        System.err.println("Usage: azora test <file.az | dir>")
-        return
-    }
+    if (args.isEmpty()) exitWith(ExitStatus.USAGE, "Usage: azora test <file.az | dir>")
     val strict = args.any { it == "--strict" }
     val native = args.any { it == "--llvm" }
     val linkArgs = args.zipWithNext().filter { it.first == "--link" }.map { it.second }
     val positional = args.filterIndexed { i, a ->
         !a.startsWith("--") && !(i > 0 && args[i - 1] == "--link")
     }
-    if (positional.isEmpty()) {
-        System.err.println("Usage: azora test <file.az | dir> [--llvm] [--link <arg>]")
-        return
-    }
+    if (positional.isEmpty()) exitWith(ExitStatus.USAGE, "Usage: azora test <file.az | dir> [--llvm] [--link <arg>]")
     val target = File(positional.first())
-    if (!target.exists()) {
-        System.err.println("Not found: ${target.path}")
-        return
-    }
+    if (!target.exists()) exitWith(ExitStatus.USAGE, "Not found: ${target.path}")
     val files = if (target.isDirectory) {
         target.walkTopDown().filter { it.isFile && it.extension == "az" }.sortedBy { it.path }.toList()
     } else listOf(target)

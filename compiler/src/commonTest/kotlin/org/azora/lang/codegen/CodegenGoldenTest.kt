@@ -171,7 +171,10 @@ class CodegenGoldenTest {
             declare i32 @puts(i8*)
             declare i32 @printf(i8*, ...)
             declare i32 @snprintf(i8*, i64, i8*, ...)
+            declare void @abort() noreturn
+            declare i32 @fflush(i8*)
             declare i8* @malloc(i64)
+            declare void @free(i8*)
             declare i64 @strlen(i8*)
             declare i8* @strcpy(i8*, i8*)
             declare i8* @strcat(i8*, i8*)
@@ -213,46 +216,86 @@ class CodegenGoldenTest {
               %4 = call i8* @__azora_str_concat(i8* %0, i8* %3)
               %5 = call i32 @puts(i8* %4)
               store i32 0, i32* %loc1.total
-              store i32 1, i32* %loc2.i
-              br label %for_cond.0
-            for_cond.0:
-              %6 = load i32, i32* %loc2.i
-              %7 = icmp sle i32 %6, 5
-              br i1 %7, label %for_body.1, label %for_end.3
-            for_body.1:
-              %8 = load i32, i32* %loc1.total
-              %9 = load i32, i32* %loc2.i
-              %10 = add i32 %8, %9
-              store i32 %10, i32* %loc1.total
-              br label %for_inc.2
-            for_inc.2:
-              %11 = load i32, i32* %loc2.i
-              %12 = add i32 %11, 1
+              %6 = sext i32 1 to i64
+              %7 = sext i32 5 to i64
+              %8 = sext i32 1 to i64
+              %9 = icmp sgt i64 %8, 0
+              br i1 %9, label %for_step_valid.0, label %for_step_invalid.1
+            for_step_invalid.1:
+              call void @__azora_abort()
+              unreachable
+            for_step_valid.0:
+              br label %for_entry.6
+            for_entry.6:
+              br label %for_cond.2
+            for_cond.2:
+              %10 = phi i64 [ %6, %for_entry.6 ], [ %for_next.7, %for_inc.4 ]
+              %11 = icmp sle i64 %10, %7
+              br i1 %11, label %for_body.3, label %for_end.5
+            for_body.3:
+              %12 = trunc i64 %10 to i32
               store i32 %12, i32* %loc2.i
-              br label %for_cond.0
-            for_end.3:
               %13 = load i32, i32* %loc1.total
-              %14 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
-              %15 = call i32 (i8*, ...) @printf(i8* %14, i32 %13)
-              br label %while_cond.4
-            while_cond.4:
+              %14 = load i32, i32* %loc2.i
+              %15 = add i32 %13, %14
+              store i32 %15, i32* %loc1.total
+              br label %for_inc.4
+            for_inc.4:
+              %for_next.7 = add i64 %10, %8
+              br label %for_cond.2
+            for_end.5:
               %16 = load i32, i32* %loc1.total
-              %17 = icmp sgt i32 %16, 10
-              br i1 %17, label %while_body.5, label %while_end.6
-            while_body.5:
-              %18 = load i32, i32* %loc1.total
-              %19 = sub i32 %18, 4
-              store i32 %19, i32* %loc1.total
-              br label %while_cond.4
-            while_end.6:
-              %20 = load i32, i32* %loc1.total
-              %21 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
-              %22 = call i32 (i8*, ...) @printf(i8* %21, i32 %20)
-              %23 = call i8* @classify(i32 5)
-              %24 = call i32 @puts(i8* %23)
-              %25 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
-              %26 = call i32 (i8*, ...) @printf(i8* %25, i32 2)
+              %17 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
+              %18 = call i32 (i8*, ...) @printf(i8* %17, i32 %16)
+              br label %while_cond.8
+            while_cond.8:
+              %19 = load i32, i32* %loc1.total
+              %20 = icmp sgt i32 %19, 10
+              br i1 %20, label %while_body.9, label %while_end.10
+            while_body.9:
+              %21 = load i32, i32* %loc1.total
+              %22 = sub i32 %21, 4
+              store i32 %22, i32* %loc1.total
+              br label %while_cond.8
+            while_end.10:
+              %23 = load i32, i32* %loc1.total
+              %24 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
+              %25 = call i32 (i8*, ...) @printf(i8* %24, i32 %23)
+              %26 = call i8* @classify(i32 5)
+              %27 = call i32 @puts(i8* %26)
+              %28 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
+              %29 = call i32 (i8*, ...) @printf(i8* %28, i32 2)
               ret i32 0
+            }
+
+            ; runtime: checked native allocation
+            define i8* @__azora_alloc_raw(i64 %size) {
+            entry:
+              %p = call i8* @malloc(i64 %size)
+              %isnull = icmp eq i8* %p, null
+              br i1 %isnull, label %oom, label %ok
+            oom:
+              call void @__azora_abort()
+              unreachable
+            ok:
+              ret i8* %p
+            }
+
+            define i8* @__azora_alloc(i64 %size) {
+            entry:
+              %p = call i8* @__azora_alloc_raw(i64 %size)
+              ret i8* %p
+            }
+
+            define void @__azora_free(i8* %ptr) {
+            entry:
+              %isnull = icmp eq i8* %ptr, null
+              br i1 %isnull, label %end, label %free
+            free:
+              call void @free(i8* %ptr)
+              br label %end
+            end:
+              ret void
             }
 
             ; runtime: string concatenation
@@ -262,7 +305,7 @@ class CodegenGoldenTest {
               %lb = call i64 @strlen(i8* %b)
               %sum = add i64 %la, %lb
               %size = add i64 %sum, 1
-              %buf = call i8* @malloc(i64 %size)
+              %buf = call i8* @__azora_alloc(i64 %size)
               %c1 = call i8* @strcpy(i8* %buf, i8* %a)
               %c2 = call i8* @strcat(i8* %buf, i8* %b)
               ret i8* %buf
@@ -271,10 +314,18 @@ class CodegenGoldenTest {
             ; runtime: integer to string
             define i8* @__azora_int_to_str(i64 %v) {
             entry:
-              %buf = call i8* @malloc(i64 24)
+              %buf = call i8* @__azora_alloc(i64 24)
               %fmt = getelementptr [5 x i8], [5 x i8]* @.str.5, i64 0, i64 0
               %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 24, i8* %fmt, i64 %v)
               ret i8* %buf
+            }
+
+            ; runtime: stop the program, keeping what it printed
+            define void @__azora_abort() noreturn {
+            entry:
+              %flushed = call i32 @fflush(i8* null)
+              call void @abort()
+              unreachable
             }
 
             ; String constants

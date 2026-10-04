@@ -111,6 +111,14 @@ data class VariableSymbol(
      * so a write to it would change nothing the loop visits.
      */
     val loopVariable: Boolean = false,
+    /**
+     * Bound to a shared borrow - a `p&` parameter or the receiver of a `&.`
+     * member. It owns nothing and may not change what it points at, through
+     * any path: a field, an element, or a member that changes its receiver.
+     */
+    val sharedBorrow: Boolean = false,
+    /** The receiver of the member being resolved, for saying how to make it writable. */
+    val receiver: Boolean = false,
 )
 
 /**
@@ -135,7 +143,13 @@ data class StructField(
      */
     val typeParamIndex: Int = -1,
     /** `unsafe fin data: T*` - readable only inside an unsafe scope. */
-    val isUnsafe: Boolean = false
+    val isUnsafe: Boolean = false,
+    /**
+     * The type as the pack wrote it, in terms of its type parameters -
+     * `Array<T>` where [type] has only erased it. What a construction infers
+     * its type arguments from, and checks its arguments against.
+     */
+    val typeRef: org.azora.lang.frontend.TypeRef? = null,
 )
 
 /**
@@ -197,6 +211,13 @@ data class SpecMethodSig(
     val returnTypeRef: org.azora.lang.frontend.TypeRef? = null,
     /** The spec that declares the member, which is whose parameters it names. */
     val owner: String = "",
+    /**
+     * How the member takes its receiver - `&` shared, `!` exclusive, or owned -
+     * or null for a member of the type rather than of a value. A call through a
+     * spec-typed value is checked against this, as a call to a concrete member
+     * is against its own declaration.
+     */
+    val receiver: org.azora.lang.frontend.ParamModifier? = null,
 )
 
 /** A validated `impl Contract for Type` conformance. */
@@ -205,7 +226,19 @@ data class TraitConformance(
     val contractName: String,
     val typeArgs: List<org.azora.lang.frontend.TypeRef> = emptyList(),
     val isDecorator: Boolean = false,
-)
+    /**
+     * The implementing type's parameters as the `impl` wrote them - `[T]` for
+     * `impl List<T> for ArrayList<T>` - which is what [typeArgs] are written in.
+     * Not part of identity: one type implements one spec instantiation once.
+     */
+    val implTypeParams: List<String> = emptyList(),
+) {
+    override fun equals(other: Any?): Boolean =
+        other is TraitConformance && other.typeName == typeName && other.contractName == contractName &&
+            other.typeArgs == typeArgs && other.isDecorator == isDecorator
+
+    override fun hashCode(): Int = listOf(typeName, contractName, typeArgs, isDecorator).hashCode()
+}
 
 /**
  * Symbol table built in two stages:
@@ -559,6 +592,34 @@ class SymbolTable {
 
     fun lookupInferredMember(line: Int, column: Int): String? =
         inferredMembers[line to column]
+
+    /**
+     * The whole type a `.(…)` builds, arguments included - `Array<Int>` where the
+     * owner alone is `Array`. Recorded where the position states one, so the
+     * construction is the `Type<…>(…)` call it stands for, as a typed binding's
+     * `.(…)` already is from the parser.
+     */
+    private val inferredConstructions = mutableMapOf<Pair<Int, Int>, org.azora.lang.frontend.TypeRef>()
+
+    fun defineInferredConstruction(line: Int, column: Int, type: org.azora.lang.frontend.TypeRef) {
+        inferredConstructions[line to column] = type
+    }
+
+    fun lookupInferredConstruction(line: Int, column: Int): org.azora.lang.frontend.TypeRef? =
+        inferredConstructions[line to column]
+
+    /**
+     * `.(args)` as the `Type<…>(args)` call the resolver decided it stands for,
+     * or null for anything else - a named `.Variant`, or a `.(…)` nothing typed.
+     */
+    fun inferredConstructionCall(expr: org.azora.lang.frontend.Expr.InferredMember): org.azora.lang.frontend.Expr.Call? {
+        if (expr.name.isNotEmpty()) return null
+        val args = expr.ctorArgs ?: return null
+        val owner = lookupInferredMember(expr.line, expr.column) ?: return null
+        val typeArgs = (lookupInferredConstruction(expr.line, expr.column) as? org.azora.lang.frontend.TypeRef.Named)
+            ?.args.orEmpty()
+        return org.azora.lang.frontend.Expr.Call(owner, args, expr.line, expr.column, owner.length, typeArgs)
+    }
 
     fun defineLambdaType(line: Int, column: Int, type: IrType.Function) {
         lambdaTypes[line to column] = type

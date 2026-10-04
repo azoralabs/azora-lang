@@ -54,7 +54,7 @@ impl Random {
      * Returns a pseudo-random integer in [0, max).
      */
     @Experimental(since: "0.1")
-    func &.nextInt(max: Int): Int {
+    func !.nextInt(max: Int): Int {
         var n: Int = self.next()
         if max <= 0 { return 0 }
         return n % max
@@ -64,7 +64,7 @@ impl Random {
      * Returns a pseudo-random integer in [min, max].
      */
     @Experimental(since: "0.1")
-    func &.nextRange(min: Int, max: Int): Int {
+    func !.nextRange(min: Int, max: Int): Int {
         var range: Int = max - min + 1
         return min + self.nextInt(range)
     }
@@ -73,7 +73,7 @@ impl Random {
      * Returns a pseudo-random boolean.
      */
     @Experimental(since: "0.1")
-    func &.nextBool(): Bool {
+    func !.nextBool(): Bool {
         return self.next() % 2 == 0
     }
 }

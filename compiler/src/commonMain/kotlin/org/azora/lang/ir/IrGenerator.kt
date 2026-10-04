@@ -25,6 +25,8 @@ import org.azora.lang.frontend.lambdaReceiverName
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.BindingKind
 import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.arrayCallLiteral
+import org.azora.lang.frontend.tupleCallLiteral
 import org.azora.lang.frontend.Literals
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
@@ -41,6 +43,11 @@ import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.semantic.SlotPatterns
 import org.azora.lang.semantic.ComparisonPlan
 import org.azora.lang.semantic.instantiateMember
+import org.azora.lang.semantic.allocatedConstruction
+import org.azora.lang.semantic.indexedElementType
+import org.azora.lang.semantic.typeRefOf
+import org.azora.lang.semantic.VariadicMonomorphizer
+import org.azora.lang.semantic.MonoNames
 import org.azora.lang.semantic.literalFactoryTypes
 import org.azora.lang.semantic.instantiateSpecMember
 import org.azora.lang.semantic.StructType
@@ -83,6 +90,9 @@ class IrGenerator(private val table: SymbolTable) {
     private var typeFunctions = emptyList<TypeFunctionDecl>()
     private var functionDecls = emptyMap<String, FuncDecl>()
     private val generatedTraceFunctions = mutableListOf<IrFunction>()
+
+    /** The display helpers [rendered] wrote, by name - one per aggregate type printed. */
+    private val generatedRenderFunctions = linkedMapOf<String, IrFunction>()
     private val traceLambdaIndices = mutableMapOf<String, Int>()
     private val knownEnumValues = mutableMapOf<String, IrExpr.EnumLiteral>()
     private var currentTraceOwner: String? = null
@@ -549,6 +559,7 @@ class IrGenerator(private val table: SymbolTable) {
         functionDecls = program.functions.associateBy { it.name }
         initWitnesses(program)
         generatedTraceFunctions.clear()
+        generatedRenderFunctions.clear()
         traceLambdaIndices.clear()
         knownEnumValues.clear()
         currentTraceOwner = null
@@ -595,6 +606,12 @@ class IrGenerator(private val table: SymbolTable) {
             }
         }
 
+        // A library's declarations are lowered like the program's own and marked,
+        // so that what the program never reaches can be left out of it.
+        fun fromLibrary(impl: TopLevel.Impl): Boolean =
+            impl.declaringModule != null && impl.declaringModule != program.moduleName
+        fun IrFunction.ownedBy(library: Boolean): IrFunction = if (library) copy(isLibrary = true) else this
+
         // Lower top-level items in source order to preserve interleaving
         val items = program.items.flatMap { item ->
             when (item) {
@@ -603,7 +620,7 @@ class IrGenerator(private val table: SymbolTable) {
                     // have dead placeholder bodies and stay out of IR. Proper
                     // compiler intrinsics are represented by `bridge func` instead.
                     if (item.decl.isInline || item.decl.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) emptyList()
-                    else listOf(IrTopLevel.Func(lowerFunction(item.decl)))
+                    else listOf(IrTopLevel.Func(lowerFunction(item.decl).ownedBy(item.decl.name in program.injectedNames)))
                 }
                 is TopLevel.FinDecl -> {
                     val init = lowerExpr(item.initializer)
@@ -699,7 +716,7 @@ class IrGenerator(private val table: SymbolTable) {
                     else {
                         val saved = currentReceiverType
                         currentReceiverType = item.typeName
-                        try { IrTopLevel.Func(lowerMethod(item.typeName, method)) }
+                        try { IrTopLevel.Func(lowerMethod(item.typeName, method).ownedBy(fromLibrary(item))) }
                         finally { currentReceiverType = saved }
                     }
                 }
@@ -750,6 +767,7 @@ class IrGenerator(private val table: SymbolTable) {
                         } else {
                             listOf(fresh, IrStmt.ExprStmt(call), IrStmt.Return(IrExpr.Var("__self", type)))
                         },
+                        isLibrary = fromLibrary(item),
                     ))
                 }
             }
@@ -769,6 +787,7 @@ class IrGenerator(private val table: SymbolTable) {
                 listOf("__self" to type),
                 type,
                 listOf(IrStmt.ExprStmt(run), IrStmt.Return(self)),
+                isLibrary = fromLibrary(item),
             ))
         } +
         // Emit __singleton factories for `graph` registrations (DI wiring).
@@ -827,7 +846,8 @@ class IrGenerator(private val table: SymbolTable) {
         // of this list: a backend that needs its own order sorts for itself.
         val lowered = IrProgram(
             program.moduleName,
-            generatedTraceFunctions.map { IrTopLevel.Func(it) } + items,
+            generatedTraceFunctions.map { IrTopLevel.Func(it) } +
+                generatedRenderFunctions.values.map { IrTopLevel.Func(it) } + items,
             buildSpecTables(),
         )
         return IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces)
@@ -1255,10 +1275,79 @@ class IrGenerator(private val table: SymbolTable) {
      * Rewrite only continues targeting this generated loop; nested loops own
      * their own continue statements.
      */
-    private fun rewriteContinuesForIndex(stmts: List<IrStmt>, index: String, label: String?): List<IrStmt> =
-        stmts.map { stmt -> rewriteContinueForIndex(stmt, index, label) }
+    /**
+     * `for x in xs` over an `Indexed` collection: by position.
+     *
+     * The collection is evaluated once. `xs.size` is read before every row, so
+     * a body that removes elements ends the walk rather than reading past the
+     * end, and the row is `xs.get(i)`. Both are lowered from the calls a
+     * program writing them out would make, so a collection seen through a spec
+     * dispatches exactly as such a call does.
+     */
+    private fun lowerIndexedWalk(stmt: Stmt.For, iterable: IrExpr, element: IrType): IrStmt {
+        val line = stmt.line
+        val column = stmt.column
+        table.pushScope()
+        pushNameScope()
+        // Named after the loop's position: a nested walk is written elsewhere,
+        // so its names cannot collide with these.
+        val collectionName = "__walked_${line}_$column"
+        val positionName = "__walk_at_${line}_$column"
+        val collection = registerName(collectionName)
+        table.defineVariable(VariableSymbol(collectionName, iterable.type, mutable = false))
+        val position = registerName(positionName)
+        table.defineVariable(VariableSymbol(positionName, IrType.Int, mutable = true))
+        val walked = Expr.Identifier(collectionName, line, column)
+        val size = lowerExpr(Expr.Member(walked, "size", line, column))
+        val read = lowerExpr(Expr.MethodCall(walked, "get", listOf(Expr.Identifier(positionName, line, column)), line, column))
+        val row = registerName(stmt.name)
+        table.defineVariable(VariableSymbol(stmt.name, element, mutable = false))
+        val index = stmt.indexName?.let { name ->
+            val registered = registerName(name)
+            table.defineVariable(VariableSymbol(name, IrType.Int, mutable = false))
+            registered
+        }
+        val body = rewriteContinuesForIndex(lowerBody(stmt.body), position, stmt.label)
+        popNameScope()
+        table.popScope()
+        val at = IrExpr.Var(position, IrType.Int)
+        val advance = IrStmt.Assignment(
+            position,
+            IrExpr.Binary(at, IrBinaryOp.ADD, IrExpr.IntLiteral(1), IrType.Int),
+        )
+        val rowBindings = listOfNotNull(
+            IrStmt.FinDecl(row, element, read),
+            index?.let { IrStmt.FinDecl(it, IrType.Int, at) },
+        )
+        return IrStmt.Scope(
+            listOf(
+                IrStmt.FinDecl(collection, iterable.type, iterable),
+                IrStmt.VarDecl(position, IrType.Int, IrExpr.IntLiteral(0), valueMutable = true),
+                IrStmt.While(
+                    IrExpr.Binary(at, IrBinaryOp.LT, size, IrType.Bool),
+                    rowBindings + body + advance,
+                    stmt.label,
+                ),
+            ),
+        )
+    }
 
-    private fun rewriteContinueForIndex(stmt: IrStmt, index: String, label: String?): IrStmt {
+    /**
+     * [stmts] with every `continue` of the loop labelled [label] advancing
+     * [index] first, as falling off the end of the body does.
+     *
+     * Inside a nested loop a bare `continue` is that loop's own, but one naming
+     * [label] still leaves for this loop's next row - and skipping the advance
+     * there would repeat the row forever.
+     */
+    private fun rewriteContinuesForIndex(
+        stmts: List<IrStmt>,
+        index: String,
+        label: String?,
+        nested: Boolean = false,
+    ): List<IrStmt> = stmts.map { stmt -> rewriteContinueForIndex(stmt, index, label, nested) }
+
+    private fun rewriteContinueForIndex(stmt: IrStmt, index: String, label: String?, nested: Boolean): IrStmt {
         val increment = IrStmt.Assignment(
             index,
             IrExpr.Binary(
@@ -1268,26 +1357,30 @@ class IrGenerator(private val table: SymbolTable) {
                 IrType.Int,
             ),
         )
+        fun inner(body: List<IrStmt>) =
+            if (label == null) body else rewriteContinuesForIndex(body, index, label, nested = true)
+        fun same(body: List<IrStmt>) = rewriteContinuesForIndex(body, index, label, nested)
         return when (stmt) {
-            is IrStmt.Continue -> if (stmt.label == null || stmt.label == label) {
-                IrStmt.Scope(listOf(increment, stmt))
-            } else stmt
-            // A nested loop consumes its own continue statements.
-            is IrStmt.While, is IrStmt.For, is IrStmt.ForEach, is IrStmt.Loop -> stmt
+            is IrStmt.Continue -> {
+                val ours = if (stmt.label == null) !nested else stmt.label == label
+                if (ours) IrStmt.Scope(listOf(increment, stmt)) else stmt
+            }
+            is IrStmt.While -> stmt.copy(body = inner(stmt.body))
+            is IrStmt.For -> stmt.copy(body = inner(stmt.body))
+            is IrStmt.ForEach -> stmt.copy(body = inner(stmt.body))
+            is IrStmt.Loop -> stmt.copy(body = inner(stmt.body))
             is IrStmt.If -> stmt.copy(
-                thenBranch = rewriteContinuesForIndex(stmt.thenBranch, index, label),
-                elseBranch = stmt.elseBranch?.let { rewriteContinuesForIndex(it, index, label) },
+                thenBranch = same(stmt.thenBranch),
+                elseBranch = stmt.elseBranch?.let(::same),
             )
-            is IrStmt.Scope -> stmt.copy(body = rewriteContinuesForIndex(stmt.body, index, label))
+            is IrStmt.Scope -> stmt.copy(body = same(stmt.body))
             is IrStmt.When -> stmt.copy(
-                branches = stmt.branches.map { branch ->
-                    branch.copy(body = rewriteContinuesForIndex(branch.body, index, label))
-                },
-                elseBranch = stmt.elseBranch?.let { rewriteContinuesForIndex(it, index, label) },
+                branches = stmt.branches.map { branch -> branch.copy(body = same(branch.body)) },
+                elseBranch = stmt.elseBranch?.let(::same),
             )
             is IrStmt.Try -> stmt.copy(
-                body = rewriteContinuesForIndex(stmt.body, index, label),
-                catchBody = stmt.catchBody?.let { rewriteContinuesForIndex(it, index, label) },
+                body = same(stmt.body),
+                catchBody = stmt.catchBody?.let(::same),
             )
             else -> stmt
         }
@@ -1388,6 +1481,12 @@ class IrGenerator(private val table: SymbolTable) {
                         val index = coerceToFloat(lowerExpr(stmt.index), typed.params.getOrNull(1)?.second ?: IrType.Any)
                         val value = coerceToFloat(lowerExpr(stmt.value), typed.params.getOrNull(2)?.second ?: IrType.Any)
                         return IrStmt.ExprStmt(IrExpr.Call(mangled, listOf(target, index, value), IrType.Unit))
+                    }
+                    val required = table.lookupSpecMethod(tt.name, "indexSet")?.let { instantiateSpecMember(table, tt, it) }
+                    if (required != null) {
+                        val index = coerceToFloat(lowerExpr(stmt.index), required.paramTypes.getOrNull(0) ?: IrType.Any)
+                        val value = coerceToFloat(lowerExpr(stmt.value), required.paramTypes.getOrNull(1) ?: IrType.Any)
+                        return IrStmt.ExprStmt(IrExpr.MethodCall(target, "indexSet", listOf(index, value), IrType.Unit))
                     }
                 }
                 val index = lowerExpr(stmt.index)
@@ -1558,6 +1657,8 @@ class IrGenerator(private val table: SymbolTable) {
                             )
                         }
                         IrStmt.Scope(listOfNotNull(reset, indexDecl, IrStmt.While(cond, listOf(bind) + body + listOfNotNull(indexIncrement), stmt.label)))
+                    } else if (indexedElementType(table, iterable.type) != null) {
+                        lowerIndexedWalk(stmt, iterable, indexedElementType(table, iterable.type)!!)
                     } else {
                     val elemType = when (val type = iterable.type) {
                         is IrType.Array -> type.element
@@ -1580,7 +1681,7 @@ class IrGenerator(private val table: SymbolTable) {
                     if (savedElementRef == null) declaredRefs.remove(stmt.name) else declaredRefs[stmt.name] = savedElementRef
                     popNameScope()
                     table.popScope()
-                    IrStmt.ForEach(elem, iterable, body, indexName = index)
+                    IrStmt.ForEach(elem, iterable, body, indexName = index, label = stmt.label)
                     }
                 }
             }
@@ -1785,6 +1886,97 @@ class IrGenerator(private val table: SymbolTable) {
         // already knows how to lower.
         val render = table.lookupMethod(named.name, "__displayString") ?: return value
         return IrExpr.Call(render, listOf(value), IrType.String)
+    }
+
+    /**
+     * [value] as the text a program shows for it, built here in IR so that what
+     * gets printed is decided once rather than by each backend.
+     *
+     * A string is itself and a number, flag or character is written natively by
+     * every backend. An enum shows its qualified case, and a pack what its
+     * `Display` writes. The compiler's own aggregates format themselves: an
+     * array as `[a, b]`, a tuple as `Tuple<A, B>(a, b)` with its text elements
+     * quoted, so `("1, 2", 3)` cannot read as three values. Natively an array
+     * used to print as its address and a tuple as `<value>`.
+     */
+    private fun rendered(value: IrExpr): IrExpr = when (val type = value.type) {
+        is IrType.Named -> stringifyEnum(displayed(value))
+        is IrType.Array -> IrExpr.Call(renderArrayFunction(type), listOf(value), IrType.String)
+        is IrType.Tuple -> renderTuple(value, type)
+        else -> value
+    }
+
+    /** One element of an aggregate: text in quotes, a character in single quotes. */
+    private fun renderedElement(value: IrExpr): IrExpr.IrTemplatePart.Expr = IrExpr.IrTemplatePart.Expr(
+        when (value.type) {
+            IrType.String -> IrExpr.StringTemplate(
+                listOf(
+                    IrExpr.IrTemplatePart.Literal("\""),
+                    IrExpr.IrTemplatePart.Expr(value),
+                    IrExpr.IrTemplatePart.Literal("\""),
+                ),
+            )
+            IrType.Char -> IrExpr.StringTemplate(
+                listOf(
+                    IrExpr.IrTemplatePart.Literal("'"),
+                    IrExpr.IrTemplatePart.Expr(value),
+                    IrExpr.IrTemplatePart.Literal("'"),
+                ),
+            )
+            else -> rendered(value)
+        },
+    )
+
+    /** How a tuple's type reads in its display: `Tuple<Int, Tuple<Int, Int>>`. */
+    private fun displayTypeName(type: IrType): String = when (type) {
+        is IrType.Tuple -> "Tuple<${type.elements.joinToString(", ") { displayTypeName(it) }}>"
+        else -> type.shown()
+    }
+
+    private fun renderTuple(value: IrExpr, type: IrType.Tuple): IrExpr {
+        val parts = mutableListOf<IrExpr.IrTemplatePart>(IrExpr.IrTemplatePart.Literal("${displayTypeName(type)}("))
+        type.elements.forEachIndexed { index, element ->
+            if (index > 0) parts += IrExpr.IrTemplatePart.Literal(", ")
+            parts += renderedElement(IrExpr.TupleAccess(value, index, element))
+        }
+        parts += IrExpr.IrTemplatePart.Literal(")")
+        return IrExpr.StringTemplate(parts)
+    }
+
+    /**
+     * The function that writes an `Array` of [type]'s element type: `[a, b]`.
+     * One per element type, since what an element writes depends on it.
+     */
+    private fun renderArrayFunction(type: IrType.Array): String {
+        val unsized = IrType.Array(type.element)
+        val name = "__render_" + MonoNames.mangleType(typeRefOf(unsized)).replace(Regex("[^A-Za-z0-9_]"), "_")
+        if (name in generatedRenderFunctions) return name
+        // Registered before its body is built, so an array of arrays reaches it.
+        generatedRenderFunctions[name] = IrFunction(name, listOf("values" to unsized), IrType.String, emptyList())
+        val values = IrExpr.Var("values", unsized)
+        val out = IrExpr.Var("out", IrType.String)
+        val index = IrExpr.Var("index", IrType.Int)
+        fun appended(vararg parts: IrExpr.IrTemplatePart) =
+            IrStmt.Assignment("out", IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(out)) + parts))
+        val body = listOf(
+            IrStmt.VarDecl("out", IrType.String, IrExpr.StringLiteral("[")),
+            IrStmt.VarDecl("index", IrType.Int, IrExpr.IntLiteral(0)),
+            IrStmt.While(
+                IrExpr.Binary(index, IrBinaryOp.LT, IrExpr.Member(values, "size", IrType.Int), IrType.Bool),
+                listOf(
+                    IrStmt.If(
+                        IrExpr.Binary(index, IrBinaryOp.GT, IrExpr.IntLiteral(0), IrType.Bool),
+                        listOf(appended(IrExpr.IrTemplatePart.Literal(", "))),
+                        null,
+                    ),
+                    appended(renderedElement(IrExpr.Index(values, index, type.element))),
+                    IrStmt.Assignment("index", IrExpr.Binary(index, IrBinaryOp.ADD, IrExpr.IntLiteral(1), IrType.Int)),
+                ),
+            ),
+            IrStmt.Return(IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(out), IrExpr.IrTemplatePart.Literal("]")))),
+        )
+        generatedRenderFunctions[name] = IrFunction(name, listOf("values" to unsized), IrType.String, body)
+        return name
     }
 
     /** Converts an enum value to its source-level qualified spelling. */
@@ -2392,18 +2584,6 @@ class IrGenerator(private val table: SymbolTable) {
         else -> false
     }
 
-    /** What `alloc .(…)` builds; see the resolver's twin. */
-    private fun allocatedConstruction(value: Expr): Expr {
-        val member = value as? Expr.InferredMember ?: return value
-        val args = member.ctorArgs?.takeIf { member.name.isEmpty() } ?: return value
-        // A bridge pack cannot be constructed, so `.()` into one is not a
-        // construction: `T*` erases to `Any*`, and what the pointer holds is the
-        // run of values, not one `Any`.
-        val owner = table.lookupInferredMember(member.line, member.column)
-        if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
-        return Expr.ArrayLiteral(args, member.line, member.column, member.length)
-    }
-
     /** What one slot of an allocated repetition holds; see the resolver's twin. */
     private fun repeatedElementType(construct: Expr): IrType? {
         val name = when (construct) {
@@ -2442,7 +2622,11 @@ class IrGenerator(private val table: SymbolTable) {
                 IrType.Pointer(element, mutable = construct.mutable),
             )
         }
-        val call = construct as? Expr.Call ?: return null
+        val call = when (construct) {
+            is Expr.Call -> construct
+            is Expr.InferredMember -> table.inferredConstructionCall(construct) ?: return null
+            else -> return null
+        }
         val struct = table.lookupStruct(call.callee) ?: return null
         val loweredCount = lowerExpr(count)
         if (struct.name == "Array") {
@@ -2460,6 +2644,37 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /**
+     * The answer to `value is Type` where the value's own type already gives
+     * it, or null where only the running program can.
+     *
+     * A runtime check reads a tag the value carries, which only a dynamic value
+     * has - `Any`, a `Var<…>`, an optional, a spec-typed box, a variant. An
+     * `Int` carries none: asking the runtime about one read the integer as a
+     * pointer and crashed natively. Only a value read from a binding or a field
+     * is decided here, so no evaluation is dropped.
+     */
+    private fun staticIsCheck(value: IrExpr, typeName: String): Boolean? {
+        fun pure(expr: IrExpr): Boolean = when (expr) {
+            is IrExpr.Var -> true
+            is IrExpr.Member -> pure(expr.target)
+            is IrExpr.TupleAccess -> pure(expr.target)
+            is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral,
+            is IrExpr.BoolLiteral, is IrExpr.CharLiteral -> true
+            else -> false
+        }
+        if (!pure(value)) return null
+        val own = value.type
+        val dynamic = own == IrType.Any || own is IrType.Variant || own is IrType.Nullable ||
+            (own is IrType.Named && (table.lookupSpec(own.name) != null || table.lookupSlot(own.name) != null ||
+                table.lookupStruct(own.name) == null))
+        if (dynamic) return null
+        val asked = resolveType(TypeRef.Named(typeName))
+        if (own == asked) return true
+        if (own is IrType.Named && table.lookupSpec(typeName) != null) return table.conformsTo(own.name, typeName)
+        return false
+    }
+
+    /**
      * The symbol of a member declared in an `impl` on an aggregate builtin, or
      * null when [type] is not an aggregate or declares no such member.
      */
@@ -2468,7 +2683,8 @@ class IrGenerator(private val table: SymbolTable) {
             is IrType.Array -> "Array"
             is IrType.Map -> "Map"
             is IrType.Set -> "Set"
-            is IrType.Tuple -> "Tuple"
+            // A tuple's members are specialized per shape (`specializeTuples`).
+            is IrType.Tuple -> VariadicMonomorphizer.tupleMemberOwner(type.elements.map(::typeRefOf))
             else -> return null
         }
         // A type-level constant (`impl Array { bridge fin size }`) is bodyless
@@ -2626,7 +2842,7 @@ class IrGenerator(private val table: SymbolTable) {
                     // to "${x}"), which every backend already supports. `as*` (reinterpret)
                     // never stringifies.
                     expr.kind == CastKind.STATIC && target == IrType.String ->
-                        IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(displayed(inner))))
+                        IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(rendered(inner))))
                     target == innerType -> inner
                     // Upcast a concrete `pack` to a spec it implements: mark it as a
                     // representation coercion so native backends can box it into a fat
@@ -2649,6 +2865,7 @@ class IrGenerator(private val table: SymbolTable) {
                 // compares against the type's own name, which is what a
                 // declaration is registered under.
                 val typeName = table.canonicalTypeName(expr.typeName)
+                staticIsCheck(inner, typeName)?.let { return IrExpr.BoolLiteral(it) }
                 IrExpr.Call("__isCheck", listOf(inner, IrExpr.StringLiteral(typeName)), IrType.Bool)
             }
             is Expr.InlineForArgs ->
@@ -2663,7 +2880,7 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.NullCoalesce -> {
                 val left = lowerExpr(expr.left)
                 val right = lowerExpr(expr.right)
-                IrExpr.Call("__nullCoalesce", listOf(left, right), right.type)
+                IrExpr.Call(Intrinsics.NULL_COALESCE, listOf(left, right), right.type)
             }
             is Expr.SafeMember -> {
                 val target = lowerExpr(expr.target)
@@ -2936,7 +3153,10 @@ class IrGenerator(private val table: SymbolTable) {
                 // `Array(a, b, c)` - the compiler's own aggregate; see the
                 // resolver, which types it the same way and just as early.
                 if (expr.callee == Intrinsics.ARRAY && expr.receiver == null) {
-                    return lowerExpr(Expr.ArrayLiteral(expr.args, expr.line, expr.column, expr.length))
+                    return lowerExpr(arrayCallLiteral(expr))
+                }
+                if (expr.callee == Intrinsics.TUPLE && expr.receiver == null) {
+                    tupleCallLiteral(expr)?.let { return lowerExpr(it) }
                 }
                 // `Byte(4)` - a literal read at a width. The type says it is
                 // written as a literal, so what comes out is that literal, at
@@ -3240,7 +3460,8 @@ class IrGenerator(private val table: SymbolTable) {
                         else -> func.returnType
                     }
                     val displayArgs = if (symbolDenotes(func.name, Intrinsics.PRINTLN) || symbolDenotes(func.name, Intrinsics.PRINT)) {
-                        effectiveArgs.map(::stringifyEnum)
+                        // What is printed is what `"${value}"` would read.
+                        effectiveArgs.map(::rendered)
                     } else {
                         // An integer literal passed where a float is declared becomes
                         // one here, so the callee never receives the wrong machine type.
@@ -3284,7 +3505,7 @@ class IrGenerator(private val table: SymbolTable) {
                 // Compiler builtin: `convert::toString(x)` stringifies any
                 // value (implemented natively by CTCE and every backend).
                 if (symbolDenotes(expr.callee, Intrinsics.TO_STRING)) {
-                    val args = expr.args.map { stringifyEnum(lowerExpr(it)) }
+                    val args = expr.args.map { rendered(lowerExpr(it)) }
                     // Keep the name the source used; only the behaviour is the
                     // compiler's, not the spelling.
                     return IrExpr.Call(expr.callee, args, IrType.String)
@@ -3332,7 +3553,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
             }
             is Expr.Alloc -> {
-                val value = lowerExpr(allocatedConstruction(expr.value))
+                val value = lowerExpr(allocatedConstruction(table, expr.value))
                 // alloc [a, b, c] → pointer to element type (buffer for arithmetic).
                 val pointee = (value.type as? IrType.Array)?.element ?: value.type
                 IrExpr.Call("__alloc", listOf(value), IrType.Pointer(pointee))
@@ -3392,6 +3613,13 @@ class IrGenerator(private val table: SymbolTable) {
                         val func = instantiateMember(table, tt, table.lookupFunction(mangled)!!)
                         val index = lowerExpr(expr.index)
                         return IrExpr.Call(mangled, listOf(target, index), func.returnType)
+                    }
+                    // A spec's own `oper[]` (`xs[i]` where `xs: List<Int>`) is one of
+                    // its members, dispatched on the value like any other.
+                    val required = table.lookupSpecMethod(tt.name, "index")?.let { instantiateSpecMember(table, tt, it) }
+                    if (required != null) {
+                        val index = coerceToFloat(lowerExpr(expr.index), required.paramTypes.firstOrNull() ?: IrType.Any)
+                        return IrExpr.MethodCall(target, "index", listOf(index), required.returnType)
                     }
                 }
                 val index = lowerExpr(expr.index)
@@ -3504,11 +3732,11 @@ class IrGenerator(private val table: SymbolTable) {
                 // A type-scoped constant (`impl Array { bridge fin size }`) is
                 // typed by its declaration wherever the receiver came from.
                 val typeOwner = (target.type as? IrType.Named)?.name
-                    ?: when (target.type) {
+                    ?: when (val owned = target.type) {
                         is IrType.Array -> "Array"
                         is IrType.Map -> "Map"
                         is IrType.Set -> "Set"
-                        is IrType.Tuple -> "Tuple"
+                        is IrType.Tuple -> VariadicMonomorphizer.tupleMemberOwner(owned.elements.map(::typeRefOf))
                         else -> null
                     }
                 val typeStatic = typeOwner?.let { table.lookupTypeStatic(it, expr.name) }
@@ -3577,7 +3805,7 @@ class IrGenerator(private val table: SymbolTable) {
                     val payloads = table.lookupSlot(expr.target.name)!!.find { it.first == expr.name }?.second.orEmpty()
                     val args = expr.args.mapIndexed { i, arg ->
                         val value = lowerExpr(arg)
-                        payloads.getOrNull(i)?.let { coerceToFloat(value, it) } ?: value
+                        payloads.getOrNull(i)?.let { asPayload(value, it) } ?: value
                     }
                     val fieldNames = listOf("__tag") + args.indices.map { "__$it" }
                     val allArgs = listOf(IrExpr.StringLiteral(expr.name)) + args
@@ -3605,7 +3833,9 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                 }
                 if (tt !is IrType.Named) {
-                    val mangled = table.lookupMethod(tt.toString(), expr.name)
+                    val mangled = (tt as? IrType.Tuple)
+                        ?.let { table.lookupMethod(VariadicMonomorphizer.tupleMemberOwner(it.elements.map(::typeRefOf)), expr.name) }
+                        ?: table.lookupMethod(tt.toString(), expr.name)
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
                         val args = lowerMethodArguments(expr, func, mangled)
@@ -3655,13 +3885,18 @@ class IrGenerator(private val table: SymbolTable) {
                     when (p) {
                         is Expr.StringTemplatePart.Literal -> IrExpr.IrTemplatePart.Literal(p.text)
                         is Expr.StringTemplatePart.Expr ->
-                            IrExpr.IrTemplatePart.Expr(stringifyEnum(displayed(lowerExpr(p.expr))))
+                            IrExpr.IrTemplatePart.Expr(rendered(lowerExpr(p.expr)))
                     }
                 }
                 IrExpr.StringTemplate(parts)
             }
             is Expr.TupleLit -> {
-                val elems = expr.elements.map { lowerExpr(it) }
+                val expectedElements = (expr.contextualType?.let { resolveType(it) } as? IrType.Tuple)
+                    ?.elements?.takeIf { it.size == expr.elements.size }
+                val elems = expr.elements.mapIndexed { i, element ->
+                    val lowered = lowerExpr(element)
+                    expectedElements?.get(i)?.let { coerceToFloat(lowered, it) } ?: lowered
+                }
                 IrExpr.TupleLit(elems, IrType.Tuple(elems.map { it.type }))
             }
             is Expr.VariantLit -> {
@@ -4025,6 +4260,23 @@ class IrGenerator(private val table: SymbolTable) {
     private fun typeAnnotationOrNull(ann: TypeAnnotation): IrType =
         (ann as? TypeAnnotation.Explicit)?.let { runCatching { resolveType(it.ref) }.getOrNull() } ?: IrType.Any
 
+    /**
+     * [value] as the payload a variant declares for it.
+     *
+     * A payload slot is an erased word, so nothing downstream knows what was
+     * declared for it. A concrete pack stored where the variant declares a
+     * spec is converted to the spec here - natively, boxed with its type id -
+     * because the slot is read back as the spec and dispatched through it. An
+     * untyped literal takes the payload's width.
+     */
+    private fun asPayload(value: IrExpr, declared: IrType): IrExpr {
+        val widened = coerceToFloat(value, declared)
+        val spec = declared as? IrType.Named ?: return widened
+        val actual = widened.type as? IrType.Named ?: return widened
+        if (actual.name == spec.name || table.lookupSpec(spec.name) == null) return widened
+        return IrExpr.NumCast(widened, declared)
+    }
+
     private fun coerceToFloat(expr: IrExpr, target: IrType): IrExpr =
         if (IrType.isNumeric(target) && target != expr.type &&
             (IrType.isInteger(expr.type) || expr.type in IrType.floatTypes) &&
@@ -4164,7 +4416,9 @@ class IrGenerator(private val table: SymbolTable) {
         val args = expr.ctorArgs
         return when {
             args == null -> lowerExpr(Expr.Member(ownerRef, expr.name, expr.line, expr.column, expr.length))
-            expr.name.isEmpty() -> lowerExpr(Expr.Call(owner, args, expr.line, expr.column, owner.length))
+            expr.name.isEmpty() -> lowerExpr(
+                table.inferredConstructionCall(expr) ?: Expr.Call(owner, args, expr.line, expr.column, owner.length),
+            )
             else -> lowerExpr(Expr.MethodCall(ownerRef, expr.name, args, expr.line, expr.column))
         }
     }

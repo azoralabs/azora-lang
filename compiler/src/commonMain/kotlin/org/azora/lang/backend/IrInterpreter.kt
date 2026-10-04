@@ -28,6 +28,8 @@ import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrType
 import org.azora.lang.ir.mangleMethodSymbol
+import org.azora.lang.ir.binaryOperatorSymbol
+import org.azora.lang.ir.Intrinsics.NULL_COALESCE
 import org.azora.lang.ir.IrUnaryOp
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
@@ -75,6 +77,14 @@ class IrInterpreter {
 
     /** When set, receives each println/trace line as it is produced (live output). */
     var outputListener: ((String) -> Unit)? = null
+
+    /**
+     * When set, receives exactly the text the program writes, newlines included,
+     * as it writes it - and the text is not also captured, so [interpret] returns
+     * nothing. A program that runs for a long time, or fails part way, has its
+     * output seen as it goes rather than kept until it ends or lost when it fails.
+     */
+    var outputSink: ((String) -> Unit)? = null
 
     /**
      * Command-line arguments passed to `func main() { ...args -> … }` (bound to the
@@ -720,8 +730,14 @@ class IrInterpreter {
                             stmt.indexName?.let { defineVar(it, ordinal.toLong()) }
                             val result = executeBody(stmt.body)
                             popScope()
-                            if (result is BreakSignal) break
-                            if (result is ReturnSignal) return result
+                            when (result) {
+                                is ReturnSignal -> return result
+                                is BreakSignal -> {
+                                    if (result.label == null || result.label == stmt.label) break
+                                    return result
+                                }
+                                is ContinueSignal -> if (result.label != null && result.label != stmt.label) return result
+                            }
                         }
                     }
                     is kotlinx.coroutines.channels.ReceiveChannel<*> -> {
@@ -733,8 +749,14 @@ class IrInterpreter {
                                 stmt.indexName?.let { defineVar(it, ordinal) }
                                 val result = executeBody(stmt.body)
                                 popScope()
-                                if (result is BreakSignal) break
-                                if (result is ReturnSignal) return result
+                                when (result) {
+                                    is ReturnSignal -> return result
+                                    is BreakSignal -> {
+                                        if (result.label == null || result.label == stmt.label) break
+                                        return result
+                                    }
+                                    is ContinueSignal -> if (result.label != null && result.label != stmt.label) return result
+                                }
                                 ordinal++
                             }
                         } finally {
@@ -803,7 +825,7 @@ class IrInterpreter {
                     }
                     is MutableList<*> -> {
                         @Suppress("UNCHECKED_CAST")
-                        (target as MutableList<Any?>)[(key as Long).toInt()] = value
+                        (target as MutableList<Any?>)[slot(key, target.size)] = value
                     }
                     is Pointer -> {
                         target.buffer[target.index + (key as Long).toInt()] = value
@@ -887,7 +909,7 @@ class IrInterpreter {
             is IrStmt.Trace -> {
                 val level = formatValue(evalExpr(stmt.level)).uppercase()
                 val msg = formatValue(evalExpr(stmt.message))
-                azSync(output) { output.appendLine("[$level] $msg") }
+                write("[$level] $msg\n")
                 outputListener?.invoke("[$level] $msg")
             }
         }
@@ -1146,12 +1168,9 @@ class IrInterpreter {
                             (target as MutableMap<Any?, Any?>)[key]
                         }
                     }
-                    is MutableList<*> -> {
-                        @Suppress("UNCHECKED_CAST")
-                        (target as MutableList<Any?>)[(key as Long).toInt()]
-                    }
+                    is MutableList<*> -> target[slot(key, target.size)]
                     is Pointer -> target.buffer[target.index + (key as Long).toInt()]
-                    is String -> target[(key as Long).toInt()]
+                    is String -> target[slot(key, target.length)]
                     else -> error("Cannot index into $target")
                 }
             }
@@ -1469,21 +1488,6 @@ class IrInterpreter {
         return executeFunction(target, listOf(left, right))
     }
 
-    /** The member name a binary operator is declared under. */
-    private fun binaryOperatorSymbol(op: IrBinaryOp): String? = when (op) {
-        IrBinaryOp.ADD -> "oper+"
-        IrBinaryOp.SUB -> "oper-"
-        IrBinaryOp.MUL -> "oper*"
-        IrBinaryOp.DIV -> "oper/"
-        IrBinaryOp.MOD -> "oper%"
-        IrBinaryOp.BIT_AND -> "oper&"
-        IrBinaryOp.BIT_OR -> "oper|"
-        IrBinaryOp.BIT_XOR -> "oper^"
-        IrBinaryOp.SHL -> "oper<<"
-        IrBinaryOp.SHR -> "oper>>"
-        else -> null
-    }
-
     private suspend fun evalBinary(expr: IrExpr.Binary): Any {
         // Short-circuit logical operators: the right operand must not be evaluated
         // when the left already determines the result (matches the codegen backends).
@@ -1591,6 +1595,10 @@ class IrInterpreter {
     private fun pairNum(l: Any, r: Any): Pair<Double, Double> = toNum(l) to toNum(r)
 
     private suspend fun evalCall(expr: IrExpr.Call): Any? {
+        // `a ?? b` short-circuits: `b` runs only when `a` is null.
+        if (expr.name == NULL_COALESCE) {
+            return evalExpr(expr.args[0]) ?: evalExpr(expr.args[1])
+        }
         // Evaluate args, splicing any Spread (arr...) into individual elements.
         val args = mutableListOf<Any?>()
         for (argExpr in expr.args) {
@@ -1652,9 +1660,6 @@ class IrInterpreter {
                 else -> value is Map<*, *> && (value["__type"] == typeName || value["__tag"] == typeName || value["__type"] == null)
             }
             return if (matches) value else null
-        }
-        if (expr.name == "__nullCoalesce") {
-            return if (args[0] != null) args[0] else args[1]
         }
         if (expr.name == "__alloc") {
             return asPointer(args[0])
@@ -1750,9 +1755,7 @@ class IrInterpreter {
         if (expr.name.isIntrinsic("print") || expr.name.isIntrinsic("println")) {
             val value = args.firstOrNull()
             val text = formatValue(value)
-            azSync(output) {
-                if (expr.name.isIntrinsic("println")) output.appendLine(text) else output.append(text)
-            }
+            write(if (expr.name.isIntrinsic("println")) text + "\n" else text)
             outputListener?.invoke(text)
             return null
         }
@@ -2090,6 +2093,24 @@ class IrInterpreter {
 
     /** A value thrown by `throw`, caught by `try`/`catch`. */
     private class AzoraThrownException(val value: Any?) : RuntimeException(value?.toString())
+
+    /** Writes program output to [outputSink], or captures it for [interpret] to return. */
+    private fun write(text: String) {
+        val sink = outputSink
+        if (sink != null) sink(text) else azSync(output) { output.append(text) }
+    }
+
+    /**
+     * The position [index] names in a run of [size] elements, or a panic.
+     *
+     * The index is checked as the `Long` it is: narrowing it first would turn
+     * `2^32 + 1` into `1` and read an element nobody asked for.
+     */
+    private fun slot(index: Any?, size: Int): Int {
+        val at = index as Long
+        if (at < 0 || at >= size) throw AzoraPanicException("index $at out of bounds for size $size")
+        return at.toInt()
+    }
 
     /** Unrecoverable runtime `panic` - propagates out of [interpret]. */
     private class AzoraPanicException(message: String) : RuntimeException("panic: $message")

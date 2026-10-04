@@ -494,10 +494,10 @@ class Tier1PolishTest {
             pack IntBag {
                 var data: Array<Int>
             }
-            impl oper[] for IntBag { self&, i: Int ->
+            oper[] IntBag&.(i: Int): Int {
                 return self.data[i]
             }
-            impl oper[]= for IntBag { self!, i: Int, v: Int ->
+            oper[]= IntBag!.(i: Int, v: Int) {
                 self.data[i] = v
             }
             func main() {
@@ -564,6 +564,7 @@ class Tier1PolishTest {
     @Test fun mapWithExplicitTypeAnnotation() {
         assertEquals("red", run("""
             import std.io
+            import std.container.map
             func main() {
                 var colors: Map<Int, String> = [1: "red", 2: "green"]
                 println(colors[1])

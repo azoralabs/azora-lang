@@ -131,7 +131,7 @@ class GenericRealTest {
                 var value: T
             }
             func main() {
-                var keys: Array<Keyframe<Double>> = Array::fill<Keyframe<Double>>(2)
+                var keys: Array<Keyframe<Double>> = [Keyframe<Double>(0.0, 0.0), Keyframe<Double>(0.0, 0.0)]
                 keys[0] = Keyframe<Double>(0.0, 10.0)
                 keys[1] = Keyframe<Double>(1.0, 20.0)
                 fin a: Keyframe<Double> = keys[0]

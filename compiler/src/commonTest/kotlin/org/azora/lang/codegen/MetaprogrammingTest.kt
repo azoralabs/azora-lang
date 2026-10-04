@@ -38,12 +38,12 @@ class MetaprogrammingTest {
             module playground
 
             func b(): Unit {
-                std__println("Hello from B")
+                println("Hello from B")
             }
 
             func main(): Unit {
                 scope {
-                    std__println("Hello from A")
+                    println("Hello from A")
                 }
                 b()
             }
@@ -53,12 +53,12 @@ class MetaprogrammingTest {
             module playground
 
             func b(): Unit {
-                std__println("Hello from B")
+                println("Hello from B")
             }
 
             func main(): Unit {
                 scope {
-                    std__println("Hello from A")
+                    println("Hello from A")
                 }
                 b()
             }
@@ -89,8 +89,10 @@ class MetaprogrammingTest {
             @.str.1 = private unnamed_addr constant [13 x i8] c"Hello from A\00"
         """.trimIndent()
 
-        assertEquals(expectedIr, result.ir.prettyPrint())
-        assertEquals(expectedOptimizedIr, result.optimizedIr.prettyPrint())
+        // This file's items: the library it was compiled with is printed apart.
+        val mine = setOf("b", "main")
+        assertEquals(expectedIr, result.ir.prettyPrint(mine))
+        assertEquals(expectedOptimizedIr, result.optimizedIr.prettyPrint(mine))
         assertEquals(expectedLlvm, result.llvm)
     }
 
@@ -278,25 +280,25 @@ class MetaprogrammingTest {
             fin c1: Int = 0
 
             func c(): Unit {
-                std__println("Hello from C")
+                println("Hello from C")
             }
 
             fin e1: Int = 0
 
             func e(): Unit {
-                std__println("Hello from E")
+                println("Hello from E")
             }
 
             func main(): Unit {
                 scope {
-                    std__println("Hello from A")
+                    println("Hello from A")
                 }
                 scope {
-                    std__println("Hello from B")
+                    println("Hello from B")
                 }
                 c()
                 scope {
-                    std__println("Hello from D")
+                    println("Hello from D")
                 }
                 e()
             }
@@ -346,30 +348,32 @@ class MetaprogrammingTest {
             module playground
 
             func c(): Unit {
-                std__println("Hello from C")
+                println("Hello from C")
             }
 
             func e(): Unit {
-                std__println("Hello from E")
+                println("Hello from E")
             }
 
             func main(): Unit {
                 scope {
-                    std__println("Hello from A")
+                    println("Hello from A")
                 }
                 scope {
-                    std__println("Hello from B")
+                    println("Hello from B")
                 }
                 c()
                 scope {
-                    std__println("Hello from D")
+                    println("Hello from D")
                 }
                 e()
             }
         """.trimIndent()
 
-        assertEquals(expectedIr, result.ir.prettyPrint())
-        assertEquals(expectedOptimizedIr, result.optimizedIr.prettyPrint())
+        // This file's items: the library it was compiled with is printed apart.
+        val mine = setOf("aa", "c1", "c", "e1", "e", "main")
+        assertEquals(expectedIr, result.ir.prettyPrint(mine))
+        assertEquals(expectedOptimizedIr, result.optimizedIr.prettyPrint(mine))
         assertEquals(expectedLlvm, result.llvm)
     }
 }

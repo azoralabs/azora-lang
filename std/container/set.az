@@ -40,6 +40,7 @@
 module std.container.set
 
 import std.serializer::Serializable
+import std.traits::Clone
 
 /**
  * Read-only behavior shared by every set implementation.
@@ -51,7 +52,7 @@ import std.serializer::Serializable
  * @generic T The element type.
  */
 @Experimental(since: "0.1")
-spec Set<T> {
+spec Set<T> : Indexed<T> {
     /** Number of unique elements. */
     prop &.size: Int
 
@@ -116,13 +117,13 @@ derive Clone for Set
 @Experimental(since: "0.1")
 spec MutableSet<T> : Set<T> {
     /** Adds `element`; returns whether membership changed. */
-    func &.add(element: T): Bool
+    func !.add(element: T): Bool
 
     /** Removes `element`; returns whether membership changed. */
-    func &.remove(element: T): Bool
+    func !.remove(element: T): Bool
 
     /** Removes every element while retaining reusable internal capacity. */
-    func &.clear()
+    func !.clear()
 
     /** `[a, b, c]` where a `MutableSet<T>` is expected: a `LinkedHashSet<T>`, as for `Set<T>`. */
     literal [...elements: T]: Self where T: Equal {

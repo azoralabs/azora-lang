@@ -16,6 +16,8 @@
 @Supress(.Unused)
 module std.memory.weak
 
+import std.traits::Clone
+
 @Since("0.1")
 pack Weak<T> {
     var _raw: T*

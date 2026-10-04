@@ -32,7 +32,7 @@ class TraitsTest {
                 func &.describe(): String
             }
             impl Describable for Point {
-                func describe(): String {
+                func &.describe(): String {
                     return "Point(" + self.x + ", " + self.y + ")"
                 }
             }
@@ -55,10 +55,10 @@ class TraitsTest {
                 func &.level(): Int
             }
             impl Device for Light {
-                func status(): String {
+                func &.status(): String {
                     return self.color
                 }
-                func level(): Int {
+                func &.level(): Int {
                     return self.brightness
                 }
             }

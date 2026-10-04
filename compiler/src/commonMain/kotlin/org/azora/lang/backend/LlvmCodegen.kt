@@ -27,7 +27,9 @@ import org.azora.lang.ir.IrSpecMethod
 import org.azora.lang.ir.IrSpecTable
 import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
+import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.IrType
+import org.azora.lang.ir.shown
 import org.azora.lang.ir.IrUnaryOp
 
 /**
@@ -236,6 +238,7 @@ class LlvmCodegen {
     private var usesZeroedAlloc = false
     private var usesAllocatorRuntime = false
     private var usesTaskRuntime = false
+    private var usesIndexFail = false
 
 
     /** Tracks the continue/end labels of enclosing loops for `break`/`continue`. */
@@ -294,6 +297,7 @@ class LlvmCodegen {
         usesCalloc = false
         usesZeroedAlloc = false
         usesTaskRuntime = false
+        usesIndexFail = false
         loopStack.clear()
         taskScopeStack.clear()
         taskContextCounter = 0
@@ -479,6 +483,10 @@ class LlvmCodegen {
                 body.append(osBody)
                 continue
             }
+            // A bridge the compiler lowers where it is called - `println` becomes
+            // `puts` - is never called by its own name, and a declaration for it
+            // would name a symbol nothing provides.
+            if (!referencesSymbol(body, item.name)) continue
             val params = item.params.joinToString(", ") { (_, t) -> mapType(t) }
             body.appendLine("declare ${abiReturnType(item.returnType)} @${item.name}($params)")
         }
@@ -534,7 +542,10 @@ class LlvmCodegen {
         if (usesPrintf) line("declare i32 @printf(i8*, ...)")
         if (usesSnprintf) line("declare i32 @snprintf(i8*, i64, i8*, ...)")
         if (usesTrunc) line("declare double @trunc(double)")
-        if (usesAbort) line("declare void @abort() noreturn")
+        if (usesAbort) {
+            line("declare void @abort() noreturn")
+            line("declare i32 @fflush(i8*)")
+        }
         if (usesMalloc) line("declare i8* @malloc(i64)")
         if (usesFree) line("declare void @free(i8*)")
         if (usesCalloc) line("declare i8* @calloc(i64, i64)")
@@ -663,6 +674,7 @@ class LlvmCodegen {
         line("define void @test_$safeName() {")
         line("entry:")
         emitEntryAllocas(test.body)
+        prepareDefers(test.body)
         emitRootTaskScopeIfNeeded()
         emitStmts(test.body)
         emitFunctionExitCleanup()
@@ -735,8 +747,11 @@ class LlvmCodegen {
                     }
                     stmt.elseBranch?.let { collectLocalSlots(it, slots) }
                 }
+                is IrStmt.Defer -> collectLocalSlots(stmt.body, slots)
                 is IrStmt.Try -> {
                     collectLocalSlots(stmt.body, slots)
+                    // The caught error is held as the slot holds it: erased.
+                    stmt.catchName?.let { slots.add(it to mapType(IrType.Any)) }
                     stmt.catchBody?.let { collectLocalSlots(it, slots) }
                 }
                 is IrStmt.Effect -> collectLocalSlots(stmt.body, slots)
@@ -785,6 +800,7 @@ class LlvmCodegen {
 
         // All local allocas live in the entry block (never inside loops).
         emitEntryAllocas(func.body)
+        prepareDefers(func.body)
         emitRootTaskScopeIfNeeded()
 
         if (isMain && dynamicGlobalInitializers.any { !it.threadLocal }) {
@@ -932,9 +948,112 @@ class LlvmCodegen {
         taskScopeStack.addLast(scope)
     }
 
-    private fun emitFunctionExitCleanup() {
+    /**
+     * What every exit of the function runs before it returns: its `defer`s,
+     * then its task scopes. [failing] is an exit by error, which also runs the
+     * `error defer`s and lets a `rescue` swallow the error.
+     */
+    private fun emitFunctionExitCleanup(failing: Boolean = false) {
         if (terminated) return
+        emitDeferred(failing)
         emitAllTaskScopeCleanups()
+    }
+
+    /** A `defer` of the function being emitted, and the counter its registrations raise. */
+    private class DeferSlot(val stmt: IrStmt.Defer, val counter: String)
+
+    /** The `defer`s of the function being emitted, in source order. */
+    private val deferSlots = mutableListOf<DeferSlot>()
+
+    /**
+     * True while deferred bodies are emitted at an exit. A failable call inside
+     * one has an exit of its own, which must not emit the deferred bodies again.
+     */
+    private var emittingDefers = false
+
+    /**
+     * Gives each `defer` in [body] a counter, zeroed on entry.
+     *
+     * A `defer` runs when its function exits, once for every time it was
+     * reached, the last reached first: reaching one raises its counter, and
+     * every exit drains the counters in reverse source order. That is exact
+     * unless two `defer`s inside one loop interleave, which drains each in turn.
+     */
+    private fun prepareDefers(body: List<IrStmt>) {
+        deferSlots.clear()
+        emittingDefers = false
+        val found = mutableListOf<IrStmt.Defer>()
+        collectDefers(body, found)
+        for (stmt in found) {
+            val counter = "%defer.${deferSlots.size}"
+            emit("  $counter = alloca i32")
+            emit("  store i32 0, i32* $counter")
+            deferSlots += DeferSlot(stmt, counter)
+        }
+    }
+
+    private fun collectDefers(stmts: List<IrStmt>, into: MutableList<IrStmt.Defer>) {
+        for (stmt in stmts) when (stmt) {
+            is IrStmt.Defer -> into += stmt
+            is IrStmt.If -> { collectDefers(stmt.thenBranch, into); stmt.elseBranch?.let { collectDefers(it, into) } }
+            is IrStmt.Scope -> collectDefers(stmt.body, into)
+            is IrStmt.While -> collectDefers(stmt.body, into)
+            is IrStmt.For -> collectDefers(stmt.body, into)
+            is IrStmt.ForEach -> collectDefers(stmt.body, into)
+            is IrStmt.Loop -> collectDefers(stmt.body, into)
+            is IrStmt.When -> {
+                stmt.branches.forEach { collectDefers(it.body, into) }
+                stmt.elseBranch?.let { collectDefers(it, into) }
+            }
+            is IrStmt.Try -> { collectDefers(stmt.body, into); stmt.catchBody?.let { collectDefers(it, into) } }
+            else -> {}
+        }
+    }
+
+    /** Reaching a `defer` registers it once more. */
+    private fun emitDeferRegistration(stmt: IrStmt.Defer) {
+        val slot = deferSlots.firstOrNull { it.stmt === stmt }
+            ?: error("LLVM cannot lower a 'defer' outside a function body yet")
+        val count = nextTmp()
+        emit("  $count = load i32, i32* ${slot.counter}")
+        val raised = nextTmp()
+        emit("  $raised = add i32 $count, 1")
+        emit("  store i32 $raised, i32* ${slot.counter}")
+    }
+
+    private fun emitDeferred(failing: Boolean) {
+        if (emittingDefers || deferSlots.isEmpty()) return
+        emittingDefers = true
+        try {
+            for (slot in deferSlots.asReversed()) {
+                if (slot.stmt.onFail && !failing) continue
+                val check = nextLabel("defer.check")
+                val run = nextLabel("defer.run")
+                val done = nextLabel("defer.done")
+                emitTerminator("  br label %$check")
+                startBlock(check)
+                val count = nextTmp()
+                emit("  $count = load i32, i32* ${slot.counter}")
+                val pending = nextTmp()
+                emit("  $pending = icmp sgt i32 $count, 0")
+                emitTerminator("  br i1 $pending, label %$run, label %$done")
+                startBlock(run)
+                val drained = nextTmp()
+                emit("  $drained = sub i32 $count, 1")
+                emit("  store i32 $drained, i32* ${slot.counter}")
+                emitStmts(slot.stmt.body)
+                // `rescue`: the error it ran for is handled, so the caller's
+                // check sees none and takes the function's zero value.
+                if (failing && slot.stmt.suppress) {
+                    usesErrorSlot = true
+                    emit("  store i8* null, i8** @__azora_err")
+                }
+                if (!terminated) emitTerminator("  br label %$check")
+                startBlock(done)
+            }
+        } finally {
+            emittingDefers = false
+        }
     }
 
     private fun emitAllTaskScopeCleanups() {
@@ -1033,12 +1152,12 @@ class LlvmCodegen {
             is IrStmt.Exchange -> emitExchange(stmt)
             is IrStmt.IndexAssign -> emitIndexAssign(stmt)
             is IrStmt.MemberAssign -> emitMemberAssign(stmt)
-            is IrStmt.Defer -> emit("  ; defer - not lowered")
+            is IrStmt.Defer -> emitDeferRegistration(stmt)
             is IrStmt.Effect -> {
                 activeReactiveEffects.add(stmt)
                 emitReactiveEffect(stmt)
             }
-            is IrStmt.Yield -> emit("  ; yield - not lowered (interpreter-only)")
+            is IrStmt.Yield -> error("LLVM cannot lower 'yield' yet; generators run on the interpreter")
             is IrStmt.ForEach -> emitForEach(stmt)
             is IrStmt.Throw -> emitThrow(stmt)
             is IrStmt.Try -> emitTry(stmt)
@@ -1100,8 +1219,56 @@ class LlvmCodegen {
             emitTerminator("  br label %${errorHandlers.last()}")
             return
         }
-        emitFunctionExitCleanup()
+        emitFunctionExitCleanup(failing = true)
         emitReturnZero()
+    }
+
+    /**
+     * `a ?? b` - what `a` holds, or `b` when it holds nothing.
+     *
+     * `a` is evaluated once and `b` only on the null path; both arms meet in a
+     * phi. A left side that cannot be null (its slot is not a pointer) is its
+     * own answer, and `b` is never evaluated.
+     */
+    private fun emitNullCoalesce(expr: IrExpr.Call): String {
+        val (left, right) = expr.args
+        val held = emitExpr(left)
+        val slot = mapType(left.type)
+        if (!slot.endsWith("*")) return coerceNumeric(held, left.type, expr.type)
+        val isNull = nextTmp()
+        emit("  $isNull = icmp eq $slot $held, null")
+        val present = nextLabel("coalesce.value")
+        val absent = nextLabel("coalesce.fallback")
+        val done = nextLabel("coalesce.done")
+        emitTerminator("  br i1 $isNull, label %$absent, label %$present")
+
+        startBlock(present)
+        val value = coerceNumeric(held, left.type, expr.type)
+        val valueBlock = currentBlock
+        emitTerminator("  br label %$done")
+
+        startBlock(absent)
+        val fallback = coerceNumeric(emitExpr(right), right.type, expr.type)
+        val fallbackBlock = currentBlock
+        emitTerminator("  br label %$done")
+
+        startBlock(done)
+        if (expr.type == IrType.Unit) return "0"
+        val result = nextTmp()
+        emit("  $result = phi ${mapType(expr.type)} [ $value, %$valueBlock ], [ $fallback, %$fallbackBlock ]")
+        return result
+    }
+
+    /** True when the IR text in [module] uses the global symbol `@[symbol]`. */
+    private fun referencesSymbol(module: CharSequence, symbol: String): Boolean {
+        val spelled = "@$symbol"
+        var at = module.indexOf(spelled)
+        while (at >= 0) {
+            val next = module.getOrNull(at + spelled.length)
+            if (next == null || !(next.isLetterOrDigit() || next in "._$-")) return true
+            at = module.indexOf(spelled, at + 1)
+        }
+        return false
     }
 
     /** Returns the current function's zero value, for a failure exit. */
@@ -1126,9 +1293,9 @@ class LlvmCodegen {
      * `try { … } catch { … }`.
      *
      * The body runs with a handler pushed, so every failable call and every
-     * `throw` inside it branches to the catch block. The handler clears the
-     * slot first: an error that has been handled must not still be pending when
-     * the next call checks.
+     * `throw` inside it branches to the catch block. The handler binds the
+     * caught error, then clears the slot: an error that has been handled must
+     * not still be pending when the next call checks.
      */
     private fun emitTry(stmt: IrStmt.Try) {
         val catchBody = stmt.catchBody
@@ -1146,6 +1313,14 @@ class LlvmCodegen {
         emitTerminator("  br label %$done")
 
         startBlock(handler)
+        stmt.catchName?.let { name ->
+            val type = mapType(IrType.Any)
+            val slot = allocaSlots[name to type] ?: error("the caught error '$name' was not allocated")
+            val raised = nextTmp()
+            emit("  $raised = load i8*, i8** @__azora_err")
+            emit("  store $type $raised, $type* $slot")
+            localVars[name] = slot to type
+        }
         emit("  store i8* null, i8** @__azora_err")
         emitStmts(catchBody)
         emitTerminator("  br label %$done")
@@ -1175,11 +1350,11 @@ class LlvmCodegen {
             emitTerminator("  br label %${errorHandlers.last()}")
         } else if (currentIsFailable) {
             // Leave the slot set: the caller's own check sees the same error.
-            emitFunctionExitCleanup()
+            emitFunctionExitCleanup(failing = true)
             emitReturnZero()
         } else {
             usesAbort = true
-            emit("  call void @abort()")
+            emit("  call void @__azora_abort()")
             emitTerminator("  unreachable")
         }
 
@@ -1494,7 +1669,7 @@ class LlvmCodegen {
         emitTerminator("  br i1 $validStep, label %$validLabel, label %$invalidLabel")
         startBlock(invalidLabel)
         usesAbort = true
-        emit("  call void @abort()")
+        emit("  call void @__azora_abort()")
         emitTerminator("  unreachable")
         startBlock(validLabel)
 
@@ -1566,11 +1741,7 @@ class LlvmCodegen {
             is IrType.Array -> type.element
             is IrType.Set -> type.element
             else -> null
-        } ?: run {
-            emitExpr(stmt.iterable)
-            emit("  ; for-each over ${stmt.elem} - not lowered for ${stmt.iterable.type}")
-            return
-        }
+        } ?: error("LLVM cannot walk a ${stmt.iterable.type.shown()} with 'for … in' yet")
         val et = mapType(elemType)
 
         val elemAlloca = allocaSlots[stmt.elem to et] ?: run {
@@ -1632,7 +1803,7 @@ class LlvmCodegen {
             emit("  store i32 $ordinal32, i32* $userIndexAlloca")
         }
         localVars[stmt.elem] = elemAlloca to et
-        loopStack.addLast(LoopTarget(incLabel, endLabel))
+        loopStack.addLast(LoopTarget(incLabel, endLabel, stmt.label))
         emitStmts(stmt.body)
         loopStack.removeLast()
         emitTerminator("  br label %$incLabel")
@@ -1914,7 +2085,7 @@ class LlvmCodegen {
         val msg = stringify(stmt.message)
         val unused = nextTmp()
         emit("  $unused = call i32 @puts(i8* $msg)")
-        emit("  call void @abort()")
+        emit("  call void @__azora_abort()")
         emitTerminator("  unreachable")
 
         startBlock(passLabel)
@@ -1991,11 +2162,7 @@ class LlvmCodegen {
         is IrExpr.MethodCall -> emitMethodCall(expr)
         is IrExpr.StructCtor -> emitStructCtor(expr)
         is IrExpr.TupleLit -> emitTupleLit(expr)
-        is IrExpr.VariantLit -> {
-            for (e in expr.elements) emitExpr(e)
-            emit("  ; variant literal - aggregate lowering not yet implemented")
-            "null"
-        }
+        is IrExpr.VariantLit -> error("LLVM cannot lower an anonymous variant value yet")
         is IrExpr.TupleAccess -> emitTupleAccess(expr)
         is IrExpr.CatchExpr -> emitCatchExpr(expr)
         is IrExpr.NumCast -> coerceNumeric(emitExpr(expr.value), expr.value.type, expr.type)
@@ -2151,7 +2318,9 @@ class LlvmCodegen {
             localVars[paramName] = slot to llvmType
         }
         emitEntryAllocas(lambda.body)
+        prepareDefers(lambda.body)
         emitStmts(lambda.body)
+        emitFunctionExitCleanup()
         when (callableType.ret) {
             IrType.Unit -> emitTerminator("  ret void")
             IrType.Nothing -> emitTerminator("  unreachable")
@@ -2818,10 +2987,7 @@ class LlvmCodegen {
         // Slot (tagged-union) instance: `[ i8* tag, i64 payload… ]` on the heap.
         // The tag is the variant name; payloads are boxed to i64.
         if (expr.fieldNames.firstOrNull() == "__tag") return emitSlotCtor(expr)
-        val def = structDefs[expr.name] ?: run {
-            emit("  ; struct ${expr.name} has no definition - emitting null")
-            return "null"
-        }
+        val def = structDefs[expr.name] ?: error("LLVM has no layout for pack '${expr.name}'")
         val st = "%struct.${sanitizeName(expr.name)}"
 
         // Evaluate constructor arguments first (source order).
@@ -3290,9 +3456,7 @@ class LlvmCodegen {
                 return coerceNumeric(r, property.returnType, expr.type)
             }
         }
-        emitExpr(expr.target)
-        emit("  ; member .${expr.name} on ${expr.target.type} - not lowered")
-        return defaultValue(expr.type)
+        error("LLVM cannot read member '.${expr.name}' of ${expr.target.type.shown()} yet")
     }
 
     private fun emitMemberAssign(stmt: IrStmt.MemberAssign) {
@@ -3304,9 +3468,7 @@ class LlvmCodegen {
             emit("  store $ft $value, $ft* $fp")
             return
         }
-        emitExpr(stmt.target)
-        emitExpr(stmt.value)
-        emit("  ; member assign .${stmt.name} on ${stmt.target.type} - not lowered")
+        error("LLVM cannot assign member '.${stmt.name}' of ${stmt.target.type.shown()} yet")
     }
 
     /** The LLVM symbol name of a spec method's dynamic-dispatch stub. */
@@ -3472,10 +3634,7 @@ class LlvmCodegen {
             }
         }
 
-        emitExpr(expr.target)
-        for (a in expr.args) emitExpr(a)
-        emit("  ; method .${expr.name} - not lowered")
-        return defaultValue(expr.type)
+        error("LLVM cannot call '.${expr.name}' on ${expr.target.type.shown()} yet")
     }
 
     /** `[a, b, c]` → malloc(8 + n*elemSize), i64 length header, packed elements. */
@@ -3610,7 +3769,7 @@ class LlvmCodegen {
         val (updated, added) = emitSetInsertRaw(raw, value, elementType)
         variableStorage(target)?.let { (address, type) ->
             emit("  store $type $updated, $type* $address")
-        } ?: emit("  ; set add receiver is not assignable - grown buffer not stored")
+        } ?: error("LLVM cannot grow a set that is not held in a variable or a field yet")
         return added
     }
 
@@ -4014,7 +4173,7 @@ class LlvmCodegen {
         emit("  store $vt $value, $vt* $newValue, align 1")
         variableStorage(stmt.target)?.let { (address, type) ->
             emit("  store $type $grown, $type* $address")
-        } ?: emit("  ; map insertion receiver is not assignable - grown buffer not stored")
+        } ?: error("LLVM cannot grow a map that is not held in a variable or a field yet")
         emitTerminator("  br label %$endLabel")
 
         startBlock(endLabel)
@@ -4134,6 +4293,26 @@ class LlvmCodegen {
         emit("  store $ft $stored, $ft* $fp")
     }
 
+    /**
+     * Stops the program unless [index] names an element of the array [raw]:
+     * a safe index reads and writes only the array's own elements, as on every
+     * other target. One unsigned comparison covers a negative index too, which
+     * is a very large one once its sign is ignored.
+     */
+    private fun emitBoundsCheck(raw: String, index: String) {
+        val size = emitArrayLengthI64(raw)
+        val valid = nextTmp()
+        emit("  $valid = icmp ult i64 $index, $size")
+        val ok = nextLabel("index_ok")
+        val bad = nextLabel("index_fail")
+        emitTerminator("  br i1 $valid, label %$ok, label %$bad")
+        startBlock(bad)
+        usesIndexFail = true
+        emit("  call void @__azora_index_fail(i64 $index, i64 $size)")
+        emitTerminator("  unreachable")
+        startBlock(ok)
+    }
+
     private fun emitArrayLengthI64(raw: String): String {
         val lenPtr = nextTmp()
         emit("  $lenPtr = bitcast i8* $raw to i64*")
@@ -4186,7 +4365,9 @@ class LlvmCodegen {
             val (addr, type) = storage
             emit("  store $type $grown, $type* $addr")
         } else {
-            emit("  ; array add receiver is not assignable - grown buffer not stored")
+            // Growing reallocates: storing the new buffer nowhere would leave
+            // whatever held the array pointing at freed memory.
+            error("LLVM cannot grow an array that is not held in a variable or a field yet")
         }
     }
 
@@ -4263,6 +4444,7 @@ class LlvmCodegen {
         val raw = emitExpr(target)
         val idxRaw = emitExpr(index)
         val idx = indexToI64(idxRaw, index.type)
+        emitBoundsCheck(raw, idx)
         val dataRaw = nextTmp()
         emit("  $dataRaw = getelementptr i8, i8* $raw, i64 8")
         val data = nextTmp()
@@ -4274,23 +4456,6 @@ class LlvmCodegen {
 
     private fun emitIndexRead(expr: IrExpr.Index): String {
         val tt = expr.target.type
-        // `values[i]` where `values: List<T>` - a spec-typed receiver has no
-        // storage to address, so the subscript is the spec's own single-argument
-        // accessor, dispatched through the fat pointer like any other requirement.
-        if (tt is IrType.Named && tt.name in specDispatch) {
-            val table = specDispatch.getValue(tt.name)
-            val accessor = table.methods.firstOrNull { it.name == "get" && it.paramTypes.size == 1 }
-            if (accessor != null) {
-                val box = emitExpr(expr.target)
-                val idx = coerceNumeric(emitExpr(expr.index), expr.index.type, accessor.paramTypes[0])
-                val r = nextTmp()
-                emit(
-                    "  $r = call ${mapType(accessor.returnType)} " +
-                        "@${specDispatcherName(tt.name, "get")}(i8* $box, ${mapType(accessor.paramTypes[0])} $idx)",
-                )
-                return r
-            }
-        }
         if (tt is IrType.Array) {
             val et = mapType(tt.element)
             val ep = emitArrayElemPtr(expr.target, expr.index, tt.element)
@@ -4322,10 +4487,7 @@ class LlvmCodegen {
             emit("  $tmp = load i8, i8* $cp")
             return tmp
         }
-        emitExpr(expr.target)
-        emitExpr(expr.index)
-        emit("  ; index on ${expr.target.type} - not lowered")
-        return defaultValue(expr.type)
+        error("LLVM cannot index ${expr.target.type.shown()} yet")
     }
 
     private fun emitExchange(stmt: IrStmt.Exchange) {
@@ -4346,17 +4508,7 @@ class LlvmCodegen {
                 check(place.target.type is IrType.Array) { "exchange requires built-in array storage" }
                 val raw = emitExpr(place.target)
                 val index = indexToI64(emitExpr(place.index), place.index.type)
-                val size = emitArrayLengthI64(raw)
-                val valid = nextTmp()
-                emit("  $valid = icmp ult i64 $index, $size")
-                val ok = nextLabel("exchange_bounds_ok")
-                val bad = nextLabel("exchange_bounds_fail")
-                emitTerminator("  br i1 $valid, label %$ok, label %$bad")
-                startBlock(bad)
-                usesAbort = true
-                emit("  call void @abort()")
-                emitTerminator("  unreachable")
-                startBlock(ok)
+                emitBoundsCheck(raw, index)
                 val type = mapType(place.type)
                 val data = nextTmp()
                 emit("  $data = getelementptr i8, i8* $raw, i64 8")
@@ -4408,10 +4560,7 @@ class LlvmCodegen {
             emitMapIndexAssign(stmt, tt)
             return
         }
-        emitExpr(stmt.target)
-        emitExpr(stmt.index)
-        emitExpr(stmt.value)
-        emit("  ; index assign on ${stmt.target.type} - not lowered")
+        error("LLVM cannot assign through an index of ${stmt.target.type.shown()} yet")
     }
 
     private fun emitUnary(expr: IrExpr.Unary): String {
@@ -4424,10 +4573,7 @@ class LlvmCodegen {
                     IrType.isInteger(expr.type) -> emit("  $tmp = sub $llvmType 0, $operand")
                     expr.type in IrType.floatTypes -> emit("  $tmp = fneg $llvmType $operand")
                     else -> {
-                        // Erased generic (Any) - no native negate; stub like other
-                        // unlowered aggregate operations.
-                        emit("  ; negate on ${expr.type} - not lowered (erased generic)")
-                        return defaultValue(expr.type)
+                        error("LLVM cannot negate an erased ${expr.type.shown()} yet")
                     }
                 }
             }
@@ -4553,14 +4699,7 @@ class LlvmCodegen {
                 }
             }
             else -> {
-                // Unsupported operand type (e.g. arithmetic on a nullable/boxed
-                // value). The LLVM backend has no unboxing model yet, so degrade
-                // to a stub - consistent with how other aggregate ops are handled.
-                // The stub still has to *define* its temporary: callers may phi on
-                // it from a later block, and an undefined name is invalid IR that
-                // fails at load time rather than where the gap actually is.
-                emit("  ; binary ${expr.op} on ${expr.left.type} - not lowered (nullable aggregate)")
-                emit("  $tmp = select i1 true, ${mapType(expr.type)} ${defaultValue(expr.type)}, ${mapType(expr.type)} ${defaultValue(expr.type)}")
+                error("LLVM cannot apply ${expr.op} to ${expr.left.type.shown()} yet")
             }
         }
         return tmp
@@ -4691,6 +4830,7 @@ class LlvmCodegen {
      * failed call never reaches the code that would consume its value.
      */
     private fun emitCall(expr: IrExpr.Call): String {
+        if (expr.name == Intrinsics.NULL_COALESCE) return emitNullCoalesce(expr)
         val result = emitCallValue(expr)
         if (expr.name in failableFunctions) emitErrorCheck()
         return when (expr.type) {
@@ -4801,7 +4941,7 @@ class LlvmCodegen {
             val message = emitExpr(expr.args.single())
             val printed = nextTmp()
             emit("  $printed = call i32 @puts(i8* $message)")
-            emit("  call void @abort()")
+            emit("  call void @__azora_abort()")
             return "void"
         }
         if (expr.name == "__alloc") {
@@ -4839,15 +4979,16 @@ class LlvmCodegen {
         // Coerce arguments to the callee's declared parameter types (numeric
         // widening such as an Int literal passed to a Double/Long parameter).
         val declared = funcParamTypes[expr.name]
+        // `toString(x)` is `"${'$'}{x}"`: the rendering interpolation uses. An
+        // aggregate was rendered in IR already; an erased value carries no type
+        // to render it by, and printing its bits as a number would be wrong.
         if (symbolDenotes(expr.name, "toString") && expr.args.size == 1) {
-            emitExpr(expr.args.single())
-            emit("  ; erased generic toString - no native generic stringification ABI yet")
-            return gepString(addStringConstant(""))
+            val value = expr.args.single()
+            if (value.type == IrType.Any) error("LLVM cannot convert an erased value to a String yet")
+            return stringify(value)
         }
         if (declared == null && expr.name in localVars) {
-            expr.args.forEach { emitExpr(it) }
-            emit("  ; erased function-value call '${expr.name}' - no native closure ABI yet")
-            return if (expr.type == IrType.Unit) "void" else defaultValue(expr.type)
+            error("LLVM cannot call the function value '${expr.name}' this way yet")
         }
         val args = expr.args.mapIndexed { i, arg ->
             val paramType = declared?.getOrNull(i) ?: arg.type
@@ -5327,6 +5468,21 @@ class LlvmCodegen {
             usesAllocatorRuntime = true
         }
 
+        if (usesIndexFail) {
+            usesPrintf = true
+            usesAbort = true
+            val fmt = addStringConstant("panic: index %lld out of bounds for size %lld\n")
+            sb.appendLine("; runtime: an index outside its array")
+            sb.appendLine("define void @__azora_index_fail(i64 %index, i64 %size) noreturn {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
+            sb.appendLine("  %r = call i32 (i8*, ...) @printf(i8* %fmt, i64 %index, i64 %size)")
+            sb.appendLine("  call void @__azora_abort()")
+            sb.appendLine("  unreachable")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
         if (usesIsCheck) {
             // `x is Variant`: a slot carries its variant name as its first (`i8*`)
             // field; compare it to the requested tag. Null-safe (a null slot never
@@ -5359,7 +5515,7 @@ class LlvmCodegen {
             sb.appendLine("  %isnull = icmp eq i8* %p, null")
             sb.appendLine("  br i1 %isnull, label %oom, label %ok")
             sb.appendLine("oom:")
-            sb.appendLine("  call void @abort()")
+            sb.appendLine("  call void @__azora_abort()")
             sb.appendLine("  unreachable")
             sb.appendLine("ok:")
             sb.appendLine("  ret i8* %p")
@@ -5386,7 +5542,7 @@ class LlvmCodegen {
                 sb.appendLine("  %failed = and i1 %isnull, %nonempty")
                 sb.appendLine("  br i1 %failed, label %oom, label %ok")
                 sb.appendLine("oom:")
-                sb.appendLine("  call void @abort()")
+                sb.appendLine("  call void @__azora_abort()")
                 sb.appendLine("  unreachable")
                 sb.appendLine("ok:")
                 sb.appendLine("  ret i8* %p")
@@ -5778,6 +5934,20 @@ class LlvmCodegen {
             sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
             sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 2, i8* %fmt, i32 %v)")
             sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesAbort) {
+            // Every stop goes through here. `abort` does not flush stdio, so
+            // without this a program whose output is a pipe or a file loses
+            // everything it printed - its last message, the reason, included.
+            sb.appendLine("; runtime: stop the program, keeping what it printed")
+            sb.appendLine("define void @__azora_abort() noreturn {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %flushed = call i32 @fflush(i8* null)")
+            sb.appendLine("  call void @abort()")
+            sb.appendLine("  unreachable")
             sb.appendLine("}")
             sb.appendLine()
         }

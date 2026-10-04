@@ -208,26 +208,33 @@ class LlvmRegressionExecTest {
     @Test fun threadLocalAggregatesUseTlsAndRuntimeInitialization() {
         val source = """
             import std.io
+            import std.container.set
             threadlocal var numbers = [1, 2, 3]
             threadlocal var names = ["first": 10, "second": 20]
-            threadlocal var unique = ![1, 2, 2, 3]
+            threadlocal var unique: Set<Int> = [1, 2, 2, 3]
             func main() {
                 println(numbers[1])
                 println(names["second"])
                 println(unique.size)
             }
         """.trimIndent()
+        // Each slot is per-thread and starts zeroed; the value is built when the
+        // thread starts. A map literal builds a `LinkedHashMap`, whose slot is a
+        // pointer to that pack rather than an untyped one, so the slot's type is
+        // not what is checked - only that it is thread-local and filled at run time.
+        fun slotOf(ir: String, name: String): String? =
+            ir.lineSequence().firstOrNull { it.startsWith("@__tl_$name = thread_local global ") }
         for (optimized in listOf(false, true)) {
             val ir = LlvmExec.compile(source, optimized)
-            assertTrue("@__tl_numbers = thread_local global i8* zeroinitializer" in ir)
-            assertTrue("@__tl_names = thread_local global i8* zeroinitializer" in ir)
-            assertTrue("@__tl_unique = thread_local global i8* zeroinitializer" in ir)
+            for (name in listOf("numbers", "names", "unique")) {
+                val slot = slotOf(ir, name)
+                assertTrue(slot != null && slot.endsWith(" zeroinitializer"), "slot for $name: $slot")
+                assertTrue(Regex("store .+\\* @__tl_$name\\b").containsMatchIn(ir), "no runtime store to $name")
+            }
             assertTrue("define void @__azora_init_threadlocals()" in ir)
-            assertTrue("store i8*" in ir && "i8** @__tl_numbers" in ir)
-            assertTrue("store i8*" in ir && "i8** @__tl_names" in ir)
-            assertTrue("store i8*" in ir && "i8** @__tl_unique" in ir)
             assertTrue("call void @__azora_init_threadlocals()" in ir)
             assertTrue("define i8* @__emutls_get_address" in ir)
+            if (LlvmExec.available) assertEquals("2\n20\n3", LlvmExec.runIr(ir), "optimized=$optimized")
         }
     }
 
@@ -240,7 +247,7 @@ class LlvmRegressionExecTest {
         import std.container.set
         threadlocal var numbers: List<Int> = [1, 2, 3]
         threadlocal var names: Map<String, Int> = ["first": 10, "second": 20]
-        threadlocal var unique: Set<Int> = ![1, 2, 2, 3]
+        threadlocal var unique: Set<Int> = [1, 2, 2, 3]
         func main() {
             println(numbers.size)
             println(names.size)

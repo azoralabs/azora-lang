@@ -221,9 +221,15 @@ object DecoratorMetadata {
 
     private fun collectSites(program: Program): List<Site> {
         val sites = mutableListOf<Site>()
-        fun addFunction(owner: String?, function: FuncDecl) {
+        fun addFunction(
+            owner: String?,
+            function: FuncDecl,
+            operator: Boolean = false,
+            enclosing: List<Annotation> = emptyList(),
+        ) {
             val identity = if (owner == null) function.name else "$owner.${function.name}"
             val target = when {
+                operator -> DecoTarget.Oper
                 function.isUniversalInfix -> DecoTarget.Func
                 function.memberCallStyle == MemberCallStyle.PROPERTY -> DecoTarget.Prop
                 function.name == "ctor" -> DecoTarget.Ctor
@@ -231,7 +237,7 @@ object DecoratorMetadata {
                 function.isTask -> DecoTarget.AsyncFunc
                 else -> DecoTarget.Func
             }
-            sites.add(Site(identity, target, function.annotations))
+            sites.add(Site(identity, target, enclosing + function.annotations))
             function.params.forEach { sites.add(Site("$identity.${it.name}", DecoTarget.Param, it.annotations)) }
         }
 
@@ -251,12 +257,13 @@ object DecoratorMetadata {
                 }
                 is TopLevel.Deco -> sites.add(Site(item.name, DecoTarget.Annot, item.annotations))
                 is TopLevel.Func -> addFunction(null, item.decl)
-                is TopLevel.Impl -> {
-                    val isOperBlock = item.methods.any {
-                        it.name.startsWith("oper") || it.name in setOf("slice", "index", "indexSet")
-                    }
-                    if (isOperBlock) sites.add(Site(item.typeName, DecoTarget.Oper, item.annotations))
-                    item.methods.forEach { addFunction(item.typeName, it) }
+                // An operator is a member of its type, as a method is: its site
+                // is named with the type (`Set.index`), never as the type, which
+                // would hide the type's own decorators behind the operator's.
+                is TopLevel.Impl -> item.methods.forEach { method ->
+                    val operator = method.name.startsWith("oper") || method.name in setOf("slice", "index", "indexSet")
+                    if (operator) addFunction(item.typeName, method, operator = true, enclosing = item.annotations)
+                    else addFunction(item.typeName, method)
                 }
                 is TopLevel.Solo -> {
                     sites.add(Site(item.name, DecoTarget.Pack, item.annotations))

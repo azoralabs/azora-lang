@@ -136,7 +136,7 @@ class ErrorTransportExecTest {
         // slot stays set for its own caller to observe.
         val body = ir.substringAfter("define i32 @doubled").substringBefore("define ")
         assertTrue("@__azora_err" in body, "the propagating call must check the slot:\n$body")
-        assertFalse("call void @abort()" in body, "a failable caller must not abort:\n$body")
+        assertFalse("call void @__azora_abort()" in body, "a failable caller must not abort:\n$body")
     }
 
     @Test fun anUnobservableErrorAborts() {
@@ -151,7 +151,7 @@ class ErrorTransportExecTest {
         // `main` cannot fail and there is no handler, so the only honest thing
         // left is to stop.
         val body = ir.substringAfter("define i32 @main").substringBefore("declare ")
-        assertTrue("call void @abort()" in body, "an unhandled error must abort:\n$body")
+        assertTrue("call void @__azora_abort()" in body, "an unhandled error must abort:\n$body")
     }
 
     @Test fun aNonFailableCallIsNotBurdenedWithAnErrorCheck() {

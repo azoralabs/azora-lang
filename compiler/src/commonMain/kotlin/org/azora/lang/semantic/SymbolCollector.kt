@@ -62,6 +62,47 @@ class SymbolCollector {
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
 
     /**
+     * Why [written] cannot implement [requirement] of [impl]'s spec by the way
+     * it takes its receiver, or null when it can.
+     *
+     * A spec promises its callers how a member treats the value it is called
+     * on, and an implementation may promise more but not less: a member the spec
+     * lets callers reach through a shared `&` borrow may not change the value,
+     * so an `!` implementation would break that promise for every caller holding
+     * the value as the spec. A member of the type cannot stand for a member of a
+     * value, nor the other way round.
+     */
+    private fun receiverMismatch(impl: TopLevel.Impl, requirement: FuncDecl, written: FuncDecl): String? {
+        val member = "'${impl.typeName}.${written.name}'"
+        val required = "'${impl.traitName}.${requirement.name}'"
+        fun spelled(decl: FuncDecl) = when (decl.receiverModifier) {
+            ParamModifier.SHARED -> "&"
+            ParamModifier.EXCLUSIVE -> "!"
+            ParamModifier.NONE -> ""
+        }
+        return when {
+            requirement.declaresReceiver && !written.declaresReceiver ->
+                "line ${written.line}: $member is written without a receiver, so it is a member of the type, " +
+                    "but $required is a member of a value; write 'func ${spelled(requirement)}.${written.name}(…)'"
+            !requirement.declaresReceiver && written.declaresReceiver ->
+                "line ${written.line}: $member takes a receiver, but $required is a member of the type; " +
+                    "drop the receiver"
+            !requirement.declaresReceiver -> null
+            requirement.receiverModifier == ParamModifier.NONE -> null
+            written.receiverModifier == ParamModifier.SHARED -> null
+            requirement.receiverModifier == ParamModifier.EXCLUSIVE &&
+                written.receiverModifier == ParamModifier.EXCLUSIVE -> null
+            written.receiverModifier == ParamModifier.EXCLUSIVE ->
+                "line ${written.line}: $member changes its receiver ('!.'), but $required promises callers " +
+                    "it only reads it ('&.'); a caller holding the value as '${impl.traitName}' through a shared " +
+                    "borrow would see it change"
+            else ->
+                "line ${written.line}: $member takes its receiver by ownership, but $required only borrows it " +
+                    "('${spelled(requirement)}.'); the caller keeps the value"
+        }
+    }
+
+    /**
      * Whether [member] is an operator rather than a named member.
      *
      * Operators are registered as `oper<symbol>`, except the three reached by
@@ -280,7 +321,18 @@ class SymbolCollector {
                         val params = sig.params.map { it.name to resolveType(it.type, tpSet) }
                         val ret = resolveType(sig.returnType, tpSet)
                         val paramNames = sig.params.map { it.name }
-                        table.defineFunction(FunctionSymbol(sig.name, params, ret, false, sig.typeParams, paramNames, emptyMap()))
+                        // A bridge's parameters borrow as a function's do: the
+                        // implementation is foreign, the calling convention is not.
+                        fun indicesWith(modifier: ParamModifier) =
+                            sig.params.indices.filterTo(mutableSetOf()) { sig.params[it].modifier == modifier }
+                        table.defineFunction(
+                            FunctionSymbol(
+                                sig.name, params, ret, false, sig.typeParams, paramNames, emptyMap(),
+                                exclusiveParams = indicesWith(ParamModifier.EXCLUSIVE),
+                                sharedParams = indicesWith(ParamModifier.SHARED),
+                                returnedParams = sig.params.indices.filterTo(mutableSetOf()) { sig.params[it].returnsOwnership },
+                            ),
+                        )
                     } catch (e: Exception) {
                         errors.add("line ${sig.line}: ${e.message}")
                     }
@@ -352,6 +404,7 @@ class SymbolCollector {
                             field.default,
                             typeParamIndexOf(field.type, item.typeParams),
                             isUnsafe = field.isUnsafe,
+                            typeRef = field.type,
                         )
                     }
                     reportDuplicateFields(item.name, item.fields, item.line, errors)
@@ -466,10 +519,12 @@ class SymbolCollector {
                         // shape depends on them - `Array<T, N>` - is otherwise resolved
                         // bare and rejected for having no arguments.
                         val declaredParams = table.lookupStruct(item.typeName)?.typeParams.orEmpty()
-                        val selfRef = if (declaredParams.isEmpty()) {
-                            TypeRef.Named(item.typeName)
-                        } else {
-                            TypeRef.Named(item.typeName, declaredParams.map { TypeRef.Named(it) })
+                        // A tuple specialization's receiver is the tuple itself.
+                        val tupleShape = program.tupleShapes[item.typeName]
+                        val selfRef = when {
+                            tupleShape != null -> TypeRef.Tuple(tupleShape)
+                            declaredParams.isEmpty() -> TypeRef.Named(item.typeName)
+                            else -> TypeRef.Named(item.typeName, declaredParams.map { TypeRef.Named(it) })
                         }
                         val selfType = resolveType(selfRef, declaredParams.toSet())
                         val params = mutableListOf<Pair<String, IrType>>()
@@ -515,6 +570,12 @@ class SymbolCollector {
                             val methodDefaults = method.params
                                 .mapIndexedNotNull { i, p -> p.defaultValue?.let { (i + 1) to it } }
                                 .toMap()
+                            // `self` is parameter 0, so the receiver's borrow sits
+                            // there and each written parameter's one to the right.
+                            fun indicesWith(modifier: ParamModifier): Set<Int> = buildSet {
+                                if (method.declaresReceiver && method.receiverModifier == modifier) add(0)
+                                method.params.forEachIndexed { i, p -> if (p.modifier == modifier) add(i + 1) }
+                            }
                             table.defineFunction(FunctionSymbol(
                                 mangled,
                                 params,
@@ -529,8 +590,18 @@ class SymbolCollector {
                                 paramTypeRefs = listOf(selfRef) + method.params.map { it.type },
                                 isBodyless = method.body.isEmpty(),
                                 contextualParams = method.contextualParams,
+                                exclusiveParams = indicesWith(ParamModifier.EXCLUSIVE),
+                                sharedParams = indicesWith(ParamModifier.SHARED),
+                                returnedParams = method.params.indices
+                                    .filterTo(mutableSetOf()) { method.params[it].returnsOwnership }
+                                    .mapTo(mutableSetOf()) { it + 1 },
                             ))
                         }
+                        // A member that wrote no receiver belongs to the type: it is
+                        // lifted as a static and reached as `Type::member`, so it is
+                        // no member of a value. A spec impl keeps it only so the
+                        // requirement it fulfils can be checked.
+                        if (!method.declaresReceiver && item.traitName != null) continue
                         table.defineMethod(item.typeName, method.name, mangled)
                         // `impl Cast<Fahrenheit> for Celsius { prop cast … }` -
                         // the target is a parameter of the impl, so the member is
@@ -634,6 +705,7 @@ class SymbolCollector {
                         paramTypeRefs = m.params.map { it.type },
                         returnTypeRef = (m.returnType as? TypeAnnotation.Explicit)?.ref,
                         owner = item.name,
+                        receiver = m.receiverModifier.takeIf { m.declaresReceiver },
                     )
                 }
                 // Spec inheritance (`spec Mutable: Read`): store only own members
@@ -757,6 +829,14 @@ class SymbolCollector {
                             complete = false
                             errors.add("line ${item.line}: '${item.typeName}' does not implement '${item.traitName}.${req}'")
                         }
+                        val requirement = specDeclaration?.methods?.firstOrNull { it.name == req }
+                        val written = item.methods.firstOrNull { it.name == req }
+                        if (requirement != null && written != null) {
+                            receiverMismatch(item, requirement, written)?.let {
+                                complete = false
+                                errors.add(it)
+                            }
+                        }
                     }
                     // An operator impl for a spec the type already conforms to
                     // supplies a member for that conformance rather than opening a
@@ -766,7 +846,10 @@ class SymbolCollector {
                     // duplicate derive requests for one spec are still an error.
                     val refinesExisting = isOperOverload && table.conformsTo(item.typeName, item.traitName)
                     if (complete && !refinesExisting && !table.defineConformance(
-                            TraitConformance(item.typeName, item.traitName, item.traitArgs, contract.isDecorator)
+                            TraitConformance(
+                                item.typeName, item.traitName, item.traitArgs, contract.isDecorator,
+                                implTypeParams = item.typeParams,
+                            )
                         )
                     ) {
                         errors.add("line ${item.line}: duplicate implementation of '${item.traitName}' for '${item.typeName}'")

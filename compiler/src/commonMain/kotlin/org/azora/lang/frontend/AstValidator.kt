@@ -16,6 +16,8 @@
 
 package org.azora.lang.frontend
 
+import org.azora.lang.diagnostics.didYouMean
+
 /**
  * Phase 1, Step 3 -- AST Validation.
  *
@@ -27,8 +29,13 @@ package org.azora.lang.frontend
  *
  * This pass runs after parsing and before semantic analysis. It operates
  * purely on the AST structure without resolving types or symbols.
+ *
+ * [libraryDecorators] are the decorators the libraries the program was
+ * compiled against declare, by name. Without them - a fragment validated on
+ * its own - a decorator the program does not declare cannot be told from one
+ * a library it never loaded declares, so it is left to the full compilation.
  */
-class AstValidator {
+class AstValidator(private val libraryDecorators: Map<String, LibraryDecorator>? = null) {
 
     /**
      * Validates the given [program] AST and returns a list of error messages.
@@ -125,17 +132,30 @@ class AstValidator {
         return errors
     }
 
-    /**
-     * Decorator names the compiler recognizes. Any other `@name` is a typo / unknown
-     * decorator and is rejected (catches e.g. `@experiemntal` vs `@experimental`).
-     */
-    private val knownDecorators = setOf(
-        "Experimental", "Stable", "Since", "Deprecated", "EnforceNumFields", "Target", "Derive",
-        "UncheckedCast",
-    )
-
-    /** Custom decorator names declared via `deco Name { … }` in the current program. */
+    /** Decorators declared in the program, its own and those injected from libraries. */
     private var customDecos: Set<String> = emptySet()
+
+    /**
+     * Why [ann] names no decorator in scope, or null when it does.
+     *
+     * A decorator is declared like anything else - `annot @Name` - so whether
+     * one exists is a question about declarations, not about a list kept here.
+     * One a library declares in a module the program did not import is named
+     * with the import that brings it in; one nothing declares is a misspelling
+     * until shown otherwise.
+     */
+    private fun unknownDecorator(ann: Annotation): String? {
+        if (ann.name in customDecos) return null
+        val libraries = libraryDecorators ?: return null
+        val provided = libraries[ann.name]
+        return when {
+            provided == null -> "line ${ann.line}: unknown decorator '@${ann.name}'" +
+                didYouMean(ann.name, customDecos + libraries.keys) { "@$it" }
+            provided.alwaysInScope -> null
+            else -> "line ${ann.line}: unknown decorator '@${ann.name}' - '@${ann.name}' is provided by " +
+                "'${provided.module}': add 'import ${provided.module}::${ann.name}'"
+        }
+    }
 
     /**
      * Validates the stability decorators: `@experimental` and `@stable` may not
@@ -148,9 +168,7 @@ class AstValidator {
             // parameter is one - and macros are not declared in the decorator
             // table, so asking it about them would always fail.
             if (ann.name.firstOrNull()?.isUpperCase() != true) continue
-            if (ann.name !in knownDecorators && ann.name !in customDecos) {
-                errors.add("line ${ann.line}: unknown decorator '@${ann.name}'")
-            }
+            unknownDecorator(ann)?.let(errors::add)
         }
         val experimental = annotations.find { it.name == "Experimental" }
         val stable = annotations.find { it.name == "Stable" }
@@ -376,3 +394,9 @@ class AstValidator {
         }
     }
 }
+
+/**
+ * A decorator a library declares: the module declaring it, and whether that
+ * module is in scope everywhere (an `exposed` module needs no import).
+ */
+data class LibraryDecorator(val module: String, val alwaysInScope: Boolean)

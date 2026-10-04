@@ -53,16 +53,18 @@ class StdlibInjectionTest {
         val source = AzStdlib.sources.single { Regex("(?m)^module std\\.io$").containsMatchIn(it) }
         val io = Parser(Lexer(source).tokenize()).parse()
 
-        assertTrue(io.items.none { it is TopLevel.Func && it.decl.name == "std__println" })
+        // `std.io` declares at the top level of its module (no `scope std`), so
+        // the bridges carry their own names rather than `std__println`.
+        assertTrue(io.items.none { it is TopLevel.Func && it.decl.name == "println" })
         assertTrue(io.items.any {
             it is TopLevel.Bridge &&
                 it.target == "Compiler" &&
-                it.funcs.singleOrNull()?.name == "std__println"
+                it.funcs.singleOrNull()?.name == "println"
         })
         assertTrue(io.items.any {
             it is TopLevel.Bridge &&
                 it.target == "Compiler" &&
-                it.funcs.singleOrNull()?.name == "std__print"
+                it.funcs.singleOrNull()?.name == "print"
         })
     }
 
@@ -101,12 +103,13 @@ class StdlibInjectionTest {
         val root = Parser(Lexer(source).tokenize()).parse()
 
         assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Unit" && it.isBridge })
+        assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Nothing" && it.isBridge })
         assertTrue(root.items.any { it is TopLevel.Pack && it.name == "Any" && it.isBridge })
         assertTrue(root.items.any { it is TopLevel.Enum && it.name == "DecoTarget" })
         assertTrue(root.items.any { it is TopLevel.Enum && it.name == "TestMethod" })
-        assertTrue(root.items.any { it is TopLevel.Enum && it.name == "BridgeTarget" })
-        assertTrue(root.items.any { it is TopLevel.Spec && it.name == "HasDeco" })
-        assertTrue(root.items.any { it is TopLevel.Spec && it.name == "DecoMetadata" })
+        // The targets a `bridge` addresses (`BridgeTarget` before it was renamed).
+        assertTrue(root.items.any { it is TopLevel.Enum && it.name == "Target" })
+        // `@Derive` is the annotation a generator-backed decorator carries.
         assertTrue(root.items.any { it is TopLevel.Deco && it.name == "Derive" })
         // `bridge func` string primitives become extern bridge sigs.
         assertTrue(root.items.any { it is TopLevel.Bridge && it.funcs.any { f -> f.name == "stringLength" } })
@@ -178,9 +181,10 @@ class StdlibInjectionTest {
     }
 
     @Test fun stdlibIndexExposesCollectionPacks() {
-        assertEquals("std.container", StdlibInjector.moduleOf("List"))
-        assertEquals("std.container", StdlibInjector.moduleOf("Map"))
-        assertEquals("std.container", StdlibInjector.moduleOf("Set"))
+        // Each collection is a module of its own under `std.container`.
+        assertEquals("std.container.list", StdlibInjector.moduleOf("List"))
+        assertEquals("std.container.map", StdlibInjector.moduleOf("Map"))
+        assertEquals("std.container.set", StdlibInjector.moduleOf("Set"))
     }
 
     @Test fun absoluteWorkspacePathMayEndInTheDeclaredModulePath() {
@@ -240,11 +244,32 @@ class StdlibInjectionTest {
         })
     }
 
+    private val decoratedFieldLibrary = LibrarySource(
+        "lib/profile.az",
+        """
+            module lib.profile
+
+            import std.serializer
+
+            pack DirectFieldDecoratorFixture {
+                fin name: String = ""
+            }
+
+            derive SerialName(value: "display_name") for DirectFieldDecoratorFixture::name
+        """.trimIndent(),
+    )
+
+    /**
+     * A decorator a library applies to one field of its pack arrives with the
+     * pack. (The fixture was std.serializer's own until it became private to
+     * that module's tests; a library of its own stands in for it.)
+     */
     @Test fun importedPackCarriesItsFieldDecoratorImplementations() {
-        val result = Compiler().compile("""
+        val result = Compiler(listOf(decoratedFieldLibrary)).compile("""
             module serializerFieldImplTest
 
             import std.serializer
+            import lib.profile
 
             func decorated(): Int {
                 inline if reflect<DirectFieldDecoratorFixture::name>.hasAnnot<SerialName> {
@@ -264,9 +289,13 @@ class StdlibInjectionTest {
         assertTrue(fieldImpl, "field decorator implementations must be injected with their owning pack")
     }
 
+    /** A type written only in an annotation brings its pack and its members. */
     @Test fun collectionTypeAnnotationsInjectPacksAndImpls() =
         assertEquals("3\n2\n2", run("""
             import std.io
+            import std.container.list
+            import std.container.map
+            import std.container.set
             func main() {
                 var xs: List<Int> = [1, 2, 3]
                 var entries: Map<String, Int> = ["a": 1, "b": 2]
@@ -290,30 +319,61 @@ class StdlibInjectionTest {
 
     // ---- bare access is rejected ----
 
+    /**
+     * A library symbol is reached through its module's import. (It used to need
+     * a `std::` qualifier as well, when the library sat in `scope std`; that
+     * scope is gone, and the import is the whole of the rule.)
+     */
     @Test fun bareStdlibAccessIsRejected() {
-        val result = Compiler().compile("import std.io\nimport std.math\nfunc main() {\n    println(abs(-5))\n}")
+        val result = Compiler().compile("import std.io\nfunc main() {\n    println(abs(-5))\n}")
         assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "undefined" in it && "abs" in it }, "bare access should be rejected: ${'$'}{result.errors}")
+        assertTrue(
+            result.errors.any { "undefined" in it && "'abs' is provided by 'std.math'" in it },
+            "an unimported symbol should be rejected with its module: ${'$'}{result.errors}",
+        )
     }
 
+    private val scopedLibrary = LibrarySource(
+        "lib/geo.az",
+        """
+            module lib.geo
+
+            scope shapes {
+                func area(): Int { return 4 }
+            }
+        """.trimIndent(),
+    )
+
+    /**
+     * A member of a scope an imported module declares is named through that
+     * scope, as it is in the module itself, and the error for the bare name
+     * says how. (The standard library used to be such a scope, `std`; it is
+     * not any more, so a library of its own stands in for it.)
+     */
     @Test fun importedScopeMemberRequiresQualifiedAccess() {
-        val result = Compiler().compile("""
+        val bare = Compiler(listOf(scopedLibrary)).compile("""
             module playground
 
-            import std.io
+            import lib.geo
 
             func main() {
-                println("Hello, world!")
+                fin a = area()
             }
         """.trimIndent())
 
-        assertIs<CompilationResult.Failure>(result)
+        assertIs<CompilationResult.Failure>(bare)
         assertTrue(
-            result.errors.any {
-                it == "line 6: undefined function 'println'; 'println' is part of scope 'std', use 'println' instead"
+            bare.errors.any {
+                "line 6: undefined function 'area'" in it && "'area' is part of scope 'shapes', use 'shapes::area' instead" in it
             },
-            result.errors.toString(),
+            bare.errors.toString(),
         )
+        val qualified = Compiler(listOf(scopedLibrary)).compile(
+            "import std.io\nimport lib.geo\nfunc main() {\n    println(shapes::area())\n}",
+            release = false,
+        )
+        assertIs<CompilationResult.Success>(qualified, (qualified as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("4", IrInterpreter().interpret(qualified.ir).trim())
     }
 
     @Test fun scopeMembersRequireQualifiedAccess() =
@@ -365,7 +425,7 @@ class StdlibInjectionTest {
     }
 
     @Test fun importStdWildcardExposesAllModules() =
-        assertEquals("5\n9", run("import std.io\nimport std.*\nfunc main() {\n    println(abs(-5))\n    println(max(2, 9))\n}"))
+        assertEquals("5\n9", run("import std.io\nimport std::*\nfunc main() {\n    println(abs(-5))\n    println(max(2, 9))\n}"))
 
     private val wildcardFilterLibrary = LibrarySource(
         "lib/filter.az",
@@ -408,11 +468,16 @@ class StdlibInjectionTest {
 
     // ---- import syntax errors ----
 
-    @Test fun importRejectsDoubleColonSyntax() {
-        val err = assertFailsWith<IllegalStateException> {
-            Compiler().compile("import std.io\nimport std.math::abs\nfunc main() {\n    println(abs(-5))\n}")
-        }
-        assertTrue(err.message.orEmpty().contains("Use dotted import paths"), err.message)
+    /**
+     * `::` reaches inside a module: `import std.math::abs` names one symbol of
+     * `std.math`. A `.` walks down the module path, so `std.*` - every symbol
+     * of `std` - is the slip, and is answered with the spelling that works.
+     */
+    @Test fun importReachesInsideAModuleWithDoubleColon() {
+        assertEquals("5", run("import std.io\nimport std.math::abs\nfunc main() {\n    println(abs(-5))\n}"))
+        val result = Compiler().compile("import std.*\nfunc main() {}")
+        val failure = assertIs<CompilationResult.Failure>(result)
+        assertTrue(failure.errors.any { "write 'import std::*'" in it }, failure.errors.toString())
     }
 
     @Test fun dottedStdAccessIsNotNamespaceAccess() {

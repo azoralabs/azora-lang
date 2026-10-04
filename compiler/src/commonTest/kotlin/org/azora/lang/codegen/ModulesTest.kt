@@ -174,7 +174,9 @@ class ModulesTest {
         assertTrue(result.errors.any { "five" in it }, "${'$'}{result.errors}")
     }
 
-    @Test fun friendScopeMergesAcrossBlocks() {
+    @Test fun aProgramsOwnScopeNamedStdMergesAcrossBlocks() {
+        // `std` is a scope like any other here: its members merge across blocks
+        // and are reached through it, not as if the library declared them.
         assertEquals("3\n42", run("""
             import std.io
             scope std {
@@ -186,10 +188,33 @@ class ModulesTest {
                 fin answer = 42
             }
             func main() {
-                println(triple(1))
-                println(answer)
+                println(std::triple(1))
+                println(std::answer)
             }
         """.trimIndent()))
+    }
+
+    @Test fun aBareScopeMemberIsNamedWithItsScope() {
+        val result = Compiler().compile("""
+            import std.io
+            scope Const {
+                fin five = 5
+                func six(): Int { return 6 }
+            }
+            func main() {
+                println(five)
+                println(six())
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.contains("line 7: undefined value 'five'; 'five' is part of scope 'Const', use 'Const::five' instead"),
+            result.errors.toString(),
+        )
+        assertTrue(
+            result.errors.contains("line 8: undefined function 'six'; 'six' is part of scope 'Const', use 'Const::six' instead"),
+            result.errors.toString(),
+        )
     }
 
     @Test fun reopeningAScopeMergesItsContributions() {
@@ -210,25 +235,29 @@ class ModulesTest {
         """.trimIndent()))
     }
 
-    @Test fun scopeIsJustAnIdentifierNotANamespaceKeyword() {
-        assertEquals("7", run("""
+    @Test fun scopeIsAKeywordThatOpensANamespace() {
+        assertEquals("1", run("""
             import std.io
+            scope Old {
+                func nope(): Int {
+                    return 1
+                }
+            }
             func main() {
-                var scope = 7
-                println(scope)
+                println(Old::nope())
             }
         """.trimIndent()))
 
-        assertFailsWith<IllegalStateException> {
-            Compiler().compile("""
-                import std.io
-                scope Old {
-                    func nope(): Int {
-                        return 1
-                    }
-                }
-            """.trimIndent())
-        }
+        val result = Compiler().compile("""
+            func main() {
+                var scope = 7
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result)
+        assertTrue(
+            result.errors.any { "got the keyword 'scope', which cannot be used as a name" in it },
+            result.errors.toString(),
+        )
     }
 
     // -- visibility modifiers -----------------------------------------------

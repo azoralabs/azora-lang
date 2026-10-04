@@ -5407,6 +5407,12 @@ class Parser(
         // inheritance: it adds no members and implies nothing on its own.
         val requiredSpecs = mutableListOf<TypeRef>()
         // One capability is written bare (`requires Clone`); several take a list.
+        if (check(TokenType.REQUIRES) && peekNext()?.type == TokenType.L_BRACKET) {
+            error(
+                "requirements are listed in parentheses: write 'requires (A, B)', " +
+                    "or 'requires A' for one, at line ${peek().line}",
+            )
+        }
         if (check(TokenType.REQUIRES) &&
             peekNext()?.type in setOf(TokenType.L_PAREN, TokenType.IDENTIFIER)
         ) {
@@ -5927,7 +5933,7 @@ class Parser(
             parseExplicitMemberReceiver() ?: parseTypedMemberReceiver()
         }
         val name = if (prefixReceiver != null || inImplBlock) consumeMemberName("Expected function name")
-        else consumeIdentifierLike("Expected function name")
+        else freeFunctionName()
         if (check(TokenType.LESS)) {
             error("line ${start.line}: function type parameters follow 'func'; write 'func<T> $name(…)', not 'func $name<T>(…)'")
         }
@@ -6471,7 +6477,47 @@ class Parser(
             advance()
             return t.lexeme
         }
-        error("$message, got '${t.lexeme}' (${t.type}) at line ${t.line}")
+        nameExpected(message, t)
+    }
+
+    /**
+     * Why `(x,)` is not a tuple (GTC §6.4): a tuple has at least two elements,
+     * `(x)` groups, and a one-element tuple would be a second type standing for
+     * the same value.
+     */
+    private fun oneElementTuple(line: Int, what: String): String =
+        "a tuple has at least two elements, so '(x,)' is not a tuple $what; write '(x)' or just 'x' at line $line"
+
+    /**
+     * The name of a function that is not a member.
+     *
+     * It is called by its bare name, so the name must be one a call can be
+     * written with. `take(xs)` is the ownership operator and `alloc(n)` an
+     * allocation, whatever is declared: a free function spelled with such a
+     * word could be declared and never called. A member has no such problem -
+     * `opt.take()` is reached after its `.` - so members keep these names.
+     */
+    private fun freeFunctionName(): String {
+        val found = peek()
+        if (found.type != TokenType.IDENTIFIER && AzoraSyntaxVocabulary.reservedKeywords[found.lexeme] == found.type) {
+            error(
+                "a function named '${found.lexeme}' could not be called by that name, which is a keyword; " +
+                    "choose another name, or declare it as a member at line ${found.line}",
+            )
+        }
+        return consumeIdentifierLike("Expected function name")
+    }
+
+    /**
+     * Reports that a name was wanted at [found]. When [found] is a keyword, the
+     * report says so - the word being taken is the whole reason it does not
+     * work as a name, and its token kind alone does not tell the reader that.
+     */
+    private fun nameExpected(message: String, found: Token): Nothing {
+        if (AzoraSyntaxVocabulary.reservedKeywords[found.lexeme] == found.type) {
+            error("$message, got the keyword '${found.lexeme}', which cannot be used as a name at line ${found.line}")
+        }
+        error("$message, got '${found.lexeme}' (${found.type}) at line ${found.line}")
     }
 
     /**
@@ -7084,7 +7130,14 @@ class Parser(
                 val start = advance() // consume '('
                 val elements = mutableListOf<TypeRef>()
                 if (!check(TokenType.R_PAREN)) {
-                    do { elements.add(parseCallableParamType()) } while (match(TokenType.COMMA))
+                    do {
+                        // `(A, B,)` may end in a comma; `(A,)` is no one-element tuple.
+                        if (check(TokenType.R_PAREN)) {
+                            if (elements.size == 1) error(oneElementTuple(start.line, "type"))
+                            break
+                        }
+                        elements.add(parseCallableParamType())
+                    } while (match(TokenType.COMMA))
                 }
                 consume(TokenType.R_PAREN, "Expected ')' in grouped or function type")
                 if (match(TokenType.DOT)) {
@@ -7111,6 +7164,11 @@ class Parser(
                 parseNamedTypeMacroInvocation()
             }
             check(TokenType.IDENTIFIER) -> {
+                // A removed collection spelling says what replaced it, before the
+                // general reading below takes `arr[Int]` for a macro call.
+                if (peekNext()?.type == TokenType.L_BRACKET && peek().lexeme in setOf("arr", "vec", "set", "map")) {
+                    error("'${peek().lexeme}[...]' type syntax was removed; use Array<T>, List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
+                }
                 // A type macro is invoked as any macro is, behind its `@`: the
                 // sigil is what shows that the type's spelling comes from an
                 // import. A bare `rows Int` reads as a type followed by a stray
@@ -7121,9 +7179,6 @@ class Parser(
                         "a type macro is invoked with '@': write '@${macro.lexeme} …' " +
                             "instead of '${macro.lexeme} …' at line ${macro.line}",
                     )
-                }
-                if (peekNext()?.type == TokenType.L_BRACKET && peek().lexeme in setOf("arr", "vec", "set", "map")) {
-                    error("'${peek().lexeme}[...]' type syntax was removed; use Array<T>, List<T>, Set<T>, or Map<K, V> at line ${peek().line}")
                 }
                 val firstNameToken = advance()
                 val name = firstNameToken.lexeme
@@ -7604,11 +7659,18 @@ class Parser(
     private fun parseFor(label: String? = null, allowElse: Boolean = true): Stmt {
         val start = peek()
         consume(TokenType.FOR, "Expected 'for'")
-        // `for [a, b] in rows` - the row taken apart as it is bound. Each name
-        // takes the element at its position, so the header says what a row is
-        // made of and the body never indexes it.
-        val destructured = if (check(TokenType.L_BRACKET)) parseLoopDestructuring() else emptyList()
-        val name = if (destructured.isEmpty()) {
+        // `for (a, b) in rows` - the row taken apart as it is bound, as
+        // `fin (a, b) = row` takes a tuple apart. Each name takes the element at
+        // its position, so the header says what a row is made of and the body
+        // never indexes it.
+        if (check(TokenType.L_BRACKET)) {
+            error(
+                "a loop takes its row apart with parentheses, as a binding does: " +
+                    "write 'for (a, b) in …' at line ${peek().line}",
+            )
+        }
+        val destructured = if (check(TokenType.L_PAREN)) parseLoopDestructuring() else null
+        val name = if (destructured == null) {
             consume(TokenType.IDENTIFIER, "Expected loop variable name").lexeme
         } else {
             "__row${start.line}_${start.column}"
@@ -7616,7 +7678,7 @@ class Parser(
         // `for i: Int in 0..mid` - the row's type, said rather than inferred. A
         // taken-apart row has one type per name and no single place to write it,
         // so the form is the one-name one.
-        val declaredType = if (destructured.isEmpty() && match(TokenType.COLON)) parseTypeName() else null
+        val declaredType = if (destructured == null && match(TokenType.COLON)) parseTypeName() else null
         consume(TokenType.IN, "Expected 'in' after loop variable")
         // The step is part of the header too: in `for x in 0..<6 by 2 { … }` the
         // `{` closes the header, so it must not be read as a trailing lambda on
@@ -7643,7 +7705,7 @@ class Parser(
         val loop = Stmt.For(
             name,
             iterable,
-            destructuredPrologue(destructured, name, start) + body,
+            (destructured?.let { destructuredPrologue(it, name, start) } ?: emptyList()) + body,
             start.line,
             start.column,
             step = step,
@@ -7655,42 +7717,55 @@ class Parser(
     }
 
     /** `[a, b, c]` in a loop header - the names a row is taken apart into. */
-    private fun parseLoopDestructuring(): List<String> {
-        consume(TokenType.L_BRACKET, "Expected '[' to open the loop's bindings")
-        val names = mutableListOf<String>()
+    /** A loop row's pattern: a name, or a tuple's positions taken apart in turn. */
+    private sealed class LoopPattern {
+        data class Name(val name: String) : LoopPattern()
+        data class Group(val parts: List<LoopPattern>) : LoopPattern()
+    }
+
+    /** `(a, b)` or `((x, y), weight)` - at least two positions, as a tuple has. */
+    private fun parseLoopDestructuring(): LoopPattern.Group {
+        val open = consume(TokenType.L_PAREN, "Expected '(' to open the loop's bindings")
+        val parts = mutableListOf<LoopPattern>()
         skipNewlines()
         do {
             skipNewlines()
-            names.add(consumeIdentifierLike("Expected a binding name in the loop's '[…]'"))
+            parts.add(
+                if (check(TokenType.L_PAREN)) parseLoopDestructuring()
+                else LoopPattern.Name(consumeIdentifierLike("Expected a binding name in the loop's '(…)'")),
+            )
             skipNewlines()
         } while (match(TokenType.COMMA))
-        consume(TokenType.R_BRACKET, "Expected ']' after the loop's bindings")
-        if (names.isEmpty()) {
-            error("a loop's '[…]' needs at least one binding at line ${peek().line}")
-        }
-        return names
+        consume(TokenType.R_PAREN, "Expected ')' after the loop's bindings")
+        if (parts.size < 2) error(oneElementTuple(open.line, "pattern"))
+        return LoopPattern.Group(parts)
     }
 
     /**
      * The bindings a destructuring loop header opens its body with.
      *
-     * Each name takes the row element at its position, so `for [a, b] in rows`
-     * is `for row in rows` with `a` and `b` read off the front of it.
+     * Each name takes the row element at its position, so `for (a, b) in rows`
+     * is `for row in rows` with `a` and `b` read off it; a nested group takes its
+     * own element apart the same way.
      */
-    private fun destructuredPrologue(names: List<String>, row: String, start: Token): List<Stmt> =
-        names.mapIndexed { index, binding ->
-            Stmt.FinDecl(
-                binding,
-                TypeAnnotation.Inferred,
-                Expr.Member(
-                    Expr.Identifier(row, start.line, start.column, row.length),
-                    index.toString(),
-                    start.line,
-                    start.column,
-                ),
+    private fun destructuredPrologue(pattern: LoopPattern.Group, row: String, start: Token): List<Stmt> =
+        pattern.parts.flatMapIndexed { index, part ->
+            val element = Expr.Member(
+                Expr.Identifier(row, start.line, start.column, row.length),
+                index.toString(),
                 start.line,
                 start.column,
             )
+            when (part) {
+                is LoopPattern.Name -> listOf(
+                    Stmt.FinDecl(part.name, TypeAnnotation.Inferred, element, start.line, start.column),
+                )
+                is LoopPattern.Group -> {
+                    val inner = "${row}_$index"
+                    listOf(Stmt.FinDecl(inner, TypeAnnotation.Inferred, element, start.line, start.column)) +
+                        destructuredPrologue(part, inner, start)
+                }
+            }
         }
 
     private fun parseLoop(label: String? = null): Stmt {
@@ -9703,6 +9778,11 @@ class Parser(
         // expands, which is after parsing. The leading dot stays for the
         // resolver, as it does in an argument or a return.
         if (NamedTypeMacroCall.isCall(named)) return parseExpr()
+        // `.Variant` and `.Variant(payload)` are read against the stated type by
+        // the resolver, as the same form is in an argument or a return. Reading
+        // only the name here left a payload behind as a statement of its own:
+        // `fin s: V = .Text("x")` bound `V.Text` and then evaluated `("x")`.
+        if (peekNext()?.type != TokenType.L_PAREN) return parseExpr()
         val dot = advance()
         // `.(args)` - the declared type's constructor, without naming it twice.
         // `fin origin: Point = .(0, 0)` says the type once, in the place that
@@ -9730,14 +9810,7 @@ class Parser(
             }
             return call
         }
-        val variant = consume(TokenType.IDENTIFIER, "Expected variant name after '.'")
-        return Expr.Member(
-            Expr.Identifier(named.name, dot.line, dot.column, named.name.length),
-            variant.lexeme,
-            dot.line,
-            dot.column,
-            variant.lexeme.length + 1,
-        )
+        error("Expected '(' after '.' at line ${dot.line}")
     }
 
     private fun parseInitializer(type: TypeAnnotation): Expr =
@@ -11825,6 +11898,7 @@ class Parser(
                         skipNewlines()
                     }
                     consume(TokenType.R_PAREN, "Expected ')' after tuple literal")
+                    if (elements.size == 1) error(oneElementTuple(tok.line, "value"))
                     Expr.TupleLit(elements, tok.line, tok.column)
                 } else {
                 consume(TokenType.R_PAREN, "Expected ')'")
@@ -12382,6 +12456,8 @@ class Parser(
 
     private fun consume(type: TokenType, message: String): Token {
         if (check(type)) return advance()
-        error("$message, got '${peek().lexeme}' (${peek().type}) at line ${peek().line}")
+        val found = peek()
+        if (type == TokenType.IDENTIFIER) nameExpected(message, found)
+        error("$message, got '${found.lexeme}' (${found.type}) at line ${found.line}")
     }
 }

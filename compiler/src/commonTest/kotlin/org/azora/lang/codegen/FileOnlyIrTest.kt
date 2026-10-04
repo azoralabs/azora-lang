@@ -58,10 +58,12 @@ class FileOnlyIrTest {
 
         assertTrue("func add" in mine, mine)
         assertTrue("func main" in mine, mine)
-        // The promotion ranks and the comparison enums arrive with the standard
-        // library, and are most of what a full dump is.
-        assertTrue("Int_rank" in everything, "the full dump carries the library")
-        assertTrue("Int_rank" !in mine, mine)
+        // The comparison enums arrive with the standard library whether or not
+        // the file uses them. (The members nothing calls, such as the promotion
+        // ranks, are shaken out of the program before it is printed at all.)
+        assertTrue("enum Compare" in everything, "the full dump carries the library")
+        assertTrue("enum Compare" !in mine, mine)
+        assertTrue("Int_rank" !in everything, "an unreached library member is not compiled")
         assertTrue(mine.length < everything.length, "the filtered dump is the smaller one")
     }
 

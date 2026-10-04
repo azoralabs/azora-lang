@@ -3,7 +3,14 @@
 Plan: [150-step delivery plan](ECOSYSTEM_DELIVERY_PLAN.md).
 Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 
-## Current status — 2026-09-19
+## Current status — 2026-10-03
+
+- Latest: 2,758 compiler tests, 12 failing after the follow-up entry's last
+  fixes (15 in its last full run); AZLS 91/91. See the two 2026-10-03 entries
+  at the end for what changed and what is open, including the integer-overflow
+  decision and the anonymous `Var<…>` question.
+
+## Status — 2026-09-19
 
 - Completed: 001–006 and 009; strict disk and bundled standard-library loading pass.
 - Completed substeps: 010.C1–C2, bracket grammar and contextual array execution.
@@ -2886,3 +2893,379 @@ That exposed the backends:
 - Full compiler run: **2,679 tests, 2,583 passed, 96 failed, 0 skipped**,
   against 2,675 / 138. 42 earlier failures pass, none newly fails, and the four
   added tests pass. AZLS: 91/91.
+
+## 2026-10-03 — Soundness: bounds, type arguments, shared borrows, receivers; std modules test themselves
+
+Starts from `047f38c` on `0.1.0-dev`. A fresh full run measured **2,655 tests,
+83 failing**. Every one of the 83 was already failing in the 2026-09-27
+inventory, so the user's grouping and tuple-syntax commits regressed nothing.
+
+### 1. A safe index names one of the array's own elements, on every target
+
+- *LLVM read and wrote past the buffer.* `xs[i]` computed an address and
+  never looked at the length header. It now compares unsigned against the
+  size and calls `__azora_index_fail`, which prints
+  `panic: index N out of bounds for size M` and stops.
+- *WebAssembly* traps on the same comparison. The check is one folded `block`
+  expression, so the array and the index are still evaluated where the source
+  has them, and once.
+- *The interpreter* surfaced the host's `IndexOutOfBoundsException`. It now
+  panics with the same message.
+- *LLVM lost a failing program's output.* `abort` does not flush stdio, so a
+  program whose output was a pipe or a file lost everything it printed,
+  including the panic's own message. Every stop now goes through
+  `__azora_abort`, which flushes first.
+
+### 2. `azora run` reports failure and keeps output
+
+- Every failure exited with status 0. Statuses are now 1 for a program with
+  errors, 2 for a wrong command line or file, and 101 for a program that ran
+  and failed (`ExitStatus` in `Main.kt`).
+- Output reaches the terminal as the program writes it (`IrInterpreter.outputSink`).
+  It was buffered until the program ended, and lost when it failed.
+- A runtime failure prints its message, not a JVM stack trace.
+
+### 3. Type arguments are checked
+
+`IrType.Named` identity leaves type arguments out so that storage can stay
+erased. Every check that compared types with `==` therefore accepted a
+`Box<Int>` as a `Box<String>`. The interpreter printed the int; LLVM ran
+`strlen` on it and crashed.
+
+- `isCompatible` now rejects a value whose type arguments disagree with the
+  declared ones (`typeArgumentsConflict`). Arguments are invariant. A type
+  parameter nothing has bound, the erased `Any`, and a use written without
+  arguments agree with anything.
+- Spec conformance reads the spec's arguments through the impl:
+  `impl List<T> for ArrayList<T>` makes an `ArrayList<Int>` a `List<Int>`, not
+  a `List<String>`. `TraitConformance` now records the impl's type parameters
+  for this.
+- A spec-typed value is accepted where a spec it refines is expected
+  (`MutableList<Int>` as `List<Int>`). This was rejected outright before. LLVM
+  passes the box through, since type ids are per concrete type.
+- Diagnostics name the arguments (`IrType.shown()`), so a mismatch no longer
+  reads `expected Box, got Box`.
+- Inference unifies structurally. `Box<T>` against `Box<Int>`,
+  `MapEntry<K, V>` through each variadic entry, `T?`, tuples and function types
+  all bind their parameters. Arguments typed by the call go first, so a literal
+  does not decide `T`. `hashMapOf(1 to "a")` and `first(box)` now infer.
+- A generic pack's construction infers its arguments from its fields
+  (`Box(7)` is a `Box<Int>`) and checks each field against them. Before this,
+  generic constructions checked no field at all. `StructField.typeRef` keeps
+  the field as written for this.
+- A literal whose expected element type is an unbound `T` (erased to `Any`)
+  takes its type from its elements. Before, every element was rejected as
+  "must have type Any".
+
+### 4. Nothing changes through a shared borrow
+
+Through a `p: T&` parameter, every write compiled: field assignment, compound
+assignment, `p.data[0] = …`, and a call to a `!.` member. Through `self&` only a
+direct field assignment was refused. A `fin` binding could call a `!.` member.
+Method symbols recorded no borrow modes, so method arguments went unchecked
+too.
+
+- `VariableSymbol.sharedBorrow` marks `p&` parameters and `&.` receivers.
+  `checkValueMutable` refuses a write through any path rooted in one, naming
+  the fix. A write behind a pointer is exempt: it changes the pointee, which
+  the pointer's own type governs.
+- Calling a member that changes its receiver needs a receiver that may change,
+  whether the member is concrete or dispatched through a spec. Method arguments
+  get the borrow checks function arguments get.
+- `sharedBorrowedNamesOf` counted a `T!`-typed parameter as shared. Fixed with
+  `isSharedBorrow`.
+- *Conformance checks receivers.* An `!.` member cannot implement a `&.`
+  requirement: a caller holding the value as the spec through a shared borrow
+  would see it change. A member of the type cannot implement a member of a
+  value, nor the reverse. A receiver-free member of a spec impl is no longer
+  callable on a value.
+- *std broke these rules.* `MutableList`, `MutableSet`, `MutableMap` and
+  `MutableSortedMap` declared their mutators `&.`, against their own
+  documentation. `HashMap`'s `put`, `putAll`, `remove`, `_putValue` and
+  `_ensureInsertCapacity` mutated through `&.`. So did `Random.nextInt`,
+  `nextRange` and `nextBool`. All now take `!.`.
+
+### 5. Subscripts are declared, on specs too
+
+- `List`, `MutableList`, `Map` and `MutableMap` declare `oper[]` / `oper[]=`.
+  `xs[i]` on a spec-typed value dispatches the spec's own `index` member. LLVM's
+  convention of calling a member that happened to be named `get` is gone. It
+  also returned an erased word the call site never converted, so
+  `t += xs[i]` on a `List<Int>&` did not assemble.
+- `m[k] = v` on a `MutableMap` was refused ("not an array"). It now works on
+  every target. A `Map<Int, String>` read printed `<value>` on LLVM. It now
+  prints the string.
+- Any pack could be indexed with any key and was typed `Any`. Now a type with
+  no subscript cannot be indexed, and a subscript's operands are checked
+  against the operator's parameters.
+- A map's `oper[]` returned `get`'s `V?` as a `V`. It now panics on a missing
+  key; `get` remains the way to ask.
+
+### 6. Expected types build values
+
+- `return .()` and `return .() * n` never compiled, and neither did
+  `Array<Int>()` or `fin x: Array<Int> = .()`. The owner of an inferred
+  construction was read only off a `Named` type, and `Array(…)` dropped its
+  type arguments. The whole expected type is now recorded
+  (`SymbolTable.inferredConstructionCall`), and the resolver and IR read the
+  same record.
+- `fin s: V = .Text("x")` bound `V.Text` and left `("x")` behind as a
+  statement of its own (`parseInitializer`). The parser now reads only
+  `.(args)` there.
+- A conditional whose branches are all literals takes the type it lands in.
+  For example, a `when` of `1.0`/`2.0` can fill a `Double` field. This is what
+  `std.quantum` needed.
+
+### 7. Diagnostics
+
+- *Decorators are validated against declarations.* `AstValidator` kept a fixed
+  list of decorator names. It now takes the libraries' declared decorators. One
+  from a module the program did not import names the import. A misspelling
+  gets a suggestion, from a new edit-distance helper (`diagnostics/Suggestions.kt`).
+- *Scope members are named with their scope.* An undefined bare name now reads
+  `'five' is part of scope 'Const', use 'Const::five' instead`. A program's own
+  scope member wins over a library provider.
+- *Keywords used as names.* "got the keyword 'scope', which cannot be used as a
+  name" replaces `got 'scope' (SCOPE)`.
+- *Keyword-named free functions are rejected.* They could be declared and
+  never called: `take(3)` is the ownership operator and returned `3`, and
+  `alloc(1)` printed a pointer. `std.functional`'s `take` is now `takeFirst`.
+- *Constructing a spec* says it is a spec and names its implementations,
+  instead of "undefined function 'List' … add an import".
+- *`arr[Int]`* gets its removed-syntax message again; the type-macro message
+  had shadowed it.
+
+### 8. Array members without an import
+
+`[1].isEmpty`, `.isNotEmpty` and `unsafe xs.data` needed
+`import std.container.array`, although a literal builds an `Array` without
+one. `std.container.array` is now `exposed`, as `std.container.tuple` already
+is, and a sequence literal references `Array` as a string literal references
+`String`.
+
+### 9. std modules test themselves
+
+`StdlibSelfTest` compiles each of the 49 std modules on its own and runs its
+`test` blocks, as `azora test std` does. A program reaches only the
+declarations it names, so the rest of a module was never compiled. At the
+start, only 3 tests passed and 25 modules did not compile.
+
+Repaired:
+
+- *Missing imports.* `Clone` was missing in `list`, `map`, `set` and
+  `memory/*`; `Clone`/`Copy` in `traits.core` (a mutual import);
+  `Serializable` in `reactive`.
+- *`Double`s that were `Float`s.* The default real literal is `Float`
+  (`Literals.DEFAULT_FLOAT`), so `ml` and `serializer` now state `Double`.
+- *The serializer could not decode any object with two fields.* A `,` between
+  fields returned `InvalidSyntax`; a refactor had inverted
+  `if separator != ','`.
+- *Capture lists.* Lambdas in `reactive`, `async` and `generators` reached
+  outer locals without the capture lists LAMBDA_CONTEXT_CAPTURE_DIP requires.
+- *`async`* functions dropped their obsolete "unused type tag" parameters.
+- *`time`'s tests* annotated a `Duration` as a `MonotonicInstant`.
+- *`gpu`* relied on overloading, which the language does not have. The bridge
+  functions are renamed; `compile` takes a default `options` argument.
+- *Reflection on library types.* A type's free-standing `oper[]` registered its
+  reflection site under the type's own name. That hid the type's decorators,
+  so `reflect<LinkedHashSet>.hasAnnot<Serializable>` was false. An operator's
+  site is now `Type.index`.
+- *An exposed module compiled on its own* had its always-injected blocks
+  injected a second time (`StdlibInjector.alwaysInjectedFor`).
+
+Still failing: `ai`, `allocator`, `container/tuple`, `parallelism/channel`,
+`parallelism/sync`, `primitive`, `string` (see below).
+
+### 10. Stale fixtures (008)
+
+Each fixture keeps the invariant it tested and adopts the current form:
+
+- `tupleOf` is still pending the tuple work below.
+- `![…]` became a `Set<T>` context, and `Array::fill` became a literal.
+- `impl oper… for` became `oper[] T&.(…)`, in `Tier1PolishTest` and the
+  serializer-deriver fixture. That fixture also used `[].fill` and `panic { … }`.
+- Collection annotations gained their imports (`TypeRefTest`, `Tier1PolishTest`).
+- `(Int, String)` is now asserted to be the tuple type, not a removed spelling.
+- `using` is no longer asserted to be reserved: it opens a receiver context.
+- `scope` is now asserted to be a keyword that opens a namespace.
+- Scope members are reached qualified (`std::abs`).
+- `TraitsTest`'s impl members gained their `&.` receivers.
+- The README's bracketed receivers became `func &.greet()`, and
+  `ReadmeSnippetTest`'s context keys follow the README's current snippets.
+- `@experiemntal` became `@Experiemntal`, since decorators are capitalised.
+- `SymbolTest` reads `println(` in IR.
+
+### Not changed, recorded
+
+- **Decision needed: integer overflow.** `Int` is 32-bit (BASE_SYNTAX §2). The
+  interpreter computes in 64 bits (`2147483647 + 1` is `2147483648`), while LLVM
+  wraps `i32`. An out-of-range literal is accepted (`fin b: Int = 2147483648`).
+  Options are to wrap, to trap, or to trap in debug and wrap in release.
+- Inside a generic body `T` checks as `Any`, so returning a `T?` as `T` is
+  accepted.
+- LLVM still lowers `defer` and `yield` to comments. Several other paths
+  (member, method, index, binary on some types) emit a default value, and
+  WebAssembly emits `0` for variant literals. Each should be an explicit
+  unsupported-target error until it is lowered.
+- Two `[done.!]` exclusive captures of one binding are accepted
+  (`std.concurrency.async.race`).
+- `concurrency::cancel` has an empty body.
+- Channels have two designs: the compiler's `channel()` builtin, which only
+  the interpreter implements, and a `std.parallelism.channel` pack that does
+  not compile. `std.parallelism.sync` names `Mutex` and `Atomic`, which do
+  not exist. These belong to 048/049.
+- GTC §6.3's identity of `(A, B)` with `Tuple<A, B>` is not implemented.
+  `Tuple<…>` is still a monomorphised std pack, so `std/container/tuple.az`'s
+  own tests and the `tupleOf` fixtures fail. *(Done in the follow-up entry.)*
+- `primitive` and `string` cannot be compiled from their own source: the
+  program's declarations take module identities that the compiler's
+  primitive names do not match.
+- An index write through a read-only `T*` is not refused.
+
+### Evidence
+
+- New tests:
+  - `IndexBoundsTest` (4) and `IndexBoundsExecTest` (4);
+  - `SharedBorrowWriteTest` (9) and `GenericSoundnessTest` (8);
+  - `ExpectedTypeConstructionTest` (5);
+  - `SpecSubscriptTest` (4) and `SpecSubscriptExecTest` (2);
+  - `SuggestionsTest` (6);
+  - `StdlibSelfTest` (one case per std module);
+  - two more `StabilityDecoratorTest` cases and one more `ModulesTest` case.
+- Full compiler run before the last three test files: **2,731 tests,
+  62 failing**. 28 of the 83 starting failures pass, nothing that passed
+  fails, and the 7 failures outside the starting set are `StdlibSelfTest`
+  modules that still do not compile. The last three files, 19 tests, pass on
+  their own. AZLS: 91/91.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --continue
+./gradlew :azls:test --offline --console=plain
+./gradlew :compiler:desktopTest --offline --console=plain --tests '*StdlibSelfTest'
+```
+
+## 2026-10-03 (continued) — Tuples are structural, errors reach WebAssembly, collections walk, programs carry only the library they reach
+
+Continues the entry above. Full run before: 2,731 tests, 62 failing. Last full
+run: **2,758 tests, 15 failing**; the three fixed after it pass on their own.
+
+### 1. A tuple is its shape (GTC §6.3/§6.4)
+
+- `(A, B)` and `Tuple<A, B>` are one type. `Tuple` is a `bridge pack` with
+  no fields; `Tuple<A, B>` resolves to `IrType.Tuple`, and fewer than two
+  elements is an error naming the rule.
+- `impl … for Tuple<...T>` is held back and specialised per shape a program
+  uses a member on (`VariadicMonomorphizer.specializeTuples`); `self` in a
+  specialisation is the structural tuple.
+- Display is the same on every backend: strings and primitives natively, enum
+  values as their qualified case, aggregates rendered in IR (`__render_*`).
+- `for (a, b) in pairs` destructures, nested too; `for [a, b]` names the new
+  spelling.
+
+### 2. Failures reach the fallback on every backend
+
+- *WebAssembly had no error transport.* `throw` was `unreachable` and
+  `expr catch fallback` evaluated only `expr`. Now a raised error sets a
+  pending flag and an erased error slot (a flag, so no value can read as "no
+  error"), every call to a failable function checks the flag, and a handler or
+  `catch` expression is a block the failure branches out of. A failing literal
+  factory now reaches its `catch` like a call does.
+- *LLVM never bound the caught error.* `try { … } catch { e -> … }` referenced
+  an undefined `@e`. The handler now binds it before clearing the slot. (`e`
+  is typed `Any`, so natively it prints `<value>`; see the open items.)
+- `std.result` was removed with this error model; `ResultUnwrapOrTest` became
+  `FailableFallbackExecTest`, which runs `catch` on all three backends.
+
+### 3. A program carries only the library it reaches
+
+Mentioning a library type brought every member of it into IR, so every
+program carried `Int_rank`, `Compare_isLess` and the like, and every backend
+lowered them. A library function a target could not lower spoiled programs
+that never called it.
+
+- `IrFunction.isLibrary` marks injected functions and members of library
+  impls. `IrOptimizer.shakeLibrary` removes the unreached ones in every build;
+  the program's own code stays as written until release shaking.
+- Reachability now follows the references IR leaves implicit: a member asked
+  for by name (`x.m`, `x.m()`, `x[i]`, `x[i] = v`, an operator on a pack,
+  `purge`) is paired with every type that can be the receiver, including types
+  only known at run time.
+- *Release builds deleted functions reached through an enum interpolated in a
+  template* (`EnumToString` was skipped). The reference walk is now exhaustive
+  over `IrExpr`, so a new expression kind cannot silently hide calls.
+- LLVM declares an extern only when the module references it, so a bridge the
+  compiler lowers itself (`println` → `puts`) no longer declares `@println`.
+
+### 4. `for x in xs` over the standard collections
+
+`List` and `Set` became packs behind specs, and `for` walked only ranges,
+arrays and iterators, so neither could be looped over. `std` itself counted
+`for i in 0..<xs.size`.
+
+- `spec Indexed<T>` in `std.traits.core` (a `size` and a `get(index)`);
+  `List` and `Set` refine it. A collection that is `Indexed` is walked by
+  position: `size` is re-read before every row, so removing elements ends the
+  walk rather than reading past it, and nested walks share no cursor.
+- The protocol is a spec, not member names: a `Map<Int, V>` has the same
+  spellings and is not walked.
+- *`continue:outer` inside an inner loop repeated the outer row forever* when
+  the outer loop kept an index (`rewriteContinuesForIndex` did not look inside
+  nested loops). Fixed.
+- *A label on `for x in array` named nothing.* `IrStmt.ForEach` had no label:
+  WebAssembly threw and took the whole compilation down, LLVM left the wrong
+  loop, and the interpreter's `break:outer` stopped only the inner loop. The
+  label is now carried and honoured by all three, and IR prints loop labels.
+- LLVM emitted a comment instead of a loop for a `for … in` it could not walk;
+  it now says it cannot, as WebAssembly does.
+
+### 5. Smaller fixes
+
+- `scope vha` mangles to `__vha_sin`, the name of WebAssembly's own helper, so
+  the module defined it twice. The runtime's routines are now `rt.…`: a `.`
+  cannot appear in an Azora name.
+- An undefined bare name that a scope of an *imported* module declares now
+  reads `'area' is part of scope 'shapes', use 'shapes::area' instead`
+  (`StdlibInjector.importedScopeMembers`, replacing an unused lookup that
+  mapped the other way).
+- `requires [A, B]` (the old spelling) says `write 'requires (A, B)'`.
+- The filtered IR printer could not select a `fin` or `let` global.
+
+### 6. Stale fixtures
+
+Each keeps its subject and states the rule as it now stands: `std.result` →
+failables; `import std.math::abs` is the item-import form and `std.*` the slip;
+the collections live in `std.container.{list,map,set}` and need their imports;
+`std.core` predefines `Target` (was `BridgeTarget`) and `@Derive`, and no
+longer `HasDeco`/`DecoMetadata`; `std` is no longer a scope, so reflection and
+`println` are bare; `requires (A, B)`; a library fixture replaces the
+serializer's now-private one; the scalar LLVM golden gained checked
+allocation, the 64-bit range step check and the flushing abort, and was
+verified by running it; IR comparisons print only the file's own items.
+
+### Open
+
+- **Decision needed: anonymous `Var<A, B, C>`.** `CollectionCtorTest` uses it,
+  `IrType.Variant` and `IrType.resolve` remnants exist, but no DIP describes it
+  and the front end rejects it (failing since the 2026-09-10 baseline). Tagged
+  unions are `variant enum`. Implement it or retire the test.
+- The caught error in `catch { e -> … }` is typed `Any`. A typed binding (the
+  error set) needs errors to travel as values of that set rather than as case
+  names.
+- `RoboticsEngineTest` reads `azora-engine/proposals/robotics.az`, which uses
+  the pre-rename `realm` keyword; the fixture moved to the engine repository
+  and needs migrating there.
+- Still failing: `ai`, `allocator`, `primitive`, `string`, `parallelism/channel`
+  and `parallelism/sync` self-tests; `AiMlStdlibTest`; the channel examples
+  (048/049); `SerializationDeriverTest`'s primitive-codec fixture (rewrite
+  against the real `std.serializer`).
+
+### Evidence
+
+- New tests: `FailableFallbackExecTest` (3), `IndexedWalkExecTest` (4),
+  `LabelledArrayLoopExecTest` (3), one more `OwnershipTest` case, and the
+  `StdlibInjectionTest`/`ScopeQualifiedAccessTest` migrations above.
+
+```sh
+./gradlew :compiler:desktopTest --offline --console=plain --continue
+```
+

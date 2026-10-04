@@ -94,11 +94,35 @@ class StabilityDecoratorTest {
     }
 
     @Test fun unknownDecoratorIsRejected() {
+        // A decorator is capitalised (a lowercase `@name` is a macro), so the
+        // misspelling worth catching is of the capitalised name.
         val e = errors("""
             import std.io
-            @experiemntal(since: "0.1")
+            @Experiemntal(since: "0.1")
             func f(): Int { return 1 }
         """.trimIndent())
-        assertTrue(e.any { it.contains("unknown decorator") && it.contains("@experiemntal") }, e.toString())
+        assertTrue(
+            e.any { "unknown decorator '@Experiemntal'" in it && "did you mean '@Experimental'?" in it },
+            e.toString(),
+        )
+    }
+
+    @Test fun aDecoratorNothingDeclaresSuggestsNothing() {
+        val e = errors("""
+            @Frobnicate
+            func f(): Int { return 1 }
+        """.trimIndent())
+        assertTrue(e.any { it == "line 1: unknown decorator '@Frobnicate'" }, e.toString())
+    }
+
+    @Test fun aLibraryDecoratorNamesTheImportThatBringsItIn() {
+        val e = errors("""
+            @Serializable
+            pack Point { fin x: Int = 0 }
+        """.trimIndent())
+        assertTrue(
+            e.any { "'@Serializable' is provided by 'std.serializer': add 'import std.serializer::Serializable'" in it },
+            e.toString(),
+        )
     }
 }

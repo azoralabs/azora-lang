@@ -37,6 +37,8 @@
 @Supress(.Unused)
 module std.container.list
 
+import std.traits::Clone
+
 /**
  * Read-only behavior shared by every list implementation.
  *
@@ -46,7 +48,7 @@ module std.container.list
  * @generic T The element type.
  */
 @Experimental(since: "0.1")
-spec List<T> {
+spec List<T> : Indexed<T> {
     /** Number of elements. */
     prop &.size: Int
 
@@ -67,6 +69,9 @@ spec List<T> {
 
     /** Returns the element at `index`. Asserts on an out-of-bounds index. */
     func &.get(index: Int): T
+
+    /** The element at `index`, read as `list[index]`. Asserts on an out-of-bounds index. */
+    oper[] &.(index: Int): T
 
     /** Returns whether `element` is present. */
     func &.contains(element: T): Bool
@@ -118,7 +123,7 @@ derive Clone for List
  * Mutation behavior implemented by mutable list packs.
  *
  * Mutation always receives `self!`. Implementing this spec does not
- * weaken a `ref List<T>` view: callers holding only a shared reference can
+ * weaken a `List<T>&` view: callers holding only a shared borrow can
  * still use only read operations.
  *
  * @generic T The element type.
@@ -126,25 +131,28 @@ derive Clone for List
 @Experimental(since: "0.1")
 spec MutableList<T> : List<T> {
     /** Appends `element` to the end. */
-    func &.add(element: T)
+    func !.add(element: T)
+
+    /** Replaces the element at `index`, written `list[index] = element`. */
+    oper[]= !.(index: Int, element: T)
 
     /** Inserts `element` at `index`, shifting the suffix right. */
-    func &.insert(index: Int, element: T)
+    func !.insert(index: Int, element: T)
 
     /** Replaces the element at `index`. */
-    func &.set(index: Int, element: T)
+    func !.set(index: Int, element: T)
 
     /** Removes and returns the element at `index`. */
-    func &.removeAt(index: Int): T
+    func !.removeAt(index: Int): T
 
     /** Removes and returns the first element. */
-    func &.removeFirst(): T
+    func !.removeFirst(): T
 
     /** Removes and returns the last element. */
-    func &.removeLast(): T
+    func !.removeLast(): T
 
     /** Removes every element while retaining reusable internal capacity. */
-    func &.clear()
+    func !.clear()
 
     /** `[a, b, c]` where a `MutableList<T>` is expected: an `ArrayList<T>` in source order. */
     literal [...elements: T]: Self {

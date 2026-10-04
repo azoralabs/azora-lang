@@ -31,7 +31,7 @@ class AiMlStdlibTest {
                 import std.io
 
                 func main() {
-                    var chat = conversation()
+                    var chat = conversation
                     chat.system("be concise")
                     chat.user("hello")
                     println(chat.size)

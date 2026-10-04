@@ -47,9 +47,8 @@ class CollectionCtorTest {
 
     @Test fun tup_ctor() = assertEquals("1\na", run("""
         import std.io
-        import std.container::*
         func main() {
-            fin t = tupleOf(1, "a", 2.5)
+            fin t = (1, "a", 2.5)
             println(t.0)
             println(t.1)
         }

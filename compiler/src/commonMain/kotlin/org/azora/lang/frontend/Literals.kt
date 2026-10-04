@@ -63,3 +63,20 @@ object Literals {
      */
     const val DEFAULT_FLOAT = "Float"
 }
+
+/**
+ * `Array<T>(a, b)` as the literal it stands for, with `Array<T>` as the
+ * literal's context: the type arguments say what an empty one holds, and what
+ * width its elements are read at.
+ */
+fun arrayCallLiteral(call: Expr.Call): Expr.ArrayLiteral = Expr.ArrayLiteral(
+    call.args,
+    call.line,
+    call.column,
+    call.length,
+    contextualType = call.typeArgs.takeIf { it.isNotEmpty() }?.let { TypeRef.Named(call.callee, it) },
+)
+
+/** `Tuple<A, B>(a, b)` as the tuple literal it stands for, or null for fewer than two elements. */
+fun tupleCallLiteral(call: Expr.Call): Expr.TupleLit? =
+    if (call.args.size < 2) null else Expr.TupleLit(call.args, call.line, call.column)

@@ -317,7 +317,7 @@ class Feature003SyntaxTest {
                 }
             }
             func main() {
-                println(abs(-3))
+                println(std::abs(-3))
             }
         """.trimIndent()))
     }

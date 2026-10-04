@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.frontend.ParamModifier
+import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.Literals
@@ -64,6 +65,46 @@ import org.azora.lang.frontend.VariadicFieldTemplate
  */
 internal object VariadicMonomorphizer {
 
+    /**
+     * The name a tuple of [shape]'s members are registered under: the same
+     * mangling a monomorphised pack's are, so `(Int, String)`'s `pretty` is
+     * `__Tuple_Int_String_pretty`.
+     */
+    fun tupleMemberOwner(shape: List<TypeRef>): String = MonoNames.mangle(Intrinsics.TUPLE, shape)
+
+    /**
+     * The program with `impl … for Tuple<...T>` specialized for each of [shapes].
+     *
+     * Each specialization's `Self` is the structural tuple, and reflection over
+     * its fields walks its positions `0`, `1`, … - which is what lets one
+     * library implementation serve every tuple a program writes.
+     */
+    fun specializeTuples(program: Program, shapes: Collection<List<TypeRef>>): Program {
+        if (shapes.isEmpty() || program.tupleTemplates.isEmpty()) return program
+        // The family is the `bridge pack Tuple<...T>` the templates were written
+        // for; what the specialization needs of it is its one variadic parameter,
+        // which the templates carry whether or not the program named the pack.
+        val variadic = program.tupleTemplates.firstNotNullOfOrNull { it.variadicParam } ?: return program
+        val family = TopLevel.Pack(Intrinsics.TUPLE, emptyList(), listOf(variadic), line = 0, variadicParam = variadic)
+        val ctx = MonoContext(
+            emptyMap(), emptyMap(), emptyMap(), emptyMap(), emptyMap(), emptyMap(), emptyList(),
+            program.scopeTypeNamespaces, emptyMap(), emptyMap(),
+        )
+        val existing = program.items.mapNotNullTo(mutableSetOf()) { (it as? TopLevel.Impl)?.typeName }
+        val fresh = shapes.distinct().filter { tupleMemberOwner(it) !in existing }
+        val specialized = fresh.flatMap { shape ->
+            val fields = shape.mapIndexed { index, type -> PackField(index.toString(), type, mutable = false, default = null) }
+            ctx.specializeImpls(
+                Intrinsics.TUPLE, tupleMemberOwner(shape), TypeRef.Tuple(shape), fields, shape, family,
+                program.tupleTemplates,
+            )
+        }
+        return program.copy(
+            items = program.items + specialized,
+            tupleShapes = program.tupleShapes + fresh.associateBy(::tupleMemberOwner),
+        )
+    }
+
     fun monomorphize(program: Program): Program {
         val packTemplates = linkedMapOf<String, TopLevel.Pack>()
         val funcTemplates = linkedMapOf<String, TopLevel.Func>()
@@ -78,7 +119,10 @@ internal object VariadicMonomorphizer {
                     // a variadic pack generates fields from its element types, and a pack
                     // with conditional fields has a different layout per binding. An
                     // ordinary generic still erases to one struct, exactly as before.
-                    if (item.variadicParam != null || item.fields.any { it.condition != null }) {
+                    // `Tuple<...T>` is the compiler's structural tuple, so there is no
+                    // pack to materialise for a shape; any other variadic pack, a
+                    // bridge one included, is specialised per instantiation.
+                    if (!isStructuralTuple(item) && (item.variadicParam != null || item.fields.any { it.condition != null })) {
                         packTemplates[item.name] = item
                     }
                 }
@@ -105,6 +149,21 @@ internal object VariadicMonomorphizer {
             if (item.typeName in packTemplates) {
                 implTemplates.getOrPut(item.typeName) { mutableListOf() }.add(item)
             }
+        }
+        // `impl … for Tuple<...T>` waits for the shapes type resolution finds.
+        val families = program.items.filterIsInstance<TopLevel.Pack>()
+            .filter(::isStructuralTuple)
+            .mapTo(mutableSetOf()) { it.name }
+        val heldBack = program.items.filterIsInstance<TopLevel.Impl>().filter { it.typeName in families }
+        if (heldBack.isNotEmpty()) {
+            return monomorphize(
+                program.copy(
+                    items = program.items.filterNot { it is TopLevel.Impl && it.typeName in families },
+                    // Monomorphization runs once more after re-injection, which
+                    // brings the same impls back; they are one template each.
+                    tupleTemplates = (program.tupleTemplates + heldBack).distinct(),
+                ),
+            )
         }
         val typeMacroRules = program.typeMacroRules
         if (packTemplates.isEmpty() && funcTemplates.isEmpty() && typeMacroRules.isEmpty()) return program
@@ -167,6 +226,10 @@ internal object VariadicMonomorphizer {
             scopeTypeNamespaces = program.scopeTypeNamespaces + ctx.generatedPackNamespaces,
         )
     }
+
+    /** The library's `bridge pack Tuple<...T>`, which names the compiler's structural tuple. */
+    private fun isStructuralTuple(pack: TopLevel.Pack): Boolean =
+        pack.isBridge && pack.variadicParam != null && pack.name == Intrinsics.TUPLE
 
     private fun explicitReturnType(decl: FuncDecl): TypeRef? =
         (decl.returnType as? TypeAnnotation.Explicit)?.ref
@@ -776,17 +839,37 @@ private class MonoContext(
         val templateName = packTemplates.keys.firstOrNull { mangled.startsWith("__${it}_") }
             ?: return@run emptyList()
         val struct = packs[mangled] ?: return@run emptyList()
+        specializeImpls(
+            templateName, mangled, TypeRef.Named(mangled), struct.fields, arguments,
+            packTemplates[templateName], implTemplates[templateName].orEmpty(),
+        )
+    }
+
+    /**
+     * [templates] - the impls of [templateName] - for one specialization: their
+     * members registered under [owner], with `Self` as [selfType] and reflection
+     * over [fields].
+     */
+    fun specializeImpls(
+        templateName: String,
+        owner: String,
+        selfType: TypeRef,
+        fields: List<PackField>,
+        arguments: List<TypeRef>,
+        packTemplate: TopLevel.Pack?,
+        templates: List<TopLevel.Impl>,
+    ): List<TopLevel.Impl> = run {
+        val mangled = owner
         // The specialization binds the pack's parameters, and its impl's members are
         // written against those same names - `ctor (all: T)` on `Vec<Int, 3>` takes an
         // Int. Without this the member would keep the template's `T`, which names
         // nothing once the pack is concrete.
-        val packTemplate = packTemplates[templateName]
         // The pack's own name binds to this specialization as well: the parser has
         // already turned `Self` into `Vec` by the time an impl gets here, so a member
         // returning `Self` must still land on `Vec<Float, 2>` and not the template.
         val argumentBindings = packTemplate?.typeParams.orEmpty().zip(arguments).toMap() +
-            (templateName to TypeRef.Named(mangled)) +
-            ("Self" to TypeRef.Named(mangled))
+            (templateName to selfType) +
+            ("Self" to selfType)
         // A member's own `where` narrows which specializations have it: `cross` exists
         // on a 3-vector and nowhere else, so it is not emitted where its clause fails.
         val constraintBindings = ConstraintEvaluator.bindingsFor(
@@ -794,12 +877,11 @@ private class MonoContext(
             packTemplate?.variadicParam,
             arguments,
         )
-        implTemplates[templateName].orEmpty().map { template ->
+        templates.map { template ->
             val methods = template.methods.filterNot { method ->
                 ConstraintEvaluator.evaluate(method.whereClause, constraintBindings, null) is
                     ConstraintEvaluator.Outcome.Violated
             }.map { method ->
-                val selfType = TypeRef.Named(mangled)
                 // A member's own type parameters shadow the pack's - but only the ones
                 // it really declares: the impl's parameters are carried on its members
                 // too, and those are exactly what the specialization binds.
@@ -829,7 +911,7 @@ private class MonoContext(
                         it.copy(type = substituteParams(substituteSelf(it.type, selfType), bindings))
                     },
                     returnType = substituteParams(substituteSelf(method.returnType, selfType), bindings),
-                    body = expandReflectedFields(method.body, struct.fields),
+                    body = expandReflectedFields(method.body, fields),
                     typeParams = method.typeParams.filterNot {
                         it == template.variadicParam || it in argumentBindings
                     },
@@ -847,7 +929,7 @@ private class MonoContext(
             template.copy(
                 typeName = mangled,
                 methods = methods,
-                traitArgs = template.traitArgs.map { substituteSelf(it, TypeRef.Named(mangled)) },
+                traitArgs = template.traitArgs.map { substituteSelf(it, selfType) },
                 typeParams = emptyList(),
                 variadicParam = null,
             )
@@ -1895,14 +1977,27 @@ private class MonoContext(
      * Without that, nesting accumulates separators (`..._u64__Vec_Double_3`) and
      * the symbol no longer matches the one ABI every backend reads.
      */
-    private fun mangleTemplate(templateName: String, args: List<TypeRef>): String =
+    private fun mangleTemplate(templateName: String, args: List<TypeRef>): String = MonoNames.mangle(templateName, args)
+
+    private fun canonicalSymbol(raw: String): String = MonoNames.canonicalSymbol(raw)
+
+    private fun mangleType(type: TypeRef): String = MonoNames.mangleType(type)
+}
+
+/**
+ * How a specialization is named. One authority, so a tuple's members are found
+ * under the name they were specialized under, by whoever looks them up.
+ */
+internal object MonoNames {
+    /** `Tuple` with `[Int, String]` is `__Tuple_Int_String`. */
+    fun mangle(templateName: String, args: List<TypeRef>): String =
         canonicalSymbol(templateName + args.joinToString("") { "_" + mangleType(it) })
 
     /** [raw] with one leading `__` and no repeated separators anywhere after it. */
-    private fun canonicalSymbol(raw: String): String =
+    fun canonicalSymbol(raw: String): String =
         "__" + raw.trimStart('_').replace(Regex("_{2,}"), "_")
 
-    private fun mangleType(type: TypeRef): String = when (type) {
+    fun mangleType(type: TypeRef): String = when (type) {
         is TypeRef.Named -> sanitize(type.name) + if (type.args.isEmpty()) "" else type.args.joinToString("_", "_") { mangleType(it) }
         is TypeRef.Array -> "Array_" + mangleType(type.element)
         is TypeRef.Map -> "Map_" + mangleType(type.key) + "_" + mangleType(type.value)

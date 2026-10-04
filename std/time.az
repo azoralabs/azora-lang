@@ -640,7 +640,7 @@ pack DurationSerializer
 @Experimental(since: "0.1")
 impl Serializer<Duration> for DurationSerializer {
     func &.toSerialValue(value: Duration&): SerialValue ?! SerializationError {
-        var fields = List<SerialField>()
+        var fields: ArrayList<SerialField> = .()
         fields.add(SerialField("seconds", SerialValue.Number(value.seconds as String)))
         fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(value.nanosecondAdjustment as String)))
         return SerialValue.Object(fields)
@@ -967,12 +967,12 @@ test "ISO instant round trip preserves nanoseconds" {
 }
 
 test "monotonic elapsed rejects reversed readings" {
-    fin elapsed: MonotonicInstant = .(10).elapsedSince(MonotonicInstant(20)) catch Duration(-1)
+    fin elapsed: Duration = MonotonicInstant(10).elapsedSince(MonotonicInstant(20)) catch Duration(-1)
     assert elapsed.seconds == -1 panic "reversed monotonic readings must fail"
 }
 
 test "monotonic elapsed returns exact duration" {
-    fin elapsed: MonotonicInstant = .(2000000050).elapsedSince(MonotonicInstant(1000000000)) catch Duration(-1)
+    fin elapsed: Duration = MonotonicInstant(2000000050).elapsedSince(MonotonicInstant(1000000000)) catch Duration(-1)
     assert elapsed.seconds == 1 && elapsed.nanosecondAdjustment == 50 panic "monotonic elapsed time must be exact"
 }
 

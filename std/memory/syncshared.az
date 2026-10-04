@@ -31,6 +31,8 @@
 @Supress(.Unused)
 module std.memory.syncshared
 
+import std.traits::Clone
+
 /**
  * A reference-counted pointer to a `T`, countable across threads.
  *

@@ -373,7 +373,7 @@ class SymbolTest {
         val ir = result.ir.prettyPrint()
         // Local x is mangled (shadows global), ::x resolves to global x
         // The two println calls should reference different variable names
-        val lines = ir.lines().filter { it.trim().startsWith("__std_println(") }
+        val lines = ir.lines().filter { it.trim().startsWith("println(") }
         assertEquals(2, lines.size, "Should have 2 println calls, got: $lines")
         assertNotEquals(lines[0], lines[1], "Local and upper scope should resolve to different names in IR:\n$ir")
     }

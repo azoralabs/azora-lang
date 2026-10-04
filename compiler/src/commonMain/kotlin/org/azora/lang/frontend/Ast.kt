@@ -397,6 +397,11 @@ sealed class Expr {
         override val line: Int,
         override val column: Int = 0,
         override val length: Int = 0,
+        /**
+         * The tuple type the position expects, which an element literal takes
+         * its width from: `(1, 2.0)` where a `(Long, Double)` is wanted.
+         */
+        var contextualType: TypeRef? = null,
     ) : Expr()
 
     /** Variant literal `var(a, b, c)` - constructs a `Var<...>` holding exactly one of the given
@@ -3201,6 +3206,18 @@ data class Program(
      * unit's own declarations shadowing the library.
      */
     val injectedNames: Set<String> = emptySet(),
+    /**
+     * `impl … for Tuple<...T>` - behaviour for every tuple, held back from
+     * [items]. A tuple is structural, so these are specialized for each shape a
+     * program uses a member on, once type resolution has said which shapes those
+     * are (`VariadicMonomorphizer.specializeTuples`).
+     */
+    val tupleTemplates: List<TopLevel.Impl> = emptyList(),
+    /**
+     * The tuple each specialization of [tupleTemplates] is for, by the name its
+     * impl carries: its `self` is that structural tuple, not a pack of the name.
+     */
+    val tupleShapes: Map<String, List<TypeRef>> = emptyMap(),
 ) {
     /** Convenience - returns only the resolved function declarations. */
     val functions: List<FuncDecl> get() = items.filterIsInstance<TopLevel.Func>().map { it.decl }

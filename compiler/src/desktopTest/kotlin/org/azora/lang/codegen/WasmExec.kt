@@ -94,6 +94,9 @@ object WasmExec {
 
     fun run(source: String): String = runWat(compile(source))
 
+    /** Compiles and runs a program that must trap; returns what it printed first. */
+    fun runExpectingTrap(source: String, trap: String = "unreachable"): String = runWatExpectingTrap(compile(source), trap)
+
     /** Execute emitted WAT independently of standard-library loading. */
     fun runWat(wat: String): String = execute(wat) { exit, stdout, stderr ->
         if (exit != 0) fail("node exited non-zero\n--- stderr ---\n$stderr\n--- WAT ---\n$wat")

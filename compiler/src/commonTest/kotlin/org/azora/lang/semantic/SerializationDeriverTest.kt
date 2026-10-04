@@ -10,15 +10,15 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.CompilationResult
+import org.azora.lang.Compiler
 import org.azora.lang.backend.IrInterpreter
-import org.azora.lang.backend.LlvmCodegen
-import org.azora.lang.backend.WasmCodegen
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.TopLevel
-import org.azora.lang.ir.IrGenerator
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SerializationDeriverTest {
@@ -183,131 +183,32 @@ class SerializationDeriverTest {
         })
     }
 
+    /**
+     * The codec the deriver writes for every kind of field - text, numbers,
+     * flags, lists, sets, maps, optionals, nested packs, and renamed, required
+     * and ignored fields - compiles against the real `std.serializer` and
+     * round-trips.
+     *
+     * This ran against a hand-written imitation of the library, which the
+     * generator outgrew; against the real one, a `Set` field indexed a type with
+     * no subscript, a `Map` field read `.length`, decoding constructed the `List`
+     * spec, and `encodeDefaults: false` compared a nested pack that has no `==`.
+     */
     @Test fun generatedPrimitiveCodecBodiesPassSemanticAnalysis() {
-        val source = """
-            annot @Derive for .Annot {
-                fin generator: String
-                fin role: String
-                fin provider: String = ""
-                fin conversionProvider: String = ""
-                fin providerModule: String = ""
-                fin conversionModule: String = ""
-            }
-            @Derive(generator: "serializer", role: "all", provider: "std", conversionProvider: "convert")
-            annot @Serializable for .Pack {
-                fin ignoreUnknownFields: Bool = false
-                fin encodeDefaults: Bool = true
-            }
-            @Derive(generator: "serializer", role: "azon", provider: "std", conversionProvider: "convert")
-            annot @AzonSerializable for .Pack {
-                fin ignoreUnknownFields: Bool = false
-                fin encodeDefaults: Bool = true
-            }
-            @Derive(generator: "serializer", role: "name")
-            annot @SerialName for .Field { fin value: String = "" }
-            @Derive(generator: "serializer", role: "ignore")
-            annot @SerialIgnore for .Field
-            @Derive(generator: "serializer", role: "required")
-            annot @SerialRequired for .Field
+        val result = Compiler().compile(serializedUsers, release = false)
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals(serializedUsersOutput, IrInterpreter().interpret(result.ir).trimEnd())
+        assertTrue("User_toSerialValue" in result.llvm, "LLVM lowers the generated codec")
+    }
 
-            error SerializationError {
-                InvalidNumber,
-                UnexpectedType,
-                DuplicateField,
-                MissingField,
-                UnknownField
-            }
-            pack SerializerOptions
-            pack List<T> {
-                var data: T* = alloc T*() * 16
-                var size: Int = 0
-            }
-            impl List<T> {
-                func !.add(element: T): Unit {
-                    self.data[self.size] = element
-                    self.size += 1
-                }
-            }
-            impl oper[] for List<T> { self&, index -> return self.data[index] }
-            pack Set<T> {
-                var data: T* = alloc T*() * 16
-                var size: Int = 0
-            }
-            impl Set<T> {
-                func !.add(element: T): Bool {
-                    self.data[self.size] = element
-                    self.size += 1
-                    return true
-                }
-            }
-            impl oper[] for Set<T> { self&, index -> return self.data[index] }
-            pack Map<K, V> {
-                var keysData: K* = alloc K*() * 16
-                var valuesData: V* = alloc V*() * 16
-                var size: Int = 0
-            }
-            impl Map<K, V> {
-                func !.put(key: K, value: V): Unit {
-                    self.keysData[self.size] = key
-                    self.valuesData[self.size] = value
-                    self.size += 1
-                }
-                func &.keys(): Array<K> {
-                    var result = [].fill<K>(self.size)
-                    var index = 0
-                    while index < self.size {
-                        result[index] = self.keysData[index]
-                        index += 1
-                    }
-                    return result
-                }
-            }
-            impl oper[] for Map<K, V> { self&, key ->
-                var index = 0
-                while index < self.size {
-                    if self.keysData[index] == key { return self.valuesData[index] }
-                    index += 1
-                }
-                panic { "missing map key" }
-            }
-            pack SerialField {
-                fin name: String
-                fin value: SerialValue
-            }
-            variant enum SerialValue {
-                Null
-                Bool(Bool)
-                Number(String)
-                Text(String)
-                Array(List<SerialValue>)
-                Object(List<SerialField>)
-            }
-
-            func std__serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
-                return fields[index]
-            }
-            func std__serialFieldCount(fields: List<SerialField>&): Int { return fields.size }
-            func std__serialValueAt(values: List<SerialValue>&, index: Int): SerialValue { return values[index] }
-            func std__serialAsText(value: SerialValue&): String ?! SerializationError {
-                when value {
-                    SerialValue.Text(text) -> { return text }
-                    else -> { return .UnexpectedType }
-                }
-            }
-            func std__serialAsBool(value: SerialValue&): Bool ?! SerializationError {
-                when value {
-                    SerialValue.Bool(boolean) -> { return boolean }
-                    else -> { return .UnexpectedType }
-                }
-            }
-            func std__serialAsChar(value: SerialValue&): Char ?! SerializationError { return 'x' }
-            func std__serialAsLong(value: SerialValue&): Long ?! SerializationError { return Long(7) }
-            func std__serialAsInt(value: SerialValue&): Int ?! SerializationError { return 7 }
-            func std__serialAsDouble(value: SerialValue&): Double ?! SerializationError { return 0.0 }
-            func std__convert__toString(value: Any): String { return "" }
-            func std__encodeSerialValue(value: SerialValue&, options: SerializerOptions&): String ?! SerializationError { return "" }
-            func std__decodeSerialValue(input: String, options: SerializerOptions&): SerialValue ?! SerializationError { return SerialValue.Null }
-            func std__println(value: Any): Unit {}
+    companion object {
+        /** Exercises each field kind the serializer generates code for. */
+        val serializedUsers = """
+            import std.io
+            import std.serializer
+            import std.container.list
+            import std.container.set
+            import std.container.map
 
             @Serializable
             pack Address { fin city: String = "" }
@@ -317,9 +218,9 @@ class SerializationDeriverTest {
                 @SerialName("display_name") fin name: String = ""
                 fin age: Int = 0
                 @SerialRequired fin enabled: Bool = true
-                fin tags: List<String> = List()
-                fin scores: Set<Int> = Set()
-                fin metrics: Map<String, Int> = Map()
+                fin tags: List<String> = []
+                fin scores: Set<Int> = []
+                fin metrics: Map<String, Int> = [:]
                 fin nickname: String? = null
                 fin address: Address = Address()
                 @SerialIgnore fin password: String = ""
@@ -328,90 +229,77 @@ class SerializationDeriverTest {
             @Serializable(ignoreUnknownFields: true, encodeDefaults: true)
             pack LenientUser { fin name: String = "" }
 
+            func fallback(name: String): User = User(name, -1, false, [], [], [:], null, Address(), "fallback")
+
             func main() {
                 fin prototype = User()
-                var tags = List()
+                var tags: MutableList<String> = []
                 tags.add("compiler")
-                var scores = Set()
+                var scores: MutableSet<Int> = []
                 scores.add(7)
-                var metrics = Map()
-                metrics.put("builds", 7)
+                var metrics: MutableMap<String, Int> = ["builds": 7]
                 fin value = User("Alice", 0, true, tags, scores, metrics, "ally", Address("Bucharest"), "secret")
                 fin tree = prototype.toSerialValue(value) catch SerialValue.Null
                 when tree {
                     SerialValue.Object(fields) -> {
-                        std__println(std__serialFieldCount(fields))
-                        fin first = std__serialFieldAt(fields, 0)
-                        std__println(first.name)
+                        println(fields.size)
+                        fin first = fields[0]
+                        println(first.name)
                         when first.value {
-                            SerialValue.Text(text) -> { std__println(text) }
-                            else -> { std__println("wrong-value") }
+                            SerialValue.Text(text) -> { println(text) }
+                            else -> { println("wrong-value") }
                         }
                     }
-                    else -> { std__println("wrong-tree") }
+                    else -> { println("wrong-tree") }
                 }
 
-                var validFields = List()
+                var validFields: MutableList<SerialField> = []
                 validFields.add(SerialField("display_name", SerialValue.Text("Bob")))
                 validFields.add(SerialField("age", SerialValue.Number("7")))
                 validFields.add(SerialField("enabled", SerialValue.Bool(false)))
-                var encodedTags = List()
+                var encodedTags: MutableList<SerialValue> = []
                 encodedTags.add(SerialValue.Text("language"))
                 validFields.add(SerialField("tags", SerialValue.Array(encodedTags)))
-                var encodedScores = List()
+                var encodedScores: MutableList<SerialValue> = []
                 encodedScores.add(SerialValue.Number("7"))
                 validFields.add(SerialField("scores", SerialValue.Array(encodedScores)))
-                var encodedMetrics = List()
+                var encodedMetrics: MutableList<SerialField> = []
                 encodedMetrics.add(SerialField("builds", SerialValue.Number("7")))
                 validFields.add(SerialField("metrics", SerialValue.Object(encodedMetrics)))
                 validFields.add(SerialField("nickname", SerialValue.Text("Bobby")))
-                var encodedAddress = List()
+                var encodedAddress: MutableList<SerialField> = []
                 encodedAddress.add(SerialField("city", SerialValue.Text("Cluj")))
                 validFields.add(SerialField("address", SerialValue.Object(encodedAddress)))
-                fin decoded = prototype.fromSerialValue(SerialValue.Object(validFields)) catch User("decode-error", -1, false, List(), Set(), Map(), null, Address(), "fallback")
-                std__println(decoded.name)
-                std__println(decoded.age)
-                std__println(decoded.enabled)
-                std__println(decoded.tags.size)
-                std__println(decoded.scores.size)
-                std__println(decoded.metrics.size)
-                std__println(decoded.nickname)
-                std__println(decoded.address.city)
-                std__println(decoded.password)
+                fin decoded = prototype.fromSerialValue(SerialValue.Object(validFields)) catch fallback("decode-error")
+                println(decoded.name)
+                println(decoded.age)
+                println(decoded.enabled)
+                println(decoded.tags.size)
+                println(decoded.scores.size)
+                println(decoded.metrics.size)
+                println(decoded.nickname)
+                println(decoded.address.city)
+                println(decoded.password)
 
                 validFields.add(SerialField("extra", SerialValue.Text("no")))
-                fin rejected = prototype.fromSerialValue(SerialValue.Object(validFields)) catch User("unknown-rejected", -1, false, List(), Set(), Map(), null, Address(), "fallback")
-                std__println(rejected.name)
+                fin rejected = prototype.fromSerialValue(SerialValue.Object(validFields)) catch fallback("unknown-rejected")
+                println(rejected.name)
 
-                var missingFields = List()
+                var missingFields: MutableList<SerialField> = []
                 missingFields.add(SerialField("display_name", SerialValue.Text("No flag")))
-                fin missing = prototype.fromSerialValue(SerialValue.Object(missingFields)) catch User("required-missing", -1, false, List(), Set(), Map(), null, Address(), "fallback")
-                std__println(missing.name)
+                fin missing = prototype.fromSerialValue(SerialValue.Object(missingFields)) catch fallback("required-missing")
+                println(missing.name)
 
                 fin lenientPrototype = LenientUser()
-                var lenientFields = List()
+                var lenientFields: MutableList<SerialField> = []
                 lenientFields.add(SerialField("name", SerialValue.Text("Accepted")))
                 lenientFields.add(SerialField("extra", SerialValue.Text("ignored")))
                 fin lenient = lenientPrototype.fromSerialValue(SerialValue.Object(lenientFields)) catch LenientUser("lenient-error")
-                std__println(lenient.name)
+                println(lenient.name)
             }
         """.trimIndent()
-        // This fixture deliberately spells the already-lowered scope names that
-        // compiler-generated serializer bodies consume.
-        val parsed = Parser(Lexer(source).tokenize(), internalSource = true).parse()
-        val derived = SerializationDeriver.derive(parsed)
-        assertTrue(derived.errors.isEmpty(), derived.errors.toString())
 
-        val semantic = SemanticPipeline().analyze(derived.program)
-        assertTrue(semantic.errors.isEmpty(), semantic.errors.toString())
-
-        val ir = IrGenerator(semantic.symbolTable).generate(semantic.program)
-        val output = IrInterpreter().interpret(ir)
-        assertEquals(
-            "7\ndisplay_name\nAlice\nBob\n7\nfalse\n1\n1\n1\nBobby\nCluj\n\nunknown-rejected\nrequired-missing\nAccepted",
-            output,
-        )
-        assertTrue("User_toSerialValue" in WasmCodegen().generate(ir))
-        assertTrue("User_toSerialValue" in LlvmCodegen().generate(ir))
+        const val serializedUsersOutput =
+            "7\ndisplay_name\nAlice\nBob\n7\nfalse\n1\n1\n1\nBobby\nCluj\n\nunknown-rejected\nrequired-missing\nAccepted"
     }
 }

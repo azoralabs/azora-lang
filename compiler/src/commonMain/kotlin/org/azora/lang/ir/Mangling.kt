@@ -73,6 +73,27 @@ object Intrinsics {
      * one is the compiler's job.
      */
     const val ARRAY = "Array"
+
+    /**
+     * The tuple type, as `Tuple<A, B>` names it: the same type `(A, B)` writes
+     * (GTC §6.3). The compiler owns its layout and positional members; the
+     * library declares it as a `bridge pack` and layers behaviour on it.
+     */
+    const val TUPLE = "Tuple"
+
+    /**
+     * `a ?? b`. A call in form only: every backend evaluates `a` once and `b`
+     * only when `a` is null, as `&&` evaluates its right side only when needed.
+     */
+    const val NULL_COALESCE = "__nullCoalesce"
+
+    /**
+     * The spec `for … in` walks by position (`std.traits.core`): a `size` and
+     * a `get(index)`. A collection refining it - `List`, `Set` - is walked by
+     * index; a `Map` with an `Int` key is not, though its members share the
+     * spelling, because it does not say it is one.
+     */
+    const val INDEXED = "Indexed"
     const val CANCEL = "concurrency_cancel"
 
     /**
@@ -97,6 +118,24 @@ object Intrinsics {
  */
 fun sourceSymbol(symbol: String): String =
     if (!symbol.startsWith("__") && "__" in symbol) symbol.split("__").joinToString("::") else symbol
+
+/**
+ * The member name a binary operator is declared under - `oper+` for `+` - or
+ * null for one a type cannot declare.
+ */
+fun binaryOperatorSymbol(op: IrBinaryOp): String? = when (op) {
+    IrBinaryOp.ADD -> "oper+"
+    IrBinaryOp.SUB -> "oper-"
+    IrBinaryOp.MUL -> "oper*"
+    IrBinaryOp.DIV -> "oper/"
+    IrBinaryOp.MOD -> "oper%"
+    IrBinaryOp.BIT_AND -> "oper&"
+    IrBinaryOp.BIT_OR -> "oper|"
+    IrBinaryOp.BIT_XOR -> "oper^"
+    IrBinaryOp.SHL -> "oper<<"
+    IrBinaryOp.SHR -> "oper>>"
+    else -> null
+}
 
 fun mangleMethodSymbol(name: String): String {
     // A name that needs no escaping is already whatever the rest of the compiler

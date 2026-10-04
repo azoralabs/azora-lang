@@ -71,7 +71,7 @@ class OwnershipTest {
     @Test fun severalRequirementsTakeAList() = accepts("""
         spec A
         spec B
-        spec C requires [A, B]
+        spec C requires (A, B)
         pack P { var x: Int }
         derive A for P
         derive B for P
@@ -80,8 +80,15 @@ class OwnershipTest {
 
     @Test fun aSingleRequirementIsWrittenWithoutBrackets() = rejects("""
         spec Base
-        spec Derived requires [Base]
-    """, "written 'requires Base', without brackets")
+        spec Derived requires (Base)
+    """, "written 'requires Base', without parentheses")
+
+    /** The list was bracketed before it took parentheses; that spelling says so. */
+    @Test fun aBracketedRequirementListNamesTheParentheses() = rejects("""
+        spec A
+        spec B
+        spec C requires [A, B]
+    """, "write 'requires (A, B)'")
 
     @Test fun aManualSpecImplementationRequiresABody() = rejects("""
         spec Marker

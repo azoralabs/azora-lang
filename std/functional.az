@@ -134,14 +134,17 @@ func<T> none(arr: Array<T>, pred: (T) -> Bool): Bool {
 /**
  * Returns the first N elements of an array.
  *
+ * Not named `take`, which is the ownership operator: `take(xs, 2)` would hand
+ * the tuple `(xs, 2)` over rather than call a function.
+ *
  * @param arr The source array.
  * @param n The number of elements to take.
  * @return A new array with at most n elements.
  */
 @Experimental(since: "0.1")
-func<T> take(arr: Array<T>, n: Int): Array<T>
+func<T> takeFirst(arr: Array<T>, n: Int): Array<T>
 in {
-    assert n >= 0 panic "take count must be non-negative"
+    assert n >= 0 panic "takeFirst count must be non-negative"
 } scope {
     fin len: Int = if n < arr.size then n else arr.size
     var result: Array<T> = .() * len

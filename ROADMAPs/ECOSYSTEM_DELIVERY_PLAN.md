@@ -49,18 +49,17 @@ implementation spans AST, semantics, IR, optimizer, interpreter, LLVM and WASM;
 its safety and backend limitations are recorded in GTC §23.2 and the progress log.
 This unblocks parsing, not the correctness of every library algorithm.
 
-The latest full compiler run has **2,679 tests: 2,583 passed,
-96 failed, 0 skipped** (2026-10-01: loop variables, `.Variant` shorthands, serializer
-derivation, std algorithm/filesystem/OS repairs, `Int` string indices, assertion
-fixtures, `alloc` literals, array `clone`).
-All 102 new tests pass, no previously passing test fails, and no tests were
-removed. The earlier initializer, constraint, runtime spread and WASM loop fixes
-remain qualified. AZLS is **91/91 passing**. The 007/014 acceptance tests in
-`FactoryDependencyTest` pass. The
-[latest durable inventory](ECOSYSTEM_BASELINE_SPREAD_CONSTRAINTS_2026_09_27.json)
-compares this run with the preceding 2,554-test / 185-failure work package and
-includes every test identity for future comparisons. The progress log records
-34 individual checks covering this work package.
+The latest full compiler run has **2,758 tests, 15 failing** (2026-10-03);
+three of those were fixed after it and pass on their own, leaving 12. From the
+2,655 / 83 measured at `047f38c`, nothing that passed fails. The two 2026-10-03
+packages made indices bounds-checked on every target, checked type arguments
+and shared borrows, matched receivers in conformance, declared spec
+subscripts, made each std module test itself, made tuples structural, gave
+WebAssembly error transport, made `List` and `Set` walkable with `for … in`
+(`spec Indexed`), carried loop labels through every backend, and stopped
+compiling library members a program never reaches. AZLS is **91/91 passing**.
+The progress log's two 2026-10-03 entries list the open findings, including
+the integer-overflow and anonymous `Var<…>` decisions.
 Packs and specs declare sequence and
 associative `literal` factories, and importing the target brings in the factory
 and what it builds. Library declarations carry canonical identities, a
@@ -135,7 +134,7 @@ Dependencies: Steps 001–010; narrow semantic tests can be developed earlier wi
 - [ ] **018. Validate packs, enums, variants, errors, and unsafe unions.** Acceptance: Layouts, constructors, payloads, discriminants, exhaustiveness, and unsafe access agree through execution.
   - [x] **018.1. Run `ctor .()` on every target.** A construction that writes no arguments - `.()` where the type is stated (binding, field default, return, argument, default parameter), `Type()`, `Type<Args>()` - builds the value as before and passes it to a generated `__ctor_<Type>_run`, which runs the ctor on it and returns it. It answers ahead of a ctor whose parameters all have defaults, and beside other ctors; memberwise construction `Type(a, b)` does not run it. The interpreter no longer calls it implicitly. Evidence: `ReceiverOnlyCtorTest`, `ReceiverOnlyCtorExecTest` (interpreter, LLVM, WASM, optimized and unoptimized, plain and generic packs) (2026-09-19).
   - From 018.1: a receiver-only ctor may declare a return type (`ctor .(): Int`); construction ignores it and yields the filled value, while a ctor with parameters yields what it declared. Reject the declaration or honor it.
-- [ ] **019. Repair spec conformance, required members, and operator contracts.** Acceptance: Return types, receivers, associated outputs, overlapping impls, and field capability derivation are checked.
+- [ ] **019. Repair spec conformance, required members, and operator contracts.** Progress 2026-10-03: an implementation's receiver must keep the spec's promise (`!.` cannot implement `&.`; type members and value members do not stand for each other), and conformance reads the spec's type arguments through the impl. Acceptance: Return types, receivers, associated outputs, overlapping impls, and field capability derivation are checked.
   - From 010.C3.3: member access on an unconstrained type parameter is accepted (`ArrayList.hash` read `.hash` on `T`); LLVM lowers it to a default zero. `ArrayList.hash` is parked until a `Hash` bound can be required and dispatched.
 - [ ] **020. Gate core typing with positive and negative program suites.** Acceptance: Invalid programs stop before code generation and valid programs retain the intended type behavior.
 
@@ -148,7 +147,7 @@ Dependencies: Core type contracts from 011–020; resolve architectural choices 
 - [ ] **022. Preserve and enforce inline and where bounds.** Acceptance: Constraints survive parsing and reject invalid instantiations; no declared bound is silently discarded.
   - [x] **022.1. Reach `Hash`, `Equal` and `Order` through erased generic code.** A type parameter bounded by one of them carries a descriptor naming the concrete type: a hidden field of a bounded pack, a hidden parameter of a bounded function, read from a bounded pack parameter otherwise. `x.hash`, `==`/`!=` and `<`/`<=`/`>`/`>=` on it call generated dispatch functions that apply the concrete type's own operation (the shared-code form GENERICS_DIP §21.3 allows beside the §21.1 specialization strategy). Bounds are checked where a concrete type is chosen (written types, constructions, literal factories, generic calls) and where generic code passes a type parameter on (`add 'where T: Hash'`). `HashMap`/`LinkedHashMap`/`HashSet` need `Hash`, `LinkedHashSet` and the `Set` factories `Equal`, `TreeMap`/`TreeSet` `Order`. Evidence: `WitnessTest`, `WitnessExecTest` (interpreter, LLVM, WASM, optimized and unoptimized). Open: `.hash`/`==` on an unbounded type parameter still compares the erased bits instead of being rejected; a bounded pack's ctor with arguments cannot be given descriptors yet; `<=>` on a bounded parameter is not dispatched.
   - [x] **022.2. Enforce concrete variadic pack-size predicates.** Canonical `T.size` and `(...T).size` comparisons reject invalid type-property applications, pack specializations and generic function calls; `.length` remains compatible. Fixed parameters are bound separately from the variadic tail, and an unresolved fixed type does not suppress a known size violation. Type-property overload selection and specialized method availability use those bindings. Evidence: `PackSizeConstraintTest`, `PackSizeConstraintExecTest` (valid sizes on interpreter, LLVM and WASM, optimized and unoptimized; rejection, overload and member checks). Stable runtime spread sources and function-call element bounds are qualified by 025.2; other unevaluable clauses remain open (2026-09-27).
-- [ ] **023. Complete nested inference, defaults, holes, and explicit arguments.** Acceptance: Functions, members, constructors, and expected types resolve consistently with useful ambiguity errors.
+- [ ] **023. Complete nested inference, defaults, holes, and explicit arguments.** Progress 2026-10-03: type parameters unify structurally through argument types, variadic entries and generic constructions. Acceptance: Functions, members, constructors, and expected types resolve consistently with useful ambiguity errors.
   - From 010.C3.3: `apply(1.5, { x -> x * 2.0 })` for `func<T> apply(value: T, change: (T) -> T): T` infers no type argument, so the call and lambda stay erased.
   - From 021.1: that call's result is now typed by the `T` inferred from `1.5`, but the lambda is still checked and lowered against the erased `(Any) -> Any`. LLVM computes 0 in it, which now prints as `0.0`/`0` where `<value>` hid it; the written form `apply<Float>(…)` prints the same on LLVM and traps on WASM. A hole (`pairOf<Int, _>(…)`) is not completed by inference and stays erased.
 - [ ] **024. Complete const generic identity and layout computation.** Acceptance: Distinct const arguments produce correct layouts and cache keys; invalid values fail at compile time.
@@ -167,11 +166,11 @@ Dependencies: Core type contracts from 011–020; resolve architectural choices 
 Dependencies: Binding/type foundations; coordinate generic layouts with 021–030.
 
 - [ ] **031. Specify owned, shared, exclusive, raw, and smart-pointer access invariants.** Acceptance: A checked matrix covers moves, lends, clones, aliases, return origins, and unsafe boundaries.
-- [ ] **032. Close shared-borrow mutation holes.** Acceptance: Direct/nested fields, indices, method calls, reborrows, parameters, receivers, and shadowing are covered.
+- [ ] **032. Close shared-borrow mutation holes.** Progress 2026-10-03: writes through `&` parameters and `&.` receivers - fields, elements, compound assignment, `!.` member calls - and `!.` calls on frozen bindings are refused (`SharedBorrowWriteTest`). Acceptance: Direct/nested fields, indices, method calls, reborrows, parameters, receivers, and shadowing are covered.
 - [ ] **033. Enforce borrow lifetime and alias exclusivity.** Acceptance: Overlapping accesses fail; legal disjoint access remains available; escapes and return origins are checked.
 - [ ] **034. Complete moves, partial moves, lends, and reinitialization.** Acceptance: Ownership transfers cannot duplicate/drop values twice and branch joins preserve moved-state facts.
 - [ ] **035. Validate captures and escaping closures.** Acceptance: Borrow, mutable borrow, move, clone, nested capture, and callback lifetime rules survive lowering.
-- [ ] **036. Complete allocation, pointer arithmetic, bounds, and alignment.** Acceptance: Raw operations require the intended access; invalid accesses trap or are rejected as specified.
+- [ ] **036. Complete allocation, pointer arithmetic, bounds, and alignment.** Progress 2026-10-03: safe array indexing is bounds-checked on the interpreter, LLVM and WASM (`IndexBoundsExecTest`). Acceptance: Raw operations require the intended access; invalid accesses trap or are rejected as specified.
 - [ ] **037. Implement lifecycle ordering and cleanup on every exit.** Acceptance: Constructors, destructors, defer, failure, early return, and partial initialization have exact event traces.
 - [ ] **038. Complete unique, shared, atomic-shared, and weak ownership.** Acceptance: Reference counts, upgrades, destruction, cycles policy, and concurrent operations are verified.
 - [ ] **039. Complete custom allocator and runtime ABI integration.** Acceptance: Allocator ownership, alignment, failure, reallocation, and cross-language destruction are explicit.

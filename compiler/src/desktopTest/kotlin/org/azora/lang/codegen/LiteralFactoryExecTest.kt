@@ -28,13 +28,13 @@ class LiteralFactoryExecTest {
         }
     }
 
-    // WebAssembly has no exception support: a failure it cannot handle traps
-    // rather than reaching the fallback, which LLVM does.
+    // A failing factory is a failing call: the fallback catches it on every
+    // target. (WebAssembly used to trap here, having no error transport.)
     @Test fun aFailingFactoryFailsLikeACallOnEachTarget() {
         for (optimized in listOf(false, true)) {
             val ir = LiteralFactoryTest.compile(LiteralFactoryTest.bounded, optimized)
             if (LlvmExec.available) assertEquals("2\n0", LlvmExec.runIr(LlvmCodegen().generate(ir)), "optimized=$optimized")
-            if (WasmExec.available) assertEquals("2", WasmExec.runWatExpectingTrap(WasmCodegen().generate(ir)), "optimized=$optimized")
+            if (WasmExec.available) assertEquals("2\n0", WasmExec.runWat(WasmCodegen().generate(ir)), "optimized=$optimized")
         }
     }
 

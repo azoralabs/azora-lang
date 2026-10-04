@@ -24,10 +24,13 @@
  * element count through `size` and provide low-level access to contiguous
  * storage through `data`.
  *
+ * The module is exposed: a bracket literal builds an `Array` without any
+ * import, so the members of the value it builds are there without one too.
+ *
  * @since 0.1
  */
 @Supress(.Unused)
-module std.container.array
+exposed module std.container.array
 
 import std.traits::Clone
 

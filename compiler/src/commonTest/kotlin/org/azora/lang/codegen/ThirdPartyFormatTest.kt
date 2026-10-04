@@ -37,6 +37,7 @@ class ThirdPartyFormatTest {
             """
             import std.io
             import std.serializer
+            import std.container.list
 
             pack Point {
                 fin x: Int = 0
@@ -83,6 +84,7 @@ class ThirdPartyFormatTest {
             """
             import std.io
             import std.serializer
+            import std.container.list
 
             @Serializable
             pack Session {

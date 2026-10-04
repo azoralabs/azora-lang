@@ -43,6 +43,7 @@
 module std.container.map
 
 import std.container::{array::*, list::*}
+import std.traits::Clone
 
 /**
  * One immutable key-value association.
@@ -85,6 +86,12 @@ spec Map<K, V> {
 
     /** Returns the value associated with `key`, or `null` when absent. */
     func &.get(key: K&): V?
+
+    /**
+     * The value associated with `key`, read as `map[key]`. Panics when `key`
+     * is absent; `get` answers `null` instead.
+     */
+    oper[] &.(key: K): V
 
     /** Returns the associated value, or `defaultValue` when absent. */
     func &.getOrDefault(key: K&, defaultValue: V): V
@@ -130,19 +137,22 @@ derive Clone for Map
 @Experimental(since: "0.1")
 spec MutableMap<K, V> : Map<K, V> {
     /** Associates `key` with `value` and returns the replaced value, if any. */
-    func &.put(key: K, value: V): V?
+    func !.put(key: K, value: V): V?
+
+    /** Associates `key` with `value`, written `map[key] = value`. */
+    oper[]= !.(key: K, value: V)
 
     /** Copies all entries from `other`, replacing equal keys. */
-    func &.putAll(other: Map<K, V>&)
+    func !.putAll(other: Map<K, V>&)
 
     /** Removes `key` and returns its previous value, or `null` when absent. */
-    func &.remove(key: K&): V?
+    func !.remove(key: K&): V?
 
     /** Removes every entry while retaining reusable internal capacity. */
-    func &.clear()
+    func !.clear()
 
     /** Returns the existing value or inserts and returns `defaultValue()`. */
-    func &.getOrPut(key: K, defaultValue: () -> V): V
+    func !.getOrPut(key: K, defaultValue: () -> V): V
 
     /** `[k: v, …]` where a `MutableMap<K, V>` is expected: a `LinkedHashMap<K, V>`, as for `Map<K, V>`. */
     literal [...entries: (K, V)]: Self where K: Hash {
@@ -209,10 +219,10 @@ spec SortedMap<K, V> {
 @Experimental(since: "0.1")
 spec MutableSortedMap<K, V> : SortedMap<K, V> {
     /** Removes and returns the smallest entry, or `null` when empty. */
-    func &.pollFirstEntry(): MapEntry<K, V>?
+    func !.pollFirstEntry(): MapEntry<K, V>?
 
     /** Removes and returns the greatest entry, or `null` when empty. */
-    func &.pollLastEntry(): MapEntry<K, V>?
+    func !.pollLastEntry(): MapEntry<K, V>?
 }
 
 /** Hash table with unspecified iteration order. `K` requires `Hash` and `oper==`. */
@@ -370,13 +380,13 @@ impl HashMap<K, V> {
         purge oldOccupied
     }
 
-    func &._ensureInsertCapacity() {
+    func !._ensureInsertCapacity() {
         if (self._size + 1) * 10 >= self.capacity * 7 {
             self._rehash(self.capacity * 2)
         }
     }
 
-    func &._putValue(key: K, value: V): V? {
+    func !._putValue(key: K, value: V): V? {
         self._ensureInsertCapacity()
         fin hash = key.hash
         return self._insertKnownHash(key, value, hash)
@@ -481,18 +491,18 @@ impl Map<K, V> for HashMap<K, V> {
 }
 
 impl MutableMap<K, V> for HashMap<K, V> {
-    func &.put(key: K, value: V): V? {
+    func !.put(key: K, value: V): V? {
         return self._putValue(key, value)
     }
 
-    func &.putAll(other: Map<K, V>&) {
+    func !.putAll(other: Map<K, V>&) {
         fin all = other.entries()
         for i in 0..<all.size {
             self._putValue(all[i].key, all[i].value)
         }
     }
 
-    func &.remove(key: K&): V? {
+    func !.remove(key: K&): V? {
         return self._removeValue(key)
     }
 
@@ -1353,7 +1363,9 @@ func<K, V> mutableMapOf(...entries: MapEntry<K, V>): MutableMap<K, V> where K: H
 
 @Experimental(since: "0.1")
 oper[] HashMap<K, V>&.(key: K): V {
-    return self.get(key)
+    fin index = self._findIndex(key)
+    assert index >= 0 panic "key not found in map"
+    return self.values[index]
 }
 
 @Experimental(since: "0.1")
@@ -1363,7 +1375,9 @@ oper[]= HashMap<K, V>!.(key: K, value: V) {
 
 @Experimental(since: "0.1")
 oper[] LinkedHashMap<K, V>&.(key: K): V {
-    return self.get(key)
+    fin index = self._findIndex(key)
+    assert index >= 0 panic "key not found in map"
+    return self.values[index]
 }
 
 @Experimental(since: "0.1")
@@ -1373,7 +1387,9 @@ oper[]= LinkedHashMap<K, V>!.(key: K, value: V) {
 
 @Experimental(since: "0.1")
 oper[] TreeMap<K, V>&.(key: K): V {
-    return self.get(key)
+    fin node = self._findNode(key)
+    assert node >= 0 panic "key not found in map"
+    return self.values[node]
 }
 
 @Experimental(since: "0.1")

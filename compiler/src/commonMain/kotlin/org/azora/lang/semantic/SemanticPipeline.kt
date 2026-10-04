@@ -34,6 +34,11 @@ data class SemanticResult(
     val errors: List<String>,
     val unresolvedSymbols: List<SemanticUnresolvedSymbol> = emptyList(),
     val redundantVariantQualifiers: List<SemanticRedundantVariantQualifier> = emptyList(),
+    /**
+     * Tuple shapes whose `Tuple` impl members were asked for before they were
+     * specialized. Non-empty means analysis must run again once they are.
+     */
+    val tupleDemands: Set<List<org.azora.lang.frontend.TypeRef>> = emptySet(),
 )
 
 enum class SemanticSymbolNamespace { FUNCTION, VALUE }
@@ -47,6 +52,11 @@ data class SemanticUnresolvedSymbol(
     val column: Int,
     val length: Int,
     val renderedMessage: String,
+    /**
+     * How the program could have named what was meant: `Const::five` for a
+     * bare `five` that a `scope Const` of the program declares.
+     */
+    val scopeAlternatives: List<String> = emptyList(),
 )
 
 /** A compiler-proven `Type.Case` occurrence whose expected type permits `.Case`. */
@@ -215,6 +225,13 @@ class SemanticPipeline(
         // Type Resolution + Inference (on the CTCE-stabilized AST)
         val typeResolver = TypeResolver(table)
         val typeErrors = typeResolver.resolve(currentProgram)
+        if (typeResolver.tupleDemands.isNotEmpty()) {
+            // Nothing past this point can be trusted until the shapes exist.
+            return SemanticResult(
+                currentProgram, table, emptyList(), allErrors + typeErrors,
+                tupleDemands = typeResolver.tupleDemands.toSet(),
+            )
+        }
         if (typeErrors.isNotEmpty()) {
             allErrors.addAll(typeErrors)
             return SemanticResult(

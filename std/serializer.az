@@ -411,19 +411,19 @@ func serialAsReal(value: SerialValue&): Double ?! SerializationError {
                 return .InvalidNumber
             }
             var index = 0
-            var sign = 1.0
+            var sign: Double = 1.0
             if charAt(text, index) == '-' {
                 sign = -1.0
                 index += 1
             }
-            var result = 0.0
+            var result: Double = 0.0
             while index < stringLength(text) && charIsDigit(charAt(text, index)) {
                 result = result * 10.0 + (charToCode(charAt(text, index)) - 48) as Double
                 index += 1
             }
             if index < stringLength(text) && charAt(text, index) == '.' {
                 index += 1
-                var divisor = 10.0
+                var divisor: Double = 10.0
                 while index < stringLength(text) && charIsDigit(charAt(text, index)) {
                     fin digit: Double = (charToCode(charAt(text, index)) - 48) as Double
                     result = result + digit / divisor
@@ -737,9 +737,11 @@ impl _SerialReader {
 
             self.skipWhitespace()
             fin separator = try self.take()
-            when separator {
-                '}' -> return .Object(fields)
-                ',' -> return .InvalidSyntax
+            if separator == '}' {
+                return .Object(fields)
+            }
+            if separator != ',' {
+                return .InvalidSyntax
             }
             self.skipWhitespace()
         }

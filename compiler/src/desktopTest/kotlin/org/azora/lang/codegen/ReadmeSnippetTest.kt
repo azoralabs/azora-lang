@@ -44,9 +44,10 @@ class ReadmeSnippetTest {
         // Declarations that stand alone.
         "pack Point {" to emptyMain,
         "func add(a: Int, b: Int = 0): Int" to emptyMain,
-        "macro @arr {" to Context(bodyFrom = "[1, 2, 3]", epilogue = ""),
+        "macro @batch {" to emptyMain,
+        "fin values = [1, 2, 3]" to emptyMain,
         "macro \$a @to \$b" to Context(
-            prelude = "scope std { func<K, V> mapEntry(key: K, value: V): K { return key } }\n",
+            prelude = "func<K, V> mapEntry(key: K, value: V): K { return key }\n",
             bodyFrom = "\"key\" @to 42",
             epilogue = "",
         ),
@@ -87,7 +88,7 @@ class ReadmeSnippetTest {
         "inline for Ty in [A, B]" to Context(
             prelude = "import std.traits\npack A { var v: Int = 0 }\npack B { var v: Int = 0 }\n",
         ),
-        "inline for axis in @arr" to Context(
+        "inline for axis in [\"x\", \"y\", \"z\"]" to Context(
             prelude = "pack Vec3 {\n    var x: Double = 0.0\n" +
                 "    var y: Double = 0.0\n    var z: Double = 0.0\n}\n",
         ),

@@ -140,7 +140,7 @@ func softmax(values: Array<Double>): Array<Double> {
         if values[i] > maximum { maximum = values[i] }
     }
     var result: Array<Double> = .() * values.size
-    var total = 0.0
+    var total: Double = 0.0
     for i in 0..<values.size {
         result[i] = exp(values[i] - maximum)
         total = total + result[i]
@@ -167,7 +167,7 @@ func argmax(values: Array<Double>): Int {
 func meanSquaredError(predicted: Array<Double>, target: Array<Double>): Double {
     assert predicted.size == target.size panic "metric vectors must have equal size"
     if predicted.size == 0 { return 0.0 }
-    var total = 0.0
+    var total: Double = 0.0
     for i in 0..<predicted.size {
         fin delta = predicted[i] - target[i]
         total = total + delta * delta

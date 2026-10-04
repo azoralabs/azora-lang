@@ -177,7 +177,7 @@ test "sequence collects every yielded value in order" {
         yield(3)
     }
     var seen = ""
-    values.collect { n -> seen += "$n" }
+    values.collect [seen.!] { n -> seen += "$n" }
     assert seen == "123" panic "sequence must preserve yield order"
 }
 
@@ -187,7 +187,7 @@ test "flow collects every emitted value in order" {
         emit(20)
     }
     var total = 0
-    events.collect { n -> total += n }
+    events.collect [total.!] { n -> total += n }
     assert total == 30 panic "flow must deliver every emitted value"
 }
 

@@ -309,7 +309,7 @@ object SerializationDeriver {
         appendLine("        var __serialFields = ArrayList<SerialField>()")
         fields.filterNot { it.ignored }.forEach { plan ->
             val encoded = appendEncodedField(plan, helpers)
-            if (!encodeDefaults && plan.defaultSource != null && !plan.required) {
+            if (!encodeDefaults && plan.defaultSource != null && !plan.required && comparesByValue(plan.field.type)) {
                 appendLine("        if value.${plan.field.name} != ${plan.defaultSource} {")
                 appendLine("            __serialFields.add(SerialField(${quote(plan.wireName)}, $encoded))")
                 appendLine("        }")
@@ -382,29 +382,24 @@ object SerializationDeriver {
             val keysName = "__keys_${plan.field.name}"
             val indexName = "__encode_${plan.field.name}_index"
             appendLine("        var $fieldsName = ArrayList<SerialField>()")
-            appendLine("        fin $keysName = value.${plan.field.name}.keys()")
-            appendLine("        var $indexName = 0")
-            appendLine("        while $indexName < $keysName.length {")
             val keyName = "__key_${plan.field.name}"
-            appendLine("            fin $keyName = $keysName[$indexName] as String")
+            appendLine("        for $keyName in value.${plan.field.name}.keys() {")
             val mapValue = "value.${plan.field.name}[$keyName] as ${renderType(valueType)}"
-            appendLine("            $fieldsName.add(SerialField($keyName, ${encodeExpr(mapValue, valueType, helpers)}))")
-            appendLine("            $indexName += 1")
+            appendLine("            $fieldsName.add(SerialField($keyName as String, ${encodeExpr(mapValue, valueType, helpers)}))")
             appendLine("        }")
             return "SerialValue.Object($fieldsName)"
         }
         if (type.name !in setOf("List", "Set") || type.args.size != 1) {
             return encodeExpr("value.${plan.field.name}", plan.field.type, helpers)
         }
+        // Walked rather than indexed: a `Set` is `Indexed` but declares no
+        // subscript, and the walk types each element as the collection holds it.
         val element = type.args.single()
         val valuesName = "__encoded_${plan.field.name}"
-        val indexName = "__encode_${plan.field.name}_index"
+        val elementName = "__element_${plan.field.name}"
         appendLine("        var $valuesName = ArrayList<SerialValue>()")
-        appendLine("        var $indexName = 0")
-        appendLine("        while $indexName < value.${plan.field.name}.size {")
-        val elementValue = "value.${plan.field.name}[$indexName] as ${renderType(element)}"
-        appendLine("            $valuesName.add(${encodeExpr(elementValue, element, helpers)})")
-        appendLine("            $indexName += 1")
+        appendLine("        for $elementName in value.${plan.field.name} {")
+        appendLine("            $valuesName.add(${encodeExpr(elementName, element, helpers)})")
         appendLine("        }")
         return "SerialValue.Array($valuesName)"
     }
@@ -416,7 +411,7 @@ object SerializationDeriver {
             val decodedName = "__decoded_${plan.field.name}"
             val fieldsName = "__map_fields_${plan.field.name}"
             val indexName = "__decode_${plan.field.name}_index"
-            appendLine("                var $decodedName = Map()")
+            appendLine("                var $decodedName: Mutable${renderType(type)} = [:]")
             appendLine("                if __seen_${plan.field.name} {")
             appendLine("                    when __raw_${plan.field.name} {")
             appendLine("                        SerialValue.Object($fieldsName) -> {")
@@ -437,7 +432,9 @@ object SerializationDeriver {
         val decodedName = "__decoded_${plan.field.name}"
         val valuesName = "__values_${plan.field.name}"
         val indexName = "__decode_${plan.field.name}_index"
-        appendLine("                var $decodedName = ${type.name}()")
+        // The field's own spec, mutable, built by its literal: the library
+        // decides which collection that is, as it does for any `[]`.
+        appendLine("                var $decodedName: Mutable${renderType(type)} = []")
         appendLine("                if __seen_${plan.field.name} {")
         appendLine("                    when __raw_${plan.field.name} {")
         appendLine("                        SerialValue.Array($valuesName) -> {")
@@ -499,6 +496,19 @@ object SerializationDeriver {
             in floatingTypes -> "try ${qualified(helpers.provider, "serialAsDouble")}($raw) as ${named.name}"
             else -> "try $receiverValue.fromSerialValue($raw)"
         }
+    }
+
+    /**
+     * Whether a field of [type] can be compared with its default, so that
+     * `encodeDefaults: false` can leave it out. Text, flags and numbers can; a
+     * pack or a collection says what its equality is, if it has one, in code
+     * the deriver does not read, so such a field is always written.
+     */
+    private fun comparesByValue(type: TypeRef): Boolean = when (type) {
+        is TypeRef.Nullable -> comparesByValue(type.inner)
+        is TypeRef.Named -> type.args.isEmpty() &&
+            (type.name in setOf("String", "Bool", "Char") || type.name in integerTypes || type.name in floatingTypes)
+        else -> false
     }
 
     private fun isCollection(type: TypeRef): Boolean =
@@ -576,7 +586,8 @@ object SerializationDeriver {
         is Expr.Member -> renderExpr(expr.target)?.let { "$it.${expr.name}" }
         is Expr.ArrayLiteral -> expr.elements.map { renderExpr(it) ?: return null }.joinToString(", ", "[", "]")
         is Expr.SetLiteral -> expr.elements.map { renderExpr(it) ?: return null }.joinToString(", ", "![", "]")
-        is Expr.MapLit -> expr.entries.map {
+        // `[:]`, not `[]`: an empty map is spelled apart from an empty sequence.
+        is Expr.MapLit -> if (expr.entries.isEmpty()) "[:]" else expr.entries.map {
             val key = renderExpr(it.first) ?: return null
             val value = renderExpr(it.second) ?: return null
             "$key: $value"

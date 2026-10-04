@@ -64,11 +64,17 @@ class TypeRefTest {
         assertIs<IrType.Array>(t.element)
     }
 
+    // The standard collections are library types: a program names them after
+    // importing them, as it would any other library declaration.
+    private val listImport = "import std.container.list\n"
+    private val setImport = "import std.container.set\n"
+    private val mapImport = "import std.container.map\n"
+
     @Test
     fun immutableCollectionTypeAnnotations() {
-        val vec = firstParamType("func f(x: List<Int>): Int { return 0 }")
-        val set = firstParamType("func f(x: Set<String>): Int { return 0 }")
-        val map = firstParamType("func f(x: Map<String, Int>): Int { return 0 }")
+        val vec = firstParamType(listImport + "func f(x: List<Int>): Int { return 0 }")
+        val set = firstParamType(setImport + "func f(x: Set<String>): Int { return 0 }")
+        val map = firstParamType(mapImport + "func f(x: Map<String, Int>): Int { return 0 }")
         assertIs<IrType.Named>(vec)
         assertEquals("List", vec.name)
         assertIs<IrType.Named>(set)
@@ -79,9 +85,9 @@ class TypeRefTest {
 
     @Test
     fun mutableCollectionTypeAnnotations() {
-        val vec = firstParamType("func f(x: MutableList<Int>): Int { return 0 }")
-        val set = firstParamType("func f(x: MutableSet<String>): Int { return 0 }")
-        val map = firstParamType("func f(x: MutableMap<String, Int>): Int { return 0 }")
+        val vec = firstParamType(listImport + "func f(x: MutableList<Int>): Int { return 0 }")
+        val set = firstParamType(setImport + "func f(x: MutableSet<String>): Int { return 0 }")
+        val map = firstParamType(mapImport + "func f(x: MutableMap<String, Int>): Int { return 0 }")
         assertIs<IrType.Named>(vec)
         assertEquals("MutableList", vec.name)
         assertIs<IrType.Named>(set)
@@ -107,16 +113,15 @@ class TypeRefTest {
     }
 
     @Test
-    fun removedTupleTypeAnnotationIsRejected() {
-        assertTrue(
-            expectFailure("func f(x: (Int, String)): Int { return 0 }")
-                .any { "Tuple<A, B>" in it },
-        )
+    fun tupleTypeAnnotation() {
+        // `(A, B)` is the native tuple type (GTC §6.2).
+        val t = firstParamType("func f(x: (Int, String)): Int { return 0 }")
+        assertEquals(IrType.Tuple(listOf(IrType.Int, IrType.String)), t)
     }
 
     @Test
     fun genericNamedTypeAnnotation() {
-        val t = firstParamType("func f(x: List<Int>): Int { return 0 }")
+        val t = firstParamType(listImport + "func f(x: List<Int>): Int { return 0 }")
         assertIs<IrType.Named>(t)
         assertEquals("List", t.name)
     }
@@ -124,7 +129,10 @@ class TypeRefTest {
     @Test
     fun nestedGenericNamedTypeAnnotation() {
         // Collection surface spellings are contextual; plain user generic names still parse normally.
-        val t = firstParamType("func f(x: Dictionary<String, List<Int>>): Int { return 0 }")
+        val t = firstParamType(
+            listImport + "pack Dictionary<K, V>\n" +
+                "func f(x: Dictionary<String, List<Int>>): Int { return 0 }",
+        )
         assertIs<IrType.Named>(t)
         assertEquals("Dictionary", t.name)
     }
@@ -149,8 +157,8 @@ class TypeRefTest {
 
     @Test
     fun arrayGenericNameRequiresExactlyOneTypeArgument() {
-        assertTrue(expectFailure("func f(x: Array): Int { return 0 }").any { "exactly one type argument" in it })
-        assertTrue(expectFailure("func f(x: Array<Int, String>): Int { return 0 }").any { "exactly one type argument" in it })
+        assertTrue(expectFailure("func f(x: Array): Int { return 0 }").any { "Array expects one type argument" in it && "got 0" in it })
+        assertTrue(expectFailure("func f(x: Array<Int, String>): Int { return 0 }").any { "Array expects one type argument" in it && "got 2" in it })
     }
 
     @Test

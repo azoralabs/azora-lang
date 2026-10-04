@@ -17,6 +17,8 @@
 @Supress(.Unused)
 exposed module std.traits.core
 
+import std.traits::{Clone, Copy}
+
 /**
  * A value `for … in` can walk.
  *
@@ -57,6 +59,27 @@ spec Iterator assoc Item {
             body(row)
         }
     }
+}
+
+/**
+ * A collection `for … in` walks by position: how many elements it holds,
+ * and the element at each index, in order.
+ *
+ * `for x in xs { … }` reads `xs.size` before every row and binds
+ * `xs.get(i)` for each index, so a loop that adds or removes elements sees
+ * the collection as it is now, never a position past its end. Nothing is
+ * allocated to walk it, and nested loops over one collection do not share
+ * a cursor - which an [Iterator], walking itself, would.
+ *
+ * @generic T The element type.
+ */
+@Experimental(since: "0.1")
+spec Indexed<T> {
+    /** Number of elements. */
+    prop &.size: Int
+
+    /** The element at `index`, `0 <= index < size`. */
+    func &.get(index: Int): T
 }
 
 inline for Ty in Numbers {

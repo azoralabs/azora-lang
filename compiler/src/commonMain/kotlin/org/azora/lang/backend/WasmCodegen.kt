@@ -26,7 +26,9 @@ import org.azora.lang.ir.IrSpecMethod
 import org.azora.lang.ir.IrSpecTable
 import org.azora.lang.ir.IrStmt
 import org.azora.lang.ir.IrTopLevel
+import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.IrType
+import org.azora.lang.ir.shown
 import org.azora.lang.ir.IrUnaryOp
 
 /**
@@ -125,6 +127,30 @@ class WasmCodegen {
     private val neededDispatchers = LinkedHashMap<String, Pair<IrSpecTable, IrSpecMethod>>()
     private val neededExterns = LinkedHashSet<String>()
     private val closureTypes = LinkedHashMap<IrType.Function, String>()
+
+    /** Names of functions that can fail; a call to one checks the failure flag. */
+    private val failableFunctions = HashSet<String>()
+
+    /**
+     * Labels of the enclosing error handlers, innermost last.
+     *
+     * A failure branches to the top of this stack. When it is empty the error
+     * propagates if the current function is itself failable, and traps if it is
+     * not - which is what an error nobody can observe means.
+     */
+    private val errorHandlers = ArrayDeque<String>()
+
+    /** True when the function being emitted declares `T ?! E`. */
+    private var currentIsFailable = false
+
+    /** True once anything in this module raises, checks or handles an error. */
+    private var usesErrorSlot = false
+
+    /** The `defer`s of the function being emitted, each with the local counting its registrations. */
+    private val deferSlots = mutableListOf<Pair<IrStmt.Defer, String>>()
+
+    /** True while deferred bodies are rendered, so an exit inside one cannot render them again. */
+    private var renderingDefers = false
     private val closureFunctions = mutableListOf<ClosureFunction>()
     private val stringIntrinsics = setOf(
         "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
@@ -230,6 +256,7 @@ class WasmCodegen {
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         reactiveStorage.clear(); reactiveAliases.clear()
         closureTypes.clear(); closureFunctions.clear()
+        failableFunctions.clear(); errorHandlers.clear(); usesErrorSlot = false
 
         for (item in program.items) if (item is IrTopLevel.Struct) {
             structs[item.name] = item.fields
@@ -255,6 +282,7 @@ class WasmCodegen {
         for (func in funcs) {
             functionParams[func.name] = func.params.map { it.second }
             functionResults[func.name] = func.returnType
+            if (func.isFailable) failableFunctions += func.name
         }
         for ((name, extern) in externs) {
             functionParams[name] = extern.params.map { it.second }
@@ -352,6 +380,14 @@ class WasmCodegen {
             val escaped = exportName.replace("\\", "\\\\").replace("\"", "\\\"")
             sb.appendLine("  (export \"$escaped\" (global \$$internalName))")
         }
+        if (usesErrorSlot) {
+            // `T ?! E` keeps its success type, so a raised error travels beside
+            // the return value: a flag saying one is pending, and the error itself
+            // erased to eight bytes. The flag is separate so that no error value,
+            // zero included, can be mistaken for the absence of one.
+            sb.appendLine("  (global \$__azora_failed (mut i32) (i32.const 0))")
+            sb.appendLine("  (global \$__azora_err (mut i64) (i64.const 0))")
+        }
         if (usesAlloc) sb.append(ALLOCATOR_RUNTIME)
         if (usesConcat) sb.append(RT_CONCAT)
         if (usesIsCheck) usesStrEq = true
@@ -382,6 +418,8 @@ class WasmCodegen {
         if (globals.isEmpty()) return ""
         locals.clear(); localIrTypes.clear(); boxedLocals.clear(); tempCounter = 0; blockCounter = 0
         loopStack.clear(); labelTargets.clear(); params = emptySet()
+        errorHandlers.clear(); currentIsFailable = false
+        deferSlots.clear()
 
         out.clear(); indent = 2
         for (stmt in globals) {
@@ -411,10 +449,14 @@ class WasmCodegen {
         reactiveAliases.clear()
         currentFunctionName = func.name
         currentReturnType = func.returnType
+        currentIsFailable = func.isFailable
+        errorHandlers.clear()
         localIrTypes.putAll(func.params)
+        prepareDefers(func.body)
 
         out.clear(); indent = 2
         for (stmt in func.body) emitStmt(stmt)
+        if (!endsWithTerminator(func.body)) deferredCode(failing = false).takeIf { it.isNotEmpty() }?.let(::line)
         // A function that returns from inside a `when`/`if` - every arm of a
         // `when self { … }` ending in `return` - leaves nothing on the stack
         // where Wasm expects the result of an implicit return. `unreachable`
@@ -493,14 +535,24 @@ class WasmCodegen {
             }
             is IrStmt.Return -> {
                 val value = stmt.value
+                // The value is computed before the deferred bodies run, which is
+                // what makes `return x` with a `defer` changing `x` return `x`.
+                val deferred = deferredCode(failing = false)
                 when {
-                    value == null -> line("(return)")
+                    value == null -> { if (deferred.isNotEmpty()) line(deferred); line("(return)") }
                     value.type == IrType.Nothing -> line("(drop ${emitExpr(value)})")
                     currentReturnType == IrType.Unit -> {
                         line("(drop ${emitExpr(value)})")
+                        if (deferred.isNotEmpty()) line(deferred)
                         line("(return)")
                     }
-                    else -> line("(return ${emitAs(value, currentReturnType)})")
+                    deferred.isEmpty() -> line("(return ${emitAs(value, currentReturnType)})")
+                    else -> {
+                        val result = newTemp(wasmType(currentReturnType))
+                        line("(local.set $result ${emitAs(value, currentReturnType)})")
+                        line(deferred)
+                        line("(return (local.get $result))")
+                    }
                 }
             }
             is IrStmt.If -> emitIf(stmt)
@@ -514,15 +566,189 @@ class WasmCodegen {
             is IrStmt.Scope -> for (s in stmt.body) emitStmt(s)
             is IrStmt.Assert -> line("(if (i32.eqz ${emitExpr(stmt.condition)}) (then unreachable))")
             is IrStmt.Trace -> emitTrace(stmt)
-            is IrStmt.Throw -> line("unreachable")
-            is IrStmt.Try -> for (s in stmt.body) emitStmt(s) // no exception support - run the body
-            is IrStmt.Defer -> {}
+            is IrStmt.Throw -> emitThrow(stmt)
+            is IrStmt.Try -> emitTry(stmt)
+            is IrStmt.Defer -> {
+                val counter = deferSlots.firstOrNull { it.first === stmt }?.second
+                    ?: error("WebAssembly cannot lower a 'defer' outside a function body yet")
+                line("(local.set \$$counter (i32.add (local.get \$$counter) (i32.const 1)))")
+            }
             is IrStmt.Effect -> {
                 activeReactiveEffects.add(stmt)
                 emitReactiveEffect(stmt)
             }
-            is IrStmt.Yield -> {}
+            is IrStmt.Yield -> error("WebAssembly cannot lower 'yield' yet; generators run on the interpreter")
         }
+    }
+
+    /**
+     * Raises an error: record it, then leave by [failureExit].
+     *
+     * The function's own return value has no room for a failure, so the error
+     * waits in the module's error slot for the check after the call.
+     */
+    private fun emitThrow(stmt: IrStmt.Throw) {
+        usesErrorSlot = true
+        line("(global.set \$__azora_err ${erase(emitExpr(stmt.value), stmt.value.type)})")
+        line("(global.set \$__azora_failed (i32.const 1))")
+        line(failureExit())
+    }
+
+    /**
+     * Where a failure goes from here: to the innermost handler, else out to the
+     * caller with the function's zero value when the function can fail, else
+     * nowhere - an error nothing can observe stops the program.
+     */
+    private fun failureExit(): String = when {
+        errorHandlers.isNotEmpty() -> "(br \$${errorHandlers.last()})"
+        currentIsFailable && hasFunctionResult(currentReturnType) -> {
+            val type = wasmType(currentReturnType)
+            "${deferredCode(failing = true)} (return ($type.const 0))".trim()
+        }
+        currentIsFailable && currentReturnType == IrType.Unit -> "${deferredCode(failing = true)} (return)".trim()
+        else -> "unreachable"
+    }
+
+    /**
+     * Gives each `defer` in [body] a local counting how often it was reached.
+     * Every exit runs each that many times, the last in source order first;
+     * see the LLVM backend's twin for what that leaves out.
+     */
+    private fun prepareDefers(body: List<IrStmt>) {
+        deferSlots.clear()
+        renderingDefers = false
+        val found = mutableListOf<IrStmt.Defer>()
+        collectDefers(body, found)
+        for (stmt in found) {
+            val counter = "__defer_${deferSlots.size}"
+            declareLocal(counter, IrType.Int)
+            deferSlots += stmt to counter
+        }
+    }
+
+    private fun collectDefers(stmts: List<IrStmt>, into: MutableList<IrStmt.Defer>) {
+        for (stmt in stmts) when (stmt) {
+            is IrStmt.Defer -> into += stmt
+            is IrStmt.If -> { collectDefers(stmt.thenBranch, into); stmt.elseBranch?.let { collectDefers(it, into) } }
+            is IrStmt.Scope -> collectDefers(stmt.body, into)
+            is IrStmt.While -> collectDefers(stmt.body, into)
+            is IrStmt.For -> collectDefers(stmt.body, into)
+            is IrStmt.ForEach -> collectDefers(stmt.body, into)
+            is IrStmt.Loop -> collectDefers(stmt.body, into)
+            is IrStmt.When -> {
+                stmt.branches.forEach { collectDefers(it.body, into) }
+                stmt.elseBranch?.let { collectDefers(it, into) }
+            }
+            is IrStmt.Try -> { collectDefers(stmt.body, into); stmt.catchBody?.let { collectDefers(it, into) } }
+            else -> {}
+        }
+    }
+
+    /**
+     * The deferred bodies an exit runs, as text: each `defer` drained by its
+     * counter, last first. [failing] adds the `error defer`s, and a `rescue`
+     * that runs clears the pending error, so the caller sees the zero value as
+     * a success.
+     */
+    private fun deferredCode(failing: Boolean): String {
+        if (renderingDefers || deferSlots.isEmpty()) return ""
+        renderingDefers = true
+        val saved = out.toString()
+        val savedIndent = indent
+        try {
+            out.clear()
+            for ((stmt, counter) in deferSlots.asReversed()) {
+                if (stmt.onFail && !failing) continue
+                val n = blockCounter++
+                line("(block \$defer_done_$n (loop \$defer_next_$n")
+                line("(br_if \$defer_done_$n (i32.eqz (local.get \$$counter)))")
+                line("(local.set \$$counter (i32.sub (local.get \$$counter) (i32.const 1)))")
+                for (inner in stmt.body) emitStmt(inner)
+                if (failing && stmt.suppress) {
+                    usesErrorSlot = true
+                    line("(global.set \$__azora_failed (i32.const 0))")
+                }
+                line("(br \$defer_next_$n)))")
+            }
+            return out.toString().trim()
+        } finally {
+            out.clear()
+            out.append(saved)
+            indent = savedIndent
+            renderingDefers = false
+        }
+    }
+
+    /**
+     * `try { … } catch { e -> … }`.
+     *
+     * The body sits inside the handler's block, so a failure anywhere in it
+     * branches out to the catch code that follows the block. That code binds the
+     * error, then clears the flag: a handled error must not still be pending
+     * when the next call checks.
+     */
+    private fun emitTry(stmt: IrStmt.Try) {
+        val catchBody = stmt.catchBody
+        if (catchBody == null) {
+            for (s in stmt.body) emitStmt(s)
+            return
+        }
+        usesErrorSlot = true
+        val n = blockCounter++
+        val done = "try_done_$n"
+        val handler = "catch_$n"
+        line("(block \$$done")
+        indent++
+        line("(block \$$handler")
+        indent++
+        errorHandlers.addLast(handler)
+        for (s in stmt.body) emitStmt(s)
+        errorHandlers.removeLast()
+        line("(br \$$done)")
+        indent--
+        line(")")
+        stmt.catchName?.let { name ->
+            declareLocal(name, IrType.Any)
+            line(storeVariable(name, IrType.Any, "(global.get \$__azora_err)"))
+        }
+        line("(global.set \$__azora_failed (i32.const 0))")
+        for (s in catchBody) emitStmt(s)
+        indent--
+        line(")")
+    }
+
+    /**
+     * `expr catch fallback` - the expression's value, or the fallback if it failed.
+     *
+     * The primary runs inside the handler's block and leaves the whole
+     * expression with its value; a failure in it falls out of that block onto
+     * the fallback instead.
+     */
+    private fun emitCatchExpr(expr: IrExpr.CatchExpr): String {
+        usesErrorSlot = true
+        val n = blockCounter++
+        val done = "catch_done_$n"
+        val handler = "catch_expr_$n"
+        errorHandlers.addLast(handler)
+        val primary = emitAs(expr.expr, expr.type)
+        errorHandlers.removeLast()
+        val fallback = emitAs(expr.fallback, expr.type)
+        return "(block \$$done (result ${wasmType(expr.type)}) " +
+            "(block \$$handler (br \$$done $primary)) " +
+            "(global.set \$__azora_failed (i32.const 0)) $fallback)"
+    }
+
+    /**
+     * [value], a call to a failable function, followed by the check that sends
+     * a failure to [failureExit] before anything can use the value it returned
+     * in place of one.
+     */
+    private fun checkedCall(value: String, type: IrType): String {
+        usesErrorSlot = true
+        val scalar = wasmType(type)
+        val result = newTemp(scalar)
+        return "(block (result $scalar) (local.set $result $value) " +
+            "(if (global.get \$__azora_failed) (then ${failureExit()})) (local.get $result))"
     }
 
     private fun emitReactiveEffect(effect: IrStmt.Effect) {
@@ -770,7 +996,7 @@ class WasmCodegen {
         line("(local.set $length (i32.load (local.get $raw)))")
         line("(local.set $index (i32.const 0))")
         val condition = "(i32.lt_u (local.get $index) (local.get $length))"
-        emitWhile(null, condition, stmt.body, isFor = true, bindIteration = {
+        emitWhile(stmt.label, condition, stmt.body, isFor = true, bindIteration = {
             val address = "(i32.add (local.get $raw) (i32.add (i32.const 4) " +
                 "(i32.mul (local.get $index) (i32.const ${wasmSize(array.element)}))))"
             line(storeVariable(stmt.elem, array.element, "(${wasmLoad(array.element)} $address)"))
@@ -896,7 +1122,7 @@ class WasmCodegen {
             "(if (result $t) ${emitExpr(expr.condition)} (then ${emitAs(expr.thenExpr, expr.type)}) (else ${emitAs(expr.elseExpr, expr.type)}))"
         }
         is IrExpr.StringTemplate -> emitTemplate(expr)
-        is IrExpr.CatchExpr -> emitAs(expr.expr, expr.type) // no exception support - evaluate the primary expression
+        is IrExpr.CatchExpr -> emitCatchExpr(expr)
         is IrExpr.Lambda -> emitClosure(expr)
         is IrExpr.TupleLit -> emitTupleLit(expr)
         is IrExpr.TupleAccess -> {
@@ -906,8 +1132,11 @@ class WasmCodegen {
             val address = "(i32.add ${emitExpr(expr.target)} (i32.const ${tupleOffsets(types).first[expr.index]}))"
             coerceWasm("(${wasmLoad(stored)} $address)", stored, expr.type)
         }
-        is IrExpr.SetLit, is IrExpr.MapLit,
-        is IrExpr.VariantLit, is IrExpr.SlotPattern -> "(i32.const 0)" // unsupported by the MVP target
+        is IrExpr.SetLit, is IrExpr.MapLit -> error("WebAssembly cannot lower a built-in ${expr.type.shown()} literal yet")
+        // A variant has no layout here yet; a match on one that always failed,
+        // or a value that was always zero, would be a program that runs wrong.
+        is IrExpr.VariantLit -> error("WebAssembly cannot lower an anonymous variant value yet")
+        is IrExpr.SlotPattern -> error("WebAssembly cannot match variant '${expr.slotName}.${expr.variantName}' yet")
     }
 
     private fun emitBinary(expr: IrExpr.Binary): String {
@@ -1107,6 +1336,7 @@ class WasmCodegen {
     private fun emitAs(expr: IrExpr, type: IrType): String = coerceWasm(emitExpr(expr), expr.type, type)
 
     private fun emitCall(expr: IrExpr.Call): String {
+        if (expr.name == Intrinsics.NULL_COALESCE) return emitNullCoalesce(expr)
         // The MVP target has no host clock to sleep against, so `delay` degrades
         // to a no-op here rather than a call to a function that does not exist.
         // Its operand is still evaluated, so any effect in it still happens.
@@ -1198,7 +1428,30 @@ class WasmCodegen {
             declared?.getOrNull(i)?.let { emitAs(arg, it) } ?: emitExpr(arg)
         }
         val call = "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})"
-        return wrapCallResult(expr.type, callResult(call, functionResults[expr.name] ?: expr.type, expr.type))
+        val value = wrapCallResult(expr.type, callResult(call, functionResults[expr.name] ?: expr.type, expr.type))
+        return if (expr.name in failableFunctions) checkedCall(value, expr.type) else value
+    }
+
+    /**
+     * `a ?? b` - what `a` holds, or `b` when it holds nothing. A nullable is
+     * held as its inner type with null as all-zero bits, so the test is on the
+     * bits; `a` is evaluated once and `b` only when it is null.
+     */
+    private fun emitNullCoalesce(expr: IrExpr.Call): String {
+        val (left, right) = expr.args
+        if (left.type !is IrType.Nullable && left.type != IrType.Any) return emitAs(left, expr.type)
+        val scalar = wasmType(left.type)
+        val held = newTemp(scalar)
+        val isNull = when (scalar) {
+            "f64" -> "(i64.eqz (i64.reinterpret_f64 (local.get $held)))"
+            "f32" -> "(i32.eqz (i32.reinterpret_f32 (local.get $held)))"
+            else -> "($scalar.eqz (local.get $held))"
+        }
+        val resultType = wasmType(expr.type)
+        return "(block (result $resultType) (local.set $held ${emitExpr(left)}) " +
+            "(if (result $resultType) $isNull " +
+            "(then ${emitAs(right, expr.type)}) " +
+            "(else ${coerceWasm("(local.get $held)", left.type, expr.type)})))"
     }
 
     /** A call's result converted from the callee's [physical] return type to the call site's [expected] one. */
@@ -1448,6 +1701,11 @@ class WasmCodegen {
         localIrTypes.putAll(closure.lambda.params)
         localIrTypes["__env"] = CLOSURE_ENVIRONMENT
         currentReturnType = (closure.lambda.type as IrType.Function).ret
+        // A lambda body is a function of its own: a handler around the place it
+        // was written does not enclose the place it runs.
+        currentIsFailable = false
+        errorHandlers.clear()
+        prepareDefers(closure.lambda.body)
 
         out.clear(); indent = 2
         for (capture in closure.captures) {
@@ -1466,6 +1724,7 @@ class WasmCodegen {
             }
         }
         for (stmt in closure.lambda.body) emitStmt(stmt)
+        if (!endsWithTerminator(closure.lambda.body)) deferredCode(failing = false).takeIf { it.isNotEmpty() }?.let(::line)
         val body = out.toString()
 
         val sig = StringBuilder("  (func \$__closure_${closure.index}")
@@ -1602,9 +1861,22 @@ class WasmCodegen {
     }
 
     private fun elemAddr(target: IrExpr, index: IrExpr): String {
-        val base = if (target.type is IrType.Pointer) emitExpr(target)
-            else "(i32.add ${emitExpr(target)} (i32.const 4))"
-        return "(i32.add $base (i32.mul ${emitExpr(index)} (i32.const ${wasmSize(elementType(target))})))"
+        val size = wasmSize(elementType(target))
+        // A raw pointer is unsafe and carries no bounds to check.
+        if (target.type is IrType.Pointer) {
+            return "(i32.add ${emitExpr(target)} (i32.mul ${emitExpr(index)} (i32.const $size)))"
+        }
+        // A safe index names one of the array's own elements or traps, as on
+        // every other target. The check is one expression, so the array and the
+        // index are still evaluated where the source has them, and once; a
+        // negative index fails the same unsigned comparison as one past the end.
+        val base = newTemp("i32")
+        val at = newTemp("i32")
+        return "(block (result i32) " +
+            "(local.set $base ${emitExpr(target)}) " +
+            "(local.set $at ${emitExpr(index)}) " +
+            "(if (i32.ge_u (local.get $at) (i32.load (local.get $base))) (then unreachable)) " +
+            "(i32.add (i32.add (local.get $base) (i32.const 4)) (i32.mul (local.get $at) (i32.const $size))))"
     }
 
     /** The stored element type of an array or raw buffer - erased for a generic one. */
@@ -1887,31 +2159,34 @@ class WasmCodegen {
      * still comes from the host until its approximation is written.
      */
     private fun wasmSoftwareMathFor(extern: IrTopLevel.Extern): String? {
-        // `scope vha` mangles to `__std_vha_sin`; the extra accuracy is what the
+        // `scope vha` mangles to `__vha_sin`; the extra accuracy is what the
         // scope exists for, so it maps to the longer series where one is implemented.
+        // The runtime's own routines are named `rt.…`: a `.` cannot appear in an
+        // Azora name, so no canonical symbol - `__vha_sin` included - can be
+        // defined twice by sharing a name with the routine that implements it.
         val vha = "_vha_" in extern.name
         val name = when (extern.name.substringAfterLast('_')) {
-            "sin" -> if (vha) "__vha_sin" else "__soft_sin"
-            "cos" -> if (vha) "__vha_cos" else "__soft_cos"
-            "tan" -> if (vha) "__vha_tan" else "__soft_tan"
-            "log" -> "__soft_log"
-            "log2" -> "__soft_log2"
-            "log10" -> "__soft_log10"
-            "exp" -> "__soft_exp"
-            "exp2" -> "__soft_exp2"
-            "sinh" -> "__soft_sinh"
-            "cosh" -> "__soft_cosh"
-            "tanh" -> "__soft_tanh"
-            "cbrt" -> "__soft_cbrt"
-            "asin" -> "__soft_asin"
-            "acos" -> "__soft_acos"
-            "atan" -> "__soft_atan"
-            "atan2" -> "__soft_atan2"
-            "powr" -> "__soft_pow"
-            "hypot" -> "__soft_hypot"
+            "sin" -> if (vha) "rt.vha_sin" else "rt.soft_sin"
+            "cos" -> if (vha) "rt.vha_cos" else "rt.soft_cos"
+            "tan" -> if (vha) "rt.vha_tan" else "rt.soft_tan"
+            "log" -> "rt.soft_log"
+            "log2" -> "rt.soft_log2"
+            "log10" -> "rt.soft_log10"
+            "exp" -> "rt.soft_exp"
+            "exp2" -> "rt.soft_exp2"
+            "sinh" -> "rt.soft_sinh"
+            "cosh" -> "rt.soft_cosh"
+            "tanh" -> "rt.soft_tanh"
+            "cbrt" -> "rt.soft_cbrt"
+            "asin" -> "rt.soft_asin"
+            "acos" -> "rt.soft_acos"
+            "atan" -> "rt.soft_atan"
+            "atan2" -> "rt.soft_atan2"
+            "powr" -> "rt.soft_pow"
+            "hypot" -> "rt.soft_hypot"
             else -> return null
         }
-        val expectedArity = if (name in setOf("__soft_atan2", "__soft_hypot", "__soft_pow")) 2 else 1
+        val expectedArity = if (name in setOf("rt.soft_atan2", "rt.soft_hypot", "rt.soft_pow")) 2 else 1
         if (extern.params.size != expectedArity) return null
         if (extern.returnType != IrType.Double) return null
         if (extern.params.any { it.second != IrType.Double }) return null
@@ -2266,7 +2541,7 @@ class WasmCodegen {
      * which `f64` cannot represent a difference over this interval.
      */
     private val RT_TRIG = """
-  (func ${'$'}__sin_poly (param ${'$'}r f64) (result f64)
+  (func ${'$'}rt.sin_poly (param ${'$'}r f64) (result f64)
     (local ${'$'}z f64)
     (local.set ${'$'}z (f64.mul (local.get ${'$'}r) (local.get ${'$'}r)))
     (f64.mul (local.get ${'$'}r)
@@ -2280,7 +2555,7 @@ class WasmCodegen {
                     (f64.mul (local.get ${'$'}z)
                       (f64.add (f64.const 0.0000027557319223985893)
                         (f64.mul (local.get ${'$'}z) (f64.const -0.000000025052108385441718)))))))))))))
-  (func ${'$'}__cos_poly (param ${'$'}r f64) (result f64)
+  (func ${'$'}rt.cos_poly (param ${'$'}r f64) (result f64)
     (local ${'$'}z f64)
     (local.set ${'$'}z (f64.mul (local.get ${'$'}r) (local.get ${'$'}r)))
     (f64.add (f64.const 1)
@@ -2296,7 +2571,7 @@ class WasmCodegen {
                         (f64.add (f64.const -0.00000027557319223985893)
                           (f64.mul (local.get ${'$'}z) (f64.const 0.0000000020876756987868098))))))))))))))
   ;; quadrant dispatch shared by sin and cos; ${'$'}k offsets the quadrant (cos = sin + 1)
-  (func ${'$'}__trig (param ${'$'}x f64) (param ${'$'}k i32) (result f64)
+  (func ${'$'}rt.trig (param ${'$'}x f64) (param ${'$'}k i32) (result f64)
     (local ${'$'}n f64) (local ${'$'}r f64) (local ${'$'}q i32)
     (local.set ${'$'}n (f64.nearest (f64.mul (local.get ${'$'}x) (f64.const 0.6366197723675814))))
     ;; three-part pi/2 (fdlibm's split): the parts must SUM to pi/2 to within the
@@ -2307,16 +2582,16 @@ class WasmCodegen {
     (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.00000000000000000000202226624879595063154))))
     (local.set ${'$'}q (i32.and (i32.add (i32.trunc_f64_s (local.get ${'$'}n)) (local.get ${'$'}k)) (i32.const 3)))
     (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 0))
-      (then (call ${'$'}__sin_poly (local.get ${'$'}r)))
+      (then (call ${'$'}rt.sin_poly (local.get ${'$'}r)))
       (else (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 1))
-        (then (call ${'$'}__cos_poly (local.get ${'$'}r)))
+        (then (call ${'$'}rt.cos_poly (local.get ${'$'}r)))
         (else (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 2))
-          (then (f64.neg (call ${'$'}__sin_poly (local.get ${'$'}r))))
-          (else (f64.neg (call ${'$'}__cos_poly (local.get ${'$'}r)))))))))) 
-  (func ${'$'}__soft_sin (param ${'$'}x f64) (result f64)
-    (call ${'$'}__trig (local.get ${'$'}x) (i32.const 0)))
-  (func ${'$'}__soft_cos (param ${'$'}x f64) (result f64)
-    (call ${'$'}__trig (local.get ${'$'}x) (i32.const 1)))
+          (then (f64.neg (call ${'$'}rt.sin_poly (local.get ${'$'}r))))
+          (else (f64.neg (call ${'$'}rt.cos_poly (local.get ${'$'}r)))))))))) 
+  (func ${'$'}rt.soft_sin (param ${'$'}x f64) (result f64)
+    (call ${'$'}rt.trig (local.get ${'$'}x) (i32.const 0)))
+  (func ${'$'}rt.soft_cos (param ${'$'}x f64) (result f64)
+    (call ${'$'}rt.trig (local.get ${'$'}x) (i32.const 1)))
 """
 
 
@@ -2331,7 +2606,7 @@ class WasmCodegen {
      * bits. `pow` is `exp(y*log(x))`; the rest are one identity each.
      */
     private val RT_EXPLOG = """
-  (func ${'$'}__soft_log (param ${'$'}x f64) (result f64)
+  (func ${'$'}rt.soft_log (param ${'$'}x f64) (result f64)
     (local ${'$'}bits i64) (local ${'$'}k i32) (local ${'$'}m f64) (local ${'$'}s f64) (local ${'$'}z f64)
     (if (f64.le (local.get ${'$'}x) (f64.const 0))
       (then (return (f64.div (f64.const -1) (f64.const 0)))))
@@ -2364,7 +2639,7 @@ class WasmCodegen {
                             (f64.mul (local.get ${'$'}z)
                               (f64.add (f64.const 0.09090909090909091)
                                 (f64.mul (local.get ${'$'}z) (f64.const 0.07692307692307693)))))))))))))))))
-  (func ${'$'}__soft_exp (param ${'$'}x f64) (result f64)
+  (func ${'$'}rt.soft_exp (param ${'$'}x f64) (result f64)
     (local ${'$'}k f64) (local ${'$'}r f64) (local ${'$'}sum f64) (local ${'$'}term f64) (local ${'$'}i i32) (local ${'$'}ki i32)
     (if (f64.gt (local.get ${'$'}x) (f64.const 709.78))
       (then (return (f64.div (f64.const 1) (f64.const 0)))))
@@ -2385,26 +2660,26 @@ class WasmCodegen {
     (local.set ${'$'}ki (i32.trunc_f64_s (local.get ${'$'}k)))
     (f64.mul (local.get ${'$'}sum)
       (f64.reinterpret_i64 (i64.shl (i64.extend_i32_s (i32.add (local.get ${'$'}ki) (i32.const 1023))) (i64.const 52)))))
-  (func ${'$'}__soft_log2 (param ${'$'}x f64) (result f64)
-    (f64.mul (call ${'$'}__soft_log (local.get ${'$'}x)) (f64.const 1.4426950408889634)))
-  (func ${'$'}__soft_log10 (param ${'$'}x f64) (result f64)
-    (f64.mul (call ${'$'}__soft_log (local.get ${'$'}x)) (f64.const 0.4342944819032518)))
-  (func ${'$'}__soft_exp2 (param ${'$'}x f64) (result f64)
-    (call ${'$'}__soft_exp (f64.mul (local.get ${'$'}x) (f64.const 0.6931471805599453))))
-  (func ${'$'}__soft_tan (param ${'$'}x f64) (result f64)
-    (f64.div (call ${'$'}__soft_sin (local.get ${'$'}x)) (call ${'$'}__soft_cos (local.get ${'$'}x))))
-  (func ${'$'}__soft_sinh (param ${'$'}x f64) (result f64)
-    (f64.mul (f64.const 0.5) (f64.sub (call ${'$'}__soft_exp (local.get ${'$'}x)) (call ${'$'}__soft_exp (f64.neg (local.get ${'$'}x))))))
-  (func ${'$'}__soft_cosh (param ${'$'}x f64) (result f64)
-    (f64.mul (f64.const 0.5) (f64.add (call ${'$'}__soft_exp (local.get ${'$'}x)) (call ${'$'}__soft_exp (f64.neg (local.get ${'$'}x))))))
-  (func ${'$'}__soft_tanh (param ${'$'}x f64) (result f64)
-    (f64.div (call ${'$'}__soft_sinh (local.get ${'$'}x)) (call ${'$'}__soft_cosh (local.get ${'$'}x))))
-  (func ${'$'}__soft_cbrt (param ${'$'}x f64) (result f64)
+  (func ${'$'}rt.soft_log2 (param ${'$'}x f64) (result f64)
+    (f64.mul (call ${'$'}rt.soft_log (local.get ${'$'}x)) (f64.const 1.4426950408889634)))
+  (func ${'$'}rt.soft_log10 (param ${'$'}x f64) (result f64)
+    (f64.mul (call ${'$'}rt.soft_log (local.get ${'$'}x)) (f64.const 0.4342944819032518)))
+  (func ${'$'}rt.soft_exp2 (param ${'$'}x f64) (result f64)
+    (call ${'$'}rt.soft_exp (f64.mul (local.get ${'$'}x) (f64.const 0.6931471805599453))))
+  (func ${'$'}rt.soft_tan (param ${'$'}x f64) (result f64)
+    (f64.div (call ${'$'}rt.soft_sin (local.get ${'$'}x)) (call ${'$'}rt.soft_cos (local.get ${'$'}x))))
+  (func ${'$'}rt.soft_sinh (param ${'$'}x f64) (result f64)
+    (f64.mul (f64.const 0.5) (f64.sub (call ${'$'}rt.soft_exp (local.get ${'$'}x)) (call ${'$'}rt.soft_exp (f64.neg (local.get ${'$'}x))))))
+  (func ${'$'}rt.soft_cosh (param ${'$'}x f64) (result f64)
+    (f64.mul (f64.const 0.5) (f64.add (call ${'$'}rt.soft_exp (local.get ${'$'}x)) (call ${'$'}rt.soft_exp (f64.neg (local.get ${'$'}x))))))
+  (func ${'$'}rt.soft_tanh (param ${'$'}x f64) (result f64)
+    (f64.div (call ${'$'}rt.soft_sinh (local.get ${'$'}x)) (call ${'$'}rt.soft_cosh (local.get ${'$'}x))))
+  (func ${'$'}rt.soft_cbrt (param ${'$'}x f64) (result f64)
     (local ${'$'}neg i32) (local ${'$'}y f64) (local ${'$'}i i32)
     (if (f64.eq (local.get ${'$'}x) (f64.const 0)) (then (return (f64.const 0))))
     (local.set ${'$'}neg (f64.lt (local.get ${'$'}x) (f64.const 0)))
     (local.set ${'$'}x (f64.abs (local.get ${'$'}x)))
-    (local.set ${'$'}y (call ${'$'}__soft_exp (f64.mul (call ${'$'}__soft_log (local.get ${'$'}x)) (f64.const 0.3333333333333333))))
+    (local.set ${'$'}y (call ${'$'}rt.soft_exp (f64.mul (call ${'$'}rt.soft_log (local.get ${'$'}x)) (f64.const 0.3333333333333333))))
     ;; two Newton steps clean up the exp/log round trip
     (local.set ${'$'}i (i32.const 0))
     (block ${'$'}c (loop ${'$'}l
@@ -2429,7 +2704,7 @@ class WasmCodegen {
      * overflow for values whose hypotenuse is representable.
      */
     private val RT_INVTRIG = """
-  (func ${'$'}__atan_core (param ${'$'}x f64) (result f64)
+  (func ${'$'}rt.atan_core (param ${'$'}x f64) (result f64)
     (local ${'$'}z f64) (local ${'$'}s f64)
     (local.set ${'$'}z (f64.mul (local.get ${'$'}x) (local.get ${'$'}x)))
     (f64.mul (local.get ${'$'}x)
@@ -2447,7 +2722,7 @@ class WasmCodegen {
                             (f64.mul (local.get ${'$'}z)
                               (f64.add (f64.const 0.07692307692307693)
                                 (f64.mul (local.get ${'$'}z) (f64.const -0.06666666666666667)))))))))))))))))
-  (func ${'$'}__soft_atan (param ${'$'}x f64) (result f64)
+  (func ${'$'}rt.soft_atan (param ${'$'}x f64) (result f64)
     (local ${'$'}neg i32) (local ${'$'}inv i32) (local ${'$'}half i32) (local ${'$'}r f64)
     (local.set ${'$'}neg (f64.lt (local.get ${'$'}x) (f64.const 0)))
     (local.set ${'$'}x (f64.abs (local.get ${'$'}x)))
@@ -2458,31 +2733,31 @@ class WasmCodegen {
     (if (local.get ${'$'}half)
       (then (local.set ${'$'}x (f64.div (local.get ${'$'}x)
               (f64.add (f64.const 1) (f64.sqrt (f64.add (f64.const 1) (f64.mul (local.get ${'$'}x) (local.get ${'$'}x))))))))) 
-    (local.set ${'$'}r (call ${'$'}__atan_core (local.get ${'$'}x)))
+    (local.set ${'$'}r (call ${'$'}rt.atan_core (local.get ${'$'}x)))
     (if (local.get ${'$'}half) (then (local.set ${'$'}r (f64.mul (local.get ${'$'}r) (f64.const 2)))))
     (if (local.get ${'$'}inv) (then (local.set ${'$'}r (f64.sub (f64.const 1.5707963267948966) (local.get ${'$'}r)))))
     (if (result f64) (local.get ${'$'}neg) (then (f64.neg (local.get ${'$'}r))) (else (local.get ${'$'}r))))
-  (func ${'$'}__soft_asin (param ${'$'}x f64) (result f64)
+  (func ${'$'}rt.soft_asin (param ${'$'}x f64) (result f64)
     (if (f64.ge (f64.abs (local.get ${'$'}x)) (f64.const 1))
       (then (return (f64.mul (f64.const 1.5707963267948966)
         (if (result f64) (f64.lt (local.get ${'$'}x) (f64.const 0)) (then (f64.const -1)) (else (f64.const 1)))))))
-    (call ${'$'}__soft_atan (f64.div (local.get ${'$'}x)
+    (call ${'$'}rt.soft_atan (f64.div (local.get ${'$'}x)
       (f64.sqrt (f64.sub (f64.const 1) (f64.mul (local.get ${'$'}x) (local.get ${'$'}x)))))))
-  (func ${'$'}__soft_acos (param ${'$'}x f64) (result f64)
-    (f64.sub (f64.const 1.5707963267948966) (call ${'$'}__soft_asin (local.get ${'$'}x))))
-  (func ${'$'}__soft_atan2 (param ${'$'}y f64) (param ${'$'}x f64) (result f64)
+  (func ${'$'}rt.soft_acos (param ${'$'}x f64) (result f64)
+    (f64.sub (f64.const 1.5707963267948966) (call ${'$'}rt.soft_asin (local.get ${'$'}x))))
+  (func ${'$'}rt.soft_atan2 (param ${'$'}y f64) (param ${'$'}x f64) (result f64)
     (if (f64.gt (local.get ${'$'}x) (f64.const 0))
-      (then (return (call ${'$'}__soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))))))
+      (then (return (call ${'$'}rt.soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))))))
     (if (f64.lt (local.get ${'$'}x) (f64.const 0))
       (then
         (if (f64.ge (local.get ${'$'}y) (f64.const 0))
-          (then (return (f64.add (call ${'$'}__soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))) (f64.const 3.141592653589793))))
-          (else (return (f64.sub (call ${'$'}__soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))) (f64.const 3.141592653589793)))))))
+          (then (return (f64.add (call ${'$'}rt.soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))) (f64.const 3.141592653589793))))
+          (else (return (f64.sub (call ${'$'}rt.soft_atan (f64.div (local.get ${'$'}y) (local.get ${'$'}x))) (f64.const 3.141592653589793)))))))
     ;; x == 0
     (if (f64.gt (local.get ${'$'}y) (f64.const 0)) (then (return (f64.const 1.5707963267948966))))
     (if (f64.lt (local.get ${'$'}y) (f64.const 0)) (then (return (f64.const -1.5707963267948966))))
     (f64.const 0))
-  (func ${'$'}__soft_hypot (param ${'$'}x f64) (param ${'$'}y f64) (result f64)
+  (func ${'$'}rt.soft_hypot (param ${'$'}x f64) (param ${'$'}y f64) (result f64)
     (local ${'$'}m f64) (local ${'$'}r f64)
     (local.set ${'$'}x (f64.abs (local.get ${'$'}x)))
     (local.set ${'$'}y (f64.abs (local.get ${'$'}y)))
@@ -2490,18 +2765,18 @@ class WasmCodegen {
     (if (f64.eq (local.get ${'$'}m) (f64.const 0)) (then (return (f64.const 0))))
     (local.set ${'$'}r (f64.div (f64.min (local.get ${'$'}x) (local.get ${'$'}y)) (local.get ${'$'}m)))
     (f64.mul (local.get ${'$'}m) (f64.sqrt (f64.add (f64.const 1) (f64.mul (local.get ${'$'}r) (local.get ${'$'}r))))))
-  (func ${'$'}__soft_pow (param ${'$'}x f64) (param ${'$'}y f64) (result f64)
+  (func ${'$'}rt.soft_pow (param ${'$'}x f64) (param ${'$'}y f64) (result f64)
     (local ${'$'}n f64) (local ${'$'}odd i32)
     (if (f64.eq (local.get ${'$'}y) (f64.const 0)) (then (return (f64.const 1))))
     (if (f64.eq (local.get ${'$'}x) (f64.const 0)) (then (return (f64.const 0))))
     (if (f64.gt (local.get ${'$'}x) (f64.const 0))
-      (then (return (call ${'$'}__soft_exp (f64.mul (local.get ${'$'}y) (call ${'$'}__soft_log (local.get ${'$'}x)))))))
+      (then (return (call ${'$'}rt.soft_exp (f64.mul (local.get ${'$'}y) (call ${'$'}rt.soft_log (local.get ${'$'}x)))))))
     ;; negative base is real only for an integer exponent; the sign follows its parity
     (local.set ${'$'}n (f64.nearest (local.get ${'$'}y)))
     (if (f64.ne (local.get ${'$'}n) (local.get ${'$'}y))
       (then (return (f64.div (f64.const 0) (f64.const 0)))))
     (local.set ${'$'}odd (i32.and (i32.trunc_f64_s (local.get ${'$'}n)) (i32.const 1)))
-    (local.set ${'$'}n (call ${'$'}__soft_exp (f64.mul (local.get ${'$'}y) (call ${'$'}__soft_log (f64.neg (local.get ${'$'}x))))))
+    (local.set ${'$'}n (call ${'$'}rt.soft_exp (f64.mul (local.get ${'$'}y) (call ${'$'}rt.soft_log (f64.neg (local.get ${'$'}x))))))
     (if (result f64) (local.get ${'$'}odd) (then (f64.neg (local.get ${'$'}n))) (else (local.get ${'$'}n))))
 """
 
@@ -2515,15 +2790,15 @@ class WasmCodegen {
      * precision and cost real time in a loop; `vha::sin` pays for them.
      */
     private val RT_VHA_TRIG = """
-  (func ${'$'}__vha_sin_poly (param ${'$'}r f64) (result f64)
+  (func ${'$'}rt.vha_sin_poly (param ${'$'}r f64) (result f64)
     (local ${'$'}z f64)
     (local.set ${'$'}z (f64.mul (local.get ${'$'}r) (local.get ${'$'}r)))
     (f64.mul (local.get ${'$'}r) (f64.add (f64.const 1) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.16666666666666666) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.008333333333333333) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.0001984126984126984) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.0000027557319223985893) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.000000025052108385441718) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.00000000016059043836821613) (f64.mul (local.get ${'$'}z) (f64.const -0.0000000000007647163731819816)))))))))))))))))
-  (func ${'$'}__vha_cos_poly (param ${'$'}r f64) (result f64)
+  (func ${'$'}rt.vha_cos_poly (param ${'$'}r f64) (result f64)
     (local ${'$'}z f64)
     (local.set ${'$'}z (f64.mul (local.get ${'$'}r) (local.get ${'$'}r)))
     (f64.add (f64.const 1) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.5) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.041666666666666664) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.001388888888888889) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.0000248015873015873) (f64.mul (local.get ${'$'}z) (f64.add (f64.const -0.00000027557319223985893) (f64.mul (local.get ${'$'}z) (f64.add (f64.const 0.0000000020876756987868098) (f64.mul (local.get ${'$'}z) (f64.const -0.000000000011470745597729725))))))))))))))))
-  (func ${'$'}__vha_trig (param ${'$'}x f64) (param ${'$'}k i32) (result f64)
+  (func ${'$'}rt.vha_trig (param ${'$'}x f64) (param ${'$'}k i32) (result f64)
     (local ${'$'}n f64) (local ${'$'}r f64) (local ${'$'}q i32)
     (local.set ${'$'}n (f64.nearest (f64.mul (local.get ${'$'}x) (f64.const 0.6366197723675814))))
     (local.set ${'$'}r (f64.sub (local.get ${'$'}x) (f64.mul (local.get ${'$'}n) (f64.const 1.5707963267341256))))
@@ -2531,18 +2806,18 @@ class WasmCodegen {
     (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (f64.mul (local.get ${'$'}n) (f64.const 0.00000000000000000000202226624879595063154))))
     (local.set ${'$'}q (i32.and (i32.add (i32.trunc_f64_s (local.get ${'$'}n)) (local.get ${'$'}k)) (i32.const 3)))
     (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 0))
-      (then (call ${'$'}__vha_sin_poly (local.get ${'$'}r)))
+      (then (call ${'$'}rt.vha_sin_poly (local.get ${'$'}r)))
       (else (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 1))
-        (then (call ${'$'}__vha_cos_poly (local.get ${'$'}r)))
+        (then (call ${'$'}rt.vha_cos_poly (local.get ${'$'}r)))
         (else (if (result f64) (i32.eq (local.get ${'$'}q) (i32.const 2))
-          (then (f64.neg (call ${'$'}__vha_sin_poly (local.get ${'$'}r))))
-          (else (f64.neg (call ${'$'}__vha_cos_poly (local.get ${'$'}r))))))))))
-  (func ${'$'}__vha_sin (param ${'$'}x f64) (result f64)
-    (call ${'$'}__vha_trig (local.get ${'$'}x) (i32.const 0)))
-  (func ${'$'}__vha_cos (param ${'$'}x f64) (result f64)
-    (call ${'$'}__vha_trig (local.get ${'$'}x) (i32.const 1)))
-  (func ${'$'}__vha_tan (param ${'$'}x f64) (result f64)
-    (f64.div (call ${'$'}__vha_sin (local.get ${'$'}x)) (call ${'$'}__vha_cos (local.get ${'$'}x))))
+          (then (f64.neg (call ${'$'}rt.vha_sin_poly (local.get ${'$'}r))))
+          (else (f64.neg (call ${'$'}rt.vha_cos_poly (local.get ${'$'}r))))))))))
+  (func ${'$'}rt.vha_sin (param ${'$'}x f64) (result f64)
+    (call ${'$'}rt.vha_trig (local.get ${'$'}x) (i32.const 0)))
+  (func ${'$'}rt.vha_cos (param ${'$'}x f64) (result f64)
+    (call ${'$'}rt.vha_trig (local.get ${'$'}x) (i32.const 1)))
+  (func ${'$'}rt.vha_tan (param ${'$'}x f64) (result f64)
+    (f64.div (call ${'$'}rt.vha_sin (local.get ${'$'}x)) (call ${'$'}rt.vha_cos (local.get ${'$'}x))))
 """
 
 }

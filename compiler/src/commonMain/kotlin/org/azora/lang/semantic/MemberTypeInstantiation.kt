@@ -1,6 +1,8 @@
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.IrType
 
 /** Call-site types; the registered function retains its physical/erased signature. */
@@ -57,7 +59,7 @@ internal fun instantiateSpecMember(table: SymbolTable, receiver: IrType.Named, s
 }
 
 /** [receiver] seen as its ancestor spec [owner], its arguments passed along each parent. */
-private fun asAncestorSpec(table: SymbolTable, receiver: IrType.Named, owner: String, seen: MutableSet<String>): IrType.Named? {
+internal fun asAncestorSpec(table: SymbolTable, receiver: IrType.Named, owner: String, seen: MutableSet<String>): IrType.Named? {
     if (receiver.name == owner) return receiver
     if (!seen.add(receiver.name)) return null
     val spec = table.lookupSpec(receiver.name) ?: return null
@@ -69,6 +71,43 @@ private fun asAncestorSpec(table: SymbolTable, receiver: IrType.Named, owner: St
         asAncestorSpec(table, seenAs, owner, seen)?.let { return it }
     }
     return null
+}
+
+/**
+ * The element type of [type] when `for … in` walks it by position - when it
+ * is, refines or implements [Intrinsics.INDEXED] - or null when it is not.
+ *
+ * The element is read off the type's own `get`, so a `MutableSet<Int>`
+ * yields `Int` through every spec between it and `Indexed`.
+ */
+internal fun indexedElementType(table: SymbolTable, type: IrType): IrType? {
+    val named = type as? IrType.Named ?: return null
+    val indexed = Intrinsics.INDEXED
+    if (table.lookupSpec(named.name) != null) {
+        if (indexed !in table.specAndAncestors(named.name)) return null
+        val get = table.lookupSpecMethod(named.name, "get") ?: return null
+        return instantiateSpecMember(table, named, get).returnType
+    }
+    val walkable = table.allConformances().any {
+        it.typeName == named.name && indexed in table.specAndAncestors(it.contractName)
+    }
+    if (!walkable) return null
+    val get = table.lookupMethod(named.name, "get")?.let { table.lookupFunction(it) } ?: return null
+    return instantiateMember(table, named, get).returnType
+}
+
+/**
+ * The spec [actual] is through [conformance]: an `ArrayList<Int>` is a
+ * `List<Int>` by `impl List<T> for ArrayList<T>`. Null when the impl's target
+ * was not written with one parameter per argument of [actual], so the spec's
+ * arguments cannot be read off the value's.
+ */
+internal fun conformedSpec(actual: IrType.Named, conformance: TraitConformance): IrType.Named? {
+    val params = conformance.implTypeParams
+    if (params.isEmpty() || params.size != actual.args.size) return null
+    val bindings = params.zip(actual.args).associate { (name, argument) -> name to typeRefOf(argument) }
+    val args = conformance.typeArgs.map { IrType.resolve(substituteMemberType(it, bindings), emptySet()) }
+    return IrType.Named(conformance.contractName, args)
 }
 
 /**
@@ -161,3 +200,29 @@ internal fun typeRefOf(type: IrType): TypeRef = when (type) {
         type.constArgs.getOrNull(index)?.let { TypeRef.Const(it) } ?: typeRefOf(argument)
     })
 }
+
+/**
+ * What `alloc .(…)` builds.
+ *
+ * `.(a, b, c)` names no type of its own, so what it means depends on what the
+ * pointer points at. To a declared type it is that type's constructor -
+ * `var p: Point* = alloc .(1, 2)`. To anything else there is nothing to
+ * construct and the arguments are the run of values the pointer points at,
+ * which is how `ArrayList` fills its buffer from a variadic ctor. An empty run
+ * - `var slots: Int* = alloc .()` - holds what the pointer says it points at,
+ * since there is no element to say it instead.
+ *
+ * The resolver and IR generation both read it here, so they cannot disagree.
+ */
+internal fun allocatedConstruction(table: SymbolTable, value: Expr): Expr {
+    val member = value as? Expr.InferredMember ?: return value
+    val args = member.ctorArgs?.takeIf { member.name.isEmpty() } ?: return value
+    // A bridge pack cannot be constructed, so `.()` into one is not a
+    // construction: `T*` erases to `Any*`, and what the pointer holds is the
+    // run of values, not one `Any`.
+    val owner = table.lookupInferredMember(member.line, member.column)
+    if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
+    val element = owner?.takeIf { args.isEmpty() }?.let { TypeRef.Named(Intrinsics.ARRAY, listOf(TypeRef.Named(it))) }
+    return Expr.ArrayLiteral(args, member.line, member.column, member.length, contextualType = element)
+}
+

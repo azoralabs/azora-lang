@@ -9,18 +9,18 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class TupleTest {
-    @Test fun tupleOfAndTupleTypeRemainSupported() {
+    @Test fun tupleLiteralsAndTupleTypesAreOneType() {
+        // `(A, B)` and `Tuple<A, B>` are identical (GTC §6.3), so either spelling
+        // is accepted where the other is written.
         val result = Compiler().compile("""
             import std.io
-            import std.container.tuple
-            import std::*
 
-            func swap(value: Tuple<Int, String>): Tuple<String, Int> {
-                return tupleOf(value.1, value.0)
+            func swap(value: Tuple<Int, String>): (String, Int) {
+                return (value.1, value.0)
             }
 
             func main() {
-                fin result = swap(tupleOf(7, "ready"))
+                fin result: Tuple<String, Int> = swap((7, "ready"))
                 println(result.0)
                 println(result.1)
             }
@@ -30,32 +30,26 @@ class TupleTest {
         assertEquals("ready\n7", IrInterpreter().interpret(result.ir).trim())
     }
 
-    @Test fun tupleLiteralIsRejectedWithMigration() {
-        // `(a, b, …)` value tuple literals were removed: build tuples with
-        // `tupleOf(…)` or the `tup@` macro. Parentheses only group.
-        val result = Compiler().compile("""
-            import std.io
-            import std.container::*
-
-            func main() {
-                fin pair = (1, "hello")
-                println(pair.0)
-            }
-        """.trimIndent(), release = false)
-
-        assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "tuple literal" in it && "tupleOf" in it }, result.errors.toString())
+    @Test fun aOneElementTupleLiteralIsRejected() {
+        // GTC §6.4: `(x)` groups, `(x,)` is no tuple.
+        val errors = runCatching { Compiler().compile("func main() {\n    fin pair = (1,)\n}", release = false) }
+            .fold({ (it as? CompilationResult.Failure)?.errors.orEmpty() }, { listOf(it.message.orEmpty()) })
+        assertTrue(errors.any { "a tuple has at least two elements" in it }, errors.toString())
     }
 
-    @Test fun tupleTypeSyntaxIsRejectedWithMigration() {
+    @Test fun aTupleTypeIsWrittenNatively() {
         val result = Compiler().compile("""
+            import std.io
             func pair(): (Int, String) {
-                return tupleOf(1, "hello")
+                return (1, "hello")
+            }
+            func main() {
+                println(pair().1)
             }
         """.trimIndent(), release = false)
 
-        assertIs<CompilationResult.Failure>(result)
-        assertTrue(result.errors.any { "Tuple<A, B>" in it }, result.errors.toString())
+        assertIs<CompilationResult.Success>(result, "Compilation failed: ${(result as? CompilationResult.Failure)?.errors}")
+        assertEquals("hello", IrInterpreter().interpret(result.ir).trim())
     }
 
     @Test fun groupingAndFunctionTypesAreNotTupleSyntax() {

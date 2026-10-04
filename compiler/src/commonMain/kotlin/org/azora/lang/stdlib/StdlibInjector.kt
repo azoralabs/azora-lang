@@ -30,6 +30,7 @@ import org.azora.lang.frontend.ModuleQualifiedSymbol
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
+import org.azora.lang.frontend.LibraryDecorator
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeFunctionCall
@@ -201,6 +202,9 @@ class StdlibInjector private constructor(
         /** Compatibility lookup against the bundled standard library. */
         fun moduleOf(name: String): String? = standard.moduleOf(name)
 
+        /** The bundled standard library's decorators; see the instance member. */
+        fun libraryDecorators(): Map<String, LibraryDecorator> = standard.libraryDecorators()
+
         /**
          * Enforces that a source file's path agrees with its declared module.
          *
@@ -342,6 +346,18 @@ class StdlibInjector private constructor(
          * exactly as it would inside its own module.
          */
         val alwaysInjectedItems = mutableListOf<TopLevel>()
+
+        /** The module each of [alwaysInjectedItems] comes from, by position. */
+        val alwaysInjectedModules = mutableListOf<String>()
+
+        /**
+         * The always-injected items a program written as [module] does not
+         * already hold: compiling a module's own source makes the program that
+         * module, so its blocks are there once, as the program wrote them.
+         */
+        fun alwaysInjectedFor(module: String?): List<TopLevel> =
+            if (module == null) alwaysInjectedItems
+            else alwaysInjectedItems.filterIndexed { i, _ -> alwaysInjectedModules[i] != module }
         /** extern name → single-signature bridge declaring it. */
         val externs = LinkedHashMap<String, TopLevel.Bridge>()
         /** struct/pack name → its `impl` blocks (methods/oper overloads), injected alongside the pack. */
@@ -369,27 +385,29 @@ class StdlibInjector private constructor(
     /** The bundled-library module providing [name] ("std.math"), or null - used for error hints. */
     fun moduleOf(name: String): String? = index.moduleOfName[name]
 
-    /** Returns the source-level qualified access path for an imported scope member. */
-    fun qualifiedAccessOf(name: String, program: Program): String? {
-        val item = index.items[name] ?: return null
+    /** Every decorator the loaded libraries declare, by name. */
+    fun libraryDecorators(): Map<String, LibraryDecorator> = buildMap {
+        for ((name, item) in index.items) {
+            if (item !is TopLevel.Deco) continue
+            val module = index.moduleOfName[name] ?: continue
+            put(name, LibraryDecorator(module, alwaysInScope = module in index.alwaysOnModules))
+        }
+    }
+
+    /**
+     * How [name] is spelled when it is a member of a scope an imported module
+     * declares: `shapes::area` for a bare `area`. A bare use of one most
+     * plausibly meant that member, so an undefined-name error offers it.
+     */
+    fun importedScopeMembers(name: String, program: Program): List<String> {
         val visible = LinkedHashMap<String, TopLevel>().apply {
             putAll(index.implicitRootItems)
             putAll(importedItems(program))
         }
-        if (visible.values.none { it == item }) return null
-        val declaredName = when (item) {
-            is TopLevel.Func -> item.decl.name
-            is TopLevel.FinDecl -> item.name
-            is TopLevel.LetDecl -> item.name
-            is TopLevel.VarDecl -> item.name
-            is TopLevel.Bridge ->
-                item.funcs.singleOrNull()?.localName
-                    ?: item.funcs.singleOrNull()?.name
-                    ?: item.values.singleOrNull()?.name
-            else -> return null
-        } ?: return null
-        if ("__" !in declaredName) return null
-        return declaredName.split("__").joinToString("::")
+        return visible.keys
+            .filter { "__" in it.removePrefix("__") && it.substringAfterLast("__") == name }
+            .map { it.removePrefix("__").split("__").joinToString("::") }
+            .distinct()
     }
 
     /**
@@ -1344,7 +1362,10 @@ class StdlibInjector private constructor(
                     // the module itself, rather than lifting each nested constant.
                     is TopLevel.InlineBlock, is TopLevel.DeepInlineBlock,
                     is TopLevel.InlineIf, is TopLevel.DeepInlineIf ->
-                        if (alwaysOn) idx.alwaysInjectedItems.add(item)
+                        if (alwaysOn) {
+                            idx.alwaysInjectedItems.add(item)
+                            idx.alwaysInjectedModules.add(module)
+                        }
                     else -> {}
                 }
             }
@@ -1721,7 +1742,8 @@ class StdlibInjector private constructor(
             }
         }
         // Exported/core blocks are always injected; pull in whatever they reference.
-        for (item in index.alwaysInjectedItems) collectNamesFromItem(item, referenced)
+        val alwaysInjected = index.alwaysInjectedFor(program.moduleName)
+        for (item in alwaysInjected) collectNamesFromItem(item, referenced)
         val implicitReferenced = referenced.filterTo(mutableSetOf()) {
             it in implicitCollectionTypes || it in implicitLiteralTargets
         }
@@ -1737,7 +1759,7 @@ class StdlibInjector private constructor(
         // module), where the program's own declarations shadow the library, or
         // in the library module whose declaration contains it, which names what
         // that module declares and imports whatever the program declares.
-        val walk = Walk(reachable)
+        val walk = Walk(reachable, program.moduleName)
         var frontier = referenced.map { Ref(it, null) }
         val bodyImports = bodyImportBlocks(program)
         frontier = frontier + seedBodyImports(bodyImports, walk)
@@ -1793,7 +1815,7 @@ class StdlibInjector private constructor(
         // user source mentioned an unimported type-function name.
         val dependencyNames = mutableSetOf<String>()
         injected.values.forEach { collectNamesFromItem(it, dependencyNames) }
-        index.alwaysInjectedItems.forEach { collectNamesFromItem(it, dependencyNames) }
+        alwaysInjected.forEach { collectNamesFromItem(it, dependencyNames) }
         val dependencyTypeFunctions = dependencyNames.flatMap { name ->
             index.typeFunctionsByName[name].orEmpty()
         }
@@ -1831,7 +1853,7 @@ class StdlibInjector private constructor(
         if (
             injected.isEmpty() &&
             injectedExterns.isEmpty() &&
-            index.alwaysInjectedItems.isEmpty() &&
+            alwaysInjected.isEmpty() &&
             !typeFunctionsChanged &&
             !typeMacrosChanged
         ) return program
@@ -1846,7 +1868,7 @@ class StdlibInjector private constructor(
         val declarations = kept.map { it.second }
         val externDeclarations = injectedExterns.values.distinct().filter { existingIdentities.add(itemIdentity(it)) }
         // Exported/core compile-time blocks are injected unconditionally.
-        val alwaysDeclarations = index.alwaysInjectedItems.filter { existingIdentities.add(itemIdentity(it)) }
+        val alwaysDeclarations = alwaysInjected.filter { existingIdentities.add(itemIdentity(it)) }
         val injectedScopeTypeNamespaces = buildMap {
             for (declaration in kept.map { it.first } + alwaysDeclarations) {
                 val name = typeDeclarationName(declaration) ?: continue
@@ -1918,7 +1940,14 @@ class StdlibInjector private constructor(
     private data class Ref(val name: String, val module: String?)
 
     /** What the dependency walk has injected, keyed by declaration identity. */
-    private inner class Walk(val reachable: Set<String>) {
+    /**
+     * What one injection reaches. [ownModule] is the module the program itself
+     * is, when it declares one: compiling `std/string.az` makes the program
+     * `std.string`, so a library's reference to that module's `String` means
+     * the program's own declaration - not a second copy under a hidden identity
+     * that the program's `String` would then disagree with.
+     */
+    private inner class Walk(val reachable: Set<String>, val ownModule: String? = null) {
         val injected = LinkedHashMap<String, TopLevel>()
         val moduleOf = HashMap<String, String?>()
         /** module → name → the identity that name resolved to there. */
@@ -1938,6 +1967,8 @@ class StdlibInjector private constructor(
         val blockTypeMacros = mutableListOf<Pair<String, TypeTypeArm>>()
 
         fun add(key: String, item: TopLevel, module: String?, next: MutableList<Ref>) {
+            // The program holds its own module's declarations already.
+            if (module != null && module == ownModule) return
             injected[key] = item
             moduleOf[key] = module
             val names = mutableSetOf<String>()
@@ -2663,7 +2694,13 @@ class StdlibInjector private constructor(
                 collectNamesFromExpr(expr.from, names)
                 collectNamesFromExpr(expr.to, names)
             }
-            is Expr.ArrayLiteral -> expr.elements.forEach { collectNamesFromExpr(it, names) }
+            is Expr.ArrayLiteral -> {
+                // A sequence literal builds an `Array` unless its context names
+                // another target, as a string literal builds a `String`: the
+                // value's own members come with it, written import or not.
+                names.add("Array")
+                expr.elements.forEach { collectNamesFromExpr(it, names) }
+            }
             is Expr.MapLit -> {
                 // An associative literal builds the standard map unless its
                 // context names another target, and the program need not have
@@ -2679,7 +2716,10 @@ class StdlibInjector private constructor(
             // declaration is named: a private helper called only from inside a
             // `.()` was never pulled in, and its own module could not resolve it.
             is Expr.InferredMember -> expr.ctorArgs?.forEach { collectNamesFromExpr(it, names) }
-            is Expr.TupleLit -> expr.elements.forEach { collectNamesFromExpr(it, names) }
+            is Expr.TupleLit -> {
+                names.add(Intrinsics.TUPLE)
+                expr.elements.forEach { collectNamesFromExpr(it, names) }
+            }
             is Expr.VariantLit -> expr.elements.forEach { collectNamesFromExpr(it, names) }
             is Expr.TupleAccess -> collectNamesFromExpr(expr.target, names)
             is Expr.StringTemplate -> {
@@ -2755,7 +2795,11 @@ class StdlibInjector private constructor(
                 ref.receivers.forEach { collectNamesFromTypeRef(it, names) }
                 collectNamesFromTypeRef(ref.ret, names)
             }
-            is TypeRef.Tuple -> ref.elements.forEach { collectNamesFromTypeRef(it, names) }
+            // `(A, B)` is the `Tuple` the library declares, behaviour included.
+            is TypeRef.Tuple -> {
+                names.add(Intrinsics.TUPLE)
+                ref.elements.forEach { collectNamesFromTypeRef(it, names) }
+            }
             is TypeRef.Nullable -> collectNamesFromTypeRef(ref.inner, names)
             is TypeRef.Failable -> {
                 collectNamesFromTypeRef(ref.ok, names)

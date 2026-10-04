@@ -34,7 +34,7 @@
 @Supress(.Unused)
 module std.allocator
 
-import std.format::Display
+import std.format::{Display, Formatter}
 
 // -----------------------------------------------------------------------
 // Error Set
@@ -104,7 +104,7 @@ bridge spec Allocator
  *     // everything freed here
  */
 @Since("0.1")
-pack Arena derives (Display, Allocator) {
+pack Arena derives Allocator {
     var capacity: Int = 0
     var offset: Int = 0
     var allocCount: Int = 0
@@ -154,7 +154,10 @@ impl Arena {
      * @return The byte offset of the allocated region.
      */
     @Experimental(since: "0.1")
-    func !.allocate(size: UInt): Int ?! AllocError {
+    func !.allocate(size: Int): Int ?! AllocError
+    in {
+        assert size > 0 panic "Allocation size must be positive"
+    } scope {
         if self.offset + size > self.capacity then return .OutOfMemory
         fin position = self.offset
         self.offset += size
@@ -175,7 +178,10 @@ impl Arena {
      * @return The byte offset of the aligned allocation.
      */
     @Experimental(since: "0.1")
-    func !.allocAligned(size: UInt, alignment: UInt): Int ?! AllocError {
+    func !.allocAligned(size: Int, alignment: Int): Int ?! AllocError
+    in {
+        assert alignment > 0 && (alignment & (alignment - 1)) == 0 panic "Alignment must be a power of two"
+    } scope {
         fin remainder = self.offset % alignment
         fin padding = if remainder == 0 then 0 else alignment - remainder
         fin aligned = self.offset + padding
@@ -232,6 +238,14 @@ impl Arena {
         ", allocs: " + self.allocCount as String + ")"
 }
 
+/** An arena prints its [Arena.diagnostic] summary. */
+@Since("0.1")
+impl Display for Arena {
+    func &.display(formatter: Formatter!) {
+        formatter.write(self.diagnostic)
+    }
+}
+
 // -----------------------------------------------------------------------
 // Pool allocator
 // -----------------------------------------------------------------------
@@ -275,7 +289,11 @@ impl Pool {
      * @param slotCount The number of slots to pre-allocate. Must be positive.
      */
     @Experimental(since: "0.1")
-    ctor .(slotSize: UInt, slotCount: UInt) {
+    ctor .(slotSize: Int, slotCount: Int)
+    in {
+        assert slotSize > 0 panic "Pool slot size must be positive"
+        assert slotCount > 0 panic "Pool slot count must be positive"
+    } scope {
         self.slotSize = slotSize
         self.slotCount = slotCount
         self.freeStack = alloc .() * slotCount
@@ -329,7 +347,11 @@ impl Pool {
      *             previously acquired.
      */
     @Experimental(since: "0.1")
-    func !.release(slotIndex: UInt) {
+    func !.release(slotIndex: Int)
+    in {
+        assert slotIndex >= 0 && slotIndex < self.slotCount panic "Slot index out of range"
+        assert self.freeCount < self.slotCount panic "Every slot is already free"
+    } scope {
         self.freeStack.*[self.freeCount] = slotIndex
         self.freeCount++
         self.acquiredCount--
@@ -385,7 +407,7 @@ impl Pool {
  *     stack.free(64)   // frees a
  */
 @Since("0.1")
-pack StackAllocator derives (Display, Allocator) {
+pack StackAllocator derives Allocator {
     var capacity: Int = 0
     var offset: Int = 0
     var allocCount: Int = 0
@@ -399,7 +421,12 @@ impl StackAllocator {
      * @param capacity The total size in bytes. Must be positive.
      */
     @Experimental(since: "0.1")
-    ctor .(capacity: UInt) scope self.capacity = capacity
+    ctor .(capacity: Int)
+    in {
+        assert capacity > 0 panic "Stack capacity must be positive"
+    } scope {
+        self.capacity = capacity
+    }
 
     /**
      * The number of bytes remaining.
@@ -441,7 +468,7 @@ impl StackAllocator {
      *             recent allocation.
      */
     @Experimental(since: "0.1")
-    func !.free(size: UInt)
+    func !.free(size: Int)
     in {
         assert size <= self.offset panic "Cannot free more than allocated"
     } scope {
@@ -490,6 +517,14 @@ impl StackAllocator {
         ", allocs: " + self.allocCount as String + ")"
 }
 
+/** A stack allocator prints its [StackAllocator.diagnostic] summary. */
+@Since("0.1")
+impl Display for StackAllocator {
+    func &.display(formatter: Formatter!) {
+        formatter.write(self.diagnostic)
+    }
+}
+
 // -----------------------------------------------------------------------
 // Alloc Scope (Factory Functions)
 // -----------------------------------------------------------------------
@@ -513,7 +548,7 @@ impl Alloc {
      * @return A new Arena allocator.
      */
     @Experimental(since: "0.1")
-    func &.arena(size: UInt): Arena = .(size)
+    func &.arena(size: Int): Arena = .(size)
 
     /**
      * Creates a pool allocator with the given slot configuration.
@@ -523,7 +558,7 @@ impl Alloc {
      * @return A new Pool allocator.
      */
     @Experimental(since: "0.1")
-    func &.pool(slotSize: UInt, count: UInt): Pool = .(slotSize, count)
+    func &.pool(slotSize: Int, count: Int): Pool = .(slotSize, count)
 
     /**
      * Creates a stack allocator with the given byte capacity.
@@ -532,5 +567,5 @@ impl Alloc {
      * @return A new StackAllocator.
      */
     @Experimental(since: "0.1")
-    func &.stack(size: UInt): StackAllocator =  .(size)
+    func &.stack(size: Int): StackAllocator = .(size)
 }

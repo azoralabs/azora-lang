@@ -33,6 +33,8 @@
 @Supress(.Unused)
 module std.memory.shared
 
+import std.traits::Clone
+
 /**
  * A reference-counted pointer to a `T`, counted without synchronisation.
  *

@@ -14,9 +14,8 @@ class TupleVariadicLlvmExecTest {
         if (!LlvmExec.available) return
         assertEquals("1\n2", LlvmExec.run("""
             import std.io
-            import std.container::*
             func main() {
-                fin x = tupleOf(1, 2)
+                fin x = (1, 2)
                 println(x.0)
                 println(x.1)
             }
@@ -27,9 +26,8 @@ class TupleVariadicLlvmExecTest {
         if (!LlvmExec.available) return
         assertEquals("1\n2\n3", LlvmExec.run("""
             import std.io
-            import std.container::*
             func main() {
-                fin t = tupleOf(1, 2, 3)
+                fin t = (1, 2, 3)
                 println(t.0)
                 println(t.1)
                 println(t.2)
@@ -37,17 +35,19 @@ class TupleVariadicLlvmExecTest {
         """.trimIndent()))
     }
 
-    @Test fun llvmEmitsMonomorphizedStruct() {
+    @Test fun aTupleIsTheCompilersOwnAggregate() {
         if (!LlvmExec.available) return
+        // `(Int, Int)` and `Tuple<Int, Int>` are one structural type (GTC §6.3):
+        // no pack is declared for a shape, whichever spelling built the value.
         val ir = LlvmExec.compile("""
             import std.io
-            import std.container::*
             func main() {
-                fin x = tupleOf(1, 2)
-                println(x.0)
+                fin x = (1, 2)
+                fin y = Tuple<Int, Int>(3, 4)
+                println(x.0 + y.1)
             }
         """.trimIndent())
-        // The monomorphized struct must be emitted and referenced by name.
-        assertTrue(ir.contains("__std_Tuple_Int_Int"), ir)
+        assertTrue("Tuple_Int_Int" !in ir, ir)
+        assertEquals("5", LlvmExec.runIr(ir))
     }
 }

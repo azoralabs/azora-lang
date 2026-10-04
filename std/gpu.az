@@ -428,16 +428,15 @@ bridge func<T> view(values: GpuBuffer<T>, layout: GpuLayout): GpuTensor<T>
 @Experimental(since: "0.1")
 bridge func<T> tile(values: GpuTensor<T>, layout: GpuLayout): GpuTensor<T>
 
-/** Compiles source or a future compiler-native [kernel] artifact. */
-@Experimental(since: "0.1")
-bridge func compile(device: GpuDevice, source: ShaderSource): GpuShader
-
-/** Compiles with explicit optimization, determinism, and target settings. */
+/**
+ * Compiles source or a future compiler-native [kernel] artifact, with
+ * explicit optimization, determinism and target settings when given.
+ */
 @Experimental(since: "0.1")
 bridge func compile(
     device: GpuDevice,
     source: ShaderSource,
-    options: CompileOptions,
+    options: CompileOptions = .(),
 ): GpuShader
 
 /** Validates the shader's resource layout for the selected device. */
@@ -464,17 +463,20 @@ bridge func<T> copyBuffer(
 @Experimental(since: "0.1")
 bridge func<T> fillBuffer(commands: GpuCommandList, destination: GpuBuffer<T>, value: T): Unit
 
-/** Enqueues a fully bound compute launch and returns its completion token. */
+/**
+ * Enqueues a fully bound compute launch and returns its completion token.
+ * `launch` builds the configuration this takes.
+ */
 @Experimental(since: "0.1")
-bridge func launch(
+bridge func enqueueLaunch(
     commands: GpuCommandList,
     pipeline: GpuPipeline,
     config: LaunchConfig,
 ): GpuEvent
 
-/** Submits compute workgroups explicitly. */
+/** Submits compute workgroups explicitly. `dispatch` builds the shape this takes. */
 @Experimental(since: "0.1")
-bridge func dispatch(
+bridge func enqueueDispatch(
     device: GpuDevice,
     pipeline: GpuPipeline,
     groups: DispatchSize,
@@ -579,7 +581,7 @@ bridge func submit(commands: GpuCommandList): GpuEvent
 
 /** Waits for every operation currently queued on one stream. */
 @Experimental(since: "0.1")
-bridge func finish(stream: GpuStream): Unit
+bridge func finishStream(stream: GpuStream): Unit
 
 /** Waits for submitted work and makes subsequent readback well-defined. */
 @Experimental(since: "0.1")

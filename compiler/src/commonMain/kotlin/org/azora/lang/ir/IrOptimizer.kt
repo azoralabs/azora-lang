@@ -582,23 +582,129 @@ class IrOptimizer {
     // -----------------------------------------------------------------------
 
     /**
-     * Removes unused functions, globals, and local declarations.
-     * `main` is always kept as the entry point.
+     * Removes the library functions nothing in [program] can reach.
+     *
+     * A program is handed every member of each library type it mentions, so an
+     * unshaken one carries code it never calls - into every backend, where a
+     * function the target cannot lower spoils output that never needed it. The
+     * program's own functions and globals are all kept, reached or not: an
+     * unoptimized build is the program as it was written. A release build
+     * shakes everything, in [unusedSymbolElimination].
      */
-    private fun unusedSymbolElimination(program: IrProgram): IrProgram {
-        // Collect all referenced names across the entire program
-        val usedNames = mutableSetOf<String>()
+    fun shakeLibrary(program: IrProgram): IrProgram {
+        val own = program.items.mapNotNull { item ->
+            when (item) {
+                is IrTopLevel.Func -> item.function.name.takeUnless { item.function.isLibrary }
+                is IrTopLevel.Global -> declaredName(item.stmt)
+                else -> null
+            }
+        }
+        val reached = reach(program, own).functions
+        val items = program.items.filter { item ->
+            item !is IrTopLevel.Func || !item.function.isLibrary || item.function.name in reached
+        }
+        return if (items.size == program.items.size) program else program.copy(items = items)
+    }
 
+    /** What [reach] found: the functions that can run, and every name they use. */
+    private class Reach(val functions: Set<String>, val names: Set<String>)
+
+    /**
+     * Members a body asks for by name - `x.name`, `x.name(…)`, `x[i]`, `a + b`
+     * on a pack - and the types whose values it holds or builds.
+     *
+     * A member is lowered to a function named after its owner, `Owner_name`,
+     * and found by that name where it is used: by the receiver's static type,
+     * or - for a value seen as a spec or through an erased generic - by the type
+     * the value carries at run time. So the IR names no such function; [reach]
+     * pairs every member asked for with every type that can be the receiver.
+     */
+    private class ImplicitUses {
+        val members = mutableSetOf<String>()
+        /** Operators applied to values that are not primitive, by declared symbol. */
+        val operators = mutableSetOf<String>()
+        val types = mutableSetOf<String>()
+    }
+
+    /** Set while [reach] is walking; collects the uses no name records. */
+    private var implicitSink: ImplicitUses? = null
+
+    private fun noteMember(receiver: IrType, member: String) {
+        val sink = implicitSink ?: return
+        sink.members += member
+        ownerName(receiver)?.let(sink.types::add)
+    }
+
+    /**
+     * An operator on a pack, or on a value whose type is erased, is a member of
+     * the operand's type: `oper+`, or `oper+@Rhs` for one declared per operand.
+     */
+    private fun noteOperator(expr: IrExpr.Binary) {
+        val sink = implicitSink ?: return
+        if (!canHoldPack(expr.left.type)) return
+        binaryOperatorSymbol(expr.op)?.let(sink.operators::add)
+        ownerName(expr.left.type)?.let(sink.types::add)
+    }
+
+    /** True when a value of [type] can be a pack at run time, so its operators are members. */
+    private fun canHoldPack(type: IrType): Boolean = when (type) {
+        is IrType.Named, IrType.Any -> true
+        is IrType.Nullable -> canHoldPack(type.inner)
+        else -> false
+    }
+
+    /** The name a type's members are lowered under, or null for one known only at run time. */
+    private fun ownerName(type: IrType): String? = when (type) {
+        is IrType.Named -> type.name
+        is IrType.Nullable -> ownerName(type.inner)
+        is IrType.Pointer -> ownerName(type.inner)
+        IrType.Any, IrType.Unit, IrType.Nothing -> null
+        is IrType.Function, is IrType.Array, is IrType.Tuple, is IrType.Task,
+        is IrType.Map, is IrType.Set, is IrType.Variant -> null
+        else -> type.toString()
+    }
+
+    /** Every function a member asked for in [uses] can resolve to. */
+    private fun implicitTargets(uses: ImplicitUses): Set<String> = buildSet {
+        for (type in uses.types) {
+            for (member in uses.members) {
+                add("${type}_$member")
+                add("${type}_prop_$member")
+            }
+            for (symbol in uses.operators) {
+                add("${type}_${mangleMethodSymbol(symbol)}")
+                for (operand in uses.types) add("${type}_${mangleMethodSymbol("$symbol@$operand")}")
+            }
+        }
+    }
+
+    private fun declaredName(stmt: IrStmt): String? = when (stmt) {
+        is IrStmt.VarDecl -> stmt.name
+        is IrStmt.FinDecl -> stmt.name
+        is IrStmt.LetDecl -> stmt.name
+        else -> null
+    }
+
+    /**
+     * The functions [program] can run, from `main`, its tests, its exported
+     * globals, every spec implementation and [roots], following both the names
+     * the IR writes and the members it asks for by name.
+     */
+    private fun reach(program: IrProgram, roots: Collection<String>): Reach {
+        val usedNames = mutableSetOf<String>()
         val funcMap = mutableMapOf<String, IrFunction>()
         val globalInitializers = mutableMapOf<String, IrExpr>()
         for (item in program.items) {
             when (item) {
                 is IrTopLevel.Func -> funcMap[item.function.name] = item.function
-                is IrTopLevel.Global -> when (val stmt = item.stmt) {
-                    is IrStmt.VarDecl -> globalInitializers[stmt.name] = stmt.initializer
-                    is IrStmt.FinDecl -> globalInitializers[stmt.name] = stmt.initializer
-                    is IrStmt.LetDecl -> globalInitializers[stmt.name] = stmt.initializer
-                    else -> {}
+                is IrTopLevel.Global -> {
+                    val name = declaredName(item.stmt) ?: continue
+                    globalInitializers[name] = when (val stmt = item.stmt) {
+                        is IrStmt.VarDecl -> stmt.initializer
+                        is IrStmt.FinDecl -> stmt.initializer
+                        is IrStmt.LetDecl -> stmt.initializer
+                        else -> continue
+                    }
                 }
                 else -> {}
             }
@@ -623,41 +729,65 @@ class IrOptimizer {
             }
         }
 
-        if ("main" in funcMap) worklist.add("main")
-        // Spec `impl` methods are reached only through dynamic dispatch (backends
-        // synthesize the stubs), so the IR has no direct reference to them. Treat
-        // every implementer method as a reachability root so it survives shaking.
-        for (table in program.specTables) {
-            for (impl in table.impls) {
-                for (fn in impl.methodFuncs.values) {
-                    if (fn in funcMap) { usedNames.add(fn); worklist.add(fn) }
+        val uses = ImplicitUses()
+        val savedSink = implicitSink
+        implicitSink = uses
+        try {
+            if ("main" in funcMap) worklist.add("main")
+            enqueue(roots.toSet())
+            // Spec `impl` methods are reached only through dynamic dispatch (backends
+            // synthesize the stubs), so the IR has no direct reference to them. Treat
+            // every implementer method as a reachability root so it survives shaking.
+            for (table in program.specTables) {
+                for (impl in table.impls) {
+                    for (fn in impl.methodFuncs.values) {
+                        if (fn in funcMap) { usedNames.add(fn); worklist.add(fn) }
+                    }
                 }
             }
-        }
-        // Tests and exported bridge globals are always kept, so their
-        // dependencies must survive even without a reference from `main`.
-        for (item in program.items) {
-            when (item) {
-                is IrTopLevel.Test -> enqueue(collectReferencedNames(item.body))
-                is IrTopLevel.Global -> if (item.exportName != null) {
-                    enqueue(collectReferencedNames(listOf(item.stmt)))
+            // Tests and exported bridge globals are always kept, so their
+            // dependencies must survive even without a reference from `main`.
+            for (item in program.items) {
+                when (item) {
+                    is IrTopLevel.Test -> enqueue(collectReferencedNames(item.body))
+                    is IrTopLevel.Global -> if (item.exportName != null) {
+                        enqueue(collectReferencedNames(listOf(item.stmt)))
+                    }
+                    else -> {}
                 }
-                else -> {}
             }
+            val reachableFuncs = mutableSetOf<String>()
+            val visited = mutableSetOf<String>()
+            do {
+                while (worklist.isNotEmpty()) {
+                    val name = worklist.removeFirst()
+                    if (!visited.add(name)) continue
+                    val func = funcMap[name]
+                    if (func != null) {
+                        reachableFuncs.add(name)
+                        enqueue(collectReferencedNames(func.body))
+                    } else {
+                        enqueue(collectReferencedNamesFromExpr(globalInitializers[name]))
+                    }
+                }
+                // Each function reached can ask for more members, or hold a value
+                // of another type, so pairing them runs until neither grows.
+                enqueue(implicitTargets(uses).filterTo(mutableSetOf()) { it in funcMap && it !in visited })
+            } while (worklist.isNotEmpty())
+            return Reach(reachableFuncs, usedNames)
+        } finally {
+            implicitSink = savedSink
         }
-        val reachableFuncs = mutableSetOf<String>()
-        val visited = mutableSetOf<String>()
-        while (worklist.isNotEmpty()) {
-            val name = worklist.removeFirst()
-            if (!visited.add(name)) continue
-            val func = funcMap[name]
-            if (func != null) {
-                reachableFuncs.add(name)
-                enqueue(collectReferencedNames(func.body))
-            } else {
-                enqueue(collectReferencedNamesFromExpr(globalInitializers[name]))
-            }
-        }
+    }
+
+    /**
+     * Removes unused functions, globals, and local declarations.
+     * `main` is always kept as the entry point.
+     */
+    private fun unusedSymbolElimination(program: IrProgram): IrProgram {
+        val reached = reach(program, emptyList())
+        val reachableFuncs = reached.functions
+        val usedNames = reached.names
 
         // Filter top-level items: keep reachable functions, used globals, and all tests
         val filteredItems = program.items.filter { item ->
@@ -804,6 +934,7 @@ class IrOptimizer {
             is IrStmt.Continue -> {}
             is IrStmt.Exchange -> { exchangeSink?.invoke(stmt); collectReferencedNamesFromExpr(stmt.left, names); collectReferencedNamesFromExpr(stmt.right, names) }
             is IrStmt.IndexAssign -> {
+                noteMember(stmt.target.type, "indexSet")
                 collectReferencedNamesFromExpr(stmt.target, names)
                 collectReferencedNamesFromExpr(stmt.index, names)
                 collectReferencedNamesFromExpr(stmt.value, names)
@@ -837,10 +968,13 @@ class IrOptimizer {
             is IrExpr.Var -> names.add(expr.name)
             is IrExpr.Call -> {
                 names.add(expr.name)
+                // `purge` runs the value's destructor, found by its type's name.
+                if (expr.name == "__purge") expr.args.forEach { noteMember(it.type, "dtor") }
                 expr.receiver?.let { collectReferencedNamesFromExpr(it, names) }
                 expr.args.forEach { collectReferencedNamesFromExpr(it, names) }
             }
             is IrExpr.Binary -> {
+                noteOperator(expr)
                 collectReferencedNamesFromExpr(expr.left, names)
                 collectReferencedNamesFromExpr(expr.right, names)
             }
@@ -852,15 +986,23 @@ class IrOptimizer {
             is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
             is IrExpr.SetLit -> expr.elements.forEach { collectReferencedNamesFromExpr(it, names) }
             is IrExpr.Index -> {
+                noteMember(expr.target.type, "index")
                 collectReferencedNamesFromExpr(expr.target, names)
                 collectReferencedNamesFromExpr(expr.index, names)
             }
-            is IrExpr.Member -> collectReferencedNamesFromExpr(expr.target, names)
+            is IrExpr.Member -> {
+                noteMember(expr.target.type, expr.name)
+                collectReferencedNamesFromExpr(expr.target, names)
+            }
             is IrExpr.MethodCall -> {
+                noteMember(expr.target.type, expr.name)
                 collectReferencedNamesFromExpr(expr.target, names)
                 expr.args.forEach { collectReferencedNamesFromExpr(it, names) }
             }
-            is IrExpr.StructCtor -> expr.args.forEach { collectReferencedNamesFromExpr(it, names) }
+            is IrExpr.StructCtor -> {
+                implicitSink?.types?.add(expr.name)
+                expr.args.forEach { collectReferencedNamesFromExpr(it, names) }
+            }
             is IrExpr.StringTemplate -> expr.parts.forEach {
                 if (it is IrExpr.IrTemplatePart.Expr) collectReferencedNamesFromExpr(it.expr, names)
             }
@@ -887,7 +1029,14 @@ class IrOptimizer {
                 lambdaSink?.invoke(expr)
                 expr.body.forEach { collectReferencedNamesFromStmt(it, names) }
             }
-            else -> {}
+            // An enum interpolated into a template is rendered through this; what
+            // it renders is an expression like any other - often a member call.
+            is IrExpr.EnumToString -> collectReferencedNamesFromExpr(expr.value, names)
+            // Listed rather than left to an `else`: a new expression that holds
+            // others has to say what it references, or the functions it calls are
+            // shaken out from under it.
+            IrExpr.UnitLiteral, is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral,
+            is IrExpr.EnumLiteral, is IrExpr.BoolLiteral, is IrExpr.CharLiteral, is IrExpr.SlotPattern -> {}
         }
     }
 

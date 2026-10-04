@@ -12,7 +12,7 @@ import kotlin.test.assertIs
 /** Verifies engine robotics geometry and motion contracts without hardware access. */
 class RoboticsEngineTest {
 
-    private val roboticsSource = File("../azora-engine/robotics.az").readText()
+    private val roboticsSource = File("../../azora-engine/proposals/robotics.az").readText()
 
     private fun run(source: String): String {
         val result = Compiler(
@@ -45,7 +45,7 @@ class RoboticsEngineTest {
 
                     fin limit = JointLimit("arm", -1.0, 1.0, 2.0, 4.0)
                     println(withinLimit(0.5, limit))
-                    fin command = boundedPositionCommand("arm", 5.0, 100L, limit)
+                    fin command = boundedPositionCommand("arm", 5.0, Long(100), limit)
                     println(command.value)
 
                     fin names: Array<String> = ["arm"]

@@ -194,11 +194,11 @@ impl Point {
 
 ```azora
 spec Greet {
-    func greet[self: Self&](): String
+    func &.greet(): String
 }
 
 impl Greet for Point {
-    func greet[self: Self&](): String { return "a point" }
+    func &.greet(): String { return "a point" }
 }
 ```
 
@@ -316,7 +316,7 @@ into one buffer.
 import std.format
 
 impl Display for Point {
-    func display[self: Self&](formatter: Formatter!) {
+    func &.display(formatter: Formatter!) {
         formatter.write("(")
         formatter.write("${self.x}")
         formatter.write(")")
@@ -379,7 +379,7 @@ and **inside an `impl` body**, where each iteration generates a member and
 ```azora
 impl Vec3 {
     inline for axis in ["x", "y", "z"] {
-        prop double$axis[self: Self&]: Double = self.$axis * 2.0
+        prop &.double$axis: Double = self.$axis * 2.0
     }
 }
 ```

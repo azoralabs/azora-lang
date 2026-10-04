@@ -20,7 +20,9 @@
  * Fixed-size heterogeneous container.
  *
  * A Tuple holds two or more values of potentially different types,
- * accessible by their positional index.
+ * accessible by their positional index. `(A, B)` and `Tuple<A, B>` name the
+ * same type (GTC §6.3): the compiler lays it out and owns its positional
+ * members, and this module layers behaviour on it.
  *
  * @since 0.1
  */
@@ -28,7 +30,6 @@
 exposed module std.container.tuple
 
 import std::{
-    serializer::Serializable
     traits::PrettyPrint
     reflection::reflect
 }
@@ -42,13 +43,7 @@ import std::{
  * @generic T Variadic type parameter pack for the element types.
  */
 @Experimental(since: "0.1")
-@EnforceNumFields
-@Serializable
-pack Tuple<...T> where (...T).size >= 2 {
-    inline for Ty in ...T with index {
-        inline "$index: $Ty"
-    }
-}
+bridge pack Tuple<...T> where (...T).size >= 2
 
 impl PrettyPrint for Tuple<...T> {
     /**

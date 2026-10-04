@@ -28,18 +28,29 @@ class ScopeQualifiedAccessTest {
         return IrInterpreter().interpret((result as CompilationResult.Success).ir).trim()
     }
 
-    @Test fun reflectionIsQualifiedFromOutsideItsScope() {
-        val result = Compiler().compile(
-            """
-            import std.reflection
-            inline fin visible = reflect<Int>.hasAnnot<Experimental>
-            func main() {}
-            """.trimIndent(),
-        )
-        assertIs<CompilationResult.Failure>(result)
-        assertTrue(
-            result.errors.any { "reflect" in it },
-            "Bare reflect must point to its scope-qualified spelling: ${result.errors}",
+    /**
+     * `reflect` lived in the library's `std` scope and had to be qualified from
+     * outside it. That scope is gone, and `reflect<T>` is an intrinsic written
+     * bare everywhere (`BareReflectTest` covers the parser's side); this is the
+     * whole pipeline answering through it.
+     */
+    @Test fun reflectionIsWrittenBare() {
+        assertEquals(
+            "true\nfalse",
+            run(
+                """
+                import std.io
+                import std.reflection
+                @Experimental(since: "0.1")
+                pack Probe { var x: Int }
+                inline fin marked = reflect<Probe>.hasAnnot<Experimental>
+                inline fin plain = reflect<Int>.hasAnnot<Experimental>
+                func main() {
+                    println(marked)
+                    println(plain)
+                }
+                """.trimIndent(),
+            ),
         )
     }
 
@@ -104,6 +115,7 @@ class ScopeQualifiedAccessTest {
                 """
                 import std.io
                 import std.serializer
+                import std.container.list
                 func main() {
                     var fields = ArrayList<SerialField>()
                     fields.add(SerialField("a", SerialValue.Null))

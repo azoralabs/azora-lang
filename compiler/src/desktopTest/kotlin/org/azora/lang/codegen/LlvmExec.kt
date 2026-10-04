@@ -89,7 +89,30 @@ object LlvmExec {
     const val RUN_TIMEOUT_SECONDS = 60L
 
     /** Executes emitted IR, including isolated stage tests that need no stdlib. */
-    fun runIr(ir: String): String {
+    fun runIr(ir: String): String = execute(ir) { code, stdout, stderr ->
+        if (code != 0) {
+            fail(
+                "lli exited with code $code\n" +
+                    "--- stderr ---\n$stderr\n" +
+                    "--- IR ---\n$ir"
+            )
+        }
+        stdout
+    }
+
+    /**
+     * Compiles and runs a program that must stop itself - a panic or a failed
+     * check - and returns what it printed, its reason included.
+     */
+    fun runExpectingAbort(source: String, optimized: Boolean = false): String {
+        val ir = compile(source, optimized)
+        return execute(ir) { code, stdout, _ ->
+            if (code == 0) fail("expected the program to stop, but it finished\n--- stdout ---\n$stdout\n--- IR ---\n$ir")
+            stdout
+        }
+    }
+
+    private fun execute(ir: String, outcome: (code: Int, stdout: String, stderr: String) -> String): String {
         val tool = lli ?: error("lli not available")
 
         val llFile = File.createTempFile("azora_", ".ll")
@@ -106,16 +129,7 @@ object LlvmExec {
                 proc.destroyForcibly().waitFor()
                 fail("lli did not finish within $RUN_TIMEOUT_SECONDS s\n--- stdout ---\n${outFile.readText()}")
             }
-            val code = proc.exitValue()
-            val stdout = outFile.readText()
-            if (code != 0) {
-                fail(
-                    "lli exited with code $code\n" +
-                        "--- stderr ---\n${errFile.readText()}\n" +
-                        "--- IR ---\n$ir"
-                )
-            }
-            return stdout.trimEnd('\n')
+            return outcome(proc.exitValue(), outFile.readText().trimEnd('\n'), errFile.readText())
         } finally {
             llFile.delete()
             outFile.delete()

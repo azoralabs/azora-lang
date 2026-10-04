@@ -217,6 +217,12 @@ object DiagnosticRenderer {
             diagnostic.providerModule?.let { module ->
                 append(" - '${diagnostic.symbol}' is provided by '$module': add 'import $module::${diagnostic.symbol}'")
             }
+            // A scope's member is reached through the scope, as a scope type is.
+            diagnostic.candidates.firstOrNull()?.takeIf { diagnostic.providerModule == null }?.let { first ->
+                append("; '${diagnostic.symbol}' is part of scope '${first.name.substringBeforeLast("::")}', use ")
+                append(diagnostic.candidates.joinToString(" or ") { "'${it.name}'" })
+                append(" instead")
+            }
         }
         is TypeMismatch -> "expected ${diagnostic.expected}, found ${diagnostic.actual}"
         is UnusedDeclaration -> "${diagnostic.declarationKind} '${diagnostic.name}' is never used"

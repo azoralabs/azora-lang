@@ -37,12 +37,11 @@ class TupleVariadicTest {
         assertEquals("Self", assertIs<Expr.Identifier>(reflect.args.single()).name)
     }
 
-    @Test fun tupleOfInferredMonomorphizes() {
+    @Test fun aTupleLiteralTakesItsElementsTypes() {
         val out = compile("""
             import std.io
-            import std.container::*
             func main() {
-                fin x = tupleOf(1, 2.0)
+                fin x = (1, 2.0)
                 println(x.0)
                 println(x.1)
             }
@@ -50,12 +49,11 @@ class TupleVariadicTest {
         assertEquals("1\n2.0", IrInterpreter().interpret(out.ir).trim())
     }
 
-    @Test fun tupleOfExplicitAnnotation() {
+    @Test fun aTupleLiteralTakesItsAnnotation() {
         val src = """
             import std.io
-            import std.container::*
             func main() {
-                fin x: Tuple<Int, Float> = tupleOf(1, 2.0)
+                fin x: Tuple<Int, Float> = (1, 2.0)
                 println(x.0)
                 println(x.1)
             }
@@ -64,21 +62,19 @@ class TupleVariadicTest {
         assertEquals("1\n2.0", IrInterpreter().interpret(out.ir).trim())
     }
 
-    @Test fun tupleOfExplicitTypeArgsBothForms() {
+    @Test fun aTupleIsBuiltByItsTypeInBothForms() {
         val a = compile("""
             import std.io
-            import std.container::*
             func main() {
-                fin x: Tuple<Int, Double> = tupleOf<Int, Double>(1, 2.0)
+                fin x: (Int, Double) = Tuple<Int, Double>(1, 2.0)
                 println(x.0)
                 println(x.1)
             }
         """.trimIndent())
         val b = compile("""
             import std.io
-            import std.container::*
             func main() {
-                fin x = tupleOf<Int, Double>(1, 2.0)
+                fin x = Tuple<Int, Double>(1, 2.0)
                 println(x.0)
                 println(x.1)
             }
@@ -87,12 +83,11 @@ class TupleVariadicTest {
         assertEquals("1\n2.0", IrInterpreter().interpret(b.ir).trim())
     }
 
-    @Test fun tupleOfThreeElementsAndMutation() {
+    @Test fun aTupleOfThreeElements() {
         val src = """
             import std.io
-            import std.container::*
             func main() {
-                fin t = tupleOf(true, "hi", 42)
+                fin t = (true, "hi", 42)
                 println(t.0)
                 println(t.1)
                 println(t.2)
@@ -104,15 +99,13 @@ class TupleVariadicTest {
 
     @Test fun tupleElementIsCheckAndEquality() {
         // Mirrors the `assert tup.0 is Int && tup.0 == 1` form used in Tuple.az's own tests.
-        // `is` is supported by the interpreter; tuple positional access + equality are
-        // checked across backends in the other tests.
+        // An unsuffixed real is a `Float` (`Literals.DEFAULT_FLOAT`).
         val src = """
             import std.io
-            import std.container::*
             func main() {
-                fin tup = tupleOf(1, 2.0, "3")
+                fin tup = (1, 2.0, "3")
                 if tup.0 is Int && tup.0 == 1 { println("ok0") }
-                if tup.1 is Double && tup.1 == 2.0 { println("ok1") }
+                if tup.1 is Float && tup.1 == 2.0 { println("ok1") }
                 if tup.2 is String && tup.2 == "3" { println("ok2") }
             }
         """.trimIndent()
@@ -125,14 +118,14 @@ class TupleVariadicTest {
             import std.io
             import std.container.tuple
             func main() {
-                fin x = tupleOf(1, 2)
+                fin x: Tuple<Int, Int> = (1, 2)
                 println(x.0)
             }
         """.trimIndent(), release = false)
         assertIs<CompilationResult.Success>(r, "import std failed: ${(r as? CompilationResult.Failure)?.errors}")
     }
 
-    @Test fun qualifiedTupleModuleImportExposesTupleOf() {
+    @Test fun aTupleDisplaysWithItsType() {
         val out = compile($$"""
             module playground
             import std.io
@@ -150,7 +143,7 @@ class TupleVariadicTest {
 
             func main() {
                 fin app = App("Azora")
-                println(tupleOf(app.greet(), ":)"))
+                println((app.greet(), ":)"))
             }
         """.trimIndent())
 
@@ -167,7 +160,7 @@ class TupleVariadicTest {
             import std.container.tuple
 
             func main() {
-                fin value = tupleOf("left", "right")
+                fin value = ("left", "right")
                 println(value.pretty)
             }
         """.trimIndent())
@@ -209,10 +202,10 @@ class TupleVariadicTest {
             import std.io
             import std.container.tuple
             func swap(t: Tuple<Int, Float>): Tuple<Float, Int> {
-                return tupleOf<Float, Int>(t.1, t.0)
+                return Tuple<Float, Int>(t.1, t.0)
             }
             func main() {
-                fin r = swap(tupleOf(7, 9.0))
+                fin r = swap((7, 9.0))
                 println(r.0)
                 println(r.1)
             }
@@ -227,7 +220,7 @@ class TupleVariadicTest {
             import std.container.tuple
 
             func divmod(a: Int, b: Int): Tuple<Int, Int> {
-                return tupleOf(a / b, a % b)
+                return (a / b, a % b)
             }
 
             func main() {
@@ -246,7 +239,7 @@ class TupleVariadicTest {
             import std.container.tuple
 
             func main() {
-                println(tupleOf(17 / 5, 17 % 5))
+                println((17 / 5, 17 % 5))
             }
         """.trimIndent())
 
@@ -256,40 +249,40 @@ class TupleVariadicTest {
         )
     }
 
-    @Test fun qualifiedSymbolsUseCanonicalIrNames() {
+    @Test fun aTupleIsTheCompilersOwnTypeInIr() {
+        // `(Int, Int)` is one structural type (GTC §6.3): no pack is declared
+        // for a shape, and the library's `println` keeps its bridge name.
         val out = compile("""
             import std.io
-            import std.container.tuple
 
             func main() {
-                println(tupleOf(17 / 5, 17 % 5))
+                println((17 / 5, 17 % 5).0)
             }
         """.trimIndent())
 
         val ir = out.ir.prettyPrint()
-        assertContains(ir, "pack __std_Tuple_Int_Int")
-        assertContains(ir, "func __std_tupleOf_Int_Int")
-        assertContains(ir, "bridge func __std_println")
-        assertContains(ir, "__std_println(__std_tupleOf_Int_Int")
-        assertFalse("std__println" in ir, ir)
-        assertFalse("__std__tupleOf" in ir, ir)
-        assertFalse("pack __Tuple_Int_Int" in ir, ir)
+        assertFalse("pack __Tuple" in ir, ir)
+        assertFalse("tupleOf" in ir, ir)
+        assertContains(ir, "bridge func println")
+        assertEquals("3", IrInterpreter().interpret(out.ir).trim())
     }
 
-    @Test fun tupleTypeRequiresItsDeclaredScope() {
-        val result = Compiler().compile("""
-            import std.container.tuple
+    @Test fun aTupleTypeNeedsNoImport() {
+        // `Tuple<…>` names the built-in tuple, as `(…)` does; neither is a
+        // library declaration a program has to import.
+        val out = compile("""
+            import std.io
 
             func divmod(a: Int, b: Int): Tuple<Int, Int> {
-                return tupleOf(a / b, a % b)
+                return (a / b, a % b)
             }
-        """.trimIndent(), release = false)
 
-        val failure = assertIs<CompilationResult.Failure>(result)
-        assertEquals(
-            listOf("line 3: undefined type 'Tuple'; 'Tuple' is part of scope 'std', use 'Tuple' instead"),
-            failure.errors,
-        )
+            func main() {
+                fin result: (Int, Int) = divmod(17, 5)
+                println(result.1)
+            }
+        """.trimIndent())
+        assertEquals("2", IrInterpreter().interpret(out.ir).trim())
     }
 
     @Test fun aScopeQualifierSurvivesParsingWithoutChangingTypeIdentity() {
@@ -298,7 +291,7 @@ class TupleVariadicTest {
         // it a different type from the one reached without it.
         val program = Parser(Lexer("""
             func divmod(a: Int, b: Int): shapes::Tuple<Int, Int> {
-                return tupleOf(a / b, a % b)
+                return (a / b, a % b)
             }
         """.trimIndent()).tokenize()).parse()
 
@@ -318,9 +311,8 @@ class TupleVariadicTest {
     @Test fun nestedTuple() {
         val src = """
             import std.io
-            import std.container::*
             func main() {
-                fin outer = tupleOf(tupleOf(1, 2), 3)
+                fin outer = ((1, 2), 3)
                 println(outer.0.0)
                 println(outer.0.1)
                 println(outer.1)
@@ -330,18 +322,20 @@ class TupleVariadicTest {
         assertEquals("1\n2\n3", IrInterpreter().interpret(out.ir).trim())
     }
 
-    @Test fun tupleLengthConstraintRejectsSingleElement() {
-        // `where (...T).size >= 2` - a 1-element tuple must fail with a clear message.
-        val r = Compiler().compile("""
-            import std.io
-            import std.container::*
-            func main() {
-                fin x = tupleOf(1)
-            }
-        """.trimIndent(), release = false)
-        val errors = (r as? CompilationResult.Failure)?.errors
-            ?: error("expected tupleOf(1) to fail the length constraint, but it compiled")
-        assertTrue(errors.any { it.contains("2") && (it.contains("Tuple") || it.contains("tupleOf")) }, "expected a clear length message, got: $errors")
+    @Test fun aOneElementTupleIsRejected() {
+        // GTC §6.4: a tuple has at least two elements; `(x)` groups.
+        for (source in listOf(
+            "func main() {\n    fin x = (1,)\n}",
+            "func f(x: (Int,)): Int { return 0 }",
+            "func f(x: Tuple<Int>): Int { return 0 }",
+        )) {
+            val errors = try {
+                (Compiler().compile(source, release = false) as? CompilationResult.Failure)?.errors
+            } catch (e: IllegalStateException) {
+                listOf(e.message.orEmpty())
+            } ?: error("expected '$source' to be rejected, but it compiled")
+            assertTrue(errors.any { "a tuple has at least two elements" in it }, "$source: $errors")
+        }
     }
 
     @Test fun tupleTestsAzFileParses() {

@@ -18,9 +18,8 @@ class TupleVariadicWasmExecTest {
         if (!WasmExec.available) return
         assertEquals("1\n2", WasmExec.run("""
             import std.io
-            import std.container::*
             func main() {
-                fin x = tupleOf(1, 2)
+                fin x = (1, 2)
                 println(x.0)
                 println(x.1)
             }
@@ -31,9 +30,8 @@ class TupleVariadicWasmExecTest {
         if (!WasmExec.available) return
         assertEquals("1\n2\n3", WasmExec.run("""
             import std.io
-            import std.container::*
             func main() {
-                fin t = tupleOf(1, 2, 3)
+                fin t = (1, 2, 3)
                 println(t.0)
                 println(t.1)
                 println(t.2)

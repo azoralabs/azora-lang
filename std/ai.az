@@ -83,6 +83,30 @@ impl Conversation {
         self.messages.add(message)
     }
 
+    /** Appends a system instruction. */
+    @Experimental(since: "0.1")
+    func !.system(content: String): Unit {
+        self.add(Message(Role.System, content, ""))
+    }
+
+    /** Appends a user message. */
+    @Experimental(since: "0.1")
+    func !.user(content: String): Unit {
+        self.add(Message(Role.User, content, ""))
+    }
+
+    /** Appends an assistant message. */
+    @Experimental(since: "0.1")
+    func !.assistant(content: String): Unit {
+        self.add(Message(Role.Assistant, content, ""))
+    }
+
+    /** Appends the result of the tool [name]. */
+    @Experimental(since: "0.1")
+    func !.tool(name: String, content: String): Unit {
+        self.add(Message(Role.Tool, content, name))
+    }
+
     /** Returns the number of messages currently stored. */
     @Experimental(since: "0.1")
     prop &.size: Int = self.messages.size
@@ -92,25 +116,30 @@ impl Conversation {
 @Experimental(since: "0.1")
 bridge func connect(provider: String, model: String): AiModel
 
-/** Generates one assistant message from structured conversation data. */
+/**
+ * Generates one assistant message from structured conversation data.
+ *
+ * Everything is borrowed: one connection serves many requests, and the
+ * conversation stays the caller's to extend with the reply.
+ */
 @Experimental(since: "0.1")
 bridge func complete(
-    model: AiModel,
-    conversation: Conversation,
-    options: GenerationOptions,
+    model: AiModel&,
+    conversation: Conversation&,
+    options: GenerationOptions&,
 ): Message
 
 /** Produces an embedding vector for one input string. */
 @Experimental(since: "0.1")
-bridge func embed(model: AiModel, text: String): Array<Double>
+bridge func embed(model: AiModel&, text: String): Array<Double>
 
 /** Performs one simple system/user request through the explicit bridge. */
 @Experimental(since: "0.1")
 func ask(
-    model: AiModel,
+    model: AiModel&,
     system: String,
     question: String,
-    options: GenerationOptions,
+    options: GenerationOptions&,
 ): Message {
     var chat = conversation
     chat.system(system)

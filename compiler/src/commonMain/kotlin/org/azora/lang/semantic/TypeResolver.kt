@@ -33,6 +33,8 @@ import org.azora.lang.frontend.CaptureExclusion
 import org.azora.lang.frontend.CaptureMode
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.arrayCallLiteral
+import org.azora.lang.frontend.tupleCallLiteral
 import org.azora.lang.frontend.Literals
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.MemberCallStyle
@@ -44,7 +46,10 @@ import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.Visibility
 import org.azora.lang.ir.sourceSymbol
+import org.azora.lang.frontend.scopePrefix
+import org.azora.lang.frontend.scopeQualifiedSpelling
 import org.azora.lang.ir.IrType
+import org.azora.lang.ir.shown
 import kotlin.collections.iterator
 
 /**
@@ -115,13 +120,43 @@ class TypeResolver(private val table: SymbolTable) {
                 column = column,
                 length = length.takeIf { it > 0 } ?: sourceName.length,
                 renderedMessage = message,
+                scopeAlternatives = scopeMembers[sourceName].orEmpty(),
             ),
         )
     }
 
+    /**
+     * The program's own scope members by their bare names, each with the
+     * qualified spelling that reaches it: `five` → `Const::five`. A bare name
+     * outside its scope does not reach the member, and the error says what does.
+     * A type's statics (`Byte__limit`) are read through the type, not as a
+     * scope's, so they are not offered here.
+     */
+    private var scopeMembers: Map<String, List<String>> = emptyMap()
+
+    private fun collectScopeMembers(program: Program): Map<String, List<String>> =
+        program.items.mapNotNull { item ->
+            val mangled = when (item) {
+                is TopLevel.Func -> item.decl.name
+                is TopLevel.FinDecl -> item.name
+                is TopLevel.LetDecl -> item.name
+                is TopLevel.VarDecl -> item.name
+                else -> null
+            } ?: return@mapNotNull null
+            if (mangled in program.injectedNames) return@mapNotNull null
+            val scope = mangled.scopePrefix() ?: return@mapNotNull null
+            if (table.lookupStruct(scope) != null || table.lookupEnum(scope) != null || table.lookupSpec(scope) != null) {
+                return@mapNotNull null
+            }
+            val spelling = mangled.scopeQualifiedSpelling() ?: return@mapNotNull null
+            spelling.substringAfterLast("::") to spelling
+        }.groupBy({ it.first }, { it.second })
+
     fun resolve(program: Program): List<String> {
         stableArraySizes.clear()
         this.program = program
+        scopeMembers = collectScopeMembers(program)
+        tupleTemplateMembers = program.tupleTemplates.flatMapTo(mutableSetOf()) { impl -> impl.methods.map { it.name } }
         typePropertyNames = program.typeFunctions.mapTo(mutableSetOf()) { it.name }
         packModules = program.items.filterIsInstance<TopLevel.Pack>()
             .associate { it.name to it.declaringModule }
@@ -150,7 +185,7 @@ class TypeResolver(private val table: SymbolTable) {
             expectedLambdaReceiverTypes = savedReceivers
             if (declared != null && actual != null &&
                 !isCompatible(declared, adoptLiteralType(initializer, actual, declared))) {
-                errors.add("line $line: global initializer expects $declared, got $actual")
+                errors.add("line $line: global initializer expects ${declared.shown()}, got ${actual.shown()}")
             }
             if (item is TopLevel.FinDecl && actual is IrType.Array) {
                 table.lookupVariable(item.name)?.let { rememberArraySize(it, initializer, actual) }
@@ -163,7 +198,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val actual = resolveExpr(value.initializer) ?: continue
                 if (!isCompatible(declared, actual)) {
                     errors.add(
-                        "line ${value.line}: bridge value '${value.name}' has type $declared but initializer is $actual",
+                        "line ${value.line}: bridge value '${value.name}' has type ${declared.shown()} but initializer is ${actual.shown()}",
                     )
                 }
             }
@@ -211,7 +246,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (actual != null && !isCompatible(declared, adoptLiteralType(initializer, actual, declared))) {
                     errors.add(
                         "line ${item.line}: default for '${item.name}.${item.fields[i].name}' " +
-                            "expects $declared, got $actual",
+                            "expects ${declared.shown()}, got ${actual.shown()}",
                     )
                 }
             }
@@ -244,9 +279,18 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = "${item.typeName}_${method.name}"
                     val func = table.lookupFunction(mangled) ?: continue
                     table.pushScope()
-                    for ((name, type) in func.params) {
+                    for ((index, param) in func.params.withIndex()) {
+                        val (name, type) = param
                         val mutable = name != "self" || method.receiverModifier != ParamModifier.SHARED
-                        table.defineVariable(VariableSymbol(name, type, mutable = mutable))
+                        val isReceiver = index == 0 && method.declaresReceiver
+                        val shared = if (isReceiver) {
+                            method.receiverModifier == ParamModifier.SHARED
+                        } else {
+                            method.params.getOrNull(index - 1)?.let(::isSharedBorrow) == true
+                        }
+                        table.defineVariable(
+                            VariableSymbol(name, type, mutable = mutable, sharedBorrow = shared, receiver = isReceiver),
+                        )
                     }
                     val unnamedReceiverTuple = method.contextualParams > 0 && method.receiverName == "__receiver0"
                     val receiverTupleType = if (unnamedReceiverTuple) {
@@ -430,7 +474,8 @@ class TypeResolver(private val table: SymbolTable) {
             // Only an exclusive borrow (`x!`) lets the callee write through it.
             val modifier = func.params.getOrNull(i)?.modifier ?: ParamModifier.NONE
             val mutable = modifier.writable
-            table.defineVariable(VariableSymbol(name, type, mutable))
+            val shared = func.params.getOrNull(i)?.let(::isSharedBorrow) == true
+            table.defineVariable(VariableSymbol(name, type, mutable, sharedBorrow = shared))
         }
 
         // `T ?! ErrSet` enforcement: track the function's declared error set so that
@@ -649,12 +694,21 @@ class TypeResolver(private val table: SymbolTable) {
         reportedSuspended.addAll(saved.reported)
     }
 
-    /** Every name [decl] binds to a borrow: its borrowed parameters and receiver. */
+    /** Every name [decl] binds to a shared borrow: its shared parameters and receiver. */
     private fun sharedBorrowedNamesOf(decl: FuncDecl, receiver: String?): Set<String> =
-        decl.params.filter { it.modifier == ParamModifier.SHARED || it.type is TypeRef.Reference }
-            .filter { it.modifier != ParamModifier.EXCLUSIVE }
+        decl.params.filter(::isSharedBorrow)
             .mapTo(mutableSetOf()) { it.name }
             .also { names -> if (decl.receiverModifier == ParamModifier.SHARED) receiver?.let(names::add) }
+
+    /**
+     * Whether [param] is a shared borrow: written `p&`, or typed `T&`. A `T!`
+     * is a borrow too, but an exclusive one, which may be written through.
+     */
+    private fun isSharedBorrow(param: Param): Boolean = when (param.modifier) {
+        ParamModifier.SHARED -> true
+        ParamModifier.EXCLUSIVE -> false
+        ParamModifier.NONE -> (param.type as? TypeRef.Reference)?.kind == TypeRef.RefKind.BORROWED
+    }
 
     private fun borrowedNamesOf(decl: FuncDecl, receiver: String?): Set<String> =
         decl.params.filter { it.type is TypeRef.Reference || it.modifier != ParamModifier.NONE }
@@ -931,12 +985,16 @@ class TypeResolver(private val table: SymbolTable) {
      * [argument] is.
      */
     private fun seedInferredReceiver(argument: Expr, expected: IrType?) {
-        val owner = when (expected) {
-            is IrType.Named -> expected.name
-            is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
+        val stated = (expected as? IrType.Nullable)?.inner ?: expected
+        val owner = when (stated) {
+            is IrType.Named -> stated.name
+            is IrType.Array -> Intrinsics.ARRAY
             else -> null
         } ?: return
-        inferredHead(argument)?.let { table.defineInferredMember(it.line, it.column, owner) }
+        inferredHead(argument)?.let { head ->
+            table.defineInferredMember(head.line, head.column, owner)
+            constructionTypeOf(stated)?.let { table.defineInferredConstruction(head.line, head.column, it) }
+        }
     }
 
     /**
@@ -1015,6 +1073,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.TupleLit -> {
                 val tuple = expected as? IrType.Tuple
                 if (tuple != null && tuple.elements.size == expr.elements.size) {
+                    expr.contextualType = typeRefOf(tuple)
                     expr.elements.zip(tuple.elements).forEach { (element, type) ->
                         seedExpectedValue(element, type)
                     }
@@ -1109,13 +1168,18 @@ class TypeResolver(private val table: SymbolTable) {
      * deriving it a second time from a context it no longer has.
      */
     private fun resolveInferredMember(expr: Expr.InferredMember, expected: IrType?): IrType? {
-        val owner = when (expected) {
-            is IrType.Named -> expected.name
-            is IrType.Nullable -> (expected.inner as? IrType.Named)?.name
+        val stated = (expected as? IrType.Nullable)?.inner ?: expected
+        val owner = when (stated) {
+            is IrType.Named -> stated.name
+            // `.()` where an `Array<T>` is expected is an `Array<T>()`.
+            is IrType.Array -> Intrinsics.ARRAY
             // An annotation argument was matched to its field before this pass,
             // so the type it chose is already recorded.
             else -> table.lookupInferredMember(expr.line, expr.column)
         }
+        // The arguments the position states go with the construction, so a
+        // `.()` returned as an `Array<Int>` builds one of `Int`s.
+        constructionTypeOf(stated)?.let { table.defineInferredConstruction(expr.line, expr.column, it) }
         if (owner == null) {
             errors.add(
                 "line ${expr.line}: cannot tell what '.${expr.name}' belongs to here - " +
@@ -1137,7 +1201,8 @@ class TypeResolver(private val table: SymbolTable) {
             }
             // `.(a, b)` builds the type; `.Variant(a)` builds one of its variants.
             return if (expr.name.isEmpty()) {
-                resolveExpr(Expr.Call(declared, args, expr.line, expr.column, declared.length))
+                val typeArgs = (table.lookupInferredConstruction(expr.line, expr.column) as? TypeRef.Named)?.args.orEmpty()
+                resolveExpr(Expr.Call(declared, args, expr.line, expr.column, declared.length, typeArgs))
             } else {
                 resolveExpr(
                     Expr.MethodCall(
@@ -1156,6 +1221,16 @@ class TypeResolver(private val table: SymbolTable) {
                 expr.length,
             ),
         )
+    }
+
+    /** The type a `.(…)` builds where [type] is expected, with its arguments, or null. */
+    private fun constructionTypeOf(type: IrType?): TypeRef? = when (type) {
+        is IrType.Array -> TypeRef.Named(
+            Intrinsics.ARRAY,
+            listOf(typeRefOf(type.element)) + listOfNotNull(type.size?.let { TypeRef.Const(it) }),
+        )
+        is IrType.Named -> type.takeIf { it.args.isNotEmpty() }?.let { typeRefOf(it) }
+        else -> null
     }
 
     private fun requireReactiveCaller(function: FunctionSymbol, line: Int): Boolean {
@@ -1326,7 +1401,7 @@ class TypeResolver(private val table: SymbolTable) {
         for (i in args.indices) {
             val actual = resolveContextualArgument(args[i], function.params[i]) ?: return null
             if (!isCompatible(function.params[i], adoptLiteralType(args[i], actual, function.params[i]))) {
-                errors.add("line $line: arg ${i + 1} of '$label': expected ${function.params[i]}, got $actual")
+                errors.add("line $line: arg ${i + 1} of '$label': expected ${function.params[i].shown()}, got ${actual.shown()}")
             }
         }
         // Receivers written at the call - `2.scale(7)` supplies one, `[2, 3].add()`
@@ -1343,7 +1418,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (!isCompatible(function.receivers[i], explicitReceivers[i])) {
                     errors.add(
                         "line $line: receiver ${i + 1} of '$label': " +
-                            "expected ${function.receivers[i]}, got ${explicitReceivers[i]}",
+                            "expected ${function.receivers[i].shown()}, got ${explicitReceivers[i].shown()}",
                     )
                 }
             }
@@ -1669,7 +1744,7 @@ class TypeResolver(private val table: SymbolTable) {
                                     "declare it as ': $valueType'",
                             )
                         } else {
-                            errors.add("line ${stmt.line}: return type mismatch: expected $returnType but got $valueType")
+                            errors.add("line ${stmt.line}: return type mismatch: expected ${returnType.shown()} but got ${valueType.shown()}")
                         }
                     }
                 }
@@ -1795,10 +1870,26 @@ class TypeResolver(private val table: SymbolTable) {
                         table.popScope()
                         return
                     }
+                    // A collection that says it is `Indexed` walks by position.
+                    val positional = indexedElementType(table, iterType)
+                    if (positional != null) {
+                        table.pushScope()
+                        table.defineVariable(
+                            VariableSymbol(stmt.name, loopRowType(stmt, positional), mutable = false, loopVariable = true),
+                        )
+                        stmt.indexName?.let { index ->
+                            table.defineVariable(
+                                VariableSymbol(index, IrType.Int, mutable = false, valueMutable = false, loopVariable = true),
+                            )
+                        }
+                        inLoop { resolveBody(stmt.body, returnType) }
+                        table.popScope()
+                        return
+                    }
                     if (iterType !is IrType.Array && iterType !is IrType.Set) {
                         errors.add(
-                            "line ${stmt.line}: for loop iterable must be a range, an array, or an " +
-                                "iterator, got $iterType",
+                            "line ${stmt.line}: for loop iterable must be a range, an array, an " +
+                                "iterator, or an Indexed collection, got ${iterType.shown()}",
                         )
                         return
                     }
@@ -1854,17 +1945,26 @@ class TypeResolver(private val table: SymbolTable) {
                 // reason `p.*[i]` reads it - see [bufferPointerType].
                 val targetType = bufferPointerType(stmt.target)
                     ?: resolveExpr(stmt.target) ?: return
-                // User-defined index-assign operator (`oper[]=`) on a struct.
+                // A pack's own `oper[]=`, or the one a spec declares.
                 if (targetType is IrType.Named) {
                     val mangled = table.lookupMethod(targetType.name, "indexSet")
-                    if (mangled != null) {
-                        val params = table.lookupFunction(mangled)?.params.orEmpty()
-                        seedExpectedValue(stmt.index, params.getOrNull(params.lastIndex - 1)?.second)
-                        seedExpectedValue(stmt.value, params.lastOrNull()?.second)
-                        resolveExpr(stmt.index) ?: return
-                        resolveExpr(stmt.value) ?: return
+                    val params = if (mangled != null) {
+                        table.lookupFunction(mangled)?.let { instantiateMember(table, targetType, it) }
+                            ?.params?.map { it.second }?.takeLast(2).orEmpty()
+                    } else {
+                        table.lookupSpecMethod(targetType.name, "indexSet")
+                            ?.let { instantiateSpecMember(table, targetType, it) }?.paramTypes
+                    }
+                    if (params == null) {
+                        errors.add(
+                            "line ${stmt.line}: '${targetType.shown()}' cannot be assigned by index - " +
+                                "it declares no 'oper[]= ${targetType.name}!.(index: …, value: …)'",
+                        )
                         return
                     }
+                    subscriptArgument(stmt.index, params.getOrNull(0), targetType, stmt.line) ?: return
+                    subscriptArgument(stmt.value, params.getOrNull(1), targetType, stmt.line, "value") ?: return
+                    return
                 }
                 // Map index-assign: `map[key] = value`.
                 if (targetType is IrType.Map) {
@@ -2125,7 +2225,11 @@ class TypeResolver(private val table: SymbolTable) {
             val element = repeatedElementType(construct.value) ?: return null
             return IrType.Pointer(element, mutable = construct.mutable)
         }
-        val call = construct as? Expr.Call ?: return null
+        val call = when (construct) {
+            is Expr.Call -> construct
+            is Expr.InferredMember -> table.inferredConstructionCall(construct) ?: return null
+            else -> return null
+        }
         val struct = table.lookupStruct(call.callee) ?: return null
         // Every test below is a guard, not a diagnostic. `Type(a) * b` is also how
         // a user-declared `oper*` between two values reads, so anything that does
@@ -2167,26 +2271,6 @@ class TypeResolver(private val table: SymbolTable) {
         IrType.String -> true
         is IrType.Named -> table.lookupMethod(type.name, "index") != null
         else -> false
-    }
-
-    /**
-     * What `alloc .(…)` builds.
-     *
-     * `.(a, b, c)` names no type of its own, so what it means depends on what the
-     * pointer points at. To a declared type it is that type's constructor -
-     * `var p: Point* = alloc .(1, 2)`. To anything else there is nothing to
-     * construct and the arguments are the run of values the pointer points at,
-     * which is how `ArrayList` fills its buffer from a variadic ctor.
-     */
-    private fun allocatedConstruction(value: Expr): Expr {
-        val member = value as? Expr.InferredMember ?: return value
-        val args = member.ctorArgs?.takeIf { member.name.isEmpty() } ?: return value
-        // A bridge pack cannot be constructed, so `.()` into one is not a
-        // construction: `T*` erases to `Any*`, and what the pointer holds is the
-        // run of values, not one `Any`.
-        val owner = table.lookupInferredMember(member.line, member.column)
-        if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
-        return Expr.ArrayLiteral(args, member.line, member.column, member.length)
     }
 
     /** What one slot of an allocated repetition holds, or null if nothing said. */
@@ -2410,7 +2494,26 @@ class TypeResolver(private val table: SymbolTable) {
                 // the compiler's own aggregate, so making one needs no library and
                 // no import; the library only declares what an array offers.
                 if (expr.callee == Intrinsics.ARRAY && expr.receiver == null) {
-                    return resolveExpr(Expr.ArrayLiteral(expr.args, expr.line, expr.column, expr.length))
+                    return resolveExpr(arrayCallLiteral(expr))
+                }
+                // `Tuple<A, B>(a, b)` is `(a, b)`, the stated arguments typing
+                // its elements as a binding's type would.
+                if (expr.callee == Intrinsics.TUPLE && expr.receiver == null) {
+                    val literal = tupleCallLiteral(expr) ?: run {
+                        errors.add("line ${expr.line}: a tuple has at least two elements, got ${expr.args.size}")
+                        return null
+                    }
+                    if (expr.typeArgs.isNotEmpty()) {
+                        val stated = tryResolveType(TypeRef.Named(Intrinsics.TUPLE, expr.typeArgs), expr.line) ?: return null
+                        seedExpectedValue(literal, stated)
+                        val built = resolveExpr(literal) ?: return null
+                        if (!isCompatible(stated, adoptLiteralType(literal, built, stated))) {
+                            errors.add("line ${expr.line}: '${stated.shown()}' cannot be built from ${built.shown()}")
+                            return null
+                        }
+                        return stated
+                    }
+                    return resolveExpr(literal)
                 }
                 // `Byte(4)` - a literal read at a width, not a call. The type
                 // says it is written as a literal (`bridge pack Byte(IntLiteral)`),
@@ -2562,7 +2665,7 @@ class TypeResolver(private val table: SymbolTable) {
                                 }
                                 val actual = resolveContextualArgument(value, expected) ?: return null
                                 if (expected != null && !isCompatible(expected, adoptLiteralType(value, actual, expected))) {
-                                    errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $expected, got $actual")
+                                    errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected ${expected.shown()}, got ${actual.shown()}")
                                 }
                             }
                             return factory.returnType
@@ -2636,6 +2739,16 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                         padded
                     }
+                    // `Box(7)` is a `Box<Int>`: what the call does not state, its
+                    // arguments do, through the fields they fill. Arguments typed
+                    // on their own go first, so a literal does not decide what a
+                    // typed argument says.
+                    val typeParamSet = struct.typeParams.toSet()
+                    val bindings = mutableMapOf<String, List<TypeRef>>()
+                    struct.typeParams.zip(expr.typeArgs).forEach { (param, arg) ->
+                        if (!arg.isHole) bindings[param] = listOf(arg)
+                    }
+                    val argTypes = arrayOfNulls<IrType>(effectiveArgs.size)
                     for (i in effectiveArgs.indices) {
                         val argument = effectiveArgs[i]
                         val fieldType = struct.fields[i].type
@@ -2662,17 +2775,50 @@ class TypeResolver(private val table: SymbolTable) {
                         } else {
                             resolveContextualArgument(argument, fieldType)
                         } ?: return null
+                        argTypes[i] = argType
                         if (struct.typeParams.isEmpty()) {
                             if (!isCompatible(fieldType, adoptLiteralType(argument, argType, fieldType))) {
-                                errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected $fieldType, got $argType")
+                                errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected ${fieldType.shown()}, got ${argType.shown()}")
                             }
                         }
                     }
-                    // Keep the explicit type arguments so a later field read
-                    // knows what a generic pack's erased slot actually holds.
+                    if (struct.typeParams.isEmpty()) return IrType.Named(struct.name)
+                    for (literalsToo in listOf(false, true)) {
+                        for (i in effectiveArgs.indices) {
+                            val argument = effectiveArgs[i]
+                            val untyped = untypedIntLiteral(argument) != null || isUntypedDoubleLiteral(argument)
+                            if (untyped != literalsToo || i in defaulted) continue
+                            val written = struct.fields[i].typeRef ?: continue
+                            unifyTypeArguments(written, argTypes[i] ?: continue, typeParamSet, bindings)
+                        }
+                    }
+                    // Each field is checked as the arguments made it: a `Box<Int>`
+                    // holds an `Int`, whether the call said so or the call's
+                    // arguments did.
+                    for (i in effectiveArgs.indices) {
+                        if (i in defaulted) continue
+                        val written = struct.fields[i].typeRef ?: continue
+                        if (mentionsUnbound(written, typeParamSet, bindings)) continue
+                        val expected = IrType.resolve(substituteTypeParams(written, bindings))
+                        // Inside generic code a binding can itself be a type
+                        // parameter, which the argument holds erased: neither side
+                        // names a type to compare yet.
+                        if (namesTypeParameter(expected)) continue
+                        val actual = argTypes[i] ?: continue
+                        if (!isCompatible(expected, adoptLiteralType(effectiveArgs[i], actual, expected))) {
+                            errors.add(
+                                "line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': " +
+                                    "expected ${expected.shown()}, got ${actual.shown()}",
+                            )
+                        }
+                    }
+                    // The type arguments ride along so a later field read knows
+                    // what a generic pack's erased slot actually holds. Left
+                    // unstated when one could not be told, rather than guessed.
+                    val args = struct.typeParams.map { bindings[it]?.singleOrNull() }
                     return IrType.Named(
                         struct.name,
-                        expr.typeArgs.map { IrType.resolve(it) },
+                        if (null in args) emptyList() else args.map { IrType.resolve(it!!) },
                     )
                 }
                 // `convert::toString(x)` is a compiler builtin (special-cased in
@@ -2706,6 +2852,21 @@ class TypeResolver(private val table: SymbolTable) {
                             return resolveExpr(Expr.MethodCall(ctxExpr, contextualName, expr.args, expr.line, expr.column))
                         }
                     }
+                    // A spec says what a value can do, not how to make one, so it
+                    // has no constructor; the types that implement it do.
+                    if (table.lookupSpec(expr.callee) != null) {
+                        val implementers = table.allConformances()
+                            .filter { it.contractName == expr.callee && table.lookupStruct(it.typeName) != null }
+                            .map { sourcePackTypeName(it.typeName) }
+                            .distinct()
+                        errors.add(
+                            "line ${expr.line}: '${sourceSymbol(expr.callee)}' is a spec, and a spec cannot be " +
+                                "constructed" + if (implementers.isEmpty()) "" else
+                                "; construct a type that implements it, such as " +
+                                    implementers.joinToString(" or ") { "'$it'" },
+                        )
+                        return null
+                    }
                     reportUndefined(
                         expr.callee,
                         SemanticSymbolNamespace.FUNCTION,
@@ -2718,6 +2879,17 @@ class TypeResolver(private val table: SymbolTable) {
                 if (func.isUnsafe && !unsafeContext) {
                     errors.add("line ${expr.line}: call to unsafe '${expr.callee}' requires an unsafe block or unsafe function")
                     return null
+                }
+                // `println(value)` prints what `"${value}"` would read, so it asks
+                // the same of the value.
+                if (symbolDenotes(expr.callee, Intrinsics.PRINTLN) || symbolDenotes(expr.callee, Intrinsics.PRINT)) {
+                    for (argument in expr.args) {
+                        val shown = resolveExpr(argument) ?: return null
+                        undisplayable(shown)?.let {
+                            errors.add("line ${expr.line}: cannot print $it")
+                            return null
+                        }
+                    }
                 }
                 if (!requireReactiveCaller(func, expr.line)) return null
                 if (!requireTestCaller(func.name, expr.line)) return null
@@ -2846,7 +3018,7 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     if (!isGeneric) {
                         if (!isCompatible(paramType, adoptLiteralType(effectiveArgs[i], argType, paramType))) {
-                            errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected $paramType, got $argType")
+                            errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected ${paramType.shown()}, got ${argType.shown()}")
                         }
                     }
                 }
@@ -2860,10 +3032,31 @@ class TypeResolver(private val table: SymbolTable) {
                                 ?.takeUnless { it.isHole }
                                 ?.let { bindings[typeParam] = listOf(it) }
                         }
+                        // A parameter written around a type parameter binds it from
+                        // the argument's matching part - `Box<T>` against a
+                        // `Box<Int>` - and an argument whose type the call itself
+                        // states goes first, so `max(5, n)` with `n: Long` reads
+                        // `T` as `Long` rather than as the literal's default.
+                        val typeParamSet = func.typeParams.toSet()
+                        for (literalsToo in listOf(false, true)) {
+                            for (i in funcDecl.params.indices) {
+                                if (funcDecl.params[i].variadic || i >= argTypes.size) continue
+                                val argument = effectiveArgs.getOrNull(i)
+                                val untyped = argument != null &&
+                                    (untypedIntLiteral(argument) != null || isUntypedDoubleLiteral(argument))
+                                if (untyped != literalsToo) continue
+                                unifyTypeArguments(funcDecl.params[i].type, argTypes[i], typeParamSet, bindings)
+                            }
+                        }
                         for (i in funcDecl.params.indices) {
                             val paramRef = funcDecl.params[i].type
                             if (paramRef is TypeRef.Named && paramRef.name in func.typeParams && i < argTypes.size) {
                                 bindings.getOrPut(paramRef.name) { listOf(typeRefOf(argTypes[i])) }
+                            } else if (funcDecl.params[i].variadic && paramRef is TypeRef.Array &&
+                                (paramRef.element as? TypeRef.Named)?.name !in func.typeParams
+                            ) {
+                                // `...entries: MapEntry<K, V>` binds through each entry.
+                                argTypes.drop(i).forEach { unifyTypeArguments(paramRef.element, it, typeParamSet, bindings) }
                             } else if (funcDecl.params[i].variadic && paramRef is TypeRef.Array) {
                                 val element = paramRef.element as? TypeRef.Named
                                 if (element != null && element.name in func.typeParams) {
@@ -2959,13 +3152,23 @@ class TypeResolver(private val table: SymbolTable) {
                 // `Array<T>*` is dereferenced and then indexed, as written.
                 val targetType = bufferPointerType(expr.target)
                     ?: resolveExpr(expr.target) ?: return null
-                // User-defined index operator (`oper[]`) on a struct.
+                // A pack's own `oper[]`, or the one a spec declares - `xs[i]` on a
+                // `List<Int>` is the spec's subscript, typed by the receiver's
+                // arguments and dispatched like any member of it.
                 if (targetType is IrType.Named) {
                     val mangled = table.lookupMethod(targetType.name, "index")
                     if (mangled != null) {
-                        resolveExpr(expr.index) ?: return null
-                        return table.lookupFunction(mangled)?.let { instantiateMember(table, targetType, it).returnType }
-                            ?: IrType.Any
+                        val operator = table.lookupFunction(mangled)?.let { instantiateMember(table, targetType, it) }
+                        subscriptArgument(expr.index, operator?.params?.lastOrNull()?.second, targetType, expr.line)
+                            ?: return null
+                        return operator?.returnType ?: IrType.Any
+                    }
+                    val required = table.lookupSpecMethod(targetType.name, "index")
+                        ?.let { instantiateSpecMember(table, targetType, it) }
+                    if (required != null) {
+                        subscriptArgument(expr.index, required.paramTypes.firstOrNull(), targetType, expr.line)
+                            ?: return null
+                        return required.returnType
                     }
                 }
                 // Map indexing: `map[key]` - key may be any type.
@@ -2987,11 +3190,16 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     return IrType.Char
                 }
-                // Named types (packs like Set/Map without injected oper[], or any struct):
-                // allow indexing with any key type, returning Any (the runtime value may be indexable).
+                // A type that declares no subscript cannot be indexed. Only a type
+                // parameter nothing has bound is left to the value it turns out to be.
                 if (targetType is IrType.Named) {
                     resolveExpr(expr.index) ?: return null
-                    return IrType.Any
+                    if (isUnboundTypeParam(targetType)) return IrType.Any
+                    errors.add(
+                        "line ${expr.line}: '${targetType.shown()}' cannot be indexed - " +
+                            "it declares no 'oper[] ${targetType.name}&.(index: …): …'",
+                    )
+                    return null
                 }
                 val indexType = resolveExpr(expr.index) ?: return null
                 if (indexType != IrType.Int) {
@@ -3067,6 +3275,10 @@ class TypeResolver(private val table: SymbolTable) {
                             targetType is IrType.Map || targetType is IrType.Set ||
                                 targetType is IrType.Array || targetType == IrType.String
                             ) -> IrType.Int
+                    // A member `impl … for Tuple<...T>` provides, for a shape not yet
+                    // specialized: it will be, and this read is resolved again then.
+                    targetType is IrType.Tuple && declaredAggregateMember(targetType, expr.name) == null &&
+                        demandTupleMember(targetType, expr.name) -> IrType.Any
                     declaredAggregateMember(targetType, expr.name) != null -> {
                         if (aggregateFieldIsUnsafe(targetType, expr.name) && !unsafeContext) {
                             errors.add(
@@ -3240,7 +3452,7 @@ class TypeResolver(private val table: SymbolTable) {
                                 // payload's width, as it does a field's or a parameter's.
                                 val at = adoptLiteralType(expr.args[i], resolved, variant.second[i])
                                 if (!isCompatible(variant.second[i], at)) {
-                                    errors.add("line ${expr.line}: payload ${i+1} of '${expr.name}': expected ${variant.second[i]}, got $at")
+                                    errors.add("line ${expr.line}: payload ${i+1} of '${expr.name}': expected ${variant.second[i].shown()}, got ${at.shown()}")
                                 }
                             }
                             return IrType.Named(table.canonicalTypeName(expr.target.name))
@@ -3263,6 +3475,11 @@ class TypeResolver(private val table: SymbolTable) {
                             reportInaccessible(expr.line, "method", targetType.name, expr.name, func.visibility)
                             return null
                         }
+                        // A member that changes its receiver needs a receiver that may
+                        // be changed, as a `p!` argument does.
+                        if (0 in func.exclusiveParams &&
+                            !checkValueMutable(expr.target, expr.line, "call '${expr.name}', which changes its receiver,")
+                        ) return null
                         // `self`, and anything the member reads from the block the
                         // call sits in, are not written at the call.
                         val declared = func.params.size - 1 - func.contextualParams
@@ -3283,10 +3500,22 @@ class TypeResolver(private val table: SymbolTable) {
                         val writtenFrom = 1 + func.contextualParams
                         for (i in positioned.indices) {
                             val argument = positioned[i] ?: continue
-                            val paramType = func.params[i + writtenFrom].second
+                            val parameter = i + writtenFrom
+                            val paramType = func.params[parameter].second
                             val argType = resolveContextualArgument(argument, paramType) ?: return null
                             if (!methodIsGeneric && !isCompatible(paramType, adoptLiteralType(argument, argType, paramType))) {
-                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
+                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected ${paramType.shown()}, got ${argType.shown()}")
+                            }
+                            // A method's borrowed parameters ask what a function's do.
+                            if (parameter in func.exclusiveParams || parameter in func.sharedParams) {
+                                checkNotGivenToBorrow(argument, parameter, func, expr.name, expr.line)
+                            }
+                            if (parameter in func.exclusiveParams) {
+                                checkValueMutable(
+                                    argument,
+                                    expr.line,
+                                    "borrow mutably for parameter '${func.paramNames.getOrNull(parameter) ?: (i + 1).toString()}'",
+                                )
                             }
                         }
                         for (i in positioned.indices) {
@@ -3354,11 +3583,14 @@ class TypeResolver(private val table: SymbolTable) {
                             errors.add("line ${expr.line}: method '${expr.name}' expects ${specMethod.paramTypes.size} args, got ${expr.args.size}")
                             return null
                         }
+                        if (specMethod.receiver == ParamModifier.EXCLUSIVE &&
+                            !checkValueMutable(expr.target, expr.line, "call '${expr.name}', which changes its receiver,")
+                        ) return null
                         for (i in expr.args.indices) {
                             val paramType = specMethod.paramTypes[i]
                             val argType = resolveContextualArgument(expr.args[i], paramType) ?: return null
                             if (!isCompatible(paramType, adoptLiteralType(expr.args[i], argType, paramType))) {
-                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
+                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected ${paramType.shown()}, got ${argType.shown()}")
                             }
                         }
                         return specMethod.returnType
@@ -3368,8 +3600,16 @@ class TypeResolver(private val table: SymbolTable) {
                 // method-table key (`impl Int { … }`). They are native
                 // IR types rather than Named packs, but otherwise follow the
                 // same call contract: an implicit receiver followed by args.
+                if (targetType is IrType.Tuple) {
+                    val mangled = table.lookupMethod(tupleMemberOwner(targetType), expr.name)
+                    if (mangled == null && demandTupleMember(targetType, expr.name)) {
+                        expr.args.forEach { resolveExpr(it) }
+                        return IrType.Any
+                    }
+                }
                 if (targetType !is IrType.Named) {
-                    val mangled = table.lookupMethod(targetType.toString(), expr.name)
+                    val mangled = (targetType as? IrType.Tuple)?.let { table.lookupMethod(tupleMemberOwner(it), expr.name) }
+                        ?: table.lookupMethod(targetType.toString(), expr.name)
                     if (mangled != null) {
                         val func = table.lookupFunction(mangled)!!
                         if (!requireReactiveCaller(func, expr.line)) return null
@@ -3383,7 +3623,7 @@ class TypeResolver(private val table: SymbolTable) {
                             val paramType = func.params[i + 1].second
                             val argType = resolveContextualArgument(expr.args[i], paramType) ?: return null
                             if (!isCompatible(paramType, adoptLiteralType(expr.args[i], argType, paramType))) {
-                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected $paramType, got $argType")
+                                errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected ${paramType.shown()}, got ${argType.shown()}")
                             }
                         }
                         return func.returnType
@@ -3404,7 +3644,7 @@ class TypeResolver(private val table: SymbolTable) {
                         val argType = resolveExpr(expr.args[i]) ?: return null
                         val paramType = infixFn.params[i + 1].second
                         if (!isCompatible(paramType, argType)) {
-                            errors.add("line ${expr.line}: operand ${i + 1} of '${expr.name}': expected $paramType, got $argType")
+                            errors.add("line ${expr.line}: operand ${i + 1} of '${expr.name}': expected ${paramType.shown()}, got ${argType.shown()}")
                         }
                     }
                     return infixFn.returnType
@@ -3436,23 +3676,20 @@ class TypeResolver(private val table: SymbolTable) {
                         // layout (`{__type=Vec2, x=1, y=2}`) reaching program
                         // output.
                         val partType = resolveExpr(part.expr)
-                        val named = partType as? IrType.Named
-                        if (named != null && table.lookupStruct(named.name) != null &&
-                            !table.conformsTo(named.name, "Display")
-                        ) {
-                            errors.add(
-                                "line ${expr.line}: cannot interpolate a '${named.name}' - " +
-                                    "${named.name} does not implement Display; add " +
-                                    "'impl Display for ${named.name} { " +
-                                    "func display[self: Self&](formatter: Formatter!) { … } }'",
-                            )
-                        }
+                        undisplayable(partType)?.let { errors.add("line ${expr.line}: cannot interpolate $it") }
                     }
                 }
                 IrType.String
             }
             is Expr.TupleLit -> {
-                val types = expr.elements.map { resolveExpr(it) ?: return null }
+                // Each element is read at the width the expected tuple gives its
+                // position, as a lone literal is at the width its binding gives it.
+                val expectedElements = (expr.contextualType?.let { tryResolveType(it, expr.line) } as? IrType.Tuple)
+                    ?.elements?.takeIf { it.size == expr.elements.size }
+                val types = expr.elements.mapIndexed { i, element ->
+                    val own = resolveExpr(element) ?: return null
+                    expectedElements?.get(i)?.let { adoptLiteralType(element, own, it) } ?: own
+                }
                 IrType.Tuple(types)
             }
             is Expr.VariantLit -> {
@@ -3553,7 +3790,7 @@ class TypeResolver(private val table: SymbolTable) {
                 resolved
             }
             is Expr.Alloc -> {
-                val inner = resolveExpr(allocatedConstruction(expr.value)) ?: return null
+                val inner = resolveExpr(allocatedConstruction(table, expr.value)) ?: return null
                 // alloc [a, b, c] → pointer to the element type (buffer), not pointer to array.
                 val pointee = (inner as? IrType.Array)?.element ?: inner
                 IrType.Pointer(pointee, mutable = expr.mutable)
@@ -4071,6 +4308,9 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Checks if an initializer type is compatible with a declared type (nullable widening, Any from null). */
     private fun isCompatible(declared: IrType, actual: IrType): Boolean {
+        // Identity ignores type arguments, so storage can stay erased (IrNode's
+        // `Named`); what may be stored where is still decided by them.
+        if (typeArgumentsConflict(declared, actual)) return false
         if (declared == actual) return true
         // `Nothing` is the uninhabited bottom type. An expression with this
         // type never produces a value, so it is valid in every value position
@@ -4142,10 +4382,11 @@ class TypeResolver(private val table: SymbolTable) {
         }
         // Spec conformance: a pack that implements a spec is usable wherever that
         // spec type is expected (e.g. returning `ArrayList<T>` for `List<T>`, just
-        // as a class implementing an interface is returned as the interface).
+        // as a class implementing an interface is returned as the interface), and
+        // so is a value of a spec that refines it.
         if (declared is IrType.Named && actual is IrType.Named &&
             table.lookupSpec(declared.name) != null &&
-            table.conformsTo(actual.name, declared.name)
+            conformsAsSpec(declared, actual)
         ) return true
         // null (Any) is compatible with any Nullable type
         if (actual == IrType.Any && declared is IrType.Nullable) return true
@@ -4156,6 +4397,206 @@ class TypeResolver(private val table: SymbolTable) {
         // A value of type T is assignable to a `Var<…>` (Variant) when T is one of its alternatives.
         if (declared is IrType.Variant && actual in declared.elements) return true
         return false
+    }
+
+    /**
+     * True when [declared] and [actual] are uses of the same generic types whose
+     * type arguments disagree - a check `==` cannot make, since a `Named` type's
+     * identity leaves its type arguments out.
+     *
+     * Type arguments are invariant: a `Box<Int>` is no `Box<String>`, and no
+     * `Box<Int?>` either, since whoever held it as the second could store a null
+     * into the first. A type parameter nothing has bound yet, and the erased
+     * `Any`, agree with anything; so does a use written without arguments
+     * (`Box` in `Box()`), which says nothing about them.
+     */
+    private fun typeArgumentsConflict(declared: IrType, actual: IrType): Boolean = when {
+        declared is IrType.Named && actual is IrType.Named ->
+            declared.name == actual.name && declared.args.isNotEmpty() && actual.args.isNotEmpty() &&
+                (declared.args.size != actual.args.size ||
+                    declared.args.indices.any { !typeArgumentsAgree(declared.args[it], actual.args[it]) })
+        declared is IrType.Nullable && actual is IrType.Nullable -> typeArgumentsConflict(declared.inner, actual.inner)
+        declared is IrType.Nullable -> typeArgumentsConflict(declared.inner, actual)
+        declared is IrType.Array && actual is IrType.Array -> typeArgumentsConflict(declared.element, actual.element)
+        declared is IrType.Pointer && actual is IrType.Pointer -> typeArgumentsConflict(declared.inner, actual.inner)
+        declared is IrType.Tuple && actual is IrType.Tuple ->
+            declared.elements.size == actual.elements.size &&
+                declared.elements.indices.any { typeArgumentsConflict(declared.elements[it], actual.elements[it]) }
+        declared is IrType.Function && actual is IrType.Function ->
+            declared.params.size == actual.params.size &&
+                (declared.params.indices.any { typeArgumentsConflict(declared.params[it], actual.params[it]) } ||
+                    typeArgumentsConflict(declared.ret, actual.ret))
+        else -> false
+    }
+
+    /**
+     * Binds the type parameters [params] that [pattern] mentions to the parts of
+     * [actual] in the same position: `Box<T>` against a `Box<Int>` binds `T` to
+     * `Int`, `(T) -> U` against `(Int) -> String` binds both, and `T?` against
+     * an `Int` binds `T` to `Int`. A parameter keeps the first binding it gets;
+     * a part of [actual] without the pattern's shape binds nothing, and the
+     * argument check after inference reports the mismatch.
+     */
+    private fun unifyTypeArguments(
+        pattern: TypeRef,
+        actual: IrType,
+        params: Set<String>,
+        bindings: MutableMap<String, List<TypeRef>>,
+    ) {
+        fun bind(name: String) {
+            if (actual == IrType.Any || isUnboundTypeParam(actual)) return
+            bindings.getOrPut(name) { listOf(typeRefOf(actual)) }
+        }
+        when (pattern) {
+            is TypeRef.Named -> when {
+                pattern.args.isEmpty() && pattern.name in params -> bind(pattern.name)
+                pattern.args.isEmpty() -> Unit
+                actual is IrType.Named -> {
+                    val seenAs = if (sameTypeName(pattern.name, actual.name)) actual
+                    else seenAsSpec(actual, pattern.name)
+                    seenAs?.args?.zip(pattern.args)?.forEach { (part, inner) -> unifyTypeArguments(inner, part, params, bindings) }
+                }
+                actual is IrType.Array && pattern.name == Intrinsics.ARRAY ->
+                    pattern.args.firstOrNull()?.let { unifyTypeArguments(it, actual.element, params, bindings) }
+                actual is IrType.Task && pattern.name == "Task" ->
+                    pattern.args.firstOrNull()?.let { unifyTypeArguments(it, actual.result, params, bindings) }
+                actual is IrType.Tuple && pattern.name == "Tuple" && pattern.args.size == actual.elements.size ->
+                    pattern.args.zip(actual.elements).forEach { (inner, part) -> unifyTypeArguments(inner, part, params, bindings) }
+                else -> Unit
+            }
+            is TypeRef.Array -> if (actual is IrType.Array) unifyTypeArguments(pattern.element, actual.element, params, bindings)
+            is TypeRef.Nullable -> unifyTypeArguments(pattern.inner, (actual as? IrType.Nullable)?.inner ?: actual, params, bindings)
+            is TypeRef.Reference -> unifyTypeArguments(pattern.inner, actual, params, bindings)
+            is TypeRef.Pointer -> if (actual is IrType.Pointer) unifyTypeArguments(pattern.inner, actual.inner, params, bindings)
+            is TypeRef.Tuple -> if (actual is IrType.Tuple && actual.elements.size == pattern.elements.size) {
+                pattern.elements.zip(actual.elements).forEach { (inner, part) -> unifyTypeArguments(inner, part, params, bindings) }
+            }
+            is TypeRef.Map -> if (actual is IrType.Map) {
+                unifyTypeArguments(pattern.key, actual.key, params, bindings)
+                unifyTypeArguments(pattern.value, actual.value, params, bindings)
+            }
+            is TypeRef.Set -> if (actual is IrType.Set) unifyTypeArguments(pattern.element, actual.element, params, bindings)
+            is TypeRef.Function -> if (actual is IrType.Function && actual.params.size == pattern.params.size) {
+                pattern.params.zip(actual.params).forEach { (inner, part) -> unifyTypeArguments(inner, part, params, bindings) }
+                unifyTypeArguments(pattern.ret, actual.ret, params, bindings)
+            }
+            is TypeRef.Failable -> unifyTypeArguments(pattern.ok, actual, params, bindings)
+            is TypeRef.Const -> Unit
+        }
+    }
+
+    /** Whether [ref] names a type parameter of [params] that [bindings] leaves unbound. */
+    private fun mentionsUnbound(ref: TypeRef, params: Set<String>, bindings: Map<String, List<TypeRef>>): Boolean {
+        var unbound = false
+        fun visit(type: TypeRef) {
+            when (type) {
+                is TypeRef.Named -> {
+                    if (type.args.isEmpty() && type.name in params && bindings[type.name]?.singleOrNull() == null) unbound = true
+                    type.args.forEach(::visit)
+                }
+                is TypeRef.Array -> visit(type.element)
+                is TypeRef.Nullable -> visit(type.inner)
+                is TypeRef.Reference -> visit(type.inner)
+                is TypeRef.Pointer -> visit(type.inner)
+                is TypeRef.Tuple -> type.elements.forEach(::visit)
+                is TypeRef.Map -> { visit(type.key); visit(type.value) }
+                is TypeRef.Set -> visit(type.element)
+                is TypeRef.Function -> { type.params.forEach(::visit); visit(type.ret); type.receivers.forEach(::visit) }
+                is TypeRef.Failable -> visit(type.ok)
+                is TypeRef.Const -> Unit
+            }
+        }
+        visit(ref)
+        return unbound
+    }
+
+    /** Whether [type] still names a type parameter anywhere inside it. */
+    private fun namesTypeParameter(type: IrType): Boolean = when (type) {
+        is IrType.Named -> isUnboundTypeParam(type) || type.args.any(::namesTypeParameter)
+        is IrType.Array -> namesTypeParameter(type.element)
+        is IrType.Nullable -> namesTypeParameter(type.inner)
+        is IrType.Pointer -> namesTypeParameter(type.inner)
+        is IrType.Tuple -> type.elements.any(::namesTypeParameter)
+        is IrType.Map -> namesTypeParameter(type.key) || namesTypeParameter(type.value)
+        is IrType.Set -> namesTypeParameter(type.element)
+        is IrType.Function -> type.params.any(::namesTypeParameter) || namesTypeParameter(type.ret) ||
+            type.receivers.any(::namesTypeParameter)
+        is IrType.Task -> namesTypeParameter(type.result)
+        is IrType.Variant -> type.elements.any(::namesTypeParameter)
+        else -> false
+    }
+
+    /** [ref] with each type parameter [bindings] binds replaced by what it is bound to. */
+    private fun substituteTypeParams(ref: TypeRef, bindings: Map<String, List<TypeRef>>): TypeRef =
+        TypeFunctionEvaluator.resolve(ref, program?.typeFunctions.orEmpty(), substitutions = bindings)
+
+    /** Whether a name as written and a name as resolved denote one declaration. */
+    private fun sameTypeName(written: String, resolved: String): Boolean =
+        written == resolved || table.canonicalTypeName(written) == resolved
+
+    /** [actual] seen as the spec [spec] it implements or refines, with that spec's arguments. */
+    private fun seenAsSpec(actual: IrType.Named, spec: String): IrType.Named? {
+        val canonical = table.canonicalTypeName(spec)
+        if (table.lookupSpec(canonical) == null) return null
+        if (table.lookupSpec(actual.name) != null) return asAncestorSpec(table, actual, canonical, mutableSetOf())
+        return table.allConformances()
+            .filter { it.typeName == actual.name && it.contractName == canonical }
+            .firstNotNullOfOrNull { conformedSpec(actual, it) }
+    }
+
+    /**
+     * Resolves one operand of a subscript against the parameter the operator
+     * declares for it, as a call's argument is: `bag["x"]` on a bag indexed by
+     * `Int` is rejected rather than handed to the operator anyway.
+     */
+    private fun subscriptArgument(
+        operand: Expr,
+        expected: IrType?,
+        owner: IrType,
+        line: Int,
+        role: String = "index",
+    ): IrType? {
+        seedExpectedValue(operand, expected)
+        val actual = resolveExpr(operand) ?: return null
+        if (expected == null) return actual
+        if (!isCompatible(expected, adoptLiteralType(operand, actual, expected))) {
+            errors.add(
+                "line $line: the $role of a '${owner.shown()}' subscript must be ${expected.shown()}, got ${actual.shown()}",
+            )
+            return null
+        }
+        return actual
+    }
+
+    /**
+     * Whether a value of [actual] can stand where the spec [declared] is
+     * expected: it implements the spec, or is a spec that refines it - with the
+     * spec's arguments the ones the value provides. An `ArrayList<Int>` is a
+     * `List<Int>` and not a `List<String>`; a `MutableList<Int>` is a `List<Int>`.
+     */
+    private fun conformsAsSpec(declared: IrType.Named, actual: IrType.Named): Boolean {
+        if (table.lookupSpec(actual.name) != null) {
+            if (declared.name !in table.specAndAncestors(actual.name)) return false
+            val seenAs = asAncestorSpec(table, actual, declared.name, mutableSetOf()) ?: return true
+            return !typeArgumentsConflict(declared, seenAs)
+        }
+        val ways = table.allConformances().filter { it.typeName == actual.name && it.contractName == declared.name }
+        return ways.any { way ->
+            val seenAs = conformedSpec(actual, way) ?: return@any true
+            !typeArgumentsConflict(declared, seenAs)
+        }
+    }
+
+    /** Whether two type arguments of one generic type name the same type (see [typeArgumentsConflict]). */
+    private fun typeArgumentsAgree(declared: IrType, actual: IrType): Boolean = when {
+        declared == IrType.Any || actual == IrType.Any -> true
+        isUnboundTypeParam(declared) || isUnboundTypeParam(actual) -> true
+        typeArgumentsConflict(declared, actual) -> false
+        declared is IrType.Nullable && actual is IrType.Nullable -> typeArgumentsAgree(declared.inner, actual.inner)
+        declared is IrType.Array && actual is IrType.Array ->
+            typeArgumentsAgree(declared.element, actual.element) &&
+                (declared.size == null || actual.size == null || declared.size == actual.size)
+        else -> declared == actual
     }
 
     /**
@@ -4426,7 +4867,10 @@ class TypeResolver(private val table: SymbolTable) {
         if (expected != null && expected != IrType.Any && !isUnboundTypeParam(expected) && target == null) {
             return resolveFactoryLiteral(expr, expected)
         }
-        var element = target?.element
+        // An element type nobody has bound - a type parameter, erased to `Any` -
+        // says nothing about the elements, so they say what it is.
+        var element = target?.element?.takeUnless { it == IrType.Any || isUnboundTypeParam(it) }
+        if (element == null && expr.elements.isEmpty() && target != null) return target
         if (element == null && expr.elements.isEmpty()) {
             errors.add("line ${expr.line}: cannot infer element type of empty sequence literal; provide Array<T> or another collection context")
             return null
@@ -4440,7 +4884,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
             val adopted = adoptLiteralType(value, own, element!!)
             if (!literalElementCompatible(element!!, adopted)) {
-                errors.add("line ${value.line}: collection element must have type $element, got $own")
+                errors.add("line ${value.line}: collection element must have type ${element.shown()}, got ${own.shown()}")
                 return null
             }
             val integer = element as? IrType.Integer
@@ -4486,7 +4930,7 @@ class TypeResolver(private val table: SymbolTable) {
             seedExpectedValue(value, element)
             val own = resolveExpr(value) ?: return null
             if (!isCompatible(element, adoptLiteralType(value, own, element))) {
-                errors.add("line ${value.line}: an element of a '$target' literal must have type $element, got $own")
+                errors.add("line ${value.line}: an element of a '$target' literal must have type ${element.shown()}, got ${own.shown()}")
                 return null
             }
         }
@@ -4532,13 +4976,13 @@ class TypeResolver(private val table: SymbolTable) {
             seedExpectedValue(key, keyType)
             val ownKey = resolveExpr(key) ?: return null
             if (!isCompatible(keyType, adoptLiteralType(key, ownKey, keyType))) {
-                errors.add("line ${key.line}: a key of a '$target' literal must have type $keyType, got $ownKey")
+                errors.add("line ${key.line}: a key of a '$target' literal must have type ${keyType.shown()}, got ${ownKey.shown()}")
                 return null
             }
             seedExpectedValue(value, valueType)
             val ownValue = resolveExpr(value) ?: return null
             if (!isCompatible(valueType, adoptLiteralType(value, ownValue, valueType))) {
-                errors.add("line ${value.line}: a value of a '$target' literal must have type $valueType, got $ownValue")
+                errors.add("line ${value.line}: a value of a '$target' literal must have type ${valueType.shown()}, got ${ownValue.shown()}")
                 return null
             }
         }
@@ -4658,7 +5102,7 @@ class TypeResolver(private val table: SymbolTable) {
         // unsuffixed real literal takes the floating-point type asked for.
         if (own in IrType.floatTypes && wanted in IrType.floatTypes && isUntypedDoubleLiteral(expr)) return wanted
         if (!IrType.isInteger(own) || !IrType.isNumeric(wanted)) return own
-        untypedIntLiteral(expr) ?: return own
+        if (!isUntypedIntLiteral(expr)) return own
         // `4` is an `IntLiteral` until something says which width to read it
         // at. A declared type, a parameter, a cast or a named width all say so;
         // where nothing does, it is an `Int`, which is what `add(4, 5)` means
@@ -4675,6 +5119,9 @@ class TypeResolver(private val table: SymbolTable) {
     private fun isUntypedDoubleLiteral(expr: Expr): Boolean = when (expr) {
         is Expr.DoubleLiteral -> true
         is Expr.Grouping -> isUntypedDoubleLiteral(expr.expr)
+        // A conditional whose every answer is a literal is a literal too: none
+        // of its branches states a width, so the place it lands in does.
+        is Expr.IfExpr -> isUntypedDoubleLiteral(expr.thenExpr) && isUntypedDoubleLiteral(expr.elseExpr)
         is Expr.Unary ->
             expr.op in setOf(TokenType.MINUS, TokenType.PLUS) && isUntypedDoubleLiteral(expr.operand)
         else -> false
@@ -4685,6 +5132,13 @@ class TypeResolver(private val table: SymbolTable) {
      *
      * Every integer literal is untyped: the width comes from where it lands.
      */
+    /** Whether [expr] is an integer literal, or a conditional choosing between them. */
+    private fun isUntypedIntLiteral(expr: Expr): Boolean = when (expr) {
+        is Expr.IfExpr -> isUntypedIntLiteral(expr.thenExpr) && isUntypedIntLiteral(expr.elseExpr)
+        is Expr.Grouping -> isUntypedIntLiteral(expr.expr)
+        else -> untypedIntLiteral(expr) != null
+    }
+
     private fun untypedIntLiteral(expr: Expr): Long? = when (expr) {
         is Expr.IntLiteral -> expr.value
         is Expr.Grouping -> untypedIntLiteral(expr.expr)
@@ -4817,13 +5271,64 @@ class TypeResolver(private val table: SymbolTable) {
     private fun checkValueMutable(target: Expr, line: Int, what: String): Boolean {
         val rootName = pathRoot(target)?.name
         if (rootName != null) checkCapture(rootName, line)
+        // A write that lands behind a pointer changes the memory pointed at, not
+        // the value holding the pointer; the pointer's own type decides it.
+        if (writesThroughPointer(target)) return true
         val root = writeRoot(target) ?: return true
+        sharedBorrowOf(root)?.let { reason ->
+            errors.add("line $line: cannot $what through '${root.name}' - $reason")
+            return false
+        }
         if (root.valueMutable) return true
         errors.add(
             "line $line: cannot $what through '${root.name}' - its value is immutable; " +
                 "declare it 'var' (or 'let' to fix only the name)",
         )
         return false
+    }
+
+    /**
+     * Why a write through [root] would change a value it only shares, or null.
+     *
+     * A shared borrow is a promise to whoever lent the value that it will look
+     * the same afterwards, which holds only if nothing changes it through any
+     * path the borrow reaches.
+     */
+    private fun sharedBorrowOf(root: VariableSymbol): String? {
+        val fix = if (root.receiver) {
+            "declare the member with a '!.' receiver to change it"
+        } else {
+            "borrow it exclusively ('!') to change it"
+        }
+        val what = if (root.receiver) "a shared receiver ('${root.name}&')" else "a shared borrow"
+        return when {
+            root.sharedBorrow -> "'${root.name}' is $what, which may not be changed; $fix"
+            activeBorrows[root.name]?.exclusive == false ->
+                "'${root.name}' is a shared borrow of '${activeBorrows.getValue(root.name).owner}', which may not be changed"
+            else -> null
+        }
+    }
+
+    /** Whether a write to [target] lands in memory a pointer on its path points at. */
+    private fun writesThroughPointer(target: Expr): Boolean = when (target) {
+        is Expr.Index -> pathType(target.target) is IrType.Pointer || writesThroughPointer(target.target)
+        is Expr.Member -> pathType(target.target) is IrType.Pointer || writesThroughPointer(target.target)
+        is Expr.Grouping -> writesThroughPointer(target.expr)
+        else -> false
+    }
+
+    /** The declared type of a binding, field or element path, read without resolving anything. */
+    private fun pathType(expr: Expr): IrType? = when (expr) {
+        is Expr.Identifier -> table.lookupVariable(expr.name)?.type
+        is Expr.Member -> (pathType(expr.target) as? IrType.Named)
+            ?.let { table.lookupStruct(it.name)?.field(expr.name)?.type }
+        is Expr.Index -> when (val owner = pathType(expr.target)) {
+            is IrType.Array -> owner.element
+            is IrType.Pointer -> owner.inner
+            else -> null
+        }
+        is Expr.Grouping -> pathType(expr.expr)
+        else -> null
     }
 
     /**
@@ -4874,7 +5379,7 @@ class TypeResolver(private val table: SymbolTable) {
         if (!isCompatible(member.type, adoptLiteralType(value, valueType, member.type))) {
             errors.add(
                 "line ${expr.line}: member '${member.name}' of union '${expr.callee}': " +
-                    "expected ${member.type}, got $valueType",
+                    "expected ${member.type.shown()}, got ${valueType.shown()}",
             )
         }
         return result
@@ -5303,7 +5808,7 @@ class TypeResolver(private val table: SymbolTable) {
         // reachable from a receiver of any shape - `Array` inside its own `impl`
         // is a Named receiver, and `self.size` must find it there too.
         if (type is IrType.Named) return table.lookupTypeStatic(type.name, name)?.returnType
-        val owner = cloneConformanceName(type) ?: return null
+        val owner = (type as? IrType.Tuple)?.let(::tupleMemberOwner) ?: cloneConformanceName(type) ?: return null
         // A field the declaration carries (`fin size: Int` on the Array pack) is a
         // member as much as an `impl` prop is; the receiver just happens to lower
         // to a builtin type rather than a Named one.
@@ -5314,6 +5819,51 @@ class TypeResolver(private val table: SymbolTable) {
         table.lookupTypeStatic(owner, name)?.let { return it.returnType }
         val mangled = table.lookupMethod(owner, name) ?: return null
         return table.lookupFunction(mangled)?.returnType
+    }
+
+    /**
+     * Why a value of [type] cannot be shown, or null when it can.
+     *
+     * One rule for `"${value}"` and `println(value)` alike: a primitive, a string,
+     * an enum and the compiler's own aggregates show themselves, the aggregates
+     * by showing what they hold; a pack shows what its `Display` writes, and one
+     * with none is refused rather than having its private layout printed.
+     */
+    private fun undisplayable(type: IrType?): String? = when (type) {
+        is IrType.Named -> {
+            val struct = table.lookupStruct(type.name)
+            if (struct != null && !struct.isBridge && !table.conformsTo(type.name, "Display")) {
+                val name = sourcePackTypeName(type.name)
+                "a '$name' - $name does not implement Display; add " +
+                    "'impl Display for $name { func &.display(formatter: Formatter!) { … } }'"
+            } else {
+                null
+            }
+        }
+        is IrType.Array -> undisplayable(type.element)
+        is IrType.Tuple -> type.elements.firstNotNullOfOrNull(::undisplayable)
+        else -> null
+    }
+
+    /** Where a tuple's members are registered: per shape (`VariadicMonomorphizer.specializeTuples`). */
+    private fun tupleMemberOwner(type: IrType.Tuple): String =
+        VariadicMonomorphizer.tupleMemberOwner(type.elements.map(::typeRefOf))
+
+    /**
+     * Tuple shapes a member was asked of that an `impl … for Tuple<...T>`
+     * provides, but that are not specialized yet. The compiler specializes them
+     * and resolves the program again.
+     */
+    val tupleDemands = linkedSetOf<List<TypeRef>>()
+
+    /** The members `impl … for Tuple<...T>` declare; filled in when [resolve] starts. */
+    private var tupleTemplateMembers: Set<String> = emptySet()
+
+    /** Records [tuple] as needing its `Tuple` impls when one of them declares [name]. */
+    private fun demandTupleMember(tuple: IrType.Tuple, name: String): Boolean {
+        if (name !in tupleTemplateMembers) return false
+        tupleDemands.add(tuple.elements.map(::typeRefOf))
+        return true
     }
 
     private fun cloneConformanceName(type: IrType): String? = when (type) {
@@ -5449,7 +5999,7 @@ class TypeResolver(private val table: SymbolTable) {
         when (typeAnn) {
             is TypeAnnotation.Explicit -> {
                 if (!isCompatible(declaredType!!, adoptLiteralType(initializer, initType, declaredType))) {
-                    errors.add("line $line: type mismatch in '$name': declared $declaredType but initializer is $initType")
+                    errors.add("line $line: type mismatch in '$name': declared ${declaredType.shown()} but initializer is ${initType.shown()}")
                 }
                 table.defineVariable(VariableSymbol(name, declaredType, mutable, valueMutable = valueMutable, hasStorageEffects = hasStorageEffects))
             }

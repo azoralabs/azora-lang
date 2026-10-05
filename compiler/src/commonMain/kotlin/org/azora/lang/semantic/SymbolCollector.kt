@@ -658,6 +658,10 @@ class SymbolCollector {
                                     paramTypeRefs = method.params.map { it.type },
                                     visibility = method.visibility,
                                     contextualParams = method.contextualParams,
+                                    isReactive = method.isReactive,
+                                    exclusiveParams = method.params.indices.filterTo(mutableSetOf()) { method.params[it].modifier == ParamModifier.EXCLUSIVE },
+                                    sharedParams = method.params.indices.filterTo(mutableSetOf()) { method.params[it].modifier == ParamModifier.SHARED },
+                                    returnedParams = method.params.indices.filterTo(mutableSetOf()) { method.params[it].returnsOwnership },
                                     // A ctor takes named arguments and fills what
                                     // was omitted, the same as any other member.
                                     paramNames = method.params.map { it.name },

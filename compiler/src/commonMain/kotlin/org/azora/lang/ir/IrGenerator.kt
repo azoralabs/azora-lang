@@ -665,7 +665,8 @@ class IrGenerator(private val table: SymbolTable) {
                     if (item.isBridge) emptyList()
                     else {
                         val tpSet = item.typeParams.toSet()
-                        val fields = item.fields.map { IrField(it.name, resolveType(it.type, tpSet), it.mutable) }
+                        val fields = item.fields.map { IrField(it.name, resolveType(it.type, tpSet), it.mutable,
+                            ownsValue = it.type !is TypeRef.Reference, ownershipType = IrType.resolve(it.type)) }
                         val slots = item.fields.map { field ->
                             item.typeParams.indexOf((field.type as? TypeRef.Named)?.name ?: "")
                         }
@@ -682,7 +683,7 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                 }
                 is TopLevel.Solo -> {
-                    val fields = item.fields.map { IrField(it.name, resolveType(it.type), it.mutable) }
+                    val fields = item.fields.map { IrField(it.name, resolveType(it.type), it.mutable, ownsValue = it.type !is TypeRef.Reference) }
                     val result = mutableListOf<IrTopLevel>(
                         IrTopLevel.Struct(item.name, fields, program.scopeTypeNamespaces[item.name]),
                     )
@@ -757,13 +758,14 @@ class IrGenerator(private val table: SymbolTable) {
                         "__self",
                         type,
                         IrExpr.StructCtor(item.typeName, struct.fields.map { it.name }, fieldDefaults, type),
+                        ownsValue = true,
                     )
                     IrTopLevel.Func(IrFunction(
                         ctorFactorySymbol(item.typeName, arity, ctor.isRepeated),
                         taken,
                         declared ?: type,
                         if (declared != null) {
-                            listOf(fresh, IrStmt.Return(call))
+                            ctorResultBody(fresh, IrExpr.Var("__self", type), call, declared)
                         } else {
                             listOf(fresh, IrStmt.ExprStmt(call), IrStmt.Return(IrExpr.Var("__self", type)))
                         },
@@ -779,14 +781,19 @@ class IrGenerator(private val table: SymbolTable) {
             if (item.isBridge || table.lookupStruct(item.typeName) == null) return@mapNotNull null
             if (item.methods.none { it.name == "ctor" && it.params.isEmpty() }) return@mapNotNull null
             val ctor = receiverOnlyCtorSymbol(item.typeName, table) ?: return@mapNotNull null
+            val sourceCtor = item.methods.first { it.name == "ctor" && it.params.isEmpty() }
+            val declared = (sourceCtor.returnType as? TypeAnnotation.Explicit)?.let { resolveType(it.ref) }
             val type = IrType.Named(item.typeName)
             val self = IrExpr.Var("__self", type)
             val run = IrExpr.Call(ctor, listOf(self), table.lookupFunction(ctor)!!.returnType)
             IrTopLevel.Func(IrFunction(
                 ctorRunSymbol(item.typeName),
                 listOf("__self" to type),
-                type,
-                listOf(IrStmt.ExprStmt(run), IrStmt.Return(self)),
+                declared ?: type,
+                if (declared != null) ctorResultBody(
+                    IrStmt.VarDecl("__constructed", type, self, ownsValue = true),
+                    IrExpr.Var("__constructed", type), run, declared)
+                else listOf(IrStmt.ExprStmt(run), IrStmt.Return(self)),
                 isLibrary = fromLibrary(item),
             ))
         } +
@@ -849,8 +856,9 @@ class IrGenerator(private val table: SymbolTable) {
             generatedTraceFunctions.map { IrTopLevel.Func(it) } +
                 generatedRenderFunctions.values.map { IrTopLevel.Func(it) } + items,
             buildSpecTables(),
+            ownedSlots = program.items.filterIsInstance<TopLevel.Slot>().filterNot { it.isError }.map { it.name }.toSet(),
         )
-        return IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces)
+        return OwnershipCleanup.lower(IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces))
     }
 
     /**
@@ -1128,6 +1136,7 @@ class IrGenerator(private val table: SymbolTable) {
             mangledParams,
             symbol.returnType,
             body,
+            refParams = symbol.sharedParams + symbol.exclusiveParams + symbol.returnedParams + 0,
             isFailable = declaredFailable(method),
         )
     }
@@ -1223,8 +1232,63 @@ class IrGenerator(private val table: SymbolTable) {
      * Only a *named* value is copied. A temporary has no other owner, so there
      * is nothing to duplicate away from.
      */
+    private fun ctorResultBody(fresh: IrStmt.VarDecl, self: IrExpr.Var, call: IrExpr, declared: IrType): List<IrStmt> {
+        val result = IrExpr.Var("__constructor_result", declared)
+        val body = mutableListOf<IrStmt>(fresh, IrStmt.FinDecl(result.name, declared, call))
+        if (declared == self.type) body += IrStmt.If(
+            IrExpr.Binary(self, IrBinaryOp.EQ, result, IrType.Bool),
+            listOf(IrStmt.ExprStmt(IrExpr.Call("__take", listOf(self), self.type))), null)
+        body += IrStmt.Return(result)
+        return body
+    }
+
+    private fun ownsBinding(annotation: TypeAnnotation, source: Expr, lowered: IrExpr): Boolean {
+        if ((annotation as? TypeAnnotation.Explicit)?.ref is TypeRef.Reference) return false
+        if (source is Expr.Isolated && source.op.isBorrow) return false
+        if ((source is Expr.Member || source is Expr.Index || source is Expr.Deref) &&
+            !(lowered is IrExpr.Call && lowered.name == "__isolated")) return false
+        if (lowered is IrExpr.Var || lowered is IrExpr.Member || lowered is IrExpr.Index) return false
+        if (lowered is IrExpr.Call && lowered.name == "__deref") return false
+        if (borrowsResult(lowered)) return false
+        if (lowered is IrExpr.MethodCall && (lowered.target.type as? IrType.Named)?.let {
+                table.lookupSpecMethod(it.name, lowered.name)?.returnTypeRef is TypeRef.Reference
+            } == true) return false
+        return when (lowered.type) {
+            is IrType.Named -> {
+                val name = (lowered.type as IrType.Named).name
+                table.lookupStruct(name)?.isBridge == false || table.lookupSpec(name) != null || table.lookupSlot(name) != null
+            }
+            is IrType.Pointer -> lowered is IrExpr.Call && lowered.name in setOf("__alloc", "__allocBuffer", "__take")
+            is IrType.Array -> true
+            is IrType.Function -> true
+            is IrType.Nullable -> ((lowered.type as IrType.Nullable).inner as? IrType.Named)?.let { table.lookupStruct(it.name)?.isBridge == false } == true
+            else -> false
+        }
+    }
+
+    private fun withBindingCopy(annotation: TypeAnnotation, source: Expr, lowered: IrExpr): IrExpr {
+        if ((annotation as? TypeAnnotation.Explicit)?.ref is TypeRef.Reference ||
+            (source is Expr.Isolated && source.op.isBorrow)) return lowered
+        return withImplicitCopy(source, lowered)
+    }
+
+    private fun borrowsResult(expr: IrExpr): Boolean {
+        fun borrowed(ref: TypeRef?): Boolean = when (ref) {
+            is TypeRef.Reference -> true
+            is TypeRef.Failable -> borrowed(ref.ok)
+            else -> false
+        }
+        return when (expr) {
+            is IrExpr.Call -> borrowed(table.lookupFunction(expr.name)?.returnTypeRef)
+            is IrExpr.CatchExpr -> borrowsResult(expr.expr)
+            is IrExpr.NumCast -> borrowsResult(expr.value)
+            else -> false
+        }
+    }
+
     private fun withImplicitCopy(source: Expr, lowered: IrExpr): IrExpr {
-        if (source !is Expr.Identifier) return lowered
+        if (source !is Expr.Identifier && source !is Expr.Member && source !is Expr.Index && source !is Expr.Deref) return lowered
+        if (lowered.type is IrType.Function) return IrExpr.Call("__isolated", listOf(lowered), lowered.type)
         val name = (lowered.type as? IrType.Named)?.name ?: return lowered
         if (!table.conformsTo(name, "Copy")) return lowered
         return IrExpr.Call("__isolated", listOf(lowered), lowered.type)
@@ -1392,7 +1456,8 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.Import -> IrStmt.Scope(emptyList())
             is Stmt.VarDecl -> {
                 val init = expecting((stmt.type as? TypeAnnotation.Explicit)?.ref) {
-                    withImplicitCopy(
+                    withBindingCopy(
+                        stmt.type,
                         stmt.initializer,
                         literalAtDeclaredType(stmt.initializer, typeAnnotationOrNull(stmt.type))
                             ?: coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
@@ -1403,11 +1468,12 @@ class IrGenerator(private val table: SymbolTable) {
                 val mangled = registerName(stmt.name)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
-                IrStmt.VarDecl(mangled, type, init, valueMutable = stmt.valueMutable, lazy = stmt.lazy)
+                IrStmt.VarDecl(mangled, type, init, valueMutable = stmt.valueMutable, lazy = stmt.lazy, ownsValue = ownsBinding(stmt.type, stmt.initializer, init))
             }
             is Stmt.FinDecl -> {
                 val init = expecting((stmt.type as? TypeAnnotation.Explicit)?.ref) {
-                    withImplicitCopy(
+                    withBindingCopy(
+                        stmt.type,
                         stmt.initializer,
                         literalAtDeclaredType(stmt.initializer, typeAnnotationOrNull(stmt.type))
                             ?: coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
@@ -1419,11 +1485,12 @@ class IrGenerator(private val table: SymbolTable) {
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
                 if (stmt.lazy) registerLazyReactiveDependencies(mangled, init)
-                IrStmt.FinDecl(mangled, type, init, lazy = stmt.lazy)
+                IrStmt.FinDecl(mangled, type, init, lazy = stmt.lazy, ownsValue = ownsBinding(stmt.type, stmt.initializer, init))
             }
             is Stmt.LetDecl -> {
                 val init = expecting((stmt.type as? TypeAnnotation.Explicit)?.ref) {
-                    withImplicitCopy(
+                    withBindingCopy(
+                        stmt.type,
                         stmt.initializer,
                         literalAtDeclaredType(stmt.initializer, typeAnnotationOrNull(stmt.type))
                             ?: coerceToFloat(lowerExpr(stmt.initializer), typeAnnotationOrNull(stmt.type)),
@@ -1435,7 +1502,7 @@ class IrGenerator(private val table: SymbolTable) {
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
                 if (stmt.lazy) registerLazyReactiveDependencies(mangled, init)
-                IrStmt.LetDecl(mangled, type, init, lazy = stmt.lazy)
+                IrStmt.LetDecl(mangled, type, init, lazy = stmt.lazy, ownsValue = ownsBinding(stmt.type, stmt.initializer, init))
             }
             is Stmt.DeepInlineBlock -> error("DeepInlineBlock should have been resolved by CTCE before IR generation")
             is Stmt.NoInline -> lowerStmt(stmt.stmt)
@@ -1577,9 +1644,9 @@ class IrGenerator(private val table: SymbolTable) {
                     // (e.g. `bridge impl oper .. for Int`); otherwise it is rejected.
                     val rangeTypeName = start.type.toString()
                     val operName = if (range.descending) "oper>.." else "oper.."
-                    if (table.lookupMethod(rangeTypeName, operName) == null) {
+                    if (table.lookupOperator(rangeTypeName, operName, end.type.toString()) == null) {
                         val sym = if (range.descending) ">.." else ".."
-                        error("type '$rangeTypeName' does not support the range operator '$sym' (declare 'impl oper $sym for $rangeTypeName')")
+                        error("line ${stmt.line}: in '$currentTraceOwner': type '$rangeTypeName' does not support the range operator '$sym' (declare 'impl oper $sym for $rangeTypeName')")
                     }
                     val step = stmt.step?.let { lowerExpr(it) }
                     table.pushScope()
@@ -3224,14 +3291,16 @@ class IrGenerator(private val table: SymbolTable) {
                     // arguments, ahead of one whose parameters all have defaults.
                     // The value is built as any other construction builds it,
                     // then the ctor runs on it.
-                    if (expr.args.isEmpty() && receiverOnlyCtorSymbol(actualCallee, table) != null) {
+                    val zeroCtor = if (expr.args.isEmpty()) receiverOnlyCtorSymbol(actualCallee, table) else null
+                    if (zeroCtor != null) {
                         val built = IrExpr.StructCtor(
                             actualCallee,
                             struct.fields.map { it.name },
                             args,
                             IrType.Named(actualCallee, expr.typeArgs.map { resolveType(it, currentGenericTypeParams) }),
                         )
-                        return IrExpr.Call(ctorRunSymbol(actualCallee), listOf(built), built.type)
+                        val ctorReturn = table.lookupFunction(zeroCtor)!!.returnType
+                        return IrExpr.Call(ctorRunSymbol(actualCallee), listOf(built), if (ctorReturn == IrType.Unit) built.type else ctorReturn)
                     }
                     // A declared `ctor` of the same arity takes precedence over
                     // filling fields positionally - it is the constructor the
@@ -3583,7 +3652,10 @@ class IrGenerator(private val table: SymbolTable) {
                 // Every ownership operation moves or borrows; none duplicates,
                 // so the value passes through unchanged. Duplication is
                 // `v.clone()`, an ordinary method call.
-                lowerExpr(expr.value)
+                val value = lowerExpr(expr.value)
+                if (expr.op == OwnershipOp.TAKE && (value.type is IrType.Named || value.type is IrType.Pointer || value.type is IrType.Nullable || value.type is IrType.Array || value.type is IrType.Function || value.type == IrType.Any))
+                    IrExpr.Call("__take", listOf(value), value.type)
+                else value
             }
             is Expr.Await -> {
                 val task = lowerExpr(expr.value)
@@ -3957,19 +4029,22 @@ class IrGenerator(private val table: SymbolTable) {
                 // Clone capture is an operation, not a bitwise environment copy.
                 // Lower it while the source binding still resolves in the creation
                 // scope; every backend evaluates this expression exactly once.
-                val captureInitializers = expr.captures
-                    .filter { it.mode == CaptureMode.CLONE }
-                    .associate { capture ->
-                        resolveName(capture.source) to lowerExpr(
-                            Expr.MethodCall(
-                                Expr.Identifier(capture.source, capture.line, capture.column),
-                                "clone",
-                                emptyList(),
-                                capture.line,
-                                capture.column,
-                            ),
-                        )
+                val captureInitializers = expr.captures.mapNotNull { capture ->
+                    val source = table.lookupVariable(capture.source) ?: return@mapNotNull null
+                    val value = IrExpr.Var(resolveName(capture.source), source.type)
+                    val initializer = when (capture.mode) {
+                        CaptureMode.CLONE -> lowerExpr(Expr.MethodCall(
+                            Expr.Identifier(capture.source, capture.line, capture.column),
+                            "clone", emptyList(), capture.line, capture.column,
+                        ))
+                        CaptureMode.MOVE -> if (value.type is IrType.Named || value.type is IrType.Pointer || value.type is IrType.Nullable)
+                            IrExpr.Call("__take", listOf(value), value.type) else null
+                        CaptureMode.COPY -> if (value.type is IrType.Named && table.lookupStruct((value.type as IrType.Named).name)?.isBridge == false)
+                            IrExpr.Call("__isolated", listOf(value), value.type) else null
+                        else -> null
                     }
+                    initializer?.let { resolveName(capture.source) to it }
+                }.toMap()
                 table.pushScope()
                 pushNameScope()
                 // An alias is a real lambda-local binding backed by the captured
@@ -4074,7 +4149,11 @@ class IrGenerator(private val table: SymbolTable) {
                         ContextFrame(receiverParams.map { (name, t) -> IrExpr.Var(name, t) }, prefersMembers = true),
                     )
                 }
-                val loweredBody = lowerBody(expr.body)
+                val sourceBody = if (callableType.ret == IrType.Unit) expr.body.map { stmt ->
+                    if (stmt is Stmt.Return && stmt.implicit && stmt.value != null)
+                        Stmt.ExprStmt(stmt.value, stmt.line, stmt.column, stmt.length) else stmt
+                } else expr.body
+                val loweredBody = lowerBody(sourceBody)
                 val body = if (positionalSelf == null) loweredBody else listOf(positionalSelf) + loweredBody
                 if (receiverParams.isNotEmpty()) contextualValues.removeLast()
                 popNameScope()
@@ -4171,7 +4250,8 @@ class IrGenerator(private val table: SymbolTable) {
         if (name == "hash") return IrType.ULong
         return when (receiverType) {
         is IrType.Array -> when (name) {
-            "add", "insert", "remove" -> IrType.Unit
+            "add", "insert", "remove", "clear" -> IrType.Unit
+            "removeAt", "removeFirst", "removeLast", "pop" -> receiverType.element
             "contains" -> IrType.Bool
             "indexOf" -> IrType.Int
             "fill" -> receiverType
@@ -4398,7 +4478,9 @@ class IrGenerator(private val table: SymbolTable) {
                 // for it, so `Box<Long>(5000000000)` is a Long literal rather than
                 // an Int one that no longer fits once it reaches the erased slot.
                 val type = typeArgs.getOrNull(field.typeParamIndex) ?: field.type
-                val value = coerceToFloat(lowerExpr(given ?: field.default ?: Expr.NullLiteral), type)
+                val source = given ?: field.default ?: Expr.NullLiteral
+                val lowered = coerceToFloat(lowerExpr(source), type)
+                val value = if (field.typeRef is TypeRef.Reference) lowered else withImplicitCopy(source, lowered)
                 values.add(value)
                 bindings[field.name] = value
             }

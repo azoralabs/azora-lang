@@ -45,6 +45,8 @@ impl Clone for Unique<T> {
 }
 
 impl Unique<T> {
+    dtor .() { self.dispose() }
+
     /** Returns the owned value (panics if already released). */
     @Experimental(since: "0.1")
     prop &.get: T {

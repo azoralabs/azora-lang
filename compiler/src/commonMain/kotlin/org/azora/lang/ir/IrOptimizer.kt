@@ -129,8 +129,13 @@ class IrOptimizer {
 
     private fun tryFoldBinary(left: IrExpr, op: IrBinaryOp, right: IrExpr, resultType: IrType): IrExpr? {
         if (left is IrExpr.IntLiteral && right is IrExpr.IntLiteral) {
-            if (resultType == IrType.Cent || resultType == IrType.UCent) return null
-            val unsigned = resultType in setOf(IrType.UInt, IrType.UByte, IrType.UShort, IrType.ULong)
+            // Comparisons have Bool result type; signedness and literal width
+            // still belong to their operands. A wide literal's Long is only
+            // its low bits, so it is never enough to fold such a comparison.
+            if (listOf(resultType, left.type, right.type).any { it is IrType.Integer && it.bits > 64 }) return null
+            val unsigned = listOf(resultType, left.type, right.type).any {
+                it is IrType.Integer && !it.signed || it == IrType.USize
+            }
             if (unsigned && op in setOf(
                     IrBinaryOp.DIV, IrBinaryOp.MOD,
                     IrBinaryOp.LT, IrBinaryOp.LTE, IrBinaryOp.GT, IrBinaryOp.GTE

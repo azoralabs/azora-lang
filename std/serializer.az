@@ -227,7 +227,7 @@ func serialNumber(value: String): SerialValue ?! SerializationError {
 
 /** Returns the named object field, or fails when it is absent. */
 @Experimental(since: "0.1")
-func serialField(value: SerialValue&, name: String): SerialValue ?! SerializationError {
+func serialField(value: SerialValue&, name: String): SerialValue& ?! SerializationError {
     when value {
         SerialValue.Object(fields) -> {
             for i in 0..<fields.size {
@@ -242,12 +242,12 @@ func serialField(value: SerialValue&, name: String): SerialValue ?! Serializatio
 }
 
 /** Returns one typed object field by positional index. */
-func serialFieldAt(fields: List<SerialField>&, index: Int): SerialField {
+func serialFieldAt(fields: List<SerialField>&, index: Int): SerialField& {
     return fields[index]
 }
 
 /** Returns one typed serialized array element by positional index. */
-func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue {
+func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue& {
     return values[index]
 }
 
@@ -689,14 +689,14 @@ impl _SerialReader {
         self.skipWhitespace()
         if !self.isAtEnd && charAt(self.input, self.index) == ']' {
             self.index += 1
-            return SerialValue.Array(values)
+            return SerialValue.Array(take values)
         }
         loop {
             values.add(try self.readValue(depth))
             self.skipWhitespace()
             fin separator = try self.take()
             if separator == ']' {
-                return SerialValue.Array(values)
+                return SerialValue.Array(take values)
             }
             if separator != ',' {
                 return .InvalidSyntax
@@ -711,7 +711,7 @@ impl _SerialReader {
         self.skipWhitespace()
         if !self.isAtEnd && charAt(self.input, self.index) == '}' {
             self.index += 1
-            return SerialValue.Object(fields)
+            return SerialValue.Object(take fields)
         }
         loop {
             self.skipWhitespace()
@@ -733,12 +733,12 @@ impl _SerialReader {
             if duplicate && !self.options.allowDuplicateFields {
                 return .DuplicateField
             }
-            fields.add(SerialField(name, value))
+            fields.add(SerialField(name, take value))
 
             self.skipWhitespace()
             fin separator = try self.take()
             if separator == '}' {
-                return .Object(fields)
+                return .Object(take fields)
             }
             if separator != ',' {
                 return .InvalidSyntax

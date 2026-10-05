@@ -235,10 +235,10 @@ impl ArrayList<T> {
         fin newCap = if self._capacity == 0 then 8 else self._capacity * 2
         let newData: T^ = alloc^ .() * newCap
         for i in 0..<self._size {
-            newData[i] = self._data[i]
+            newData[i] = take self._data[i]
         }
         fin oldData = self._data
-        self._data = newData
+        self._data = take newData
         self._capacity = newCap
         purge oldData
     }
@@ -399,7 +399,7 @@ impl MutableList<T> for ArrayList<T> {
         }
         var i = self._size
         while i > index {
-            self._data[i] = self._data[i - 1]
+            self._data[i] = take self._data[i - 1]
             i--
         }
         self._data[index] = element
@@ -419,9 +419,9 @@ impl MutableList<T> for ArrayList<T> {
         assert index >= 0 panic "Remove index must be non-negative"
         assert index < self._size panic "Remove index out of bounds"
     } scope {
-        fin removed = self._data[index]
+        fin removed = take self._data[index]
         for i in index..<self._size - 1 {
-            self._data[i] = self._data[i + 1]
+            self._data[i] = take self._data[i + 1]
         }
         self._size--
         return removed
@@ -438,7 +438,7 @@ impl MutableList<T> for ArrayList<T> {
     in {
         assert self._size > 0 panic "List is empty"
     } scope {
-        fin removed = self._data[self._size - 1]
+        fin removed = take self._data[self._size - 1]
         self._size--
         return removed
     }

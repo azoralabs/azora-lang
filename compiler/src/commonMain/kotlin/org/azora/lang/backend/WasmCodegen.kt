@@ -97,6 +97,8 @@ class WasmCodegen {
 
     // Module state.
     private val structs = HashMap<String, List<IrField>>()
+    private val ownershipDrops = linkedMapOf<String, Pair<String, IrType>>()
+    private val structDefinitions = mutableMapOf<String, IrTopLevel.Struct>()
     private val layouts = HashMap<String, PackLayout>()
     /** Names of the `union` types: every member of one sits at offset 0. */
     private val unions = HashSet<String>()
@@ -251,7 +253,7 @@ class WasmCodegen {
      */
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
-        structs.clear(); layouts.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
+        structs.clear(); structDefinitions.clear(); ownershipDrops.clear(); layouts.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
         usesAlloc = false; usesConcat = false; usesStrEq = false; usesStrHash = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         reactiveStorage.clear(); reactiveAliases.clear()
@@ -260,6 +262,7 @@ class WasmCodegen {
 
         for (item in program.items) if (item is IrTopLevel.Struct) {
             structs[item.name] = item.fields
+            structDefinitions[item.name] = item
             if (item.isUnion) unions.add(item.name)
         }
         for (item in program.items) if (item is IrTopLevel.Extern) externs[item.name] = item
@@ -303,6 +306,11 @@ class WasmCodegen {
             funcText.append(emitClosureFunction(closureFunctions[closureIndex++]))
         }
         for ((name, dispatch) in neededDispatchers) funcText.append(renderDispatcher(name, dispatch.first, dispatch.second))
+        var dropIndex = 0
+        while (dropIndex < ownershipDrops.size) {
+            val (name, type) = ownershipDrops.values.toList()[dropIndex++]
+            funcText.append(renderOwnershipDrop(name, type))
+        }
 
         val sb = StringBuilder()
         sb.appendLine("(module")
@@ -1378,6 +1386,7 @@ class WasmCodegen {
                 val stored = coerceWasm(emitExpr(value), value.type, pointee)
                 return wrapCallResult(expr.type, "(${wasmStore(pointee)} ${emitExpr(pointer)} $stored)")
             }
+            "__take" -> return emitOwnershipTake(expr.args.single())
             "__purge" -> return wrapCallResult(expr.type, emitPurge(expr.args.single()))
         }
         if (expr.receiver != null) {
@@ -1532,18 +1541,103 @@ class WasmCodegen {
      * storage only: elements are not destroyed, which is what a container that
      * has already moved them out relies on.
      */
-    private fun emitPurge(value: IrExpr): String {
-        val type = value.type
-        usesAlloc = true
-        if (type is IrType.Named && type.name in structs) {
-            val stored = newTemp("i32")
-            val dtor = "${type.name}_dtor"
-            val call = if (dtor in functionParams) "(call \$$dtor (local.get $stored))" else ""
-            return "(block (local.set $stored ${emitExpr(value)}) $call (call \$__free (local.get $stored)))"
+    private fun emitOwnershipTake(place: IrExpr): String {
+        val result = newTemp(wasmType(place.type))
+        val address = when (place) {
+            is IrExpr.Member -> fieldAddr(place.target, place.name)
+            is IrExpr.Index -> elemAddr(place.target, place.index)
+            else -> null
         }
-        val pointer = type is IrType.Pointer || (type is IrType.Nullable && type.inner is IrType.Pointer)
-        check(pointer) { "purge of $type is not supported by the WebAssembly target" }
-        return "(call \$__free ${emitExpr(value)})"
+        if (address != null) {
+            val slot = newTemp("i32")
+            val stored = if (place is IrExpr.Member) fieldSlot(place.target, place.name).type else place.type
+            val zero = "(${wasmType(stored)}.const 0)"
+            return "(block (result ${wasmType(place.type)}) (local.set $slot $address) " +
+                "(local.set $result ${coerceWasm("(${wasmLoad(stored)} (local.get $slot))", stored, place.type)}) " +
+                "(${wasmStore(stored)} (local.get $slot) $zero) (local.get $result))"
+        }
+        if (place is IrExpr.Var && place.name != "__null") {
+            val clear = if (place.name in globalTypes) "(global.set \$${place.name} (${wasmType(place.type)}.const 0))"
+                else "(local.set \$${place.name} (${wasmType(place.type)}.const 0))"
+            return "(block (result ${wasmType(place.type)}) (local.set $result ${emitExpr(place)}) $clear (local.get $result))"
+        }
+        return emitExpr(place)
+    }
+
+    private fun emitPurge(value: IrExpr): String {
+        val type = (value.type as? IrType.Nullable)?.inner ?: value.type
+        usesAlloc = true
+        val stored = newTemp("i32")
+        if (type is IrType.Named && (type.name in structs || type.name in specTables)) {
+            return "(call \$${ownershipDropName(type)} ${emitOwnershipTake(value)})"
+        }
+        if (type is IrType.Array) return "(call \$${ownershipDropName(type)} ${emitOwnershipTake(value)})"
+        check(type is IrType.Pointer) { "purge of $type is not supported by the WebAssembly target" }
+        check(type.inner !is IrType.Named || (type.inner as IrType.Named).name !in structs) {
+            "owned pack pointee destruction is not supported by the WebAssembly target"
+        }
+        return "(call \$__free ${emitOwnershipTake(value)})"
+    }
+
+    private fun ownershipDropName(type: IrType): String = ownershipDrops.getOrPut(type.shown()) {
+        "__azora_drop_pack_${ownershipDrops.size}" to type
+    }.first
+
+    private fun renderOwnershipDrop(name: String, rawType: IrType): String {
+        if (rawType is IrType.Array) {
+            val child = (rawType.element as? IrType.Nullable)?.inner ?: rawType.element
+            val owned = child is IrType.Array || (child is IrType.Named && (child.name in structs || child.name in specTables))
+            val body = StringBuilder("  (func \$$name (param \$self i32) (local \$i i32)\n")
+            body.append("    (if (local.get \$self) (then\n")
+            if (owned) {
+                val drop = ownershipDropName(child)
+                body.append("      (local.set \$i (i32.load (local.get \$self)))\n")
+                body.append("      (block \$end (loop \$items (br_if \$end (i32.eqz (local.get \$i)))\n")
+                body.append("        (local.set \$i (i32.sub (local.get \$i) (i32.const 1)))\n")
+                body.append("        (call \$$drop (i32.load (i32.add (local.get \$self) (i32.add (i32.const 4) (i32.mul (local.get \$i) (i32.const 4))))))\n")
+                body.append("        (br \$items)))\n")
+            }
+            body.append("      (call \$__free (local.get \$self))))\n  )\n")
+            return body.toString()
+        }
+        val type = rawType as IrType.Named
+        if (type.name in specTables) {
+            val body = StringBuilder("  (func \$$name (param \$self i32)\n")
+            body.append("    (if (local.get \$self) (then\n")
+            for (impl in specTables.getValue(type.name).impls) {
+                val drop = ownershipDropName(IrType.Named(impl.typeName, type.args))
+                body.append("      (if (i32.eq (i32.load (local.get \$self)) (i32.const ${specTypeIds.getValue(impl.typeName)})) (then (call \$$drop (i32.load offset=4 (local.get \$self)))))\n")
+            }
+            body.append("      (call \$__free (local.get \$self))))\n  )\n")
+            return body.toString()
+        }
+        val definition = structDefinitions.getValue(type.name)
+        check(!definition.isUnion) { "owned union destruction requires an active-member tag on the WebAssembly target" }
+        val dtor = "${type.name}_dtor"
+        val body = StringBuilder("  (func \$$name (param \$self i32) (local \$value i32)\n")
+        body.append("    (if (local.get \$self) (then\n")
+        if (dtor in functionParams) body.append("      (call \$$dtor (local.get \$self))\n")
+        for ((index, field) in definition.fields.withIndex().toList().asReversed()) {
+            if (!field.ownsValue) continue
+            val position = definition.typeParamSlots.getOrNull(index) ?: -1
+            val concrete = if (position >= 0) type.args.getOrNull(position) ?: field.type else field.type
+            val inner = (concrete as? IrType.Nullable)?.inner ?: concrete
+            val ownedNamed = inner is IrType.Named && (inner.name in structs || inner.name in specTables)
+            val ownedArray = inner is IrType.Array
+            val ownedPointer = inner is IrType.Pointer && dtor !in functionParams && !type.name.contains("Weak")
+            if (!ownedNamed && !ownedPointer && !ownedArray) continue
+            if (ownedPointer && (inner as IrType.Pointer).inner is IrType.Named) error("owned pack pointee destruction is not supported by the WebAssembly target")
+            val offset = layoutOf(type.name).fields.getValue(field.name).offset
+            val address = "(i32.add (local.get \$self) (i32.const $offset))"
+            val read = "(${wasmLoad(field.type)} $address)"
+            val value = coerceWasm(read, field.type, concrete)
+            body.append("      (local.set \$value $value)\n")
+            body.append("      (${wasmStore(field.type)} $address (${wasmType(field.type)}.const 0))\n")
+            val drop = if (ownedNamed || ownedArray) ownershipDropName(inner) else "__free"
+            body.append("      (call \$$drop (local.get \$value))\n")
+        }
+        body.append("      (call \$__free (local.get \$self))))\n  )\n")
+        return body.toString()
     }
 
     private fun emitStructCtor(expr: IrExpr.StructCtor): String {

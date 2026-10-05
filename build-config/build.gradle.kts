@@ -4,6 +4,7 @@ plugins {
 
 kotlin {
     jvm("desktop")
+    macosArm64()
     iosArm64()
     iosSimulatorArm64()
     wasmJs { browser() }

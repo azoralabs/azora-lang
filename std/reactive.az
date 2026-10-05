@@ -44,6 +44,8 @@ module std.reactive
 
 import std.container.list::*
 import std.serializer::Serializable
+import std.memory.shared::*
+import std.traits::Clone
 
 /** Lifetime selected by a language-level reactive binding. */
 @Experimental(since: "0.1")
@@ -96,7 +98,7 @@ spec Read<T> {
     prop &.version: Int
 
     /** Registers an observer and immediately emits the current value. */
-    func !.subscribe(observer: (T) -> Unit): Subscription
+    func !.subscribe(observer: escaping (T) -> Unit): Subscription
 }
 
 /** Mutable observable value contract. */
@@ -113,8 +115,8 @@ spec Write<T> : Read<T> {
 @Experimental(since: "0.1")
 pack ReactiveObserver<T> {
     fin id: Int
-    var active: Bool = true
-    fin callback: (T) -> Unit
+    fin active: Shared<Bool>
+    fin callback: escaping (T) -> Unit
 }
 
 /**
@@ -126,7 +128,7 @@ pack ReactiveObserver<T> {
 @Experimental(since: "0.1")
 pack Subscription {
     var active: Bool = true
-    fin cancel: () -> Unit
+    fin cancel: escaping () -> Unit
 }
 
 impl Subscription {
@@ -138,6 +140,8 @@ impl Subscription {
             self.cancel()
         }
     }
+
+    dtor .() { self.dispose() }
 }
 
 /**
@@ -159,20 +163,17 @@ impl Read<T> for State<T> {
     prop &.value: T = self.current
     prop &.version: Int = self.revision
 
-    func !.subscribe(observer: (T) -> Unit): Subscription {
+    func !.subscribe(observer: escaping (T) -> Unit): Subscription {
         fin id = self.nextObserverId
         self.nextObserverId += 1
-        self.observers.add(ReactiveObserver<T>(id, true, observer))
+        var active = sharedOf(true)
+        var cancelActive = active.clone()
         observer(self.current)
-        // The disposer reaches back into the state it was made from, so it
-        // says so: `self` by mutable reference, `id` copied.
-        return Subscription(true) [self.!, id] {
-            for i in 0..<self.observers.size {
-                let item: ReactiveObserver<T> = self.observers.get(i)
-                if item.id == id {
-                    item.active = false
-                }
-            }
+        self.observers.add(ReactiveObserver<T>(id, take active, observer))
+        // The handle can outlive State: it owns an independent cancellation
+        // token shared with the observer rather than borrowing State storage.
+        return Subscription(true) [take cancelActive] {
+            cancelActive.set(false)
         }
     }
 }
@@ -183,8 +184,8 @@ impl Write<T> for State<T> {
         self.revision += 1
         fin count = self.observers.size
         for i in 0..<count {
-            let item: ReactiveObserver<T> = self.observers.get(i)
-            if item.active {
+            var item: ReactiveObserver<T>! = self.observers[i]
+            if item.active.get {
                 item.callback(value)
             }
         }
@@ -198,7 +199,7 @@ impl Write<T> for State<T> {
 /** A value calculated from a producer whenever it is read. */
 @Experimental(since: "0.1")
 pack Derived<T> {
-    fin producer: () -> T
+    fin producer: escaping () -> T
 }
 
 impl Derived<T> {
@@ -231,13 +232,13 @@ func<T> state(value: T): State<T> {
 
 /** Creates a derived value from a producer. */
 @Experimental(since: "0.1")
-func<T> computed(producer: () -> T): Derived<T> {
+func<T> computed(producer: escaping () -> T): Derived<T> {
     return Derived<T>(producer)
 }
 
 /** Registers an observer and returns its deterministic disposal handle. */
 @Experimental(since: "0.1")
-func<T> observe(source: State<T>!, observer: (T) -> Unit): Subscription {
+func<T> observe(source: State<T>!, observer: escaping (T) -> Unit): Subscription {
     return source.subscribe(observer)
 }
 
@@ -305,27 +306,27 @@ macro $left @combine $right => combine($left, $right)
 
 test "state notifies in registration order and disposal is idempotent" {
     var source = state(1)
-    var observed = 0
-    var calls = 0
-    var subscription = observe(source) [observed.!, calls.!] { value: Int ->
-        observed = value
-        calls += 1
+    var observed = sharedOf(0)
+    var calls = sharedOf(0)
+    var subscription = observe(source) [observed.clone(), calls.clone()] { value: Int ->
+        observed.set(value)
+        calls.set(calls.get + 1)
     }
     source.set(7)
-    assert observed == 7 panic "observer did not receive the latest state"
-    assert calls == 2 panic "observer must receive the initial value and first update"
+    assert observed.get == 7 panic "observer did not receive the latest state"
+    assert calls.get == 2 panic "observer must receive the initial value and first update"
     subscription.dispose()
     subscription.dispose()
     source.set(9)
-    assert calls == 2 panic "disposed observer received an update"
+    assert calls.get == 2 panic "disposed observer received an update"
 }
 
 test "derived state reads the latest inputs" {
-    var left = 2
-    var right = 3
-    fin total = computed [left.&, right.&] { left + right }
+    var left = sharedOf(2)
+    var right = sharedOf(3)
+    fin total = computed [left.clone(), right.clone()] { left.get + right.get }
     assert total.value == 5 panic "derived value used incorrect initial inputs"
-    right = 8
+    right.set(8)
     assert total.value == 10 panic "derived value did not read the latest inputs"
 }
 

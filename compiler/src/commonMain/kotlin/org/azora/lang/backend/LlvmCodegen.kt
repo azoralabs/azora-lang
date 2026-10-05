@@ -110,6 +110,7 @@ class LlvmCodegen {
     /** Declared parameter types per function (user functions + bridge externs), for call-site coercion. */
     private val funcReturnTypes = mutableMapOf<String, IrType>()
     private val funcParamTypes = mutableMapOf<String, List<IrType>>()
+    private val nativeExterns = mutableMapOf<String, IrTopLevel.Extern>()
 
     /** LLVM element types for top-level and thread-local variables. */
     private val globalVars = mutableMapOf<String, String>()
@@ -305,6 +306,7 @@ class LlvmCodegen {
         structDefs.clear()
         funcParamTypes.clear()
         funcReturnTypes.clear()
+        nativeExterns.clear()
         failableFunctions.clear()
         errorHandlers.clear()
         usesErrorSlot = false
@@ -314,6 +316,10 @@ class LlvmCodegen {
         reactiveEffectEdges.clear()
         lateTypeDefinitions.clear()
         deferredFunctions.clear()
+        ownershipDrops.clear()
+        ownedSlots = program.ownedSlots
+        constructionOwners.clear()
+        usesMemset = false
         for (item in program.items.filterIsInstance<IrTopLevel.Struct>()) {
             structDefs[item.name] = item
         }
@@ -348,6 +354,7 @@ class LlvmCodegen {
                 is IrTopLevel.Extern -> {
                     funcParamTypes[item.name] = item.params.map { it.second }
                     funcReturnTypes[item.name] = item.returnType
+                    nativeExterns[item.name] = item
                 }
                 is IrTopLevel.Global -> when (val stmt = item.stmt) {
                     is IrStmt.VarDecl -> globalVars[stmt.name] = mapType(stmt.type)
@@ -466,6 +473,9 @@ class LlvmCodegen {
             // define the mangled name as a call to it.
             val libm = mathIntrinsicOf(item)
             if (libm != null) {
+                // An unmangled bridge already names the external symbol. A
+                // wrapper with that same name both redefines and calls itself.
+                if (item.name == libm) continue
                 val ps = item.params.mapIndexed { i, (_, t) -> "${mapType(t)} %a$i" }
                 val args = item.params.mapIndexed { i, (_, t) -> "${mapType(t)} %a$i" }
                 val ret = abiReturnType(item.returnType)
@@ -487,8 +497,9 @@ class LlvmCodegen {
             // `puts` - is never called by its own name, and a declaration for it
             // would name a symbol nothing provides.
             if (!referencesSymbol(body, item.name)) continue
-            val params = item.params.joinToString(", ") { (_, t) -> mapType(t) }
-            body.appendLine("declare ${abiReturnType(item.returnType)} @${item.name}($params)")
+            NativeAbi.checkSignature(item)
+            val params = item.params.joinToString(", ") { (_, t) -> nativeParameterType(t) }
+            body.appendLine("declare ${nativeReturnType(item.returnType)} @${item.name}($params)")
         }
 
 
@@ -557,6 +568,7 @@ class LlvmCodegen {
         if (usesStrncmp) line("declare i32 @strncmp(i8*, i8*, i64)")
         if (usesStrstr) line("declare i8* @strstr(i8*, i8*)")
         if (usesMemcpy) line("declare i8* @memcpy(i8*, i8*, i64)")
+        if (usesMemset) line("declare i8* @memset(i8*, i32, i64)")
         if (usesGetenv) line("declare i8* @getenv(i8*)")
         if (usesAccess) line("declare i32 @access(i8*, i32)")
         if (usesSystem) line("declare i32 @system(i8*)")
@@ -955,8 +967,8 @@ class LlvmCodegen {
      */
     private fun emitFunctionExitCleanup(failing: Boolean = false) {
         if (terminated) return
-        emitDeferred(failing)
         emitAllTaskScopeCleanups()
+        emitDeferred(failing)
     }
 
     /** A `defer` of the function being emitted, and the counter its registrations raise. */
@@ -1346,6 +1358,7 @@ class LlvmCodegen {
         emitTerminator("  br i1 $failed, label %$onError, label %$onOk")
 
         startBlock(onError)
+        emitConstructionCleanup()
         if (errorHandlers.isNotEmpty()) {
             emitTerminator("  br label %${errorHandlers.last()}")
         } else if (currentIsFailable) {
@@ -2224,6 +2237,7 @@ class LlvmCodegen {
                     emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $field, align 1")
                 }
             }
+            registerClosureContextDrop(raw, ctxType, captures, lambda)
             raw
         }
 
@@ -2236,6 +2250,7 @@ class LlvmCodegen {
         emit("  $closureSizePtr = getelementptr %azora.closure, %azora.closure* null, i32 1")
         emit("  $closureSize = ptrtoint %azora.closure* $closureSizePtr to i64")
         val rawClosure = emitHeapAlloc(closureSize)
+        registerClosureDrop(rawClosure)
         val closure = nextTmp()
         emit("  $closure = bitcast i8* $rawClosure to %azora.closure*")
         val fnField = nextTmp()
@@ -2391,6 +2406,7 @@ class LlvmCodegen {
      * (OWNERSHIP_BORROWING_DIP: both values "own independent state").
      */
     private fun isolatedCopy(value: String, type: IrType): String {
+        if (type is IrType.Function) return isolatedClosureCopy(value)
         if (type is IrType.Array) return isolatedArrayCopy(value, type.element)
         val named = type as? IrType.Named ?: return value
         if (named.name !in structDefs) return value
@@ -2408,6 +2424,20 @@ class LlvmCodegen {
         emit("  $copied = call i8* @memcpy(i8* $raw, i8* $src, i64 $size)")
         val ptr = nextTmp()
         emit("  $ptr = bitcast i8* $raw to $st*")
+        registerNamedDrop(raw, named)
+        for ((i, field) in structDefs.getValue(named.name).fields.withIndex()) {
+            val concrete = concreteFieldType(structDefs.getValue(named.name), i, named)
+            if (field.ownsValue && concrete is IrType.Named && concrete.name in structDefs) {
+                val address = nextTmp()
+                val old = nextTmp()
+                emit("  $address = getelementptr $st, $st* $ptr, i32 0, i32 $i")
+                emit("  $old = load ${mapType(field.type)}, ${mapType(field.type)}* $address")
+                val typed = coerceNumeric(old, field.type, concrete)
+                val duplicate = isolatedCopy(typed, concrete)
+                val stored = coerceNumeric(duplicate, concrete, field.type)
+                emit("  store ${mapType(field.type)} $stored, ${mapType(field.type)}* $address")
+            }
+        }
         return ptr
     }
 
@@ -2422,6 +2452,7 @@ class LlvmCodegen {
         val size = nextTmp()
         emit("  $size = add i64 $bytes, 8")
         val copy = emitHeapAlloc(size)
+        registerArrayDrop(copy, element)
         usesMemcpy = true
         val copied = nextTmp()
         emit("  $copied = call i8* @memcpy(i8* $copy, i8* $raw, i64 $size)")
@@ -2463,6 +2494,279 @@ class LlvmCodegen {
         startBlock(doneLabel)
         return copy
     }
+
+    /** Loads and empties an owned place exactly once. Clearing fields before
+     * destruction lets a hand-written dtor coexist with recursive cleanup. */
+    private fun emitOwnershipTake(place: IrExpr): String {
+        val location: Pair<String, String>? = when (place) {
+            is IrExpr.Var -> localVars[place.name]
+                ?: allocaSlots[place.name to mapType(place.type)]?.let { it to mapType(place.type) }
+                ?: globalVars[place.name]?.let { "@${place.name}" to mapType(place.type) }
+            is IrExpr.Member -> emitFieldPtr(place.target, place.name)?.let { it.first to it.third }
+            is IrExpr.Index -> {
+                val raw = emitExpr(place.target)
+                val index = indexToI64(emitExpr(place.index), place.index.type)
+                val array = place.target.type is IrType.Array
+                if (array) emitBoundsCheck(raw, index)
+                val data = if (array) nextTmp().also { emit("  $it = getelementptr i8, i8* $raw, i64 8") } else raw
+                val type = mapType(place.type)
+                val typed = nextTmp()
+                val address = nextTmp()
+                emit("  $typed = bitcast i8* $data to $type*")
+                emit("  $address = getelementptr $type, $type* $typed, i64 $index")
+                address to type
+            }
+            else -> null
+        }
+        if (location == null) return emitExpr(place)
+        val (address, storedType) = location
+        check(storedType.endsWith("*")) { "cannot empty owned storage of $storedType" }
+        val loaded = nextTmp()
+        emit("  $loaded = load $storedType, $storedType* $address, align 1")
+        emit("  store $storedType null, $storedType* $address, align 1")
+        val type = mapType(place.type)
+        return if (type == storedType) loaded else nextTmp().also {
+            emit("  $it = bitcast $storedType $loaded to $type")
+        }
+    }
+
+    private fun registerSpecDrop(raw: String) {
+        val name = ownershipDrops.getOrPut("spec-box") {
+            val symbol = "__azora_drop_spec_${ownershipDrops.size}"
+            deferredFunctions += """
+define void @$symbol(i8* %raw, i64 %count) {
+entry:
+  %slot.raw = getelementptr i8, i8* %raw, i64 8
+  %slot = bitcast i8* %slot.raw to i8**
+  %value = load i8*, i8** %slot
+  store i8* null, i8** %slot
+  call void @__azora_free(i8* %value)
+  ret void
+}
+""".trimIndent()
+            symbol
+        }
+        emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* @$name, i64 1)")
+    }
+
+    private fun registerNamedDrop(raw: String, type: IrType.Named) {
+        val key = "pack:${type.shown()}"
+        val name = ownershipDrops.getOrPut(key) {
+            val symbol = "__azora_drop_pack_${ownershipDrops.size}"
+            val def = structDefs.getValue(type.name)
+            val st = "%struct.${sanitizeName(type.name)}"
+            val dtor = "${type.name}_dtor"
+            val fields = def.fields.indices.filter { i ->
+                if (!def.fields[i].ownsValue) return@filter false
+                val field = ownershipFieldType(def, i, type)
+                val inner = (field as? IrType.Nullable)?.inner ?: field
+                // Pointer fields managed by a custom dtor include Shared's
+                // common control block and container capacities, not per-pack owners.
+                inner is IrType.Array || inner is IrType.Function || (inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots)) ||
+                    (inner is IrType.Pointer && dtor !in funcParamTypes && !type.name.contains("Weak"))
+            }
+            val body = StringBuilder()
+            body.appendLine("define void @$symbol(i8* %raw, i64 %count) {")
+            body.appendLine("entry:")
+            body.appendLine("  %self = bitcast i8* %raw to $st*")
+            if (dtor in funcParamTypes) body.appendLine("  call void @$dtor($st* %self)")
+            for (i in fields.asReversed()) {
+                val stored = mapType(def.fields[i].type)
+                body.appendLine("  %field.$i = getelementptr $st, $st* %self, i32 0, i32 $i")
+                body.appendLine("  %value.$i = load $stored, $stored* %field.$i")
+                body.appendLine("  store $stored null, $stored* %field.$i")
+                if (stored == "i8*") body.appendLine("  call void @__azora_free(i8* %value.$i)")
+                else {
+                    body.appendLine("  %raw.$i = bitcast $stored %value.$i to i8*")
+                    body.appendLine("  call void @__azora_free(i8* %raw.$i)")
+                }
+            }
+            body.appendLine("  ret void")
+            body.appendLine("}")
+            deferredFunctions += body.toString()
+            symbol
+        }
+        emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* @$name, i64 1)")
+    }
+
+    private fun registerPointerDrop(raw: String, element: IrType, count: String) {
+        val inner = (element as? IrType.Nullable)?.inner ?: element
+        if (inner !is IrType.Function && inner !is IrType.Array && (inner !is IrType.Named || (inner.name !in structDefs && inner.name !in ownedSlots && inner.name !in specDispatch))) {
+            emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* null, i64 $count)")
+            return
+        }
+        val key = "buffer:${element.shown()}"
+        val name = ownershipDrops.getOrPut(key) {
+            val symbol = "__azora_drop_buffer_${ownershipDrops.size}"
+            val type = mapType(element)
+            deferredFunctions += """
+define void @$symbol(i8* %raw, i64 %count) {
+entry:
+  %data = bitcast i8* %raw to $type*
+  br label %test
+test:
+  %i = phi i64 [ 0, %entry ], [ %next, %body ]
+  %more = icmp ult i64 %i, %count
+  br i1 %more, label %body, label %end
+body:
+  %slot = getelementptr $type, $type* %data, i64 %i
+  %value = load $type, $type* %slot, align 1
+  store $type null, $type* %slot, align 1
+  %value.raw = bitcast $type %value to i8*
+  call void @__azora_free(i8* %value.raw)
+  %next = add i64 %i, 1
+  br label %test
+end:
+  ret void
+}
+""".trimIndent()
+            symbol
+        }
+        emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* @$name, i64 $count)")
+    }
+
+    /** Arrays retain their active length; removed tail slots must never drop twice. */
+    private fun registerArrayDrop(raw: String, element: IrType) {
+        val inner = (element as? IrType.Nullable)?.inner ?: element
+        if (inner !is IrType.Array && inner !is IrType.Function && !(inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots))) return
+        val name = ownershipDrops.getOrPut("owned-array") {
+            val symbol = "__azora_drop_array_${ownershipDrops.size}"
+            deferredFunctions += """
+define void @$symbol(i8* %raw, i64 %unused) {
+entry:
+  %len.ptr = bitcast i8* %raw to i64*
+  %len = load i64, i64* %len.ptr
+  store i64 0, i64* %len.ptr
+  %data.raw = getelementptr i8, i8* %raw, i64 8
+  %data = bitcast i8* %data.raw to i8**
+  br label %test
+test:
+  %i = phi i64 [ %len, %entry ], [ %next, %body ]
+  %more = icmp ne i64 %i, 0
+  br i1 %more, label %body, label %end
+body:
+  %next = sub i64 %i, 1
+  %slot = getelementptr i8*, i8** %data, i64 %next
+  %value = load i8*, i8** %slot, align 1
+  store i8* null, i8** %slot, align 1
+  call void @__azora_free(i8* %value)
+  br label %test
+end:
+  ret void
+}
+""".trimIndent()
+            symbol
+        }
+        emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* @$name, i64 1)")
+    }
+
+    private fun ownershipFieldType(def: IrTopLevel.Struct, index: Int, referring: IrType.Named): IrType {
+        fun substitute(type: IrType): IrType = when (type) {
+            is IrType.Named -> def.typeParams.indexOf(type.name).takeIf { it >= 0 }?.let {
+                referring.args.getOrNull(it)
+            } ?: type.copy(args = type.args.map(::substitute))
+            is IrType.Array -> type.copy(element = substitute(type.element))
+            is IrType.Nullable -> type.copy(inner = substitute(type.inner))
+            is IrType.Pointer -> type.copy(inner = substitute(type.inner))
+            else -> type
+        }
+        return substitute(def.fields[index].ownershipType ?: concreteFieldType(def, index, referring))
+    }
+
+    private fun qualifyConcreteOwnership(value: String, type: IrType, depth: Int = 0) {
+        if (depth > 8) return
+        if (type is IrType.Array) { registerArrayDrop(value, type.element); return }
+        val named = type as? IrType.Named ?: return
+        val def = structDefs[named.name] ?: return
+        if (named.args.isEmpty() || named.args.any { it == IrType.Any || (it is IrType.Named && it.name !in structDefs && it.name !in ownedSlots && it.name !in specDispatch) }) return
+        val nonnull = nextTmp()
+        emit("  $nonnull = icmp ne ${mapType(named)} $value, null")
+        val qualify = nextLabel("owner.qualify")
+        val done = nextLabel("owner.qualified")
+        emitTerminator("  br i1 $nonnull, label %$qualify, label %$done")
+        startBlock(qualify)
+        val raw = nextTmp()
+        emit("  $raw = bitcast ${mapType(named)} $value to i8*")
+        registerNamedDrop(raw, named)
+        for (i in def.fields.indices) {
+            val field = def.fields[i]
+            if (!field.ownsValue) continue
+            val concrete = ownershipFieldType(def, i, named)
+            if (concrete !is IrType.Array && concrete !is IrType.Pointer && concrete !is IrType.Named) continue
+            val stored = mapType(field.type)
+            if (!stored.endsWith("*")) continue
+            val address = nextTmp()
+            val child = nextTmp()
+            emit("  $address = getelementptr ${mapType(named).removeSuffix("*")}, ${mapType(named)} $value, i32 0, i32 $i")
+            emit("  $child = load $stored, $stored* $address")
+            val live = nextTmp()
+            emit("  $live = icmp ne $stored $child, null")
+            val visit = nextLabel("owner.field")
+            val visited = nextLabel("owner.field.done")
+            emitTerminator("  br i1 $live, label %$visit, label %$visited")
+            startBlock(visit)
+            val childRaw = if (stored == "i8*") child else nextTmp().also { emit("  $it = bitcast $stored $child to i8*") }
+            when (concrete) {
+                is IrType.Array -> registerArrayDrop(childRaw, concrete.element)
+                is IrType.Pointer -> {
+                    if (named.name.contains("Weak")) {
+                        emitTerminator("  br label %$visited")
+                        startBlock(visited)
+                        continue
+                    }
+                    val countRaw = nextTmp(); val countSlot = nextTmp(); val count = nextTmp()
+                    emit("  $countRaw = getelementptr i8, i8* $childRaw, i64 -8")
+                    emit("  $countSlot = bitcast i8* $countRaw to i64*")
+                    emit("  $count = load i64, i64* $countSlot")
+                    registerPointerDrop(childRaw, concrete.inner, count)
+                }
+                is IrType.Named -> {
+                    val typed = if (mapType(concrete) == stored) child else nextTmp().also { emit("  $it = bitcast $stored $child to ${mapType(concrete)}") }
+                    qualifyConcreteOwnership(typed, concrete, depth + 1)
+                }
+                else -> Unit
+            }
+            emitTerminator("  br label %$visited")
+            startBlock(visited)
+        }
+        emitTerminator("  br label %$done")
+        startBlock(done)
+    }
+
+    private fun inheritPointerDrop(value: String, previous: String) {
+        val live = nextTmp()
+        emit("  $live = icmp ne i8* $previous, null")
+        val inherit = nextLabel("buffer.inherit")
+        val done = nextLabel("buffer.inherited")
+        emitTerminator("  br i1 $live, label %$inherit, label %$done")
+        startBlock(inherit)
+        val header = nextTmp(); val slot = nextTmp(); val callback = nextTmp()
+        emit("  $header = getelementptr i8, i8* $previous, i64 -16")
+        emit("  $slot = bitcast i8* $header to void (i8*, i64)**")
+        emit("  $callback = load void (i8*, i64)*, void (i8*, i64)** $slot")
+        val newHeader = nextTmp(); val newSlot = nextTmp()
+        emit("  $newHeader = getelementptr i8, i8* $value, i64 -16")
+        emit("  $newSlot = bitcast i8* $newHeader to void (i8*, i64)**")
+        emit("  store void (i8*, i64)* $callback, void (i8*, i64)** $newSlot")
+        emitTerminator("  br label %$done")
+        startBlock(done)
+    }
+
+    private val constructionOwners = mutableListOf<Pair<String, IrType>>()
+
+    private fun emitConstructionCleanup() {
+        for ((value, type) in constructionOwners.asReversed()) {
+            val raw = if (mapType(type) == "i8*") value else nextTmp().also {
+                emit("  $it = bitcast ${mapType(type)} $value to i8*")
+            }
+            usesAllocatorRuntime = true
+            emit("  call void @__azora_free(i8* $raw)")
+        }
+    }
+
+    private var usesMemset = false
+    private val ownershipDrops = mutableMapOf<String, String>()
+    private var ownedSlots = emptySet<String>()
 
     private fun emitHeapAlloc(size: String): String {
         usesAllocatorRuntime = true
@@ -2606,6 +2910,7 @@ class LlvmCodegen {
             }
         }
         emitEntryAllocas(body)
+        prepareDefers(body)
         emitStmts(body)
         emitFunctionExitCleanup()
         when (resultType) {
@@ -2629,6 +2934,11 @@ class LlvmCodegen {
         val savedBlock = currentBlock
         val savedReturnType = currentReturnType
         val savedIsMain = currentIsMain
+        val savedIsFailable = currentIsFailable
+        val savedDeferSlots = deferSlots.toList()
+        val savedEmittingDefers = emittingDefers
+        val savedConstructionOwners = constructionOwners.toList()
+        constructionOwners.clear()
 
         out = StringBuilder()
         try {
@@ -2647,6 +2957,10 @@ class LlvmCodegen {
             currentBlock = savedBlock
             currentReturnType = savedReturnType
             currentIsMain = savedIsMain
+            currentIsFailable = savedIsFailable
+            deferSlots.clear(); deferSlots.addAll(savedDeferSlots)
+            emittingDefers = savedEmittingDefers
+            constructionOwners.clear(); constructionOwners.addAll(savedConstructionOwners)
         }
     }
 
@@ -2894,6 +3208,7 @@ class LlvmCodegen {
             val slot = nextTmp(); emit("  $slot = bitcast i8* $slotRaw to i8**")
             val dataI8 = nextTmp(); emit("  $dataI8 = bitcast ${mapType(from)} $value to i8*")
             emit("  store i8* $dataI8, i8** $slot")
+            registerSpecDrop(box)
             return box
         }
         val ft = mapType(from)
@@ -2984,7 +3299,20 @@ class LlvmCodegen {
         val st = "%struct.${sanitizeName(expr.name)}"
 
         // Evaluate constructor arguments first (source order).
-        val argVals = expr.args.map { emitExpr(it) to it.type }
+        val start = constructionOwners.size
+        val argVals = try {
+            expr.args.map { argument ->
+                val value = emitExpr(argument)
+                val type = (argument.type as? IrType.Nullable)?.inner ?: argument.type
+                if ((type is IrType.Named && type.name in structDefs) ||
+                    (type is IrType.Pointer && argument is IrExpr.Call && argument.name in setOf("__alloc", "__allocBuffer", "__take"))) {
+                    constructionOwners += value to argument.type
+                }
+                value to argument.type
+            }
+        } finally {
+            while (constructionOwners.size > start) constructionOwners.removeAt(constructionOwners.lastIndex)
+        }
 
         // sizeof via the getelementptr-on-null idiom (target independent).
         val sizeGep = nextTmp()
@@ -2994,6 +3322,7 @@ class LlvmCodegen {
         val raw = emitHeapAlloc(size)
         val ptr = nextTmp()
         emit("  $ptr = bitcast i8* $raw to $st*")
+        if (!def.isUnion) registerNamedDrop(raw, expr.type as? IrType.Named ?: IrType.Named(expr.name))
 
         if (def.isUnion) {
             // Exactly one member is initialized; the rest of the slot is whatever
@@ -3025,6 +3354,8 @@ class LlvmCodegen {
             // really holds; the slot itself stays erased.
             val concrete = concreteFieldType(def, fi, expr.type as? IrType.Named ?: IrType.Named(expr.name))
             val value = coerceToField(rawVal, argType, concrete, ft)
+            val owningType = ownershipFieldType(def, fi, expr.type as? IrType.Named ?: IrType.Named(expr.name))
+            if (field.ownsValue && owningType is IrType.Array) registerArrayDrop(value, owningType.element)
             val fp = nextTmp()
             emit("  $fp = getelementptr $st, $st* $ptr, i32 0, i32 $fi")
             emit("  store $ft $value, $ft* $fp")
@@ -3040,6 +3371,7 @@ class LlvmCodegen {
         val argVals = expr.args.map { emitExpr(it) to it.type }
         val n = expr.fieldNames.size // 1 tag + payload count
         val raw = emitHeapAlloc("${8L * n}")
+        registerSlotDrop(raw, expr.args.drop(1).map { it.type })
         val tagSlot = nextTmp()
         emit("  $tagSlot = bitcast i8* $raw to i8**")
         emit("  store i8* ${argVals[0].first}, i8** $tagSlot")
@@ -3053,6 +3385,29 @@ class LlvmCodegen {
             emit("  store i64 $boxed, i64* $p")
         }
         return raw
+    }
+
+    private fun registerSlotDrop(raw: String, payloads: List<IrType>) {
+        val owned = payloads.indices.filter { index ->
+            val type = (payloads[index] as? IrType.Nullable)?.inner ?: payloads[index]
+            type is IrType.Array || (type is IrType.Named &&
+                (type.name in structDefs || type.name in specDispatch || type.name in ownedSlots))
+        }
+        val name = ownershipDrops.getOrPut("variant:${owned.joinToString(",")}") {
+            val symbol = "__azora_drop_variant_${ownershipDrops.size}"
+            val body = StringBuilder("define void @$symbol(i8* %raw, i64 %unused) {\nentry:\n")
+            for (index in owned.asReversed()) {
+                body.appendLine("  %slot.raw.$index = getelementptr i8, i8* %raw, i64 ${8L * (index + 1)}")
+                body.appendLine("  %slot.$index = bitcast i8* %slot.raw.$index to i8**")
+                body.appendLine("  %value.$index = load i8*, i8** %slot.$index")
+                body.appendLine("  store i8* null, i8** %slot.$index")
+                body.appendLine("  call void @__azora_free(i8* %value.$index)")
+            }
+            body.appendLine("  ret void\n}")
+            deferredFunctions += body.toString()
+            symbol
+        }
+        emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* @$name, i64 1)")
     }
 
     /** Widens/reinterprets a payload value to the i64 slot cell it is stored in. */
@@ -3458,6 +3813,12 @@ class LlvmCodegen {
             val (fp, fieldType, ft) = fieldPtr
             val raw = emitExpr(stmt.value)
             val value = coerceToField(raw, stmt.value.type, fieldType, ft)
+            if (fieldType is IrType.Pointer && stmt.value is IrExpr.Call &&
+                (stmt.value as IrExpr.Call).name in setOf("__take", "__alloc", "__allocBuffer") && ft == "i8*") {
+                val previous = nextTmp()
+                emit("  $previous = load i8*, i8** $fp")
+                inheritPointerDrop(value, previous)
+            }
             emit("  store $ft $value, $ft* $fp")
             return
         }
@@ -3579,7 +3940,16 @@ class LlvmCodegen {
                     if (expr.args.size == 1) return emitArrayContains(expr.target, expr.args[0], arrayType.element)
                 }
                 "remove" -> {
-                    if (expr.args.size == 1) return emitArrayRemoveAt(expr.target, expr.args[0], arrayType.element)
+                    if (expr.args.size == 1) return emitArrayRemoveAt(expr.target, expr.args[0], arrayType.element, transfer = false)
+                }
+                "removeAt" -> if (expr.args.size == 1) return emitArrayRemoveAt(expr.target, expr.args[0], arrayType.element, transfer = true)
+                "removeFirst" -> return emitArrayRemoveAt(expr.target, IrExpr.IntLiteral(0), arrayType.element, transfer = true)
+                "removeLast", "pop" -> return emitArrayRemoveAt(expr.target,
+                    IrExpr.Binary(IrExpr.Member(expr.target, "size", IrType.Int), IrBinaryOp.SUB, IrExpr.IntLiteral(1), IrType.Int), arrayType.element, transfer = true)
+                "clear" -> {
+                    val raw = emitExpr(expr.target)
+                    emitArrayClear(raw)
+                    return "void"
                 }
             }
         }
@@ -3641,6 +4011,7 @@ class LlvmCodegen {
         val vals = expr.elements.map { emitExpr(it) to it.type }
 
         val raw = emitHeapAlloc("$total")
+        registerArrayDrop(raw, elemType)
         val lenPtr = nextTmp()
         emit("  $lenPtr = bitcast i8* $raw to i64*")
         emit("  store i64 ${expr.elements.size}, i64* $lenPtr")
@@ -3837,7 +4208,7 @@ class LlvmCodegen {
      * things. An index outside the array does nothing, so a caller need not
      * guard what it is about to drop.
      */
-    private fun emitArrayRemoveAt(target: IrExpr, indexExpr: IrExpr, elementType: IrType): String {
+    private fun emitArrayRemoveAt(target: IrExpr, indexExpr: IrExpr, elementType: IrType, transfer: Boolean): String {
         val et = mapType(elementType)
         val raw = emitExpr(target)
         val length = emitArrayLengthI64(raw)
@@ -3850,12 +4221,12 @@ class LlvmCodegen {
         emit("  $data = bitcast i8* $dataRaw to $et*")
 
         val shiftCondLabel = nextLabel("arr_remove_shift_cond")
+        val validLabel = nextLabel("arr_remove_valid")
         val shiftBodyLabel = nextLabel("arr_remove_shift_body")
         val shrinkLabel = nextLabel("arr_remove_shrink")
         val skipLabel = nextLabel("arr_remove_skip")
         val endLabel = nextLabel("arr_remove_end")
         val shiftedIndex = "%arr_remove_shift_${labelCounter++}"
-        val preheader = currentBlock
 
         val nonNegative = nextTmp()
         emit("  $nonNegative = icmp sge i64 $index, 0")
@@ -3863,7 +4234,16 @@ class LlvmCodegen {
         emit("  $inRange = icmp slt i64 $index, $length")
         val valid = nextTmp()
         emit("  $valid = and i1 $nonNegative, $inRange")
-        emitTerminator("  br i1 $valid, label %$shiftCondLabel, label %$skipLabel")
+        emitTerminator("  br i1 $valid, label %$validLabel, label %$skipLabel")
+
+        startBlock(validLabel)
+        val removedPtr = nextTmp()
+        emit("  $removedPtr = getelementptr $et, $et* $data, i64 $index")
+        val removed = nextTmp()
+        emit("  $removed = load $et, $et* $removedPtr, align 1")
+        if (!transfer) emitArrayElementDrop(raw, removed, elementType)
+        val preheader = currentBlock
+        emitTerminator("  br label %$shiftCondLabel")
 
         startBlock(shiftCondLabel)
         val shiftIndex = nextTmp()
@@ -3891,13 +4271,68 @@ class LlvmCodegen {
         val newLength = nextTmp()
         emit("  $newLength = sub i64 $length, 1")
         emit("  store i64 $newLength, i64* $lenPtr")
+        val tail = nextTmp()
+        emit("  $tail = getelementptr $et, $et* $data, i64 $newLength")
+        emit("  store $et ${defaultValue(elementType)}, $et* $tail, align 1")
+        val completedBlock = currentBlock
         emitTerminator("  br label %$endLabel")
 
         startBlock(skipLabel)
         emitTerminator("  br label %$endLabel")
 
         startBlock(endLabel)
-        return "void"
+        if (!transfer) return "void"
+        val result = nextTmp()
+        emit("  $result = phi $et [ $removed, %$completedBlock ], [ ${defaultValue(elementType)}, %$skipLabel ]")
+        return result
+    }
+
+    private fun emitArrayElementDrop(array: String, value: String, type: IrType, replacement: String? = null) {
+        if (!mapType(type).endsWith("*")) return
+        val header = nextTmp()
+        val descriptor = nextTmp()
+        val callback = nextTmp()
+        val owned = nextTmp()
+        emit("  $header = getelementptr i8, i8* $array, i64 -16")
+        emit("  $descriptor = bitcast i8* $header to void (i8*, i64)**")
+        emit("  $callback = load void (i8*, i64)*, void (i8*, i64)** $descriptor")
+        if (replacement == null) emit("  $owned = icmp ne void (i8*, i64)* $callback, null") else {
+            val hasDrop = nextTmp(); val changed = nextTmp()
+            emit("  $hasDrop = icmp ne void (i8*, i64)* $callback, null")
+            emit("  $changed = icmp ne ${mapType(type)} $value, $replacement")
+            emit("  $owned = and i1 $hasDrop, $changed")
+        }
+        val drop = nextLabel("array.owner.drop")
+        val done = nextLabel("array.owner.done")
+        emitTerminator("  br i1 $owned, label %$drop, label %$done")
+        startBlock(drop)
+        val raw = if (mapType(type) == "i8*") value else nextTmp().also {
+            emit("  $it = bitcast ${mapType(type)} $value to i8*")
+        }
+        emit("  call void @__azora_free(i8* $raw)")
+        emitTerminator("  br label %$done")
+        startBlock(done)
+    }
+
+    private fun emitArrayClear(raw: String) {
+        val header = nextTmp()
+        val descriptor = nextTmp()
+        val callback = nextTmp()
+        val owned = nextTmp()
+        emit("  $header = getelementptr i8, i8* $raw, i64 -16")
+        emit("  $descriptor = bitcast i8* $header to void (i8*, i64)**")
+        emit("  $callback = load void (i8*, i64)*, void (i8*, i64)** $descriptor")
+        emit("  $owned = icmp ne void (i8*, i64)* $callback, null")
+        val drop = nextLabel("array.clear.drop")
+        val done = nextLabel("array.clear.done")
+        emitTerminator("  br i1 $owned, label %$drop, label %$done")
+        startBlock(drop)
+        emit("  call void $callback(i8* $raw, i64 1)")
+        emitTerminator("  br label %$done")
+        startBlock(done)
+        val length = nextTmp()
+        emit("  $length = bitcast i8* $raw to i64*")
+        emit("  store i64 0, i64* $length")
     }
 
     private fun emitSetRemove(target: IrExpr, valueExpr: IrExpr, elementType: IrType): String {
@@ -4345,6 +4780,7 @@ class LlvmCodegen {
         val value = coerceNumeric(rawValue, valueExpr.type, elemType)
         val grown = nextTmp()
         emit("  $grown = call i8* @__azora_array_grow(i8* $raw, i64 ${sizeOfScalar(elemType)})")
+        registerArrayDrop(grown, elemType)
         val dataRaw = nextTmp()
         emit("  $dataRaw = getelementptr i8, i8* $grown, i64 8")
         val data = nextTmp()
@@ -4531,6 +4967,10 @@ class LlvmCodegen {
             val ep = emitArrayElemPtr(stmt.target, stmt.index, tt.element)
             val raw = emitExpr(stmt.value)
             val value = coerceNumeric(raw, stmt.value.type, tt.element)
+            val old = nextTmp()
+            emit("  $old = load $et, $et* $ep, align 1")
+            val array = emitExpr(stmt.target)
+            emitArrayElementDrop(array, old, tt.element, value)
             emit("  store $et $value, $et* $ep, align 1")
             // The array can outlive the current `scope alloc`; root the element.
             return
@@ -4546,6 +4986,9 @@ class LlvmCodegen {
             emit("  $ep = getelementptr $et, $et* $data, i64 $idx")
             val rawValue = emitExpr(stmt.value)
             val value = coerceNumeric(rawValue, stmt.value.type, tt.inner)
+            val old = nextTmp()
+            emit("  $old = load $et, $et* $ep, align 1")
+            emitArrayElementDrop(raw, old, tt.inner, value)
             emit("  store $et $value, $et* $ep, align 1")
             return
         }
@@ -4616,7 +5059,11 @@ class LlvmCodegen {
 
         val left = emitExpr(expr.left).let { if (bothNumeric) coerceNumeric(it, leftType, opType) else it }
         val right = emitExpr(expr.right).let { if (bothNumeric) coerceNumeric(it, rightType, opType) else it }
-        val tmp = nextTmp()
+        val guardedInteger = (IrType.isInteger(opType) || opType == IrType.Char) &&
+            expr.op in setOf(IrBinaryOp.DIV, IrBinaryOp.MOD, IrBinaryOp.SHL, IrBinaryOp.SHR)
+        // A named result can be reserved before the guard's temporaries. LLVM
+        // numbered registers, in contrast, must be defined in increasing order.
+        val tmp = if (guardedInteger) "%arithmetic.${labelCounter++}" else nextTmp()
 
         when {
             // Pointer-typed operands (nullable, erased `Any`, raw pointers, and
@@ -4633,6 +5080,34 @@ class LlvmCodegen {
             }
             IrType.isInteger(opType) || opType == IrType.Char -> {
                 val u = isUnsigned(opType)
+                val width = (opType as? IrType.Integer)?.bits ?: if (opType == IrType.Char) 8 else 64
+                var divisor = right
+                var overflow: String? = null
+                if (expr.op == IrBinaryOp.DIV || expr.op == IrBinaryOp.MOD) {
+                    val zero = nextTmp()
+                    emit("  $zero = icmp eq $llvmType $right, 0")
+                    emitArithmeticFailure(zero, "panic: integer division by zero")
+                    if (!u) {
+                        val minimum = nextTmp()
+                        val atMinimum = nextTmp()
+                        val negativeOne = nextTmp()
+                        val overflowing = nextTmp()
+                        val safeDivisor = nextTmp()
+                        emit("  $minimum = shl $llvmType 1, ${width - 1}")
+                        emit("  $atMinimum = icmp eq $llvmType $left, $minimum")
+                        emit("  $negativeOne = icmp eq $llvmType $right, -1")
+                        emit("  $overflowing = and i1 $atMinimum, $negativeOne")
+                        emit("  $safeDivisor = select i1 $overflowing, $llvmType 1, $llvmType $right")
+                        divisor = safeDivisor
+                        overflow = overflowing
+                    }
+                }
+                if (expr.op == IrBinaryOp.SHL || expr.op == IrBinaryOp.SHR) {
+                    val invalid = nextTmp()
+                    // Unsigned comparison also rejects negative shift counts.
+                    emit("  $invalid = icmp uge $llvmType $right, $width")
+                    emitArithmeticFailure(invalid, "panic: integer shift count is outside the operand width")
+                }
                 val inst = when (expr.op) {
                     IrBinaryOp.ADD -> "add $llvmType"
                     IrBinaryOp.SUB -> "sub $llvmType"
@@ -4652,7 +5127,11 @@ class LlvmCodegen {
                     IrBinaryOp.SHR -> if (u) "lshr $llvmType" else "ashr $llvmType"
                     else -> error("Unsupported int op: ${expr.op}")
                 }
-                emit("  $tmp = $inst $left, $right")
+                if (overflow != null) {
+                    val raw = nextTmp()
+                    emit("  $raw = $inst $left, $divisor")
+                    emit("  $tmp = select i1 $overflow, $llvmType ${if (expr.op == IrBinaryOp.MOD) "0" else left}, $llvmType $raw")
+                } else emit("  $tmp = $inst $left, $right")
             }
             opType in IrType.floatTypes -> {
                 val inst = when (expr.op) {
@@ -4737,6 +5216,21 @@ class LlvmCodegen {
     }
 
     /** Lowers `&&` / `||` with short-circuit evaluation via phi. */
+    private fun emitArithmeticFailure(invalid: String, message: String) {
+        usesPuts = true
+        usesAbort = true
+        val failure = nextLabel("arithmetic_fail")
+        val valid = nextLabel("arithmetic_valid")
+        emitTerminator("  br i1 $invalid, label %$failure, label %$valid")
+        startBlock(failure)
+        val text = gepString(addStringConstant(message))
+        val ignored = nextTmp()
+        emit("  $ignored = call i32 @puts(i8* $text)")
+        emit("  call void @__azora_abort()")
+        emitTerminator("  unreachable")
+        startBlock(valid)
+    }
+
     private fun emitShortCircuit(expr: IrExpr.Binary): String {
         val isAnd = expr.op == IrBinaryOp.AND
         val left = emitExpr(expr.left)
@@ -4978,34 +5472,39 @@ class LlvmCodegen {
             emitPointerAssign(expr.args[0], expr.args[1])
             return "void"
         }
+        val owningFactory = listOf("sharedOf", "syncSharedOf", "uniqueOf")
+            .firstOrNull { symbolDenotes(expr.name, it) }
+        if (owningFactory != null && expr.args.size == 1 && expr.type is IrType.Named) {
+            // These library factories retain T only at their call site. Allocate
+            // there so the drop descriptor survives their otherwise erased ABI.
+            val named = expr.type as IrType.Named
+            val value = expr.args.single()
+            val pointer = IrExpr.Call("__alloc", listOf(value), IrType.Pointer(value.type, mutable = true))
+            val args = if (owningFactory == "uniqueOf") listOf(pointer, IrExpr.BoolLiteral(true))
+                else listOf(pointer, IrExpr.Call("__alloc", listOf(IrExpr.IntLiteral(1)), IrType.Pointer(IrType.Int, mutable = true)), IrExpr.IntLiteral(1))
+            val fields = structDefs.getValue(named.name).fields.take(args.size).map { it.name }
+            return emitStructCtor(IrExpr.StructCtor(named.name, fields, args, named))
+        }
+        if (expr.name == "__take") return emitOwnershipTake(expr.args.single())
         if (expr.name == "__purge") {
             val value = expr.args.single()
             val type = value.type
-            val emitted = emitExpr(value)
-            if (type is IrType.Named && type.name in structDefs) {
-                val dtor = "${type.name}_dtor"
-                funcParamTypes[dtor]?.singleOrNull()?.let { receiver ->
-                    val argument = coerceNumeric(emitted, type, receiver)
-                    emit("  call void @$dtor(${mapType(receiver)} $argument)")
-                }
-                val raw = nextTmp()
-                emit("  $raw = bitcast ${mapType(type)} $emitted to i8*")
-                usesAllocatorRuntime = true
-                emit("  call void @__azora_free(i8* $raw)")
-            } else {
-                check(type is IrType.Pointer || (type is IrType.Nullable && type.inner is IrType.Pointer)) {
-                    "purge of $type is not supported by the LLVM target"
-                }
-                usesAllocatorRuntime = true
-                emit("  call void @__azora_free(i8* $emitted)")
+            val inner = (type as? IrType.Nullable)?.inner ?: type
+            check(inner is IrType.Pointer || inner is IrType.Array || inner is IrType.Function || (inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots))) {
+                "purge of $type is not supported by the LLVM target"
             }
+            val emitted = emitOwnershipTake(value)
+            val raw = if (mapType(type) == "i8*") emitted else nextTmp().also {
+                emit("  $it = bitcast ${mapType(type)} $emitted to i8*")
+            }
+            usesAllocatorRuntime = true
+            emit("  call void @__azora_free(i8* $raw)")
             return "void"
         }
         if (symbolDenotes(expr.name, "concurrency_cancel")) {
-            usesTaskRuntime = true
-            val handle = emitExpr(expr.args.single())
-            emit("  call void @__azora_task_cancel(%azora.task* $handle)")
-            return "void"
+            // pthread cancellation bypasses Azora destructors and can return a
+            // PTHREAD_CANCELED sentinel where the runtime expects an allocation.
+            error("LLVM task cancellation is not supported until cancellation-safe ownership cleanup is implemented")
         }
 
         // Coerce arguments to the callee's declared parameter types (numeric
@@ -5022,13 +5521,24 @@ class LlvmCodegen {
         if (declared == null && expr.name in localVars) {
             error("LLVM cannot call the function value '${expr.name}' this way yet")
         }
+        // Compiler-provided bridges retain their internal aggregate ABI; C
+        // adapters are checked only for externally linked calls.
+        val native = nativeExterns[expr.name]?.takeIf {
+            stringIntrinsicOf(it.name) == null && mathIntrinsicOf(it) == null && osIntrinsicBody(it) == null
+        }
+        if (native != null) NativeAbi.checkSignature(native)
         val args = expr.args.mapIndexed { i, arg ->
             val paramType = declared?.getOrNull(i) ?: arg.type
-            val value = coerceNumeric(emitExpr(arg), arg.type, paramType)
-            "${mapType(paramType)} $value"
+            if (native != null && paramType is IrType.Function) {
+                return@mapIndexed "${nativeType(paramType)} ${emitNativeCallback(arg, paramType)}"
+            }
+            val emitted = emitExpr(arg)
+            if (native == null) qualifyConcreteOwnership(emitted, arg.type)
+            val value = coerceNumeric(emitted, arg.type, paramType)
+            "${if (native == null) mapType(paramType) else nativeParameterType(paramType)} $value"
         }.joinToString(", ")
         val physicalReturn = funcReturnTypes[expr.name] ?: expr.type
-        val retType = mapType(physicalReturn)
+        val retType = if (native == null) mapType(physicalReturn) else nativeReturnType(physicalReturn)
         return if (expr.type == IrType.Unit || expr.type == IrType.Nothing) {
             emit("  call void @${expr.name}($args)")
             "void"
@@ -5036,8 +5546,51 @@ class LlvmCodegen {
             val tmp = nextTmp()
             emit("  $tmp = call $retType @${expr.name}($args)")
             if (expr.type is IrType.Task) emitTaskScopeAttach(tmp)
-            coerceNumeric(tmp, physicalReturn, expr.type)
+            val result = coerceNumeric(tmp, physicalReturn, expr.type)
+            if (native == null) qualifyConcreteOwnership(result, expr.type)
+            result
         }
+    }
+
+    private fun nativeType(type: IrType): String = if (type is IrType.Function) {
+        "${abiReturnType(type.ret)} (${type.params.joinToString(", ") { nativeType(it) }})*"
+    } else mapType(type)
+
+    private fun nativeParameterType(type: IrType): String = nativeType(type) +
+        NativeAbi.extension(type).takeIf { it.isNotEmpty() }?.let { " ${it.trimEnd()}" }.orEmpty()
+
+    private fun nativeReturnType(type: IrType): String = NativeAbi.extension(type) + abiReturnType(type)
+
+    /** A stateless lambda has static lifetime and needs no environment pointer in C. */
+    private fun emitNativeCallback(argument: IrExpr, type: IrType.Function): String {
+        NativeAbi.checkCallback(type)
+        val lambda = argument as? IrExpr.Lambda
+            ?: error("LLVM C callbacks require a direct lambda without captures; stored Azora closures need an explicit context adapter")
+        check(collectCaptures(lambda).isEmpty()) {
+            "LLVM C callbacks cannot capture values; use an explicit context pointer and a lifetime-managed adapter"
+        }
+        val id = taskContextCounter++
+        val bodyName = "__azora_c_callback_body_$id"
+        val name = "__azora_c_callback_$id"
+        deferredFunctions += renderDeferredFunction {
+            emitClosureBody(bodyName, "%azora.unused.ctx", emptyList(), lambda)
+        }
+        val params = type.params.mapIndexed { index, t -> "${nativeParameterType(t)} %a$index" }
+        val args = type.params.mapIndexed { index, t -> "${mapType(t)} %a$index" }
+        deferredFunctions += buildString {
+            appendLine("define ${nativeReturnType(type.ret)} @$name(${params.joinToString(", ")}) {")
+            appendLine("entry:")
+            val arguments = (listOf("i8* null") + args).joinToString(", ")
+            if (type.ret == IrType.Unit) {
+                appendLine("  call void @$bodyName($arguments)")
+                appendLine("  ret void")
+            } else {
+                appendLine("  %result = call ${mapType(type.ret)} @$bodyName($arguments)")
+                appendLine("  ret ${mapType(type.ret)} %result")
+            }
+            appendLine("}")
+        }
+        return "@$name"
     }
 
     /**
@@ -5109,6 +5662,7 @@ class LlvmCodegen {
             usesMemcpy = true
             val copied = nextTmp()
             emit("  $copied = call i8* @memcpy(i8* $buffer, i8* $data, i64 $bytes)")
+            registerPointerDrop(buffer, arrayType.element, length)
             return buffer
         }
         val raw = emitHeapAlloc("${sizeOfScalar(valueExpr.type)}")
@@ -5116,6 +5670,7 @@ class LlvmCodegen {
         val ptrType = "${mapType(valueExpr.type)}*"
         emit("  $typed = bitcast i8* $raw to $ptrType")
         emit("  store ${mapType(valueExpr.type)} $value, $ptrType $typed, align 1")
+        registerPointerDrop(raw, valueExpr.type, "1")
         return raw
     }
 
@@ -5137,6 +5692,7 @@ class LlvmCodegen {
         usesZeroedAlloc = true
         val raw = nextTmp()
         emit("  $raw = call i8* @__azora_alloc_zeroed(i64 $count64, i64 ${sizeOfScalar(elementType)})")
+        registerPointerDrop(raw, elementType, count64)
         return raw
     }
 
@@ -5540,58 +6096,95 @@ class LlvmCodegen {
             usesMalloc = true
             usesFree = true
             usesAbort = true
-            sb.appendLine("; runtime: checked native allocation")
-            sb.appendLine("define i8* @__azora_alloc_raw(i64 %size) {")
-            sb.appendLine("entry:")
-            sb.appendLine("  %p = call i8* @malloc(i64 %size)")
-            sb.appendLine("  %isnull = icmp eq i8* %p, null")
-            sb.appendLine("  br i1 %isnull, label %oom, label %ok")
-            sb.appendLine("oom:")
-            sb.appendLine("  call void @__azora_abort()")
-            sb.appendLine("  unreachable")
-            sb.appendLine("ok:")
-            sb.appendLine("  ret i8* %p")
-            sb.appendLine("}")
-            sb.appendLine()
-            sb.appendLine("define i8* @__azora_alloc(i64 %size) {")
-            sb.appendLine("entry:")
-            sb.appendLine("  %p = call i8* @__azora_alloc_raw(i64 %size)")
-            sb.appendLine("  ret i8* %p")
-            sb.appendLine("}")
-            sb.appendLine()
+            sb.append("""
+; runtime: allocation headers retain the concrete destructor across erased generic calls.
+; Header alignment is sixteen bytes and the payload keeps malloc alignment.
+define i8* @__azora_alloc_raw(i64 %size) {
+entry:
+  %total = add i64 %size, 16
+  %overflow = icmp ult i64 %total, %size
+  br i1 %overflow, label %oom, label %allocate
+allocate:
+  %base = call i8* @malloc(i64 %total)
+  %isnull = icmp eq i8* %base, null
+  br i1 %isnull, label %oom, label %ok
+oom:
+  call void @__azora_abort()
+  unreachable
+ok:
+  %drop = bitcast i8* %base to void (i8*, i64)**
+  store void (i8*, i64)* null, void (i8*, i64)** %drop
+  %count.raw = getelementptr i8, i8* %base, i64 8
+  %count = bitcast i8* %count.raw to i64*
+  store i64 0, i64* %count
+  %payload = getelementptr i8, i8* %base, i64 16
+  ret i8* %payload
+}
+define i8* @__azora_alloc(i64 %size) {
+entry:
+  %p = call i8* @__azora_alloc_raw(i64 %size)
+  ret i8* %p
+}
+define void @__azora_set_drop(i8* %ptr, void (i8*, i64)* %destroy, i64 %count) {
+entry:
+  %isnull = icmp eq i8* %ptr, null
+  br i1 %isnull, label %end, label %set
+set:
+  %base = getelementptr i8, i8* %ptr, i64 -16
+  %slot = bitcast i8* %base to void (i8*, i64)**
+  store void (i8*, i64)* %destroy, void (i8*, i64)** %slot
+  %count.raw = getelementptr i8, i8* %base, i64 8
+  %count.slot = bitcast i8* %count.raw to i64*
+  store i64 %count, i64* %count.slot
+  br label %end
+end:
+  ret void
+}
+define void @__azora_free(i8* %ptr) {
+entry:
+  %isnull = icmp eq i8* %ptr, null
+  br i1 %isnull, label %end, label %dropcheck
+dropcheck:
+  %base = getelementptr i8, i8* %ptr, i64 -16
+  %slot = bitcast i8* %base to void (i8*, i64)**
+  %destroy = load void (i8*, i64)*, void (i8*, i64)** %slot
+  store void (i8*, i64)* null, void (i8*, i64)** %slot
+  %hasdrop = icmp ne void (i8*, i64)* %destroy, null
+  br i1 %hasdrop, label %destroyvalue, label %release
+destroyvalue:
+  %count.raw = getelementptr i8, i8* %base, i64 8
+  %count.slot = bitcast i8* %count.raw to i64*
+  %count = load i64, i64* %count.slot
+  call void %destroy(i8* %ptr, i64 %count)
+  br label %release
+release:
+  call void @free(i8* %base)
+  br label %end
+end:
+  ret void
+}
+""".trimIndent()).appendLine()
             if (usesZeroedAlloc) {
-                usesCalloc = true
-                // A negative count, or a size calloc cannot provide, aborts like
-                // any failed allocation; an empty buffer may be null.
-                sb.appendLine("define i8* @__azora_alloc_zeroed(i64 %count, i64 %size) {")
-                sb.appendLine("entry:")
-                sb.appendLine("  %negative = icmp slt i64 %count, 0")
-                sb.appendLine("  br i1 %negative, label %oom, label %allocate")
-                sb.appendLine("allocate:")
-                sb.appendLine("  %p = call i8* @calloc(i64 %count, i64 %size)")
-                sb.appendLine("  %isnull = icmp eq i8* %p, null")
-                sb.appendLine("  %nonempty = icmp ne i64 %count, 0")
-                sb.appendLine("  %failed = and i1 %isnull, %nonempty")
-                sb.appendLine("  br i1 %failed, label %oom, label %ok")
-                sb.appendLine("oom:")
-                sb.appendLine("  call void @__azora_abort()")
-                sb.appendLine("  unreachable")
-                sb.appendLine("ok:")
-                sb.appendLine("  ret i8* %p")
-                sb.appendLine("}")
-                sb.appendLine()
+                usesMemset = true
+                sb.append("""
+define i8* @__azora_alloc_zeroed(i64 %count, i64 %size) {
+entry:
+  %negative = icmp slt i64 %count, 0
+  %bytes = mul i64 %count, %size
+  %checked = udiv i64 %bytes, %size
+  %overflow = icmp ne i64 %checked, %count
+  %failed = or i1 %negative, %overflow
+  br i1 %failed, label %oom, label %allocate
+oom:
+  call void @__azora_abort()
+  unreachable
+allocate:
+  %p = call i8* @__azora_alloc_raw(i64 %bytes)
+  %zeroed = call i8* @memset(i8* %p, i32 0, i64 %bytes)
+  ret i8* %p
+}
+""".trimIndent()).appendLine()
             }
-            sb.appendLine("define void @__azora_free(i8* %ptr) {")
-            sb.appendLine("entry:")
-            sb.appendLine("  %isnull = icmp eq i8* %ptr, null")
-            sb.appendLine("  br i1 %isnull, label %end, label %free")
-            sb.appendLine("free:")
-            sb.appendLine("  call void @free(i8* %ptr)")
-            sb.appendLine("  br label %end")
-            sb.appendLine("end:")
-            sb.appendLine("  ret void")
-            sb.appendLine("}")
-            sb.appendLine()
         }
 
         if (globalVars.keys.any { it.startsWith("__tl_") }) {
@@ -5872,6 +6465,12 @@ class LlvmCodegen {
             sb.appendLine("  %next = add i64 %i, 1")
             sb.appendLine("  br label %copy.cond")
             sb.appendLine("copy.end:")
+            sb.appendLine("  %oldHeader = getelementptr i8, i8* %old, i64 -16")
+            sb.appendLine("  %oldDropSlot = bitcast i8* %oldHeader to void (i8*, i64)**")
+            sb.appendLine("  %drop = load void (i8*, i64)*, void (i8*, i64)** %oldDropSlot")
+            sb.appendLine("  call void @__azora_set_drop(i8* %newRaw, void (i8*, i64)* %drop, i64 1)")
+            sb.appendLine("  store void (i8*, i64)* null, void (i8*, i64)** %oldDropSlot")
+            sb.appendLine("  call void @__azora_free(i8* %old)")
             sb.appendLine("  ret i8* %newRaw")
             sb.appendLine("}")
             sb.appendLine()
@@ -6049,10 +6648,8 @@ class LlvmCodegen {
         is IrType.Named -> if (type.name in structDefs) "%struct.${sanitizeName(type.name)}*" else "i8*"
     }
 
-    private fun isUnsigned(type: IrType): Boolean = when (type) {
-        IrType.UInt, IrType.UByte, IrType.UShort, IrType.ULong, IrType.UCent, IrType.USize -> true
-        else -> false
-    }
+    private fun isUnsigned(type: IrType): Boolean =
+        (type is IrType.Integer && !type.signed) || type == IrType.USize
 
     /** A type-appropriate default/zero value, used for unreachable returns. */
     private fun defaultValue(type: IrType): String = when (type) {

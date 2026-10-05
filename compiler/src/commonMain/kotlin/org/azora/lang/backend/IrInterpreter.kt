@@ -211,7 +211,8 @@ class IrInterpreter {
     private suspend fun state(): ExecState = coroutineContext[ExecState]!!
 
     /** A deferred block, optionally restricted to run only on error (`fail defer`). */
-    private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean, val suppress: Boolean = false)
+    private class DeferredBlock(val body: List<IrStmt>, val onFail: Boolean, val suppress: Boolean = false,
+        val scopes: List<MutableMap<String, Any?>> = emptyList())
 
     /** A local initializer evaluated exactly once, when the binding is first read. */
     private data class ReactiveSlotKey(val owner: String, val name: String)
@@ -437,12 +438,7 @@ class IrInterpreter {
     }
 
     private suspend fun executeTest(test: IrTopLevel.Test) {
-        pushScope()
-        try {
-            executeBody(test.body)
-        } finally {
-            popScope()
-        }
+        executeFunction(IrFunction("__test", emptyList(), IrType.Unit, test.body), emptyList())
     }
 
     // -- Scope management ---------------------------------------------------
@@ -612,7 +608,9 @@ class IrInterpreter {
                     for (i in st.deferStack.indices.reversed()) {
                         val d = st.deferStack[i]
                         if (d.onFail && !failed) continue
-                        executeBody(d.body)
+                        val activeScopes = st.scopes
+                        st.scopes = ArrayDeque(d.scopes)
+                        try { executeBody(d.body) } finally { st.scopes = activeScopes }
                         if (d.suppress) suppressed = true
                     }
                 } finally {
@@ -665,16 +663,14 @@ class IrInterpreter {
             is IrStmt.Scope -> {
                 pushScope()
                 var signal: ControlSignal? = null
-                val result = executeBody(stmt.body)
+                val result = try { executeBody(stmt.body) } finally { popScope() }
                 if (result is ControlSignal) signal = result
-                popScope()
                 if (signal != null) return signal
             }
             is IrStmt.While -> {
                 while (evalExpr(stmt.condition) as Boolean) {
                     pushScope()
-                    val result = executeBody(stmt.body)
-                    popScope()
+                    val result = try { executeBody(stmt.body) } finally { popScope() }
                     when (result) {
                         is ReturnSignal -> return result
                         is BreakSignal -> {
@@ -702,8 +698,7 @@ class IrInterpreter {
                     pushScope()
                     defineVar(stmt.counter, i)
                     stmt.indexName?.let { defineVar(it, ordinal) }
-                    val result = executeBody(stmt.body)
-                    popScope()
+                    val result = try { executeBody(stmt.body) } finally { popScope() }
                     when (result) {
                         is ReturnSignal -> return result
                         is BreakSignal -> {
@@ -728,8 +723,7 @@ class IrInterpreter {
                             pushScope()
                             defineVar(stmt.elem, item)
                             stmt.indexName?.let { defineVar(it, ordinal.toLong()) }
-                            val result = executeBody(stmt.body)
-                            popScope()
+                            val result = try { executeBody(stmt.body) } finally { popScope() }
                             when (result) {
                                 is ReturnSignal -> return result
                                 is BreakSignal -> {
@@ -772,8 +766,7 @@ class IrInterpreter {
             is IrStmt.Loop -> {
                 while (true) {
                     pushScope()
-                    val result = executeBody(stmt.body)
-                    popScope()
+                    val result = try { executeBody(stmt.body) } finally { popScope() }
                     when (result) {
                         is ReturnSignal -> return result
                         is BreakSignal -> {
@@ -788,7 +781,7 @@ class IrInterpreter {
             }
             is IrStmt.Break -> return BreakSignal(stmt.label)
             is IrStmt.Continue -> return ContinueSignal(stmt.label)
-            is IrStmt.Defer -> { state().deferStack.add(DeferredBlock(stmt.body, stmt.onFail, stmt.suppress)) }
+            is IrStmt.Defer -> { state().deferStack.add(DeferredBlock(stmt.body, stmt.onFail, stmt.suppress, state().scopes.toList())) }
             is IrStmt.Effect -> registerReactiveEffect(stmt)
             is IrStmt.Yield -> {
                 val st = state()
@@ -825,7 +818,11 @@ class IrInterpreter {
                     }
                     is MutableList<*> -> {
                         @Suppress("UNCHECKED_CAST")
-                        (target as MutableList<Any?>)[slot(key, target.size)] = value
+                        val list = target as MutableList<Any?>
+                        val index = slot(key, target.size)
+                        val previous = list[index]
+                        list[index] = value
+                        destroyOwned(previous)
                     }
                     is Pointer -> {
                         target.buffer[target.index + (key as Long).toInt()] = value
@@ -1254,8 +1251,17 @@ class IrInterpreter {
                 if (structs[expr.name]?.isUnion == true) {
                     map[UNION_SLOT] = expr.args.firstOrNull()?.let { evalExpr(it) }
                 } else {
-                    for (i in expr.fieldNames.indices) {
-                        map[expr.fieldNames[i]] = evalExpr(expr.args[i])
+                    try {
+                        for (i in expr.fieldNames.indices) {
+                            map[expr.fieldNames[i]] = evalExpr(expr.args[i])
+                        }
+                    } catch (error: AzoraThrownException) {
+                        // Only completed fields exist. The enclosing pack's
+                        // custom dtor cannot run before construction succeeds.
+                        for (value in map.values.toList().asReversed()) {
+                            if (value is Map<*, *> || value is Pointer) destroyOwned(value)
+                        }
+                        throw error
                     }
                 }
                 // A `ctor .()` is not run here. Lowering calls it where a
@@ -1322,7 +1328,7 @@ class IrInterpreter {
                         }
                         if (snapshot.isNotEmpty()) scopes.add(snapshot)
                     }
-                    Closure(expr.params, expr.body, scopes)
+                    Closure(expr.params, expr.body, scopes, (expr.type as? IrType.Function)?.ret ?: IrType.Unit)
                 }
             }
             is IrExpr.Await -> {
@@ -1411,10 +1417,17 @@ class IrInterpreter {
                             "add" -> { list.add(args[0]); null }
                             // `List`/`MutableList` positional access (spec methods).
                             "get" -> list[(args[0] as Long).toInt()]
-                            "set" -> { list[(args[0] as Long).toInt()] = args[1]; null }
+                            "set" -> {
+                                val index = (args[0] as Long).toInt()
+                                val previous = list[index]
+                                list[index] = args[1]
+                                destroyOwned(previous)
+                                null
+                            }
                             "removeAt" -> list.removeAt((args[0] as Long).toInt())
                             "removeFirst" -> list.removeAt(0)
-                            "removeLast" -> list.removeAt(list.size - 1)
+                            "removeLast", "pop" -> list.removeAt(list.size - 1)
+                            "clear" -> { destroyOwned(list); null }
                             "first" -> list.first()
                             "last" -> list.last()
                             "size" -> list.size.toLong()
@@ -1426,7 +1439,7 @@ class IrInterpreter {
                             // result the language defines.
                             "remove" -> {
                                 val at = (args[0] as Long).toInt()
-                                if (at in list.indices) list.removeAt(at)
+                                if (at in list.indices) destroyOwned(list.removeAt(at))
                                 null
                             }
                             "contains" -> list.contains(args[0])
@@ -1502,6 +1515,14 @@ class IrInterpreter {
         // runtime, so the operator is looked up here - which is the same reason
         // the interpreter already compares erased values at runtime.
         dispatchOperatorOnRuntimeType(expr.op, left, right)?.let { return it }
+
+        if (left is Long && right is Long && expr.op in setOf(IrBinaryOp.SHL, IrBinaryOp.SHR)) {
+            val width = maxOf(
+                (expr.left.type as? IrType.Integer)?.bits ?: 64,
+                (expr.right.type as? IrType.Integer)?.bits ?: 64,
+            )
+            check(right >= 0 && right < width) { "panic: integer shift count is outside the operand width" }
+        }
 
         // A 64-bit unsigned value is held in a Long; dividing and ordering it
         // has to read the top bit as magnitude, as LLVM and Wasm do.
@@ -1589,10 +1610,86 @@ class IrInterpreter {
     /** Returns both operands as Long (if both are integer) or both as Double. */
     private fun pairNum(l: Any, r: Any): Pair<Double, Double> = toNum(l) to toNum(r)
 
+    private suspend fun takeOwnedPlace(place: IrExpr): Any? = when (place) {
+        is IrExpr.Var -> evalExpr(place).also { assignVar(place.name, null) }
+        is IrExpr.Member -> {
+            var receiver = evalExpr(place.target)
+            if (receiver is Pointer) receiver = receiver.value
+            @Suppress("UNCHECKED_CAST")
+            val fields = receiver as MutableMap<String, Any?>
+            fields[place.name].also { fields[place.name] = null }
+        }
+        is IrExpr.Index -> {
+            val target = evalExpr(place.target)
+            val index = (evalExpr(place.index) as Long).toInt()
+            when (target) {
+                is Pointer -> target.buffer[target.index + index].also { target.buffer[target.index + index] = null }
+                is MutableList<*> -> {
+                    @Suppress("UNCHECKED_CAST") val values = target as MutableList<Any?>
+                    values[index].also { values[index] = null }
+                }
+                else -> error("cannot move out of $target")
+            }
+        }
+        else -> evalExpr(place)
+    }
+
+    private suspend fun destroyOwned(value: Any?) {
+        when (value) {
+            is MutableList<*> -> {
+                @Suppress("UNCHECKED_CAST") val elements = value as MutableList<Any?>
+                for (i in elements.indices.reversed()) {
+                    val element = elements[i]
+                    elements[i] = null
+                    destroyOwned(element)
+                }
+                elements.clear()
+            }
+            is Pointer -> {
+                for (i in value.index until value.buffer.size) {
+                    val element = value.buffer[i]
+                    value.buffer[i] = null
+                    // Pointees that are packs retain their runtime concrete type.
+                    if (element is Map<*, *>) destroyOwned(element)
+                }
+            }
+            is MutableMap<*, *> -> {
+                @Suppress("UNCHECKED_CAST") val fields = value as MutableMap<String, Any?>
+                val typeName = fields["__type"] as? String ?: return
+                if ("__tag" in fields) {
+                    for (name in fields.keys.toList().asReversed()) if (name.startsWith("__") && name !in setOf("__type", "__tag")) {
+                        val element = fields[name]
+                        fields[name] = null
+                        destroyOwned(element)
+                    }
+                    return
+                }
+                val dtor = functions["${typeName}_dtor"]
+                if (dtor != null) executeFunction(dtor, listOf(value))
+                for (field in structs[typeName]?.fields.orEmpty().asReversed()) {
+                    if (!field.ownsValue) continue
+                    val element = fields[field.name]
+                    val named = element is Map<*, *> && "__type" in element
+                    val ownedPointer = element is Pointer && dtor == null && !typeName.contains("Weak")
+                    if (named || ownedPointer || element is MutableList<*>) {
+                        fields[field.name] = null
+                        destroyOwned(element)
+                    }
+                }
+            }
+        }
+    }
+
     private suspend fun evalCall(expr: IrExpr.Call): Any? {
         // `a ?? b` short-circuits: `b` runs only when `a` is null.
         if (expr.name == NULL_COALESCE) {
             return evalExpr(expr.args[0]) ?: evalExpr(expr.args[1])
+        }
+        if (expr.name == "__take" || expr.name == "__purge") {
+            val place = expr.args.single()
+            val value = takeOwnedPlace(place)
+            if (expr.name == "__purge") { destroyOwned(value); return null }
+            return value
         }
         // Evaluate args, splicing any Spread (arr...) into individual elements.
         val args = mutableListOf<Any?>()
@@ -1630,18 +1727,7 @@ class IrInterpreter {
         // Value call `receiver(args)`: the receiver evaluates to a function value.
         expr.receiver?.let { recv ->
             val fn = evalExpr(recv)
-            if (fn is Closure) {
-                val st = state()
-                val saved = st.scopes
-                st.scopes = ArrayDeque()
-                fn.capturedScopes.forEach { st.scopes.addLast(it) }
-                pushScope()
-                for (i in fn.params.indices) defineVar(fn.params[i].first, args.getOrNull(i))
-                val result = executeBody(fn.body)
-                popScope()
-                st.scopes = saved
-                return (result as? ReturnSignal)?.value
-            }
+            if (fn is Closure) return invokeClosure(fn, args)
             error("value is not callable: $fn")
         }
 
@@ -1688,18 +1774,6 @@ class IrInterpreter {
         }
         if (expr.name == "__derefAssign") {
             (args[0] as Pointer).setValue(args[1])
-            return null
-        }
-        if (expr.name == "__purge") {
-            // `purge <expr>` - if the value is a Map (struct/node instance), call its dtor if one exists.
-            val value = args[0]
-            if (value is Map<*, *>) {
-                val typeName = value["__type"] as? String
-                if (typeName != null) {
-                    val dtorFunc = functions["${typeName}_dtor"]
-                    if (dtorFunc != null) executeFunction(dtorFunc, listOf(value))
-                }
-            }
             return null
         }
         if (expr.name == "__ptrAdd") {
@@ -1952,18 +2026,7 @@ class IrInterpreter {
 
         // Calling a lambda stored in a variable.
         val callee = lookupVar(expr.name)
-        if (callee is Closure) {
-            val st = state()
-            val saved = st.scopes
-            st.scopes = ArrayDeque()
-            callee.capturedScopes.forEach { st.scopes.addLast(it) }
-            pushScope()
-            for (i in callee.params.indices) defineVar(callee.params[i].first, args[i])
-            val result = executeBody(callee.body)
-            popScope()
-            st.scopes = saved
-            return (result as? ReturnSignal)?.value
-        }
+        if (callee is Closure) return invokeClosure(callee, args)
         // Extern (`bridge`) function: resolve to a known implementation (e.g. C-math).
         val extern = externImplFor(expr.name)
         if (extern != null) return extern(args)
@@ -1988,16 +2051,13 @@ class IrInterpreter {
     }
 
     /** Runs a no-argument closure (a `task { … }` thunk) and returns its result. */
-    private suspend fun invokeClosure(closure: Closure): Any? {
+    private suspend fun invokeClosure(closure: Closure, args: List<Any?> = emptyList()): Any? {
         val st = state()
         val saved = st.scopes
-        st.scopes = ArrayDeque()
-        closure.capturedScopes.forEach { st.scopes.addLast(it) }
-        pushScope()
-        val result = executeBody(closure.body)
-        popScope()
-        st.scopes = saved
-        return (result as? ReturnSignal)?.value ?: result
+        st.scopes = ArrayDeque(closure.capturedScopes)
+        return try {
+            executeFunction(IrFunction("__closure", closure.params, closure.returnType, closure.body), args)
+        } finally { st.scopes = saved }
     }
 
     private fun formatValue(value: Any?): String = when (value) {
@@ -2129,7 +2189,8 @@ class IrInterpreter {
     private class Closure(
         val params: List<Pair<String, org.azora.lang.ir.IrType>>,
         val body: List<org.azora.lang.ir.IrStmt>,
-        val capturedScopes: List<MutableMap<String, Any?>>
+        val capturedScopes: List<MutableMap<String, Any?>>,
+        val returnType: IrType = IrType.Unit,
     )
 
     /** A structured child task. Its Deferred is parented to the interpreter root scope. */

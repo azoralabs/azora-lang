@@ -1110,6 +1110,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * not an absence of one.
      */
     private fun conformanceOf(typeName: String, specName: String, program: Program): Boolean? {
+        // Named integer widths are aliases of Int<N>/UInt<N>, so they have no
+        // pack declaration of their own. Compile-time type predicates must
+        // consult the same family's nominal conformances as type resolution.
+        val primitive = if (IrType.isPrimitiveName(typeName)) runCatching { IrType.fromName(typeName) }.getOrNull() else null
+        val integer = primitive as? IrType.Integer
+        if (integer != null && table.lookupSpec(specName) != null) {
+            return table.conformsTo(typeName, specName) || table.conformsTo(if (integer.signed) "Int" else "UInt", specName)
+        }
         val declared = program.items.any {
             (it is TopLevel.Pack && it.name == typeName) ||
                 (it is TopLevel.Enum && it.name == typeName) ||

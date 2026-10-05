@@ -1,0 +1,5 @@
+headers = spawn.h crt_externs.h
+package = org.azora.lang.nativeposix
+headerFilter = spawn.h crt_externs.h
+---
+static inline char **azora_native_environ(void) { return *_NSGetEnviron(); }

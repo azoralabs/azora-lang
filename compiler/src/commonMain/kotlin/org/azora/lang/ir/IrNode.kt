@@ -951,6 +951,8 @@ sealed class IrStmt {
         /** False for `val`: the name rebinds, but mutation through it is forbidden. */
         val valueMutable: Boolean = true,
         val lazy: Boolean = false,
+        /** This binding owns its value; checked reference declarations never do. */
+        val ownsValue: Boolean = false,
     ) : IrStmt()
 
     /**
@@ -966,6 +968,8 @@ sealed class IrStmt {
         val initializer: IrExpr,
         val reactiveLifetime: ReactiveLifetime? = null,
         val lazy: Boolean = false,
+        /** This binding owns its value; checked reference declarations never do. */
+        val ownsValue: Boolean = false,
     ) : IrStmt()
 
     /**
@@ -981,6 +985,8 @@ sealed class IrStmt {
         val initializer: IrExpr,
         val reactiveLifetime: ReactiveLifetime? = null,
         val lazy: Boolean = false,
+        /** This binding owns its value; checked reference declarations never do. */
+        val ownsValue: Boolean = false,
     ) : IrStmt()
 
     /**
@@ -1342,7 +1348,9 @@ data class IrFunction(
 }
 
 /** A field of an IR struct type. */
-data class IrField(val name: String, val type: IrType, val mutable: Boolean)
+data class IrField(val name: String, val type: IrType, val mutable: Boolean, val ownsValue: Boolean = true,
+    /** Ownership-only generic shape; parameter names stay named here rather than being erased. */
+    val ownershipType: IrType? = null)
 
 /**
  * One method of a spec, with its erased signature - enough for a backend to
@@ -1452,6 +1460,8 @@ data class IrProgram(
      * Empty means the distinction was never drawn, and everything is shown.
      */
     val sourceNames: Set<String> = emptySet(),
+    /** Tagged variants are allocations too; their active payload descriptor owns its fields. */
+    val ownedSlots: Set<String> = emptySet(),
 ) {
     /** Convenience - returns only the global statements. */
     val globals: List<IrStmt> get() = items.filterIsInstance<IrTopLevel.Global>().map { it.stmt }

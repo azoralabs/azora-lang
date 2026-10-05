@@ -64,4 +64,18 @@ class MultiOperImplTest {
         )
         assertTrue(result is CompilationResult.Success, "Int range should compile: ${(result as? CompilationResult.Failure)?.errors}")
     }
+
+    @Test
+    fun rangeIterationResolvesOperandKeyedOverloads() {
+        val result = Compiler().compile("""
+            bridge oper.. Int&.(rhs: Long&) by 1
+            func main(): Int {
+                var sum = 0
+                for i in 0..<4 { sum += i }
+                return sum
+            }
+        """.trimIndent(), release = false)
+        assertTrue(result is CompilationResult.Success,
+            "operand-keyed range should compile: ${(result as? CompilationResult.Failure)?.errors}")
+    }
 }

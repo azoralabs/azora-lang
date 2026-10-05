@@ -591,16 +591,16 @@ impl LinkedHashMap<K, V> {
         let newValues: V^ = alloc^ .() * newCapacity
         let newHashes: ULong^ = alloc^ .() * newCapacity
         for i in 0..<self._size {
-            newKeys[i] = self.keys[i]
-            newValues[i] = self.values[i]
+            newKeys[i] = take self.keys[i]
+            newValues[i] = take self.values[i]
             newHashes[i] = self.hashes[i]
         }
         fin oldKeys = self.keys
         fin oldValues = self.values
         fin oldHashes = self.hashes
-        self.keys = newKeys
-        self.values = newValues
-        self.hashes = newHashes
+        self.keys = take newKeys
+        self.values = take newValues
+        self.hashes = take newHashes
         self.capacity = newCapacity
         purge oldKeys
         purge oldValues
@@ -798,8 +798,8 @@ impl TreeMap<K, V> {
         let newFreeNext: Int^ = alloc^ .() * newCapacity
 
         for i in 0..<self.elemCount {
-            newKeys[i] = self.keys[i]
-            newValues[i] = self.values[i]
+            newKeys[i] = take self.keys[i]
+            newValues[i] = take self.values[i]
             newLeft[i] = self.left[i]
             newRight[i] = self.right[i]
             newParent[i] = self.parent[i]
@@ -807,13 +807,13 @@ impl TreeMap<K, V> {
             newFreeNext[i] = self.freeNext[i]
         }
         using self { purge (keys, values, left, right, parent, heights, freeNext) }
-        self.keys = newKeys
-        self.values = newValues
-        self.left = newLeft
-        self.right = newRight
-        self.parent = newParent
-        self.heights = newHeights
-        self.freeNext = newFreeNext
+        self.keys = take newKeys
+        self.values = take newValues
+        self.left = take newLeft
+        self.right = take newRight
+        self.parent = take newParent
+        self.heights = take newHeights
+        self.freeNext = take newFreeNext
         self.capacity = newCapacity
     }
 

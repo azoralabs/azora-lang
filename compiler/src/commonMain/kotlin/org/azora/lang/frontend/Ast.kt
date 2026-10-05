@@ -913,7 +913,9 @@ sealed class Stmt {
         val value: Expr?,
         override val line: Int,
         override val column: Int = 0,
-        override val length: Int = 0
+        override val length: Int = 0,
+        /** Tail expression inferred as a lambda result, rather than an explicit return. */
+        val implicit: Boolean = false,
     ) : Stmt()
 
     /**

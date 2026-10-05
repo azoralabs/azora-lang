@@ -164,10 +164,10 @@ impl LinkedHashSet<T> {
         fin newCap = self.capacity * 2
         let newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
-            newData[i] = self.data[i]
+            newData[i] = take self.data[i]
         }
         fin oldData = self.data
-        self.data = newData
+        self.data = take newData
         self.capacity = newCap
         purge oldData
     }
@@ -400,10 +400,10 @@ impl HashSet<T> {
         fin newCap = self.capacity * 2
         let newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
-            newData[i] = self.data[i]
+            newData[i] = take self.data[i]
         }
         fin oldData = self.data
-        self.data = newData
+        self.data = take newData
         self.capacity = newCap
         purge oldData
     }
@@ -598,10 +598,10 @@ impl TreeSet<T> {
         fin newCap = self.capacity * 2
         let newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
-            newData[i] = self.data[i]
+            newData[i] = take self.data[i]
         }
         fin oldData = self.data
-        self.data = newData
+        self.data = take newData
         self.capacity = newCap
         purge oldData
     }

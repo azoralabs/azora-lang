@@ -121,7 +121,7 @@ func (collector: FlowCollector<T>!).emit(value: T) {
 func<T> sequence(produce: SequenceScope<T>!.() -> Unit): Sequence<T> {
     var builder = SequenceScope<T>(arrayListOf<T>())
     using builder { produce() }
-    return Sequence<T>(builder.items)
+    return Sequence<T>(take builder.items)
 }
 
 /**
@@ -135,7 +135,7 @@ func<T> sequence(produce: SequenceScope<T>!.() -> Unit): Sequence<T> {
 func<T> flow(builder: FlowCollector<T>!.() -> Unit): Flow<T> {
     var collector = FlowCollector<T>(arrayListOf<T>())
     using collector { builder() }
-    return Flow<T>(collector.items)
+    return Flow<T>(take collector.items)
 }
 
 impl Sequence {

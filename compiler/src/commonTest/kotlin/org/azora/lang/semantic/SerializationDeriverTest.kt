@@ -231,6 +231,27 @@ class SerializationDeriverTest {
 
             func fallback(name: String): User = User(name, -1, false, [], [], [:], null, Address(), "fallback")
 
+            func validUserFields(): MutableList<SerialField> {
+                var validFields: MutableList<SerialField> = []
+                validFields.add(SerialField("display_name", SerialValue.Text("Bob")))
+                validFields.add(SerialField("age", SerialValue.Number("7")))
+                validFields.add(SerialField("enabled", SerialValue.Bool(false)))
+                var encodedTags: MutableList<SerialValue> = []
+                encodedTags.add(SerialValue.Text("language"))
+                validFields.add(SerialField("tags", SerialValue.Array(take encodedTags)))
+                var encodedScores: MutableList<SerialValue> = []
+                encodedScores.add(SerialValue.Number("7"))
+                validFields.add(SerialField("scores", SerialValue.Array(take encodedScores)))
+                var encodedMetrics: MutableList<SerialField> = []
+                encodedMetrics.add(SerialField("builds", SerialValue.Number("7")))
+                validFields.add(SerialField("metrics", SerialValue.Object(take encodedMetrics)))
+                validFields.add(SerialField("nickname", SerialValue.Text("Bobby")))
+                var encodedAddress: MutableList<SerialField> = []
+                encodedAddress.add(SerialField("city", SerialValue.Text("Cluj")))
+                validFields.add(SerialField("address", SerialValue.Object(take encodedAddress)))
+                return take validFields
+            }
+
             func main() {
                 fin prototype = User()
                 var tags: MutableList<String> = []
@@ -238,7 +259,7 @@ class SerializationDeriverTest {
                 var scores: MutableSet<Int> = []
                 scores.add(7)
                 var metrics: MutableMap<String, Int> = ["builds": 7]
-                fin value = User("Alice", 0, true, tags, scores, metrics, "ally", Address("Bucharest"), "secret")
+                fin value = User("Alice", 0, true, take tags, take scores, take metrics, "ally", Address("Bucharest"), "secret")
                 fin tree = prototype.toSerialValue(value) catch SerialValue.Null
                 when tree {
                     SerialValue.Object(fields) -> {
@@ -253,24 +274,8 @@ class SerializationDeriverTest {
                     else -> { println("wrong-tree") }
                 }
 
-                var validFields: MutableList<SerialField> = []
-                validFields.add(SerialField("display_name", SerialValue.Text("Bob")))
-                validFields.add(SerialField("age", SerialValue.Number("7")))
-                validFields.add(SerialField("enabled", SerialValue.Bool(false)))
-                var encodedTags: MutableList<SerialValue> = []
-                encodedTags.add(SerialValue.Text("language"))
-                validFields.add(SerialField("tags", SerialValue.Array(encodedTags)))
-                var encodedScores: MutableList<SerialValue> = []
-                encodedScores.add(SerialValue.Number("7"))
-                validFields.add(SerialField("scores", SerialValue.Array(encodedScores)))
-                var encodedMetrics: MutableList<SerialField> = []
-                encodedMetrics.add(SerialField("builds", SerialValue.Number("7")))
-                validFields.add(SerialField("metrics", SerialValue.Object(encodedMetrics)))
-                validFields.add(SerialField("nickname", SerialValue.Text("Bobby")))
-                var encodedAddress: MutableList<SerialField> = []
-                encodedAddress.add(SerialField("city", SerialValue.Text("Cluj")))
-                validFields.add(SerialField("address", SerialValue.Object(encodedAddress)))
-                fin decoded = prototype.fromSerialValue(SerialValue.Object(validFields)) catch fallback("decode-error")
+                var validFields = validUserFields()
+                fin decoded = prototype.fromSerialValue(SerialValue.Object(take validFields)) catch fallback("decode-error")
                 println(decoded.name)
                 println(decoded.age)
                 println(decoded.enabled)
@@ -281,20 +286,21 @@ class SerializationDeriverTest {
                 println(decoded.address.city)
                 println(decoded.password)
 
-                validFields.add(SerialField("extra", SerialValue.Text("no")))
-                fin rejected = prototype.fromSerialValue(SerialValue.Object(validFields)) catch fallback("unknown-rejected")
+                var rejectedFields = validUserFields()
+                rejectedFields.add(SerialField("extra", SerialValue.Text("no")))
+                fin rejected = prototype.fromSerialValue(SerialValue.Object(take rejectedFields)) catch fallback("unknown-rejected")
                 println(rejected.name)
 
                 var missingFields: MutableList<SerialField> = []
                 missingFields.add(SerialField("display_name", SerialValue.Text("No flag")))
-                fin missing = prototype.fromSerialValue(SerialValue.Object(missingFields)) catch fallback("required-missing")
+                fin missing = prototype.fromSerialValue(SerialValue.Object(take missingFields)) catch fallback("required-missing")
                 println(missing.name)
 
                 fin lenientPrototype = LenientUser()
                 var lenientFields: MutableList<SerialField> = []
                 lenientFields.add(SerialField("name", SerialValue.Text("Accepted")))
                 lenientFields.add(SerialField("extra", SerialValue.Text("ignored")))
-                fin lenient = lenientPrototype.fromSerialValue(SerialValue.Object(lenientFields)) catch LenientUser("lenient-error")
+                fin lenient = lenientPrototype.fromSerialValue(SerialValue.Object(take lenientFields)) catch LenientUser("lenient-error")
                 println(lenient.name)
             }
         """.trimIndent()

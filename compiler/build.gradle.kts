@@ -2,6 +2,15 @@ plugins {
     alias(libs.plugins.convention.kmp.library)
 }
 
+// The compiler does not use the convention plugin's UI data dependencies.
+// Keeping them off its native link path also keeps the standalone tool small.
+configurations.matching { it.name.startsWith("macosArm64") }.configureEach {
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-serialization-json-macosarm64")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-datetime")
+    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-datetime-macosarm64")
+}
+
 val generateStdlib = tasks.register("generateAzStdlib") {
     val stdDir = rootProject.file("std")
     val packageManifest = rootProject.file("package.azon")
@@ -265,6 +274,15 @@ tasks.withType<Test> {
 }
 
 kotlin {
+    macosArm64 {
+        compilations.getByName("main").cinterops.create("nativeProcess") {
+            definitionFile.set(project.file("src/nativeInterop/cinterop/nativeProcess.def"))
+        }
+        binaries.executable {
+            baseName = "azora"
+            entryPoint = "org.azora.lang.nativecli.main"
+        }
+    }
     sourceSets {
         commonMain {
             kotlin.srcDir(generateStdlib.map { it.outputs.files.singleFile })

@@ -51,7 +51,7 @@ class ThirdPartyFormatTest {
                     var fields = ArrayList<SerialField>()
                     fields.add(SerialField("x", try serialNumber(convert::toString(value.x))))
                     fields.add(SerialField("y", try serialNumber(convert::toString(value.y))))
-                    return SerialValue.Object(fields)
+                    return SerialValue.Object(take fields)
                 }
 
                 func &.fromSerialValue(value: SerialValue&): Point ?! SerializationError {
@@ -139,7 +139,7 @@ class ThirdPartyFormatTest {
                             name = name + c
                         }
                     }
-                    return SerialValue.Object(fields)
+                    return SerialValue.Object(take fields)
                 }
 
                 /** Digits are a number node; anything else is text. */

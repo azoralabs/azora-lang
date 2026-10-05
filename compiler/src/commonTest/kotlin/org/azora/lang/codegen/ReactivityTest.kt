@@ -98,7 +98,7 @@ class ReactivityTest {
                 }
             }
 
-            func main() {
+            react func main() {
                 fin p = P(3)
                 println(p.n)
             }
@@ -380,19 +380,21 @@ class ReactivityTest {
         assertEquals("7:2\n7:2", run("""
             import std.io
             import std.reactive
+            import std.memory.shared
+            import std.traits
             func main() {
                 var source = state(1)
-                var latest = 0
-                var calls = 0
-                var subscription = observe(source) [latest.!, calls.!] { value: Int ->
-                    latest = value
-                    calls += 1
+                var latest = sharedOf(0)
+                var calls = sharedOf(0)
+                var subscription = observe(source) [latest.clone(), calls.clone()] { value: Int ->
+                    latest.set(value)
+                    calls.set(calls.get + 1)
                 }
                 source.set(7)
-                println("${'$'}{latest}:${'$'}{calls}")
+                println("${'$'}{latest.get}:${'$'}{calls.get}")
                 subscription.dispose()
                 source.set(9)
-                println("${'$'}{latest}:${'$'}{calls}")
+                println("${'$'}{latest.get}:${'$'}{calls.get}")
             }
         """.trimIndent()))
     }

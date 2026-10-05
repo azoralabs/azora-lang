@@ -123,10 +123,10 @@ impl Deque<T> {
         var newData: T^ = alloc^ .() * newCap
         for i in 0..<self.size {
             var idx: Int = (self.head + i) % self.capacity
-            newData[i] = self.data[idx]
+            newData[i] = take self.data[idx]
         }
         purge self.data
-        self.data = newData
+        self.data = take newData
         self.head = 0
         self.tail = self.size
         self.capacity = newCap

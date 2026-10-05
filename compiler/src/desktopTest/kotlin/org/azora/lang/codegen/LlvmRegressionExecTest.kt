@@ -112,36 +112,22 @@ class LlvmRegressionExecTest {
         """.trimIndent()
     )
 
-    @Test fun cancelCallsNativeTaskCancellationRuntime() = check(
-        "42",
-        """
-        import std.io
-        import std.concurrency.async
-
-        async func answer(): Int { return 42 }
-        async func main() {
-            fin value = answer()
-            println(await value)
-            concurrency::cancel(value)
-        }
-        """.trimIndent()
-    )
-
-    @Test fun cancelLoweringIncludesPthreadCancel() {
-        val ir = LlvmExec.compile(
-            """
+    @Test fun unsafeCancellationIsReportedWithoutEmittingNativeOutput() {
+        val source = """
             import std.io
             import std.concurrency.async
-
             async func answer(): Int { return 42 }
             async func main() {
                 fin value = answer()
                 concurrency::cancel(value)
             }
-            """.trimIndent()
-        )
-        assertTrue("declare i32 @pthread_cancel" in ir)
-        assertTrue("call void @__azora_task_cancel" in ir)
+        """.trimIndent()
+        for (release in listOf(false, true)) {
+            val result = org.azora.lang.Compiler().compile(source, release = release)
+            kotlin.test.assertIs<org.azora.lang.CompilationResult.Success>(result)
+            assertTrue(result.llvm.isEmpty())
+            assertTrue(result.backendErrors["llvm"].orEmpty().contains("cancellation-safe ownership cleanup"))
+        }
     }
 
     /** A concatenated string has a fresh pointer - only strcmp can match it. */

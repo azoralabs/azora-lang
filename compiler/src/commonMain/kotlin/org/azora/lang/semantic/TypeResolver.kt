@@ -99,6 +99,81 @@ class TypeResolver(private val table: SymbolTable) {
     private var program: Program? = null
     // Symbol identity distinguishes shadowed bindings and shared scope exports.
     private val stableArraySizes = mutableListOf<Pair<VariableSymbol, Long>>()
+    private data class ClosureBorrow(val source: String, val mode: CaptureMode?, val line: Int)
+    // Symbol identity, rather than spelling or data-class equality, keeps
+    // shadowed local bindings from inheriting another closure's provenance.
+    private val closureBorrows = mutableListOf<Pair<VariableSymbol, List<ClosureBorrow>>>()
+
+    private fun closureBorrowsOf(symbol: VariableSymbol?): List<ClosureBorrow> =
+        closureBorrows.firstOrNull { it.first === symbol }?.second.orEmpty()
+
+    private fun rememberClosureBorrows(symbol: VariableSymbol?, value: Expr, merge: Boolean = false) {
+        if (symbol == null) return
+        val found = escapingBorrows(value)
+        val targetScope = table.variableScopeIndex(symbol.name)
+        if (targetScope != null && found.any { borrow ->
+                borrow.mode != null && (table.variableScopeIndex(borrow.source) ?: targetScope) > targetScope
+            }) checkEscapingValue(value, "is stored in a binding that outlives its captured scope")
+        val previous = if (merge) closureBorrowsOf(symbol) else emptyList()
+        closureBorrows.removeAll { it.first === symbol }
+        closureBorrows.add(symbol to (previous + found).distinct())
+    }
+
+    /** Borrow provenance follows aliases, branches and stored aggregate values. */
+    private fun escapingBorrows(value: Expr): List<ClosureBorrow> = when (value) {
+        is Expr.Lambda -> table.lookupLambdaCaptures(value.line, value.column).orEmpty().flatMap { (source, mode) ->
+            val line = value.captures.firstOrNull { it.source == source }?.line ?: value.line
+            if (mode == CaptureMode.SHARED || mode == CaptureMode.MUTABLE) listOf(ClosureBorrow(source, mode, line))
+            else closureBorrowsOf(table.lookupVariable(source))
+        }
+        is Expr.Identifier -> closureBorrowsOf(table.lookupVariable(value.name))
+        is Expr.Grouping -> escapingBorrows(value.expr)
+        is Expr.Isolated -> escapingBorrows(value.value)
+        is Expr.Cast -> escapingBorrows(value.expr)
+        is Expr.NamedArg -> escapingBorrows(value.value)
+        is Expr.IfExpr -> escapingBorrows(value.thenExpr) + escapingBorrows(value.elseExpr)
+        is Expr.Member -> escapingBorrows(value.target)
+        is Expr.Index -> escapingBorrows(value.target)
+        is Expr.ArrayLiteral -> value.elements.flatMap(::escapingBorrows)
+        is Expr.SetLiteral -> value.elements.flatMap(::escapingBorrows)
+        is Expr.InferredMember -> value.ctorArgs.orEmpty().flatMap(::escapingBorrows)
+        is Expr.Call -> {
+            val function = table.lookupFunction(value.callee)
+            if (table.lookupStruct(value.callee) != null || value.callee in setOf("tuple", "var")) {
+                value.args.flatMap(::escapingBorrows)
+            } else if (function?.returnType?.let(::mayStoreClosure) == true) {
+                value.args.flatMapIndexed { index, argument ->
+                    val expected = function.params.getOrNull(index + function.contextualParams)?.second
+                    // A non-escaping callback may be invoked synchronously to
+                    // produce data (sequence/flow builders). Its declaration's
+                    // body is checked for escapes; its input borrows are not a
+                    // lifetime obligation of that produced data.
+                    if (expected is IrType.Function && !expected.isEscaping) emptyList() else escapingBorrows(argument)
+                }
+            } else emptyList()
+        }
+        else -> emptyList()
+    }
+
+    private fun mayStoreClosure(type: IrType): Boolean = when (type) {
+        is IrType.Function, is IrType.Named, is IrType.Array, is IrType.Map,
+        is IrType.Set, is IrType.Tuple, is IrType.Variant, IrType.Any -> true
+        is IrType.Nullable -> mayStoreClosure(type.inner)
+        else -> false
+    }
+
+    private fun checkEscapingValue(value: Expr, what: String) {
+        for (borrow in escapingBorrows(value).distinct()) {
+            if (borrow.mode == null) {
+                errors.add("line ${value.line}: non-escaping callable '${borrow.source}' $what; declare its parameter as escaping")
+            } else {
+                errors.add(
+                    "line ${borrow.line}: this closure $what while borrowing '${borrow.source}' through '${borrow.mode.spelling}', " +
+                        "which does not outlive it; write '[${borrow.source}.clone()]' or '[take ${borrow.source}]'",
+                )
+            }
+        }
+    }
 
     private fun reportUndefined(
         internalName: String,
@@ -154,6 +229,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     fun resolve(program: Program): List<String> {
         stableArraySizes.clear()
+        closureBorrows.clear()
         this.program = program
         scopeMembers = collectScopeMembers(program)
         tupleTemplateMembers = program.tupleTemplates.flatMapTo(mutableSetOf()) { impl -> impl.methods.map { it.name } }
@@ -176,14 +252,24 @@ class TypeResolver(private val table: SymbolTable) {
             seedExpectedValue(initializer, declared)
             val savedParams = expectedLambdaParamTypes
             val savedReceivers = expectedLambdaReceiverTypes
+            val savedCallable = expectedLambdaCallable
             if (initializer is Expr.Lambda && declared is IrType.Function) {
                 expectedLambdaParamTypes = declared.params
                 expectedLambdaReceiverTypes = declared.receivers
+                expectedLambdaCallable = declared
             }
             val actual = resolveExpr(initializer)
+            rememberClosureBorrows(table.lookupVariable(when (item) {
+                is TopLevel.FinDecl -> item.name
+                is TopLevel.VarDecl -> item.name
+                is TopLevel.LetDecl -> item.name
+                else -> ""
+            }), initializer)
+            checkEscapingValue(initializer, "is stored in global storage")
             if (actual != null) checkIntegerLiteral(initializer, declared ?: actual)
             expectedLambdaParamTypes = savedParams
             expectedLambdaReceiverTypes = savedReceivers
+            expectedLambdaCallable = savedCallable
             if (declared != null && actual != null &&
                 !isCompatible(declared, adoptLiteralType(initializer, actual, declared))) {
                 errors.add("line $line: global initializer expects ${declared.shown()}, got ${actual.shown()}")
@@ -236,14 +322,17 @@ class TypeResolver(private val table: SymbolTable) {
                 val declared = struct.fields[i].type
                 val savedParams = expectedLambdaParamTypes
                 val savedReceivers = expectedLambdaReceiverTypes
+                val savedCallable = expectedLambdaCallable
                 if (initializer is Expr.Lambda && declared is IrType.Function) {
                     expectedLambdaParamTypes = declared.params
                     expectedLambdaReceiverTypes = declared.receivers
+                    expectedLambdaCallable = declared
                 }
                 seedExpectedValue(initializer, declared)
                 val actual = resolveExpr(initializer)
                 expectedLambdaParamTypes = savedParams
                 expectedLambdaReceiverTypes = savedReceivers
+                expectedLambdaCallable = savedCallable
                 if (actual != null && !isCompatible(declared, adoptLiteralType(initializer, actual, declared))) {
                     errors.add(
                         "line ${item.line}: default for '${item.name}.${item.fields[i].name}' " +
@@ -292,6 +381,9 @@ class TypeResolver(private val table: SymbolTable) {
                         table.defineVariable(
                             VariableSymbol(name, type, mutable = mutable, sharedBorrow = shared, receiver = isReceiver),
                         )
+                        if (type is IrType.Function && !type.isEscaping) {
+                            table.lookupVariable(name)?.let { closureBorrows.add(it to listOf(ClosureBorrow(name, null, method.line))) }
+                        }
                     }
                     val unnamedReceiverTuple = method.contextualParams > 0 && method.receiverName == "__receiver0"
                     val receiverTupleType = if (unnamedReceiverTuple) {
@@ -489,6 +581,9 @@ class TypeResolver(private val table: SymbolTable) {
             val ref = func.params.getOrNull(i)?.type as? TypeRef.Named
             table.defineVariable(VariableSymbol(name, type, mutable, sharedBorrow = shared,
                 nonNullGeneric = ref?.name in func.typeParams))
+            if (type is IrType.Function && !type.isEscaping) {
+                table.lookupVariable(name)?.let { closureBorrows.add(it to listOf(ClosureBorrow(name, null, func.line))) }
+            }
         }
 
         // `T ?! ErrSet` enforcement: track the function's declared error set so that
@@ -1317,6 +1412,7 @@ class TypeResolver(private val table: SymbolTable) {
      */
     private var expectedLambdaParamTypes: List<IrType>? = null
     private var expectedLambdaReceiverTypes: List<IrType>? = null
+    private var expectedLambdaCallable: IrType.Function? = null
     /**
      * A value whose members are callable bare, and whether it was opened on purpose.
      *
@@ -1556,10 +1652,12 @@ class TypeResolver(private val table: SymbolTable) {
         seedExpectedValue(argument, expected)
         val savedParams = expectedLambdaParamTypes
         val savedReceivers = expectedLambdaReceiverTypes
+        val savedCallable = expectedLambdaCallable
         val savedInline = inlineCallableDefault
         if (argument is Expr.Lambda && expected is IrType.Function) {
             expectedLambdaParamTypes = expected.params
             expectedLambdaReceiverTypes = expected.receivers
+            expectedLambdaCallable = expected
             if (expected.isInline) inlineCallableDefault = CaptureMode.MUTABLE
         }
         return try {
@@ -1567,13 +1665,14 @@ class TypeResolver(private val table: SymbolTable) {
             // The body has now expanded a capture default to the exact free
             // bindings it selected, so escaping is checked without treating a
             // default as though it captured the whole surrounding scope.
-            if (expected is IrType.Function && expected.isEscaping && argument is Expr.Lambda) {
-                checkEscapingCaptures(argument, "is passed to an escaping parameter")
+            if (expected is IrType.Function && expected.isEscaping) {
+                checkEscapingValue(argument, "is passed to an escaping parameter")
             }
             resolved
         } finally {
             expectedLambdaParamTypes = savedParams
             expectedLambdaReceiverTypes = savedReceivers
+            expectedLambdaCallable = savedCallable
             inlineCallableDefault = savedInline
         }
     }
@@ -1717,6 +1816,8 @@ class TypeResolver(private val table: SymbolTable) {
                 if (resolvesInPlace(stmt.compoundOp, stmt.value, varSym.type)) return
                 if (stmt.compoundOp == null) seedExpectedValue(stmt.value, varSym.type)
                 val valueType = resolveExpr(stmt.value) ?: return
+                rememberClosureBorrows(varSym, stmt.value, merge = true)
+                if (table.variableScopeIndex(stmt.name) == 0) checkEscapingValue(stmt.value, "is stored in global storage")
                 if ((varSym.nonNullGeneric && valueType is IrType.Nullable) ||
                     !isCompatible(varSym.type, adoptLiteralType(stmt.value, valueType, varSym.type))) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to '${stmt.name}' of type ${varSym.type}")
@@ -1749,9 +1850,7 @@ class TypeResolver(private val table: SymbolTable) {
                     // Returning a closure is one of the four ways it escapes: the
                     // scope it captured from is gone by the time it is called.
                     val valueType = resolveExpr(stmt.value) ?: return
-                    (stmt.value as? Expr.Lambda)?.let {
-                        if (lambdaReturnTypes == null) checkEscapingCaptures(it, "is returned")
-                    }
+                    checkEscapingValue(stmt.value!!, "is returned")
                     val capturing = lambdaReturnTypes
                     if (capturing != null) {
                         // Inferring a lambda's return type - record it, skip declared-type checking.
@@ -2039,6 +2138,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (integer != null && literal != null && !integerLiteralFits(literal, integer)) {
                     errors.add("line ${stmt.line}: array element $literal does not fit $integer")
                 }
+                rememberClosureBorrows(borrowRoot(stmt.target)?.let(table::lookupVariable), stmt.value, merge = true)
             }
             is Stmt.DerefAssign -> {
                 val target = resolveExpr(stmt.target) ?: return
@@ -2106,6 +2206,13 @@ class TypeResolver(private val table: SymbolTable) {
                     if (!isCompatible(field.type, adoptLiteralType(stmt.value, valueType, field.type))) {
                         errors.add("line ${stmt.line}: cannot assign $valueType to field '${stmt.name}' of type ${field.type}")
                     }
+                    val root = borrowRoot(stmt.target)
+                    val fieldType = field.type as? IrType.Function
+                    if (fieldType?.isEscaping == true || root in borrowedNames ||
+                        (root != null && table.variableScopeIndex(root) == 0)) {
+                        checkEscapingValue(stmt.value, "is stored in a field that outlives the call")
+                    }
+                    rememberClosureBorrows(root?.let(table::lookupVariable), stmt.value, merge = true)
                 } else {
                     errors.add("line ${stmt.line}: cannot assign member '${stmt.name}' on $targetType (not a struct)")
                 }
@@ -2679,6 +2786,13 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     val ownerType = IrType.Named(calleeName, expr.typeArgs.map { IrType.resolve(it) },
                         expr.typeArgs.map { (it as? TypeRef.Const)?.value })
+                    if (receiverOnly) {
+                        val symbol = receiverOnlyCtorSymbol(calleeName, table)!!
+                        val constructor = table.lookupFunction(symbol)!!
+                        if (constructor.returnType != IrType.Unit) {
+                            return instantiateMember(table, ownerType, constructor).returnType
+                        }
+                    }
                     val typedFactory = factory?.let { instantiateMember(table, ownerType, it) }
                     if (typedFactory != null) {
                         val factory = typedFactory
@@ -2686,6 +2800,7 @@ class TypeResolver(private val table: SymbolTable) {
                             contextualValues.any { frame -> frame.values.any { it.second == t } }
                         }
                         if (scoped) {
+                            if (!requireReactiveCaller(factory, expr.line)) return null
                             // Each argument is resolved against the parameter it
                             // fills, so a block passed for `children: Anchor&.() -> R`
                             // learns the receiver it is to inherit.
@@ -2717,6 +2832,8 @@ class TypeResolver(private val table: SymbolTable) {
                                     return null
                                 }
                                 val actual = resolveContextualArgument(value, expected) ?: return null
+                                if (parameterIndex !in factory.sharedParams && parameterIndex !in factory.exclusiveParams &&
+                                    parameterIndex !in factory.returnedParams) checkByValueTransfer(value, actual, expr.line, construction = true)
                                 if (expected != null && !isCompatible(expected, adoptLiteralType(value, actual, expected))) {
                                     errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected ${expected.shown()}, got ${actual.shown()}")
                                 }
@@ -2829,6 +2946,9 @@ class TypeResolver(private val table: SymbolTable) {
                             resolveContextualArgument(argument, fieldType)
                         } ?: return null
                         argTypes[i] = argType
+                        if (i !in defaulted && struct.fields[i].typeRef !is TypeRef.Reference) {
+                            checkByValueTransfer(argument, argType, expr.line, construction = true)
+                        }
                         if (struct.typeParams.isEmpty()) {
                             if (!isCompatible(fieldType, adoptLiteralType(argument, argType, fieldType))) {
                                 errors.add("line ${expr.line}: field '${struct.fields[i].name}' of '${expr.callee}': expected ${fieldType.shown()}, got ${argType.shown()}")
@@ -3923,6 +4043,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // Infer the implicit `it` parameter's type from context when available.
                 val expectedParams = expectedLambdaParamTypes
                 val expectedReceivers = expectedLambdaReceiverTypes
+                val expectedCallable = expectedLambdaCallable
                 val bracketReceivers = expr.receivers
                 val bracketCaptures = expr.captures
                 val exclusions = expr.captureExclusions
@@ -4014,6 +4135,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // Only the outer call seeds these; nested lambdas resolve on their own.
                 expectedLambdaParamTypes = null
                 expectedLambdaReceiverTypes = null
+                expectedLambdaCallable = null
                 // Each capture is resolved against the scope around the lambda, then
                 // bound inside it under the name the body uses - the alias where one
                 // was written, the source name otherwise.
@@ -4088,18 +4210,34 @@ class TypeResolver(private val table: SymbolTable) {
                         excluded = exclusions.associateBy { it.source },
                     ),
                 )
-                resolveBody(expr.body, IrType.Unit)
+                val savedReactive = reactiveContext
+                val contextualKind = if (expr.kind == CallableKind.FUNC &&
+                    expectedCallable?.kind in setOf(CallableKind.REACT, CallableKind.REACT_TASK)) {
+                    CallableKind.REACT
+                } else expr.kind
+                reactiveContext = contextualKind == CallableKind.REACT || contextualKind == CallableKind.REACT_TASK
+                val unitResult = expectedCallable?.ret == IrType.Unit
+                val resolvedBody = if (unitResult) expr.body.map { statement ->
+                    if (statement is Stmt.Return && statement.implicit && statement.value != null)
+                        Stmt.ExprStmt(statement.value, statement.line, statement.column, statement.length)
+                    else statement
+                } else expr.body
+                resolveBody(resolvedBody, IrType.Unit)
+                reactiveContext = savedReactive
                 val frame = lambdaFrames.removeAt(lambdaFrames.size - 1)
                 if (bodyContexts.isNotEmpty()) contextualValues.removeLast()
                 lambdaReturnTypes = savedReturns
                 table.popScope()
-                val retType = captured.firstOrNull() ?: IrType.Unit
+                val retType = if (unitResult) IrType.Unit else captured.firstOrNull() ?: IrType.Unit
+                if (unitResult && captured.any { it != IrType.Unit }) {
+                    errors.add("line ${expr.line}: a Unit lambda cannot explicitly return a value")
+                }
                 val type = IrType.Function(
                     effectiveParamTypes,
                     retType,
                     variadic = expr.variadic,
                     receivers = receiverTypes,
-                    kind = expr.kind,
+                    kind = contextualKind,
                 )
                 table.defineLambdaType(expr.line, expr.column, type)
                 val resolvedCaptures = linkedMapOf<String, CaptureMode>()
@@ -4199,9 +4337,17 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveExpr(args[0]) ?: return null; resolveExpr(args[1]) ?: return null
                 IrType.Unit
             }
-            "remove" -> {
+            "remove", "removeAt" -> {
                 if (args.size != 1) { errors.add("line $line: 'remove' expects 1 argument"); return null }
                 resolveExpr(args[0]) ?: return null
+                if (name == "removeAt") arrType.element else IrType.Unit
+            }
+            "removeFirst", "removeLast", "pop" -> {
+                if (args.isNotEmpty()) { errors.add("line $line: '$name' expects no arguments"); return null }
+                arrType.element
+            }
+            "clear" -> {
+                if (args.isNotEmpty()) { errors.add("line $line: 'clear' expects no arguments"); return null }
                 IrType.Unit
             }
             "contains" -> {
@@ -4431,6 +4577,15 @@ class TypeResolver(private val table: SymbolTable) {
                 declared.copy(kind = actual.kind),
                 actual,
             )
+        }
+        if (declared is IrType.Function && actual is IrType.Function) {
+            return declared.kind == actual.kind && declared.variadic == actual.variadic &&
+                declared.params.size == actual.params.size && declared.receivers.size == actual.receivers.size &&
+                declared.params.indices.all { declared.params[it] == actual.params[it] &&
+                    !typeArgumentsConflict(declared.params[it], actual.params[it]) } &&
+                declared.receivers.indices.all { declared.receivers[it] == actual.receivers[it] &&
+                    !typeArgumentsConflict(declared.receivers[it], actual.receivers[it]) } &&
+                isCompatible(declared.ret, actual.ret)
         }
         // An unsized array slot (`[T]`) accepts any sized array of the same element
         // (`Array<T, N>`); a sized slot still requires an exact-size match (handled
@@ -5764,20 +5919,6 @@ class TypeResolver(private val table: SymbolTable) {
      * was made in cannot hold one - which is the same rule as "a borrow may not
      * survive a suspension", and offers the same three fixes.
      */
-    private fun checkEscapingCaptures(lambda: Expr.Lambda, what: String) {
-        val borrowed = table.lookupLambdaCaptures(lambda.line, lambda.column).orEmpty().filterValues {
-            it == CaptureMode.SHARED || it == CaptureMode.MUTABLE
-        }
-        for ((source, mode) in borrowed) {
-            val captureLine = lambda.captures.firstOrNull { it.source == source }?.line ?: lambda.line
-            errors.add(
-                "line $captureLine: this closure $what while borrowing " +
-                    "'$source' through '${mode.spelling}', which does not outlive it; write " +
-                    "'[$source.clone()]' or '[take $source]'",
-            )
-        }
-    }
-
     private fun checkCaptureMode(capture: Capture, type: IrType) {
         when (capture.mode) {
             CaptureMode.SHARED, CaptureMode.MUTABLE -> {}
@@ -5836,13 +5977,19 @@ class TypeResolver(private val table: SymbolTable) {
      * a freshly constructed value - has no other owner, so passing it transfers
      * nothing that anyone could observe.
      */
-    private fun checkByValueTransfer(arg: Expr, argType: IrType, line: Int) {
+    private fun checkByValueTransfer(arg: Expr, argType: IrType, line: Int, construction: Boolean = false) {
         // Only meaningful once the capability lattice is actually in scope. A
         // program that declares its own bare `Copy` - or never imports
         // `std.traits` - has no conformances to judge against, and rejecting
         // every by-value argument on that basis would be nonsense.
-        if (!table.conformsTo("Int", "Copy")) return
-        val name = (arg as? Expr.Identifier)?.name ?: return
+        val pack = (argType as? IrType.Named)?.let { table.lookupStruct(it.name) }
+        if (!table.conformsTo("Int", "Copy") && !(construction && pack != null && !pack.isBridge)) return
+        val value = when (arg) {
+            is Expr.NamedArg -> arg.value
+            is Expr.Grouping -> arg.expr
+            else -> arg
+        }
+        val name = (value as? Expr.Identifier)?.name ?: return
         if (table.lookupVariable(name) == null) return
         val typeName = conformanceName(argType) ?: return
         if (currentFuncTypeParams.contains(typeName)) return
@@ -6110,9 +6257,11 @@ class TypeResolver(private val table: SymbolTable) {
         }
         val savedParams = expectedLambdaParamTypes
         val savedReceivers = expectedLambdaReceiverTypes
+        val savedCallable = expectedLambdaCallable
         if (initializer is Expr.Lambda && declaredType is IrType.Function) {
             expectedLambdaParamTypes = declaredType.params
             expectedLambdaReceiverTypes = declaredType.receivers
+            expectedLambdaCallable = declaredType
         }
         // `fin c: Color = .Red` - the annotation states what the dot means, and
         // it is written right there on the binding.
@@ -6121,6 +6270,7 @@ class TypeResolver(private val table: SymbolTable) {
         checkIntegerLiteral(initializer, declaredType ?: initType)
         expectedLambdaParamTypes = savedParams
         expectedLambdaReceiverTypes = savedReceivers
+        expectedLambdaCallable = savedCallable
         when (typeAnn) {
             is TypeAnnotation.Explicit -> {
                 val wanted = declaredType!!
@@ -6138,6 +6288,7 @@ class TypeResolver(private val table: SymbolTable) {
         if (initType is IrType.Array) {
             table.lookupVariable(name)?.let { rememberArraySize(it, initializer, initType) }
         }
+        rememberClosureBorrows(table.lookupVariable(name), initializer)
         movedBindings.remove(name)
         // `let m: User! = user.!` - the borrow now lives as long as `m` does,
         // rather than ending with the expression that made it.

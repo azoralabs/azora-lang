@@ -317,7 +317,7 @@ object SerializationDeriver {
                 appendLine("        __serialFields.add(SerialField(${quote(plan.wireName)}, $encoded))")
             }
         }
-        appendLine("        return SerialValue.Object(__serialFields)")
+        appendLine("        return SerialValue.Object(take __serialFields)")
         appendLine("    }")
         appendLine()
         appendLine("    func &.fromSerialValue(value: SerialValue&): ${pack.name} ?! SerializationError {")
@@ -387,7 +387,7 @@ object SerializationDeriver {
             val mapValue = "value.${plan.field.name}[$keyName] as ${renderType(valueType)}"
             appendLine("            $fieldsName.add(SerialField($keyName as String, ${encodeExpr(mapValue, valueType, helpers)}))")
             appendLine("        }")
-            return "SerialValue.Object($fieldsName)"
+            return "SerialValue.Object(take $fieldsName)"
         }
         if (type.name !in setOf("List", "Set") || type.args.size != 1) {
             return encodeExpr("value.${plan.field.name}", plan.field.type, helpers)
@@ -401,7 +401,7 @@ object SerializationDeriver {
         appendLine("        for $elementName in value.${plan.field.name} {")
         appendLine("            $valuesName.add(${encodeExpr(elementName, element, helpers)})")
         appendLine("        }")
-        return "SerialValue.Array($valuesName)"
+        return "SerialValue.Array(take $valuesName)"
     }
 
     private fun StringBuilder.appendDecodedCollection(plan: FieldPlan, helpers: Helpers) {

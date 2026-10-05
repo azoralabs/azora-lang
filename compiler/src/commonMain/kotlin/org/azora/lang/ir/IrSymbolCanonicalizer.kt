@@ -39,6 +39,7 @@ internal object IrSymbolCanonicalizer {
         private val symbolNames = linkedMapOf<String, String>()
 
         init {
+            for (name in program.ownedSlots) typeNames[name] = canonicalTypeName(name, typeNamespaces[name])
             for (item in program.items) {
                 when (item) {
                     is IrTopLevel.Struct -> {
@@ -65,6 +66,7 @@ internal object IrSymbolCanonicalizer {
         fun program(program: IrProgram): IrProgram = program.copy(
             items = program.items.map(::topLevel),
             specTables = program.specTables.map(::specTable),
+            ownedSlots = program.ownedSlots.map(::symbol).toSet(),
         )
 
         private fun topLevel(item: IrTopLevel): IrTopLevel = when (item) {
@@ -74,7 +76,7 @@ internal object IrSymbolCanonicalizer {
             is IrTopLevel.Test -> item.copy(body = item.body.map(::stmt))
             is IrTopLevel.Struct -> item.copy(
                 name = symbol(item.name),
-                fields = item.fields.map { it.copy(type = type(it.type)) },
+                fields = item.fields.map { it.copy(type = type(it.type), ownershipType = it.ownershipType?.let(::type)) },
             )
             is IrTopLevel.Extern -> item.copy(
                 name = symbol(item.name),

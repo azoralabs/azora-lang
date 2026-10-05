@@ -30,7 +30,7 @@ class SerializationExecTest {
                 var xs = ArrayList<Int>()
                 xs.add(4)
                 xs.add(5)
-                return V.Items(xs)
+                return V.Items(take xs)
             }
             func main() {
                 when make() {

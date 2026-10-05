@@ -106,6 +106,9 @@ internal object VariadicMonomorphizer {
     }
 
     fun monomorphize(program: Program): Program {
+        val compileTimeOwners = program.items.filterIsInstance<TopLevel.Impl>()
+            .filter { it.methods.any { method -> method.body.any(::hasCompileTimeChoice) } }
+            .mapTo(mutableSetOf()) { it.typeName }
         val packTemplates = linkedMapOf<String, TopLevel.Pack>()
         val funcTemplates = linkedMapOf<String, TopLevel.Func>()
         val implTemplates = linkedMapOf<String, MutableList<TopLevel.Impl>>()
@@ -122,7 +125,8 @@ internal object VariadicMonomorphizer {
                     // `Tuple<...T>` is the compiler's structural tuple, so there is no
                     // pack to materialise for a shape; any other variadic pack, a
                     // bridge one included, is specialised per instantiation.
-                    if (!isStructuralTuple(item) && (item.variadicParam != null || item.fields.any { it.condition != null })) {
+                    if (!isStructuralTuple(item) && (item.variadicParam != null || item.fields.any { it.condition != null } ||
+                            (item.typeParams.isNotEmpty() && item.name in compileTimeOwners))) {
                         packTemplates[item.name] = item
                     }
                 }
@@ -230,6 +234,18 @@ internal object VariadicMonomorphizer {
     /** The library's `bridge pack Tuple<...T>`, which names the compiler's structural tuple. */
     private fun isStructuralTuple(pack: TopLevel.Pack): Boolean =
         pack.isBridge && pack.variadicParam != null && pack.name == Intrinsics.TUPLE
+
+    // A method with a compile-time branch needs the pack's concrete arguments
+    // even if its storage layout is uniform. Erasure cannot decide that branch.
+    private fun hasCompileTimeChoice(stmt: Stmt): Boolean = when (stmt) {
+        is Stmt.InlineIf, is Stmt.DeepInlineIf -> true
+        is Stmt.If -> stmt.thenBranch.any(::hasCompileTimeChoice) || stmt.elseBranch.orEmpty().any(::hasCompileTimeChoice)
+        is Stmt.Scope -> stmt.body.any(::hasCompileTimeChoice)
+        is Stmt.While -> stmt.body.any(::hasCompileTimeChoice)
+        is Stmt.For -> stmt.body.any(::hasCompileTimeChoice)
+        is Stmt.Try -> stmt.body.any(::hasCompileTimeChoice) || stmt.catchBody.orEmpty().any(::hasCompileTimeChoice)
+        else -> false
+    }
 
     private fun explicitReturnType(decl: FuncDecl): TypeRef? =
         (decl.returnType as? TypeAnnotation.Explicit)?.ref

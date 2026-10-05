@@ -3742,7 +3742,19 @@ class Parser(
                     // A ctor is generic over what it takes, the same as any other
                     // member: `ctor<R> .(children: … -> R)`.
                     val ctorTypeParams = parseTypeParams()
-                    val (recv, scopeReceivers) = if (match(TokenType.DOT)) {
+                    val contextualPrefix = parseExplicitMemberReceiver()
+                    val (recv, scopeReceivers) = if (contextualPrefix != null) {
+                        // The constructed value is always the implicit `self`.
+                        // A prefix tuple names the contexts in which this ctor
+                        // builds a value: `ctor (anchor: Anchor!).(text): Entity`.
+                        val first = Param(contextualPrefix.name, contextualPrefix.type ?: TypeRef.Named("Self"), modifier = contextualPrefix.modifier)
+                        val contexts = listOf(first) + pendingMemberContextReceivers
+                        pendingMemberContextReceivers = emptyList()
+                        if (contexts.any { it.name == "self" }) {
+                            error("a constructor context must have its own name; 'self' is the constructed value at line ${ctorStart.line}")
+                        }
+                        PropReceiver("self", TypeRef.Named("Self"), ParamModifier.EXCLUSIVE) to contexts
+                    } else if (match(TokenType.DOT)) {
                         PropReceiver("self", TypeRef.Named("Self"), ParamModifier.EXCLUSIVE) to emptyList<Param>()
                     } else if (check(TokenType.L_BRACKET)) {
                         error("constructors no longer declare bracket receivers; write 'ctor .(…)' at line ${peek().line}")
@@ -12327,7 +12339,7 @@ class Parser(
         val mentionsIt = lambdaMentionsIt.removeAt(lambdaMentionsIt.size - 1)
         if (body.isNotEmpty() && body.last() is Stmt.ExprStmt) {
             val last = body.removeAt(body.size - 1) as Stmt.ExprStmt
-            body.add(Stmt.Return(last.expr, last.line, last.column, last.length))
+            body.add(Stmt.Return(last.expr, last.line, last.column, last.length, implicit = true))
         }
         consume(TokenType.R_BRACE, "Expected '}' after lambda body")
         // `it` is not a property of the braces: a bare lambda takes the parameter

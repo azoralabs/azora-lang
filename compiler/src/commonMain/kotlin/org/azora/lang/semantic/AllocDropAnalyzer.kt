@@ -264,10 +264,17 @@ class AllocDropAnalyzer {
         val reference = (annotation as? TypeAnnotation.Explicit)?.ref as? TypeRef.Reference ?: return
         // `let m: User! = user.!` - the borrow sigil wraps the place it borrows,
         // so look through it to find what is actually being borrowed.
-        val borrowed = (initializer as? Expr.Isolated)?.takeIf { it.op.isBorrow }?.value ?: initializer
-        val isPlace = borrowed is Expr.Identifier || borrowed is Expr.Member ||
-            borrowed is Expr.Index || borrowed is Expr.Deref
-        if (!isPlace) {
+        fun isPlace(expression: Expr): Boolean = when (expression) {
+            is Expr.Identifier, is Expr.Member, is Expr.Index, is Expr.Deref -> true
+            is Expr.Grouping -> isPlace(expression.expr)
+            is Expr.Isolated -> expression.op.isBorrow && isPlace(expression.value)
+            // A reference cast changes the view of an existing place. It does
+            // not turn a temporary constructor/call result into stable storage.
+            is Expr.Cast -> expression.kind == CastKind.STATIC &&
+                expression.targetType is TypeRef.Reference && isPlace(expression.expr)
+            else -> false
+        }
+        if (!isPlace(initializer)) {
             errors.add("line $line: ${reference.kind.spelling} must borrow a stable variable, field, index, or dereference")
         }
         if (reference.kind == TypeRef.RefKind.MUTABLE && !mutable) {

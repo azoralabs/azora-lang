@@ -197,59 +197,59 @@ func days(value: Long): Duration { return duration(value * 86400) }
 
 /** This many whole nanoseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Int&).nanoseconds: Duration = nanoseconds(self as Long)
+prop Int&.nanoseconds: Duration = nanoseconds(self as Long)
 
 /** This many whole microseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Int&).microseconds: Duration = microseconds(self as Long)
+prop Int&.microseconds: Duration = microseconds(self as Long)
 
 /** This many whole milliseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Int&).milliseconds: Duration = milliseconds(self as Long)
+prop Int&.milliseconds: Duration = milliseconds(self as Long)
 
 /** This many whole seconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Int&).seconds: Duration = seconds(self as Long)
+prop Int&.seconds: Duration = seconds(self as Long)
 
 /** This many whole minutes, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Int&).minutes: Duration = minutes(self as Long)
+prop Int&.minutes: Duration = minutes(self as Long)
 
 /** This many fixed 60-minute hours, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Int&).hours: Duration = hours(self as Long)
+prop Int&.hours: Duration = hours(self as Long)
 
 /** This many fixed 24-hour days, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Int&).days: Duration = days(self as Long)
+prop Int&.days: Duration = days(self as Long)
 
 /** This many whole nanoseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Long&).nanoseconds: Duration = nanoseconds(self)
+prop Long&.nanoseconds: Duration = nanoseconds(self)
 
 /** This many whole microseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Long&).microseconds: Duration = microseconds(self)
+prop Long&.microseconds: Duration = microseconds(self)
 
 /** This many whole milliseconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Long&).milliseconds: Duration = milliseconds(self)
+prop Long&.milliseconds: Duration = milliseconds(self)
 
 /** This many whole seconds, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Long&).seconds: Duration = seconds(self)
+prop Long&.seconds: Duration = seconds(self)
 
 /** This many whole minutes, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Long&).minutes: Duration = minutes(self)
+prop Long&.minutes: Duration = minutes(self)
 
 /** This many fixed 60-minute hours, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Long&).hours: Duration = hours(self)
+prop Long&.hours: Duration = hours(self)
 
 /** This many fixed 24-hour days, as a [Duration]. */
 @Experimental(since: "0.1")
-prop (self: Long&).days: Duration = days(self)
+prop Long&.days: Duration = days(self)
 
 impl Duration {
     /** Whether this duration is exactly zero. */

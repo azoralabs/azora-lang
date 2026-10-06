@@ -71,15 +71,15 @@ class MetaprogrammingTest {
 
             define void @b() {
             entry:
-              %0 = getelementptr [13 x i8], [13 x i8]* @.str.0, i64 0, i64 0
-              %1 = call i32 @puts(i8* %0)
+              %t0 = getelementptr [13 x i8], [13 x i8]* @.str.0, i64 0, i64 0
+              %t1 = call i32 @puts(i8* %t0)
               ret void
             }
 
             define i32 @main() {
             entry:
-              %0 = getelementptr [13 x i8], [13 x i8]* @.str.1, i64 0, i64 0
-              %1 = call i32 @puts(i8* %0)
+              %t0 = getelementptr [13 x i8], [13 x i8]* @.str.1, i64 0, i64 0
+              %t1 = call i32 @puts(i8* %t0)
               call void @b()
               ret i32 0
             }
@@ -311,27 +311,27 @@ class MetaprogrammingTest {
 
             define void @c() {
             entry:
-              %0 = getelementptr [13 x i8], [13 x i8]* @.str.0, i64 0, i64 0
-              %1 = call i32 @puts(i8* %0)
+              %t0 = getelementptr [13 x i8], [13 x i8]* @.str.0, i64 0, i64 0
+              %t1 = call i32 @puts(i8* %t0)
               ret void
             }
 
             define void @e() {
             entry:
-              %0 = getelementptr [13 x i8], [13 x i8]* @.str.1, i64 0, i64 0
-              %1 = call i32 @puts(i8* %0)
+              %t0 = getelementptr [13 x i8], [13 x i8]* @.str.1, i64 0, i64 0
+              %t1 = call i32 @puts(i8* %t0)
               ret void
             }
 
             define i32 @main() {
             entry:
-              %0 = getelementptr [13 x i8], [13 x i8]* @.str.2, i64 0, i64 0
-              %1 = call i32 @puts(i8* %0)
-              %2 = getelementptr [13 x i8], [13 x i8]* @.str.3, i64 0, i64 0
-              %3 = call i32 @puts(i8* %2)
+              %t0 = getelementptr [13 x i8], [13 x i8]* @.str.2, i64 0, i64 0
+              %t1 = call i32 @puts(i8* %t0)
+              %t2 = getelementptr [13 x i8], [13 x i8]* @.str.3, i64 0, i64 0
+              %t3 = call i32 @puts(i8* %t2)
               call void @c()
-              %4 = getelementptr [13 x i8], [13 x i8]* @.str.4, i64 0, i64 0
-              %5 = call i32 @puts(i8* %4)
+              %t4 = getelementptr [13 x i8], [13 x i8]* @.str.4, i64 0, i64 0
+              %t5 = call i32 @puts(i8* %t4)
               call void @e()
               ret i32 0
             }

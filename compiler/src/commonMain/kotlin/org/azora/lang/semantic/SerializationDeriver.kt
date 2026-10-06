@@ -325,7 +325,9 @@ object SerializationDeriver {
         appendLine("            SerialValue.Object(__serialFields) -> {")
         fields.filterNot { it.ignored }.forEach { plan ->
             appendLine("                var __seen_${plan.field.name} = false")
-            appendLine("                var __raw_${plan.field.name} = SerialValue.Null")
+            // Raw fields are views into the caller's tree. Keep an explicit
+            // borrow so lexical destruction never claims the matched payload.
+            appendLine("                var __raw_${plan.field.name}: SerialValue& = value")
         }
         appendLine("                var __serialIndex = 0")
         appendLine("                while __serialIndex < __serialFields.size {")
@@ -357,8 +359,8 @@ object SerializationDeriver {
             val value = when {
                 plan.ignored -> plan.defaultSource!!
                 isCollection(plan.field.type) && plan.defaultSource != null ->
-                    "if __seen_${plan.field.name} { __decoded_${plan.field.name} } else { ${plan.defaultSource} }"
-                isCollection(plan.field.type) -> "__decoded_${plan.field.name}"
+                    "if __seen_${plan.field.name} { take __decoded_${plan.field.name} } else { ${plan.defaultSource} }"
+                isCollection(plan.field.type) -> "take __decoded_${plan.field.name}"
                 plan.defaultSource != null -> "if __seen_${plan.field.name} { ${decodeExpr("__raw_${plan.field.name}", plan.field.type, "self.${plan.field.name}", helpers)} } else { ${plan.defaultSource} }"
                 else -> decodeExpr("__raw_${plan.field.name}", plan.field.type, "self.${plan.field.name}", helpers)
             }

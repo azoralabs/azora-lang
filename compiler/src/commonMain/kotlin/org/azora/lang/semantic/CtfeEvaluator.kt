@@ -903,6 +903,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
         if (expr !is Expr.Call) return null
         val funcDecl = program.functions.find { it.name == expr.callee && it.isInline } ?: return null
 
+        // A discarded result is still the callee's result. Splicing its
+        // `return` into the caller would return from the enclosing function
+        // and leave generic type references unbound.
+        if (funcDecl.body.singleOrNull() is Stmt.Return) {
+            val expanded = inlineCallAsExpression(expr, expr.args, program) ?: return null
+            return listOf(Stmt.ExprStmt(expanded, expr.line, expr.column))
+        }
+
         // Substitute parameters with arguments in the function body
         val paramMap = mutableMapOf<String, Expr>()
         // A const type parameter is an argument too: `axis<0>()` binds `I` to 0, and

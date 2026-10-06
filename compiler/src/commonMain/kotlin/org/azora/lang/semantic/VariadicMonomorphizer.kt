@@ -138,7 +138,8 @@ internal object VariadicMonomorphizer {
                     // is a monomorphization template. Plain variadic functions that just
                     // collect args into an array (`args: …T`) are left as runtime variadics.
                     val decl = item.decl
-                    if (decl.variadicParam != null && returnedVariadicPackName(decl) != null) {
+                    if ((decl.variadicParam != null && returnedVariadicPackName(decl) != null) ||
+                        (decl.typeParams.isNotEmpty() && requiresClone(decl.whereClause))) {
                         funcTemplates[decl.name] = item
                     }
                 }
@@ -235,6 +236,13 @@ internal object VariadicMonomorphizer {
     private fun isStructuralTuple(pack: TopLevel.Pack): Boolean =
         pack.isBridge && pack.variadicParam != null && pack.name == Intrinsics.TUPLE
 
+    private fun requiresClone(clause: Expr?): Boolean = when (clause) {
+        is Expr.IsCheck -> clause.typeName.substringAfterLast("__") == "Clone"
+        is Expr.Binary -> requiresClone(clause.left) || requiresClone(clause.right)
+        is Expr.Grouping -> requiresClone(clause.expr)
+        else -> false
+    }
+
     // A method with a compile-time branch needs the pack's concrete arguments
     // even if its storage layout is uniform. Erasure cannot decide that branch.
     private fun hasCompileTimeChoice(stmt: Stmt): Boolean = when (stmt) {
@@ -294,6 +302,7 @@ private class MonoContext(
      * calls with non-literal args (`tupleOf(t.0, t.1)`). Flat per function.
      */
     private val bindings = mutableMapOf<String, TypeRef>()
+    private var unresolvedTypeParams = emptySet<String>()
 
     // ------------------------------------------------------------------
     // Instantiation
@@ -395,8 +404,34 @@ private class MonoContext(
 
     fun instantiateFunc(templateName: String, elementTypes: List<TypeRef>): String {
         val template = funcTemplates[templateName] ?: return templateName
+        if (template.decl.variadicParam == null && elementTypes.size != template.decl.typeParams.size) return templateName
         val mangled = mangleTemplate(templateName, elementTypes)
         if (mangled !in funcs) {
+            if (template.decl.variadicParam == null) {
+                val savedTypes = typeBindings
+                val savedConsts = constBindings
+                val savedValues = bindings.toMap()
+                val substitutions = template.decl.typeParams.zip(elementTypes).toMap()
+                val concrete = template.decl.copy(
+                    name = mangled,
+                    params = template.decl.params.map { it.copy(type = substituteParams(it.type, substitutions)) },
+                    returnType = substituteParams(template.decl.returnType, substitutions),
+                    typeParams = emptyList(),
+                    whereClause = null,
+                )
+                funcs[mangled] = TopLevel.Func(concrete.copy(body = emptyList()))
+                try {
+                    typeBindings = savedTypes + substitutions
+                    constBindings = substitutions.mapNotNull { (name, ref) -> (ref as? TypeRef.Const)?.let { name to it.value } }.toMap()
+                    funcs[mangled] = TopLevel.Func(rewriteFuncDecl(concrete))
+                } finally {
+                    typeBindings = savedTypes
+                    constBindings = savedConsts
+                    bindings.clear()
+                    bindings.putAll(savedValues)
+                }
+                return mangled
+            }
             checkConstraints(
                 "variadic function '$templateName'",
                 template.decl.whereClause,
@@ -1224,7 +1259,7 @@ private class MonoContext(
         // Drop variadic templates - they are replaced by their monomorphized instances.
         is TopLevel.Pack -> if (item.variadicParam != null) null
             else item.copy(fields = item.fields.map { it.copy(type = rewriteType(it.type)) })
-        is TopLevel.Func -> if (item.decl.name in funcTemplates) null
+        is TopLevel.Func -> if (item.decl.name in funcTemplates && item.decl.variadicParam != null) null
             else item.copy(decl = rewriteFuncDecl(item.decl))
         // An impl on a monomorphised pack is a template: `expandImpls` emits one copy
         // per specialization, so the template itself must not survive - its members
@@ -1255,6 +1290,9 @@ private class MonoContext(
     }
 
     private fun rewriteFuncDecl(decl: FuncDecl, owner: String? = null): FuncDecl = withSourceLine(decl.line) {
+        val savedParams = unresolvedTypeParams
+        unresolvedTypeParams = decl.typeParams.toSet() - typeBindings.keys
+        try {
         bindings.clear()
         for (p in decl.params) bindings[p.name] = p.type
         // The receiver, so `self.field` can be typed. A variadic call taking one
@@ -1267,6 +1305,7 @@ private class MonoContext(
             returnType = rewriteTypeAnnotation(decl.returnType),
             body = rewriteBody(decl.body),
         )
+        } finally { unresolvedTypeParams = savedParams }
     }
 
     /**
@@ -1692,7 +1731,7 @@ private class MonoContext(
         val e = e.copy(args = expandedArgs)
         val elementTypes = resolveElementTypes(e)
         val mangled = when {
-            e.callee in funcTemplates && elementTypes != null -> instantiateFunc(e.callee, elementTypes)
+            e.callee in funcTemplates && elementTypes != null && elementTypes.none(::hasUnboundType) -> instantiateFunc(e.callee, elementTypes)
             // Inside a specialization of this very pack, building it means
             // building *this* one. Re-deriving the arguments from the values
             // passed would answer with whatever those happen to be - `Box(7)`
@@ -1717,6 +1756,20 @@ private class MonoContext(
             )
     }
 
+    private fun hasUnboundType(type: TypeRef): Boolean = when (type) {
+        is TypeRef.Named -> type.name in unresolvedTypeParams || type.args.any(::hasUnboundType)
+        is TypeRef.Reference -> hasUnboundType(type.inner)
+        is TypeRef.Pointer -> hasUnboundType(type.inner)
+        is TypeRef.Array -> hasUnboundType(type.element)
+        is TypeRef.Nullable -> hasUnboundType(type.inner)
+        is TypeRef.Map -> hasUnboundType(type.key) || hasUnboundType(type.value)
+        is TypeRef.Set -> hasUnboundType(type.element)
+        is TypeRef.Tuple -> type.elements.any(::hasUnboundType)
+        is TypeRef.Function -> type.params.any(::hasUnboundType) || hasUnboundType(type.ret)
+        is TypeRef.Failable -> hasUnboundType(type.ok)
+        is TypeRef.Const -> false
+    }
+
     /** Concrete element types for a variadic call, from explicit type args or inferred args; null if unknown. */
     /**
      * The declared type of [field] on [target], when the pack is known here.
@@ -1734,7 +1787,7 @@ private class MonoContext(
         val template = packTemplates[owner.name]
         val fields = plainPackFields[owner.name] ?: template?.fields ?: return null
         val declared = fields.firstOrNull { it.name == field }?.type ?: return null
-        if (template == null) return declared
+        if (template == null) return substituteParams(declared, constructibleTypes[owner.name].orEmpty().zip(owner.args).toMap())
         return substituteParams(declared, template.typeParams.zip(owner.args).toMap())
     }
 
@@ -1754,6 +1807,23 @@ private class MonoContext(
             }
         }
         val inferred = call.args.map { inferExprType(it) }
+        val function = funcTemplates[call.callee]?.decl?.takeIf { it.variadicParam == null }
+        if (function != null) {
+            val found = mutableMapOf<String, TypeRef>()
+            fun bind(expected: TypeRef, actual: TypeRef) {
+                when {
+                    expected is TypeRef.Reference -> bind(expected.inner, (actual as? TypeRef.Reference)?.inner ?: actual)
+                    expected is TypeRef.Named && expected.args.isEmpty() && expected.name in function.typeParams ->
+                        found.putIfAbsent(expected.name, actual)
+                    expected is TypeRef.Named && actual is TypeRef.Named && expected.name == actual.name ->
+                        expected.args.zip(actual.args).forEach { (left, right) -> bind(left, right) }
+                    expected is TypeRef.Array && actual is TypeRef.Array -> bind(expected.element, actual.element)
+                    expected is TypeRef.Nullable && actual is TypeRef.Nullable -> bind(expected.inner, actual.inner)
+                }
+            }
+            function.params.zip(inferred).forEach { (parameter, actual) -> if (actual != null) bind(parameter.type, actual) }
+            return function.typeParams.map { found[it] ?: return null }
+        }
         return if (inferred.all { it != null }) inferred.filterNotNull() else null
     }
 
@@ -1770,6 +1840,7 @@ private class MonoContext(
         is Expr.CharLiteral -> TypeRef.Named("Char")
         is Expr.Identifier -> bindings[e.name]
         is Expr.Grouping -> inferExprType(e.expr)
+        is Expr.Isolated -> inferExprType(e.value)
         is Expr.Binary -> inferBinaryType(e)
         is Expr.TupleAccess -> inferExprType(e.target)?.let { tupleElementType(it, e.index) }
         // Positional tuple access parses as a `Member` with a numeric field name

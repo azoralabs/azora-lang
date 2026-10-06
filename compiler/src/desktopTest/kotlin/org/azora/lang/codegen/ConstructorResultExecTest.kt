@@ -4,6 +4,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class ConstructorResultExecTest {
+    @Test fun returnedConstructorTreeRunsOnLlvm() {
+        if (!LlvmExec.available) return
+        for (release in listOf(false, true)) assertEquals("parent\nchild\n2", LlvmExec.run(ConstructorResultTest.returnedTree, release))
+    }
     @Test fun contextualConstructorTreeRunsOnLlvm() {
         if (!LlvmExec.available) return
         for (release in listOf(false, true)) assertEquals("1\n3\nplain value\n42", LlvmExec.run(ConstructorResultTest.tree, release))

@@ -181,26 +181,26 @@ class CodegenGoldenTest {
 
             define i8* @classify(i32 %arg.n) {
             entry:
-              %0 = alloca i32
-              store i32 %arg.n, i32* %0
-              %1 = load i32, i32* %0
-              %2 = icmp slt i32 %1, 0
-              br i1 %2, label %then.0, label %else.1
+              %t0 = alloca i32
+              store i32 %arg.n, i32* %t0
+              %t1 = load i32, i32* %t0
+              %t2 = icmp slt i32 %t1, 0
+              br i1 %t2, label %then.0, label %else.1
             then.0:
-              %3 = getelementptr [9 x i8], [9 x i8]* @.str.0, i64 0, i64 0
-              ret i8* %3
+              %t3 = getelementptr [9 x i8], [9 x i8]* @.str.0, i64 0, i64 0
+              ret i8* %t3
             else.1:
-              %4 = load i32, i32* %0
-              %5 = icmp eq i32 %4, 0
-              br i1 %5, label %then.3, label %merge.5
+              %t4 = load i32, i32* %t0
+              %t5 = icmp eq i32 %t4, 0
+              br i1 %t5, label %then.3, label %merge.5
             then.3:
-              %6 = getelementptr [5 x i8], [5 x i8]* @.str.1, i64 0, i64 0
-              ret i8* %6
+              %t6 = getelementptr [5 x i8], [5 x i8]* @.str.1, i64 0, i64 0
+              ret i8* %t6
             merge.5:
               br label %merge.2
             merge.2:
-              %7 = getelementptr [9 x i8], [9 x i8]* @.str.2, i64 0, i64 0
-              ret i8* %7
+              %t7 = getelementptr [9 x i8], [9 x i8]* @.str.2, i64 0, i64 0
+              ret i8* %t7
             }
 
             define i32 @main() {
@@ -209,18 +209,18 @@ class CodegenGoldenTest {
               %loc1.total = alloca i32
               %loc2.i = alloca i32
               store i32 5, i32* %loc0.sum
-              %0 = getelementptr [7 x i8], [7 x i8]* @.str.3, i64 0, i64 0
-              %1 = load i32, i32* %loc0.sum
-              %2 = sext i32 %1 to i64
-              %3 = call i8* @__azora_int_to_str(i64 %2)
-              %4 = call i8* @__azora_str_concat(i8* %0, i8* %3)
-              %5 = call i32 @puts(i8* %4)
+              %t0 = getelementptr [7 x i8], [7 x i8]* @.str.3, i64 0, i64 0
+              %t1 = load i32, i32* %loc0.sum
+              %t2 = sext i32 %t1 to i64
+              %t3 = call i8* @__azora_int_to_str(i64 %t2)
+              %t4 = call i8* @__azora_str_concat(i8* %t0, i8* %t3)
+              %t5 = call i32 @puts(i8* %t4)
               store i32 0, i32* %loc1.total
-              %6 = sext i32 1 to i64
-              %7 = sext i32 5 to i64
-              %8 = sext i32 1 to i64
-              %9 = icmp sgt i64 %8, 0
-              br i1 %9, label %for_step_valid.0, label %for_step_invalid.1
+              %t6 = sext i32 1 to i64
+              %t7 = sext i32 5 to i64
+              %t8 = sext i32 1 to i64
+              %t9 = icmp sgt i64 %t8, 0
+              br i1 %t9, label %for_step_valid.0, label %for_step_invalid.1
             for_step_invalid.1:
               call void @__azora_abort()
               unreachable
@@ -229,75 +229,111 @@ class CodegenGoldenTest {
             for_entry.6:
               br label %for_cond.2
             for_cond.2:
-              %10 = phi i64 [ %6, %for_entry.6 ], [ %for_next.7, %for_inc.4 ]
-              %11 = icmp sle i64 %10, %7
-              br i1 %11, label %for_body.3, label %for_end.5
+              %t10 = phi i64 [ %t6, %for_entry.6 ], [ %for_next.7, %for_inc.4 ]
+              %t11 = icmp sle i64 %t10, %t7
+              br i1 %t11, label %for_body.3, label %for_end.5
             for_body.3:
-              %12 = trunc i64 %10 to i32
-              store i32 %12, i32* %loc2.i
-              %13 = load i32, i32* %loc1.total
-              %14 = load i32, i32* %loc2.i
-              %15 = add i32 %13, %14
-              store i32 %15, i32* %loc1.total
+              %t12 = trunc i64 %t10 to i32
+              store i32 %t12, i32* %loc2.i
+              %t13 = load i32, i32* %loc1.total
+              %t14 = load i32, i32* %loc2.i
+              %t15 = add i32 %t13, %t14
+              store i32 %t15, i32* %loc1.total
               br label %for_inc.4
             for_inc.4:
-              %for_next.7 = add i64 %10, %8
+              %for_next.7 = add i64 %t10, %t8
               br label %for_cond.2
             for_end.5:
-              %16 = load i32, i32* %loc1.total
-              %17 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
-              %18 = call i32 (i8*, ...) @printf(i8* %17, i32 %16)
+              %t16 = load i32, i32* %loc1.total
+              %t17 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
+              %t18 = call i32 (i8*, ...) @printf(i8* %t17, i32 %t16)
               br label %while_cond.8
             while_cond.8:
-              %19 = load i32, i32* %loc1.total
-              %20 = icmp sgt i32 %19, 10
-              br i1 %20, label %while_body.9, label %while_end.10
+              %t19 = load i32, i32* %loc1.total
+              %t20 = icmp sgt i32 %t19, 10
+              br i1 %t20, label %while_body.9, label %while_end.10
             while_body.9:
-              %21 = load i32, i32* %loc1.total
-              %22 = sub i32 %21, 4
-              store i32 %22, i32* %loc1.total
+              %t21 = load i32, i32* %loc1.total
+              %t22 = sub i32 %t21, 4
+              store i32 %t22, i32* %loc1.total
               br label %while_cond.8
             while_end.10:
-              %23 = load i32, i32* %loc1.total
-              %24 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
-              %25 = call i32 (i8*, ...) @printf(i8* %24, i32 %23)
-              %26 = call i8* @classify(i32 5)
-              %27 = call i32 @puts(i8* %26)
-              %28 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
-              %29 = call i32 (i8*, ...) @printf(i8* %28, i32 2)
+              %t23 = load i32, i32* %loc1.total
+              %t24 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
+              %t25 = call i32 (i8*, ...) @printf(i8* %t24, i32 %t23)
+              %t26 = call i8* @classify(i32 5)
+              %t27 = call i32 @puts(i8* %t26)
+              %t28 = getelementptr [4 x i8], [4 x i8]* @.str.4, i64 0, i64 0
+              %t29 = call i32 (i8*, ...) @printf(i8* %t28, i32 2)
               ret i32 0
             }
 
-            ; runtime: checked native allocation
+            ; runtime: allocation headers retain the concrete destructor across erased generic calls.
+            ; Header alignment is sixteen bytes and the payload keeps malloc alignment.
             define i8* @__azora_alloc_raw(i64 %size) {
             entry:
-              %p = call i8* @malloc(i64 %size)
-              %isnull = icmp eq i8* %p, null
+              %total = add i64 %size, 16
+              %overflow = icmp ult i64 %total, %size
+              br i1 %overflow, label %oom, label %allocate
+            allocate:
+              %base = call i8* @malloc(i64 %total)
+              %isnull = icmp eq i8* %base, null
               br i1 %isnull, label %oom, label %ok
             oom:
               call void @__azora_abort()
               unreachable
             ok:
-              ret i8* %p
+              %drop = bitcast i8* %base to void (i8*, i64)**
+              store void (i8*, i64)* null, void (i8*, i64)** %drop
+              %count.raw = getelementptr i8, i8* %base, i64 8
+              %count = bitcast i8* %count.raw to i64*
+              store i64 0, i64* %count
+              %payload = getelementptr i8, i8* %base, i64 16
+              ret i8* %payload
             }
-
             define i8* @__azora_alloc(i64 %size) {
             entry:
               %p = call i8* @__azora_alloc_raw(i64 %size)
               ret i8* %p
             }
-
-            define void @__azora_free(i8* %ptr) {
+            define void @__azora_set_drop(i8* %ptr, void (i8*, i64)* %destroy, i64 %count) {
             entry:
               %isnull = icmp eq i8* %ptr, null
-              br i1 %isnull, label %end, label %free
-            free:
-              call void @free(i8* %ptr)
+              br i1 %isnull, label %end, label %set
+            set:
+              %base = getelementptr i8, i8* %ptr, i64 -16
+              %slot = bitcast i8* %base to void (i8*, i64)**
+              store void (i8*, i64)* %destroy, void (i8*, i64)** %slot
+              %count.raw = getelementptr i8, i8* %base, i64 8
+              %count.slot = bitcast i8* %count.raw to i64*
+              store i64 %count, i64* %count.slot
               br label %end
             end:
               ret void
             }
-
+            define void @__azora_free(i8* %ptr) {
+            entry:
+              %isnull = icmp eq i8* %ptr, null
+              br i1 %isnull, label %end, label %dropcheck
+            dropcheck:
+              %base = getelementptr i8, i8* %ptr, i64 -16
+              %slot = bitcast i8* %base to void (i8*, i64)**
+              %destroy = load void (i8*, i64)*, void (i8*, i64)** %slot
+              store void (i8*, i64)* null, void (i8*, i64)** %slot
+              %hasdrop = icmp ne void (i8*, i64)* %destroy, null
+              br i1 %hasdrop, label %destroyvalue, label %release
+            destroyvalue:
+              %count.raw = getelementptr i8, i8* %base, i64 8
+              %count.slot = bitcast i8* %count.raw to i64*
+              %count = load i64, i64* %count.slot
+              call void %destroy(i8* %ptr, i64 %count)
+              br label %release
+            release:
+              call void @free(i8* %base)
+              br label %end
+            end:
+              ret void
+            }
             ; runtime: string concatenation
             define i8* @__azora_str_concat(i8* %a, i8* %b) {
             entry:

@@ -43,6 +43,7 @@ import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.semantic.SlotPatterns
 import org.azora.lang.semantic.ComparisonPlan
 import org.azora.lang.semantic.instantiateMember
+import org.azora.lang.semantic.instantiateField
 import org.azora.lang.semantic.allocatedConstruction
 import org.azora.lang.semantic.indexedElementType
 import org.azora.lang.semantic.typeRefOf
@@ -1102,7 +1103,9 @@ class IrGenerator(private val table: SymbolTable) {
                 listOf(
                     if (receiverTupleType != null) IrExpr.Var(resolveName("self"), receiverTupleType)
                     else IrExpr.Var(resolveName(method.receiverName), IrType.Named(typeName)),
-                ),
+                ) + symbol.params.drop(1).take(method.contextualParams).map { (name, type) ->
+                    IrExpr.Var(resolveName(name), type)
+                },
                 prefersMembers = false,
             ),
         )
@@ -1290,6 +1293,7 @@ class IrGenerator(private val table: SymbolTable) {
         if (source !is Expr.Identifier && source !is Expr.Member && source !is Expr.Index && source !is Expr.Deref) return lowered
         if (lowered.type is IrType.Function) return IrExpr.Call("__isolated", listOf(lowered), lowered.type)
         val name = (lowered.type as? IrType.Named)?.name ?: return lowered
+        if (table.lookupEnum(name) != null || table.lookupFail(name) != null) return lowered
         if (!table.conformsTo(name, "Copy")) return lowered
         return IrExpr.Call("__isolated", listOf(lowered), lowered.type)
     }
@@ -1574,10 +1578,11 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.MemberAssign -> {
                 val target = autoDerefMemberTarget(lowerExpr(stmt.target), stmt.name, method = false)
                 val owner = target.type as? IrType.Named
-                val field = owner?.let { table.lookupStruct(it.name) }?.field(stmt.name)
+                val struct = owner?.let { table.lookupStruct(it.name) }
+                val field = struct?.field(stmt.name)
                 // A field declared as a type parameter holds the target's argument
                 // for it, as the matching member read is typed.
-                val fieldType = field?.let { owner.args.getOrNull(it.typeParamIndex) ?: it.type }
+                val fieldType = field?.let { instantiateField(struct, owner, it) }
                 val value = coerceToFloat(lowerExpr(stmt.value), fieldType ?: IrType.Any)
                 IrStmt.MemberAssign(target, stmt.name, value)
             }
@@ -3769,8 +3774,7 @@ class IrGenerator(private val table: SymbolTable) {
                         // A field declared as a type parameter resolves to `Any`;
                         // the referring type still carries the argument, which is
                         // what the value really is.
-                        val slot = field.typeParamIndex
-                        val concrete = if (slot >= 0 && slot < tt2.args.size) tt2.args[slot] else field.type
+                        val concrete = instantiateField(owner, tt2, field)
                         return IrExpr.Member(target, expr.name, concrete)
                     }
                     // Check for a computed property (prop): `Type_name` zero-arg method.
@@ -4037,9 +4041,9 @@ class IrGenerator(private val table: SymbolTable) {
                             Expr.Identifier(capture.source, capture.line, capture.column),
                             "clone", emptyList(), capture.line, capture.column,
                         ))
-                        CaptureMode.MOVE -> if (value.type is IrType.Named || value.type is IrType.Pointer || value.type is IrType.Nullable)
+                        CaptureMode.MOVE -> if (value.type is IrType.Named || value.type is IrType.Pointer || value.type is IrType.Nullable || value.type is IrType.Array || value.type is IrType.Function)
                             IrExpr.Call("__take", listOf(value), value.type) else null
-                        CaptureMode.COPY -> if (value.type is IrType.Named && table.lookupStruct((value.type as IrType.Named).name)?.isBridge == false)
+                        CaptureMode.COPY -> if (value.type is IrType.Function || (value.type is IrType.Named && table.lookupStruct((value.type as IrType.Named).name)?.isBridge == false))
                             IrExpr.Call("__isolated", listOf(value), value.type) else null
                         else -> null
                     }

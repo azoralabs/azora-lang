@@ -28,7 +28,7 @@ private fun walk(root: String): List<String> = buildList {
     visit(root)
 }.sorted()
 
-private data class UnitSources(val entry: String, val text: String, val libraries: List<LibrarySource>)
+private data class UnitSources(val entry: String, val text: String, val libraries: List<LibrarySource>, val libraryUnits: List<SourceUnit>)
 
 private fun sources(path: String, engine: Boolean = false): UnitSources {
     val entry = canonical(path)
@@ -44,9 +44,15 @@ private fun sources(path: String, engine: Boolean = false): UnitSources {
             index--
         }
     }
+    val libraryUnits = mutableListOf<SourceUnit>()
+    fun library(file: String, path: String): LibrarySource {
+        val text = read(file)
+        libraryUnits += SourceUnit(SourceId(file), file, path, text, kind = SourceKind.WORKSPACE_LIBRARY)
+        return LibrarySource(path, text)
+    }
     val libraries = if (module == "std" || module?.startsWith("std.") == true) mutableListOf() else
         walk(root).filter { it != entry && it.substringAfterLast('/') != "main.az" }.mapTo(mutableListOf()) {
-            LibrarySource(it.removePrefix("${root.trimEnd('/')}/"), read(it))
+            library(it, it.removePrefix("${root.trimEnd('/')}/"))
         }
     if (engine && Regex("(?m)^\\s*import\\s+engine\\b").containsMatchIn(text)) {
         val home = osEnvVar("AZORA_ENGINE_HOME")?.let(::canonical)
@@ -54,10 +60,10 @@ private fun sources(path: String, engine: Boolean = false): UnitSources {
         for (file in walk("$home/packages")) {
             val source = read(file)
             val declared = moduleOf(source) ?: continue
-            libraries += LibrarySource("${declared.replace('.', '/')}/${file.substringAfterLast('/')}", source)
+            libraries += library(file, "${declared.replace('.', '/')}/${file.substringAfterLast('/')}")
         }
     }
-    return UnitSources(entry, text, libraries)
+    return UnitSources(entry, text, libraries, libraryUnits)
 }
 
 private fun defines(args: List<String>): Map<String, String> = buildMap {
@@ -98,9 +104,16 @@ private fun json(value: String): String = buildString {
     append('"')
 }
 
-private fun analyze(unit: UnitSources, version: Long) {
+private fun analyze(unit: UnitSources, version: Long, query: String? = null, args: List<String> = emptyList()) {
     val source = SourceUnit(SourceId(unit.entry), unit.entry, unit.entry, unit.text, DocumentVersion(version))
-    val snapshot = Compiler(unit.libraries).analyze(AnalysisRequest(listOf(source), setOf(source.id)))
+    val snapshot = Compiler().analyze(AnalysisRequest(listOf(source) + unit.libraryUnits, setOf(source.id)))
+    fun range(span: SourceSpan): String {
+        val index = snapshot.sources.units[span.source]?.let { StringLineIndex(it.text) }
+        val start = index?.position(span.start, PositionEncoding.UTF8)
+        val end = index?.position(span.endExclusive, PositionEncoding.UTF8)
+        return "{\"source\":${json(span.source.value)},\"start\":${span.start.value},\"end\":${span.endExclusive.value}," +
+            "\"startLine\":${start?.line ?: 0},\"startByte\":${start?.character ?: 0},\"endLine\":${end?.line ?: 0},\"endByte\":${end?.character ?: 0}}"
+    }
     val diagnostics = snapshot.diagnostics.joinToString(",") { diagnostic ->
         val span = diagnostic.primary.span
         val located = snapshot.sources.units[span.source]
@@ -113,7 +126,26 @@ private fun analyze(unit: UnitSources, version: Long) {
             "\"startLine\":${start?.line ?: 0},\"startByte\":${start?.character ?: 0}," +
             "\"endLine\":${end?.line ?: 0},\"endByte\":${end?.character ?: 0}}"
     }
-    println("{\"protocol\":1,\"version\":$version,\"snapshot\":${json(snapshot.id.value)},\"completeness\":${json(snapshot.completeness.name.lowercase())},\"diagnostics\":[$diagnostics]}")
+    val result = if (query == null) "" else {
+        fun argument(name: String): String? = args.firstOrNull { it.startsWith("--$name=") }?.substringAfter('=')
+        val line = argument("line")?.toIntOrNull() ?: error("$query requires --line=N (zero based)")
+        val byte = argument("byte")?.toIntOrNull() ?: error("$query requires --byte=N (zero based UTF-8)")
+        require(line >= 0 && byte >= 0) { "query position must be nonnegative" }
+        val offset = StringLineIndex(source.text).offset(SourcePosition(line, byte), PositionEncoding.UTF8)
+            ?: error("query position is outside the source or splits a UTF-8 character")
+        val value = when (query) {
+            "hover" -> snapshot.semanticFacts.hover(source.id, offset)?.let {
+                "{\"range\":${range(it.span)},\"name\":${it.name?.let(::json) ?: "null"},\"type\":${json(it.type)}}"
+            } ?: "null"
+            "definition" -> snapshot.semanticFacts.definition(source.id, offset)?.let(::range) ?: "null"
+            "complete" -> snapshot.semanticFacts.complete(source.id, offset, argument("prefix").orEmpty()).joinToString(",", "[", "]") {
+                "{\"name\":${json(it.name)},\"kind\":${json(it.kind)},\"type\":${json(it.type)},\"definition\":${it.declaration?.let(::range) ?: "null"}}"
+            }
+            else -> error("unknown semantic query '$query'")
+        }
+        ",\"query\":${json(query)},\"result\":$value"
+    }
+    println("{\"protocol\":1,\"version\":$version,\"snapshot\":${json(snapshot.id.value)},\"completeness\":${json(snapshot.completeness.name.lowercase())},\"diagnostics\":[$diagnostics]$result}")
 }
 
 // Spawn with an argv vector, inherited descriptors and no command shell. The
@@ -173,7 +205,8 @@ fun main(arguments: Array<String>) {
                 println(llvm(sources(path), args))
             }
             "analyze" -> analyze(sources(args.getOrNull(1) ?: error("analyze requires a file")), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0)
-            null, "help", "--help" -> println("azora native: check <file> | compile llvm <file> [--debug] | analyze <file> [--version=N] | <project> build|play|inspect")
+            "hover", "definition", "complete" -> analyze(sources(args.getOrNull(1) ?: error("${args[0]} requires a file"), engine = true), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0, args[0], args)
+            null, "help", "--help" -> println("azora native: check <file> | compile llvm <file> [--debug] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
             else -> error("unknown native compiler command '${args[0]}'")
         }
     } catch (failure: Exception) {

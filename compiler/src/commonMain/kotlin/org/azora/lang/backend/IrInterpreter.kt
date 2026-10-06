@@ -1312,6 +1312,7 @@ class IrInterpreter {
                     // of its own rather than read back through the scope chain,
                     // where a later write to the original would reach it.
                     val scopes = st.scopes.toMutableList()
+                    var ownedCaptures = mutableMapOf<String, Any?>()
                     if (expr.valueCaptures.isNotEmpty()) {
                         val snapshot = mutableMapOf<String, Any?>()
                         for (name in expr.valueCaptures) {
@@ -1327,8 +1328,10 @@ class IrInterpreter {
                             }
                         }
                         if (snapshot.isNotEmpty()) scopes.add(snapshot)
+                        ownedCaptures = snapshot
                     }
-                    Closure(expr.params, expr.body, scopes, (expr.type as? IrType.Function)?.ret ?: IrType.Unit)
+                    Closure(expr.params, expr.body, scopes, (expr.type as? IrType.Function)?.ret ?: IrType.Unit,
+                        ClosureLifetime(ownedCaptures))
                 }
             }
             is IrExpr.Await -> {
@@ -1636,6 +1639,16 @@ class IrInterpreter {
 
     private suspend fun destroyOwned(value: Any?) {
         when (value) {
+            is Closure -> {
+                if (value.released) return
+                value.released = true
+                val last = azSync(value.lifetime) { --value.lifetime.references == 0 }
+                if (last) for (name in value.lifetime.captures.keys.toList().asReversed()) {
+                    val captured = value.lifetime.captures[name]
+                    value.lifetime.captures[name] = null
+                    destroyOwned(captured)
+                }
+            }
             is MutableList<*> -> {
                 @Suppress("UNCHECKED_CAST") val elements = value as MutableList<Any?>
                 for (i in elements.indices.reversed()) {
@@ -1671,7 +1684,7 @@ class IrInterpreter {
                     val element = fields[field.name]
                     val named = element is Map<*, *> && "__type" in element
                     val ownedPointer = element is Pointer && dtor == null && !typeName.contains("Weak")
-                    if (named || ownedPointer || element is MutableList<*>) {
+                    if (named || ownedPointer || element is MutableList<*> || element is Closure) {
                         fields[field.name] = null
                         destroyOwned(element)
                     }
@@ -2131,7 +2144,10 @@ class IrInterpreter {
         null -> null
         // Immutable scalars are safe to share.
         is Long, is Double, is Boolean, is Char, is String -> value
-        is Closure -> value
+        is Closure -> {
+            azSync(value.lifetime) { value.lifetime.references++ }
+            Closure(value.params, value.body, value.capturedScopes, value.returnType, value.lifetime)
+        }
         is MutableList<*> -> {
             @Suppress("UNCHECKED_CAST")
             val list = value as MutableList<Any?>
@@ -2191,7 +2207,10 @@ class IrInterpreter {
         val body: List<org.azora.lang.ir.IrStmt>,
         val capturedScopes: List<MutableMap<String, Any?>>,
         val returnType: IrType = IrType.Unit,
-    )
+        val lifetime: ClosureLifetime = ClosureLifetime(mutableMapOf()),
+    ) { var released: Boolean = false }
+
+    private class ClosureLifetime(val captures: MutableMap<String, Any?>) { var references: Int = 1 }
 
     /** A structured child task. Its Deferred is parented to the interpreter root scope. */
     private class TaskHandle(val deferred: kotlinx.coroutines.Deferred<Any?>)

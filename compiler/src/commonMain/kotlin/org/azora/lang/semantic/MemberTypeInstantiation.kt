@@ -5,6 +5,17 @@ import org.azora.lang.frontend.TypeRef
 import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.IrType
 
+/** Resolve both direct and nested owner parameters in a field's source type. */
+internal fun instantiateField(owner: StructType, receiver: IrType.Named, field: StructField): IrType {
+    val ref = field.typeRef ?: return receiver.args.getOrNull(field.typeParamIndex) ?: field.type
+    val bindings = owner.typeParams.mapIndexedNotNull { index, name ->
+        receiver.args.getOrNull(index)?.let { name to typeRefOf(it) }
+    }.toMap()
+    val substituted = substituteMemberType(ref, bindings)
+    return if (substituted == ref) field.type
+        else IrType.resolve(substituted, owner.typeParams.toSet() - bindings.keys)
+}
+
 /** Call-site types; the registered function retains its physical/erased signature. */
 internal fun instantiateMember(
     table: SymbolTable,
@@ -225,4 +236,3 @@ internal fun allocatedConstruction(table: SymbolTable, value: Expr): Expr {
     val element = owner?.takeIf { args.isEmpty() }?.let { TypeRef.Named(Intrinsics.ARRAY, listOf(TypeRef.Named(it))) }
     return Expr.ArrayLiteral(args, member.line, member.column, member.length, contextualType = element)
 }
-

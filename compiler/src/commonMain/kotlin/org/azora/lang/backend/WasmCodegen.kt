@@ -1370,6 +1370,32 @@ class WasmCodegen {
         // target has no copy of a pack or an array yet; saying so here is better
         // than a call to nothing that the assembler then refuses.
         if (expr.name == "__isolated") {
+            val value = expr.args.single()
+            val layout = (value.type as? IrType.Named)?.let { layouts[it.name] }
+            if (layout != null) {
+                val def = structDefinitions.getValue((value.type as IrType.Named).name)
+                if (def.fields.any { it.ownsValue && (it.type is IrType.Named || it.type is IrType.Array || it.type is IrType.Function || it.type is IrType.Pointer) })
+                    error("WebAssembly cannot recursively copy a ${value.type} for 'clone' yet")
+                usesAlloc = true
+                val original = newTemp("i32")
+                val copy = newTemp("i32")
+                return "(block (result i32) (local.set $original ${emitExpr(value)}) " +
+                    "(local.set $copy (call \$__alloc (i32.const ${layout.size}))) " +
+                    "(memory.copy (local.get $copy) (local.get $original) (i32.const ${layout.size})) " +
+                    "(local.get $copy))"
+            }
+            if (value.type is IrType.Function) {
+                usesAlloc = true
+                val original = newTemp("i32")
+                val copy = newTemp("i32")
+                val environment = newTemp("i32")
+                return "(block (result i32) (local.set $original ${emitExpr(value)}) " +
+                    "(local.set $copy (call \$__alloc (i32.const 8))) " +
+                    "(memory.copy (local.get $copy) (local.get $original) (i32.const 8)) " +
+                    "(local.set $environment (i32.load offset=4 (local.get $copy))) " +
+                    "(i32.store (local.get $environment) (i32.add (i32.load (local.get $environment)) (i32.const 1))) " +
+                    "(local.get $copy))"
+            }
             error("WebAssembly cannot copy a ${expr.args.single().type} for 'clone' yet")
         }
         when (expr.name) {
@@ -1557,6 +1583,10 @@ class WasmCodegen {
                 "(${wasmStore(stored)} (local.get $slot) $zero) (local.get $result))"
         }
         if (place is IrExpr.Var && place.name != "__null") {
+            val boxed = boxedLocals[place.name]
+            if (boxed != null) return "(block (result ${wasmType(place.type)}) " +
+                "(local.set $result (${wasmLoad(place.type)} (local.get \$$boxed))) " +
+                "(${wasmStore(place.type)} (local.get \$$boxed) (${wasmType(place.type)}.const 0)) (local.get $result))"
             val clear = if (place.name in globalTypes) "(global.set \$${place.name} (${wasmType(place.type)}.const 0))"
                 else "(local.set \$${place.name} (${wasmType(place.type)}.const 0))"
             return "(block (result ${wasmType(place.type)}) (local.set $result ${emitExpr(place)}) $clear (local.get $result))"
@@ -1572,6 +1602,7 @@ class WasmCodegen {
             return "(call \$${ownershipDropName(type)} ${emitOwnershipTake(value)})"
         }
         if (type is IrType.Array) return "(call \$${ownershipDropName(type)} ${emitOwnershipTake(value)})"
+        if (type is IrType.Function) return "(call \$${ownershipDropName(type)} ${emitOwnershipTake(value)})"
         check(type is IrType.Pointer) { "purge of $type is not supported by the WebAssembly target" }
         check(type.inner !is IrType.Named || (type.inner as IrType.Named).name !in structs) {
             "owned pack pointee destruction is not supported by the WebAssembly target"
@@ -1584,9 +1615,33 @@ class WasmCodegen {
     }.first
 
     private fun renderOwnershipDrop(name: String, rawType: IrType): String {
+        if (rawType is IrType.Function) {
+            val body = StringBuilder("  (func \$$name (param \$self i32) (local \$env i32) (local \$refs i32)\n")
+            body.append("    (if (local.get \$self) (then\n")
+            body.append("      (local.set \$env (i32.load offset=4 (local.get \$self)))\n")
+            body.append("      (local.set \$refs (i32.sub (i32.load (local.get \$env)) (i32.const 1)))\n")
+            body.append("      (i32.store (local.get \$env) (local.get \$refs))\n")
+            body.append("      (if (i32.eqz (local.get \$refs)) (then\n")
+            for (closure in closureFunctions) {
+                body.append("        (if (i32.eq (i32.load offset=4 (local.get \$env)) (i32.const ${closure.index})) (then\n")
+                for (capture in closure.captures.asReversed()) {
+                    if (capture.byRef) continue
+                    val inner = (capture.type as? IrType.Nullable)?.inner ?: capture.type
+                    val owned = inner is IrType.Function || inner is IrType.Array ||
+                        (inner is IrType.Named && (inner.name in structs || inner.name in specTables))
+                    if (!owned) continue
+                    val drop = ownershipDropName(inner)
+                    body.append("          (call \$$drop (i32.load offset=${capture.offset} (local.get \$env)))\n")
+                }
+                body.append("        ))\n")
+            }
+            body.append("        (call \$__free (local.get \$env))))\n")
+            body.append("      (call \$__free (local.get \$self))))\n  )\n")
+            return body.toString()
+        }
         if (rawType is IrType.Array) {
             val child = (rawType.element as? IrType.Nullable)?.inner ?: rawType.element
-            val owned = child is IrType.Array || (child is IrType.Named && (child.name in structs || child.name in specTables))
+            val owned = child is IrType.Array || child is IrType.Function || (child is IrType.Named && (child.name in structs || child.name in specTables))
             val body = StringBuilder("  (func \$$name (param \$self i32) (local \$i i32)\n")
             body.append("    (if (local.get \$self) (then\n")
             if (owned) {
@@ -1624,8 +1679,9 @@ class WasmCodegen {
             val inner = (concrete as? IrType.Nullable)?.inner ?: concrete
             val ownedNamed = inner is IrType.Named && (inner.name in structs || inner.name in specTables)
             val ownedArray = inner is IrType.Array
+            val ownedCallable = inner is IrType.Function
             val ownedPointer = inner is IrType.Pointer && dtor !in functionParams && !type.name.contains("Weak")
-            if (!ownedNamed && !ownedPointer && !ownedArray) continue
+            if (!ownedNamed && !ownedPointer && !ownedArray && !ownedCallable) continue
             if (ownedPointer && (inner as IrType.Pointer).inner is IrType.Named) error("owned pack pointee destruction is not supported by the WebAssembly target")
             val offset = layoutOf(type.name).fields.getValue(field.name).offset
             val address = "(i32.add (local.get \$self) (i32.const $offset))"
@@ -1633,7 +1689,7 @@ class WasmCodegen {
             val value = coerceWasm(read, field.type, concrete)
             body.append("      (local.set \$value $value)\n")
             body.append("      (${wasmStore(field.type)} $address (${wasmType(field.type)}.const 0))\n")
-            val drop = if (ownedNamed || ownedArray) ownershipDropName(inner) else "__free"
+            val drop = if (ownedNamed || ownedArray || ownedCallable) ownershipDropName(inner) else "__free"
             body.append("      (call \$$drop (local.get \$value))\n")
         }
         body.append("      (call \$__free (local.get \$self))))\n  )\n")
@@ -1767,13 +1823,15 @@ class WasmCodegen {
 
         val closure = newTemp("i32")
         val environment = newTemp("i32")
-        val environmentSize = captures.lastOrNull()?.let { it.offset + if (it.byRef) 4 else wasmSize(it.type) } ?: 0
+        val environmentSize = captures.lastOrNull()?.let { it.offset + if (it.byRef) 4 else wasmSize(it.type) } ?: 8
         val sb = StringBuilder("(block (result i32)\n")
         val pad = "  ".repeat(indent + 1)
         if (environmentSize == 0) {
             sb.append("$pad(local.set $environment (i32.const 0))\n")
         } else {
             sb.append("$pad(local.set $environment (call \$__alloc (i32.const $environmentSize)))\n")
+            sb.append("$pad(i32.store (local.get $environment) (i32.const 1))\n")
+            sb.append("$pad(i32.store offset=4 (local.get $environment) (i32.const $index))\n")
             for (capture in captures) {
                 val address = wasmAddress(environment, capture.offset)
                 if (capture.byRef) {
@@ -1826,11 +1884,11 @@ class WasmCodegen {
                 boxedLocals[capture.name] = box
                 line("(local.set \$$box (i32.load ${wasmAddress("\$__env", capture.offset)}))")
             } else {
-                declareLocal(capture.name, capture.type)
-                line(
-                    "(local.set \$${capture.name} " +
-                        "(${wasmLoad(capture.type)} ${wasmAddress("\$__env", capture.offset)}))",
-                )
+                val box = "__capture_value_${capture.name}"
+                declareLocal(box, IrType.Int)
+                localIrTypes[capture.name] = capture.type
+                boxedLocals[capture.name] = box
+                line("(local.set \$$box ${wasmAddress("\$__env", capture.offset)})")
             }
         }
         for (stmt in closure.lambda.body) emitStmt(stmt)
@@ -1856,7 +1914,7 @@ class WasmCodegen {
         collectDeclaredNames(lambda.body, declared)
         collectReferencedVars(lambda.body, references)
 
-        var offset = 0
+        var offset = 8
         return references
             .filterKeys { it !in declared && it in localIrTypes }
             .map { (name, type) ->

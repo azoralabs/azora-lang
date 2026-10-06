@@ -7089,7 +7089,8 @@ class Parser(
             // rather than called through, so writing one costs what writing its
             // body there would.
             check(TokenType.INLINE) &&
-                peekNext()?.type in setOf(TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.IDENTIFIER) -> {
+                peekNext()?.type in setOf(TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.IDENTIFIER,
+                    TokenType.REACT, TokenType.ASYNC, TokenType.ESCAPING) -> {
                 advance()
                 val callable = parseTypeAtom()
                 (callable as? TypeRef.Function)?.copy(isInline = true)

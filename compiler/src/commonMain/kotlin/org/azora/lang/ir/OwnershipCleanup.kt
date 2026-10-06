@@ -6,21 +6,30 @@ package org.azora.lang.ir
  * null-safe cleanup path. The function's own owners are registered as defers:
  * user defers reached later still see their owners alive. */
 object OwnershipCleanup {
-    fun lower(program: IrProgram): IrProgram = program.copy(items = program.items.map { item ->
+    fun lower(program: IrProgram): IrProgram {
+        val functions = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }.associateBy { it.name }
+        return program.copy(items = program.items.map { item ->
         when (item) {
-            is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body().lower(item.function.body, root = true)))
-            is IrTopLevel.Test -> item.copy(body = Body().lower(item.body, root = true))
+            is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(functions).lower(
+                item.function.body, root = true, initialOwners = item.function.params.mapIndexedNotNull { i, (name, type) ->
+                    if (type is IrType.Function && i !in item.function.refParams) IrExpr.Var(name, type) else null
+                },
+            )))
+            is IrTopLevel.Test -> item.copy(body = Body(functions).lower(item.body, root = true))
             else -> item
         }
-    })
+        })
+    }
 
-    private class Body {
-        private data class Frame(val owners: MutableList<IrExpr.Var>, val root: Boolean, val loop: Boolean, val label: String?, val delayed: Boolean)
+    private class Body(val functions: Map<String, IrFunction>) {
+        private data class Frame(val owners: MutableList<IrExpr.Var>, val root: Boolean, val loop: Boolean, val label: String?, val delayed: Boolean, val aliases: MutableMap<String, IrExpr.Var> = mutableMapOf())
         private val frames = mutableListOf<Frame>()
         private var temporary = 0
         private fun purge(value: IrExpr) = IrStmt.ExprStmt(IrExpr.Call("__purge", listOf(value), IrType.Unit))
         private fun cleanup(frames: List<Frame>) = frames.asReversed().filterNot { it.delayed }.flatMap { it.owners.asReversed().map(::purge) }
         private fun owned(name: String) = frames.asReversed().flatMap { it.owners }.firstOrNull { it.name == name }
+        private fun origin(value: IrExpr.Var): IrExpr.Var? = owned(value.name)
+            ?: frames.asReversed().firstNotNullOfOrNull { it.aliases[value.name] }
 
         fun lower(stmts: List<IrStmt>, root: Boolean = false, loop: Boolean = false, label: String? = null, initialOwners: List<IrExpr.Var> = emptyList()): List<IrStmt> {
             val frame = Frame(initialOwners.toMutableList(), root, loop, label, stmts.any { it is IrStmt.Defer })
@@ -29,6 +38,13 @@ object OwnershipCleanup {
             initialOwners.forEach { result += IrStmt.Defer(listOf(purge(it))) }
             for (raw in stmts) {
                 val stmt = expressions(raw)
+                val alias = when (stmt) {
+                    is IrStmt.VarDecl -> stmt.name to stmt.initializer
+                    is IrStmt.FinDecl -> stmt.name to stmt.initializer
+                    is IrStmt.LetDecl -> stmt.name to stmt.initializer
+                    else -> null
+                }
+                if (alias?.second is IrExpr.Var) origin(alias.second as IrExpr.Var)?.let { frame.aliases[alias.first] = it }
                 val declaration = when (stmt) {
                     is IrStmt.VarDecl -> if (stmt.ownsValue && !stmt.lazy && stmt.reactiveLifetime == null) IrExpr.Var(stmt.name, stmt.type) else null
                     is IrStmt.FinDecl -> if (stmt.ownsValue && !stmt.lazy && stmt.reactiveLifetime == null) IrExpr.Var(stmt.name, stmt.type) else null
@@ -46,8 +62,9 @@ object OwnershipCleanup {
                 when (stmt) {
                     is IrStmt.Return -> {
                         val value = stmt.value
-                        val transfer = if (value is IrExpr.Var && owned(value.name) != null)
-                            IrExpr.Call("__take", listOf(value), value.type) else value
+                        val owner = (value as? IrExpr.Var)?.let(::origin)
+                        val transfer = if (owner != null)
+                            IrExpr.Call("__take", listOf(owner), value!!.type) else value
                         val nestedCleanup = cleanup(frames.filterNot { it.root })
                         if (transfer != null && (transfer !== value || nestedCleanup.isNotEmpty())) {
                             val name = "__owner_return_${temporary++}"
@@ -57,6 +74,8 @@ object OwnershipCleanup {
                         } else result += stmt
                     }
                     is IrStmt.Assignment -> {
+                        frames.asReversed().firstOrNull { stmt.name in it.aliases }?.aliases?.remove(stmt.name)
+                        (stmt.value as? IrExpr.Var)?.let(::origin)?.let { frame.aliases[stmt.name] = it }
                         val owner = owned(stmt.name)
                         if (owner == null) result += stmt else {
                             // Evaluate before dropping the old value; `x = take x`
@@ -116,9 +135,14 @@ object OwnershipCleanup {
         }
 
         private fun expression(expr: IrExpr, task: Boolean = false): IrExpr = when (expr) {
-            is IrExpr.Call -> expr.copy(args = expr.args.map { expression(it, task = expr.name == "async" || expr.name == "__launch") }, receiver = expr.receiver?.let { expression(it) })
+            is IrExpr.Call -> expr.copy(args = expr.args.mapIndexed { i, value ->
+                val argument = expression(value, task = expr.name == "async" || expr.name == "__launch")
+                val callee = functions[expr.name]
+                if (callee != null && callee.params.getOrNull(i)?.second is IrType.Function && i !in callee.refParams)
+                    copyCallablePlace(argument) else argument
+            }, receiver = expr.receiver?.let { expression(it) })
             is IrExpr.StructCtor -> expr.copy(args = expr.args.map { expression(it) })
-            is IrExpr.MethodCall -> expr.copy(target = expression(expr.target), args = expr.args.map { expression(it) })
+            is IrExpr.MethodCall -> expr.copy(target = expression(expr.target), args = expr.args.map { copyCallablePlace(expression(it)) })
             is IrExpr.ArrayLiteral -> expr.copy(elements = expr.elements.map { expression(it) })
             is IrExpr.TupleLit -> expr.copy(elements = expr.elements.map { expression(it) })
             is IrExpr.Binary -> expr.copy(left = expression(expr.left), right = expression(expr.right))
@@ -133,9 +157,16 @@ object OwnershipCleanup {
                 val captures = if (task) expr.captureInitializers.mapNotNull { (name, value) ->
                     if (value.type is IrType.Named || value.type is IrType.Pointer || value.type is IrType.Nullable) IrExpr.Var(name, value.type) else null
                 } else emptyList()
-                expr.copy(body = Body().lower(expr.body, root = true, initialOwners = captures))
+                val parameters = expr.params.take((expr.type as IrType.Function).params.size).mapNotNull { (name, type) ->
+                    if (type is IrType.Function) IrExpr.Var(name, type) else null
+                }
+                expr.copy(body = Body(functions).lower(expr.body, root = true, initialOwners = captures + parameters))
             }
             else -> expr
         }
+
+        private fun copyCallablePlace(value: IrExpr): IrExpr =
+            if (value.type is IrType.Function && (value is IrExpr.Var || value is IrExpr.Member || value is IrExpr.Index))
+                IrExpr.Call("__isolated", listOf(value), value.type) else value
     }
 }

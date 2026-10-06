@@ -125,8 +125,9 @@ class SemanticPipeline(
      * @return a [SemanticResult] containing the stabilized AST, symbol table,
      *   effect info, and any errors or warnings
      */
-    fun analyze(program: Program, defines: Map<String, String> = emptyMap()): SemanticResult {
+    fun analyze(program: Program, defines: Map<String, String> = emptyMap(), retainSemanticFacts: Boolean = false): SemanticResult {
         val table = SymbolTable()
+        table.semanticFacts.enabled = retainSemanticFacts
         val allErrors = mutableListOf<String>()
         // CLI `-D NAME=VAL` overrides parsed to compile-time literals, merged into
         // the top-level constant pool so `config.az` flags are user-overridable.

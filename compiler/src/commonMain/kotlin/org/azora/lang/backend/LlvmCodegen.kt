@@ -1035,6 +1035,13 @@ class LlvmCodegen {
 
     private fun emitDeferred(failing: Boolean) {
         if (emittingDefers || deferSlots.isEmpty()) return
+        val exitLocals = localVars.toMap()
+        // Every defer is emitted at every exit, including exits preceding its
+        // registration. Its guard prevents execution there, but the body still
+        // needs valid addresses for locals declared later in source order.
+        for ((key, address) in allocaSlots) {
+            if (key.first !in localVars) localVars[key.first] = address to key.second
+        }
         emittingDefers = true
         try {
             for (slot in deferSlots.asReversed()) {
@@ -1065,6 +1072,8 @@ class LlvmCodegen {
             }
         } finally {
             emittingDefers = false
+            localVars.clear()
+            localVars.putAll(exitLocals)
         }
     }
 
@@ -2265,6 +2274,110 @@ class LlvmCodegen {
         return closure
     }
 
+    private fun closureLifetimeHelpers() {
+        ownershipDrops.getOrPut("closure-lifetime") {
+            deferredFunctions += """
+define void @__azora_closure_env_retain(i8* %env) {
+entry:
+  %null = icmp eq i8* %env, null
+  br i1 %null, label %end, label %retain
+retain:
+  %slot.raw = getelementptr i8, i8* %env, i64 -8
+  %slot = bitcast i8* %slot.raw to i64*
+  %count = atomicrmw add i64* %slot, i64 1 seq_cst
+  br label %end
+end:
+  ret void
+}
+define void @__azora_closure_env_release(i8* %env) {
+entry:
+  %null = icmp eq i8* %env, null
+  br i1 %null, label %end, label %release
+release:
+  %slot.raw = getelementptr i8, i8* %env, i64 -8
+  %slot = bitcast i8* %slot.raw to i64*
+  %count = atomicrmw sub i64* %slot, i64 1 seq_cst
+  %last = icmp eq i64 %count, 1
+  br i1 %last, label %destroy, label %end
+destroy:
+  call void @__azora_free(i8* %env)
+  br label %end
+end:
+  ret void
+}
+""".trimIndent()
+            "__azora_closure_env_release"
+        }
+    }
+
+    private fun registerClosureContextDrop(raw: String, contextType: String, captures: List<Capture>, lambda: IrExpr.Lambda) {
+        closureLifetimeHelpers()
+        val key = "closure-context:$contextType"
+        val name = ownershipDrops.getOrPut(key) {
+            val symbol = "__azora_drop_context_${ownershipDrops.size}"
+            val body = StringBuilder("define void @$symbol(i8* %raw, i64 %count) {\nentry:\n")
+            body.appendLine("  %context = bitcast i8* %raw to $contextType*")
+            for (i in captures.indices.reversed()) {
+                val capture = captures[i]
+                if (capture.byRef) continue
+                val inner = (capture.type as? IrType.Nullable)?.inner ?: capture.type
+                val owned = inner is IrType.Function || inner is IrType.Array || inner is IrType.Pointer ||
+                    (inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots))
+                if (!owned || !capture.llvmType.endsWith("*")) continue
+                body.appendLine("  %field.$i = getelementptr $contextType, $contextType* %context, i32 0, i32 $i")
+                body.appendLine("  %value.$i = load ${capture.llvmType}, ${capture.llvmType}* %field.$i")
+                body.appendLine("  store ${capture.llvmType} null, ${capture.llvmType}* %field.$i")
+                body.appendLine("  %raw.$i = bitcast ${capture.llvmType} %value.$i to i8*")
+                body.appendLine("  call void @__azora_free(i8* %raw.$i)")
+            }
+            body.appendLine("  ret void\n}")
+            deferredFunctions += body.toString()
+            symbol
+        }
+        emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* @$name, i64 1)")
+    }
+
+    private fun registerClosureDrop(raw: String) {
+        closureLifetimeHelpers()
+        val name = ownershipDrops.getOrPut("closure-wrapper") {
+            val symbol = "__azora_drop_closure_${ownershipDrops.size}"
+            deferredFunctions += """
+define void @$symbol(i8* %raw, i64 %count) {
+entry:
+  %closure = bitcast i8* %raw to %azora.closure*
+  %slot = getelementptr %azora.closure, %azora.closure* %closure, i32 0, i32 1
+  %env = load i8*, i8** %slot
+  store i8* null, i8** %slot
+  call void @__azora_closure_env_release(i8* %env)
+  ret void
+}
+""".trimIndent()
+            symbol
+        }
+        emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* @$name, i64 1)")
+    }
+
+    private fun isolatedClosureCopy(value: String): String {
+        usesAllocatorRuntime = true
+        lateTypeDefinitions.add(CLOSURE_TYPE_DEFINITION)
+        closureLifetimeHelpers()
+        val raw = emitHeapAlloc("16")
+        registerClosureDrop(raw)
+        val closure = nextTmp()
+        emit("  $closure = bitcast i8* $raw to %azora.closure*")
+        for (i in 0..1) {
+            val source = nextTmp()
+            val field = nextTmp()
+            val item = nextTmp()
+            emit("  $source = getelementptr %azora.closure, %azora.closure* $value, i32 0, i32 $i")
+            emit("  $item = load i8*, i8** $source")
+            emit("  $field = getelementptr %azora.closure, %azora.closure* $closure, i32 0, i32 $i")
+            emit("  store i8* $item, i8** $field")
+            if (i == 1) emit("  call void @__azora_closure_env_retain(i8* $item)")
+        }
+        return closure
+    }
+
     private fun closureFunctionType(type: IrType.Function): String {
         val params = listOf("i8*") + (type.params + type.receivers).map(::mapType)
         return "${abiReturnType(type.ret)} (${params.joinToString(", ")})"
@@ -2300,8 +2413,6 @@ class LlvmCodegen {
             emit("  %env = bitcast i8* %env.raw to $contextType*")
             captures.forEachIndexed { index, capture ->
                 val field = nextTmp()
-                val value = nextTmp()
-                val slot = nextTmp()
                 emit("  $field = getelementptr $contextType, $contextType* %env, i32 0, i32 $index")
                 if (capture.byRef) {
                     // The environment holds the original binding's address, so the
@@ -2311,10 +2422,9 @@ class LlvmCodegen {
                     emit("  $pointer = load ${capture.fieldType}, ${capture.fieldType}* $field, align 1")
                     localVars[capture.name] = pointer to capture.llvmType
                 } else {
-                    emit("  $value = load ${capture.llvmType}, ${capture.llvmType}* $field, align 1")
-                    emit("  $slot = alloca ${capture.llvmType}")
-                    emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $slot")
-                    localVars[capture.name] = slot to capture.llvmType
+                    // Owned captures reside in the environment. Moving a capture
+                    // empties that slot, and subsequent calls see its new value.
+                    localVars[capture.name] = field to capture.llvmType
                 }
             }
         }
@@ -3214,8 +3324,8 @@ end:
         val ft = mapType(from)
         val tt = mapType(to)
         if (ft == tt) return value
-        val fromInt = IrType.isInteger(from) || from == IrType.Char
-        val toInt = IrType.isInteger(to) || to == IrType.Char
+        val fromInt = IrType.isInteger(from) || from == IrType.Char || from == IrType.Bool
+        val toInt = IrType.isInteger(to) || to == IrType.Char || to == IrType.Bool
         val fromFloat = from in IrType.floatTypes
         val toFloat = to in IrType.floatTypes
         val fromPtr = ft.endsWith("*")
@@ -6751,7 +6861,7 @@ allocate:
     private fun sanitizeName(name: String): String =
         name.map { if (it.isLetterOrDigit() || it == '_') it else '_' }.joinToString("")
 
-    private fun nextTmp(): String = "%${tmpCounter++}"
+    private fun nextTmp(): String = "%t${tmpCounter++}"
 
     private fun nextLabel(prefix: String): String = "$prefix.${labelCounter++}"
 

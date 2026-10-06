@@ -259,7 +259,7 @@ internal object IrSymbolCanonicalizer {
             is IrType.Variant -> type.copy(elements = type.elements.map(::type))
             is IrType.Nullable -> type.copy(inner = type(type.inner))
             is IrType.Pointer -> type.copy(inner = type(type.inner))
-            is IrType.Named -> type.copy(name = symbol(type.name))
+            is IrType.Named -> type.copy(name = symbol(type.name), args = type.args.map(::type))
             else -> type
         }
 

@@ -4,6 +4,21 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class FoundationGenericBranchExecTest {
+    @Test fun discardedInlineGenericResultDoesNotReturnFromItsCaller() {
+        val source = """
+            import std.io
+            inline func<T> label(value: T): String { return T.typeName }
+            func main() {
+                label<Int>(3)
+                println(7)
+            }
+        """.trimIndent()
+        for (release in listOf(false, true)) {
+            val result = kotlin.test.assertIs<org.azora.lang.CompilationResult.Success>(org.azora.lang.Compiler().compile(source, release = release))
+            assertEquals("7", org.azora.lang.backend.IrInterpreter().interpret(result.ir).trim())
+            if (LlvmExec.available) assertEquals("7", LlvmExec.run(source, release))
+        }
+    }
     @Test fun packMethodsSpecializeCompileTimeIntegerPredicatesEvenWithUniformFields() {
         if (!LlvmExec.available) return
         val source = """

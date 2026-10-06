@@ -65,7 +65,7 @@ react func main() {
 
         # A non-ASCII prefix separates UTF-16 source offsets from UTF-8 editor
         # positions. Studio must receive the actual compiler's exact token span.
-        invalid = 'module smoke\nimport std.io\nfunc main() { println("é🙂"); println(missing) }\n'
+        invalid = 'module smoke\nimport std.io\nfunc main() { println("é🙂" + missing) }\n'
         entry.write_text(invalid)
         run("check", entry, success=False)
         snapshot = json.loads(run("analyze", entry, "--version=37"))

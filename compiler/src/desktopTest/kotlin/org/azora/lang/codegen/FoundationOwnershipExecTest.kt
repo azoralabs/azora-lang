@@ -9,6 +9,43 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class FoundationOwnershipExecTest {
+    @Test fun genericCloneCallsProduceIndependentConcreteValues() = agrees("""
+        import std.io
+        import std.traits::Clone
+        pack Value derives Clone { var number: Int }
+        pack Holder<T> { var value: T }
+        func<T: Clone> cloned(value: T&): T { return value.clone() }
+        func<T: Clone> snapshot(holder: Holder<T>&, ignored: Int): T { return cloned(holder.value) }
+        func main() {
+            var original = Value(7)
+            var explicit = cloned<Value>(original)
+            explicit.number = 9
+            var inferred = cloned(original)
+            inferred.number = 11
+            println(original.number)
+            println(explicit.number)
+            println(inferred.number)
+            var holder = Holder<Value>(Value(13))
+            var copy = snapshot(holder, 0)
+            copy.number = 17
+            println(holder.value.number)
+            println(copy.number)
+        }
+    """, "7\n9\n11\n13\n17")
+    @Test fun genericBoolAndNestedFieldArgumentsKeepTheirRuntimeType() = agrees("""
+        import std.io
+        import std.memory.shared
+        pack Box<T> { var value: T }
+        pack Holder<T> { var nested: Box<T> }
+        func main() {
+            var active = sharedOf(true)
+            if active.get { println(1) }
+            active.set(false)
+            if !active.get { println(2) }
+            var holder = Holder<Box<Bool>>(Box<Box<Bool>>(Box<Bool>(true)))
+            if holder.nested.value.value { println(3) }
+        }
+    """, "1\n2\n3")
     private fun agrees(source: String, expected: String) {
         for (release in listOf(false, true)) {
             val compiled = Compiler().compile(source.trimIndent(), release = release)
@@ -17,6 +54,50 @@ class FoundationOwnershipExecTest {
             if (LlvmExec.available) assertEquals(expected, LlvmExec.run(source.trimIndent(), release), "LLVM release=$release")
         }
     }
+
+    @Test fun copiedClosureHandlesReleaseMovedCapturesOnlyAfterTheLastOwner() = agrees("""
+        import std.io
+        pack Value { var id: Int }
+        impl Value { dtor .() { println(99) } }
+        func make(): () -> Int {
+            var value = Value(17)
+            return [take value] { value.id }
+        }
+        func main() {
+            var first = make()
+            var second = first
+            println(second())
+            purge first
+            println(second())
+            purge second
+        }
+    """, "17\n17\n99")
+
+    @Test fun ownedClosureCaptureMutationPersistsAcrossCalls() = agrees("""
+        import std.io
+        func main() {
+            var counter = 0
+            fin next = [counter] { counter += 1
+                counter }
+            println(next())
+            println(next())
+        }
+    """, "1\n2")
+
+    @Test fun subscriptionDisposalCanOutliveItsObservedState() = agrees("""
+        import std.io
+        import std.reactive
+        func make(): Subscription {
+            var source = state(1)
+            return observe(source) { value: Int -> println(value) }
+        }
+        func main() {
+            var subscription = make()
+            subscription.dispose()
+            subscription.dispose()
+            println(2)
+        }
+    """, "1\n2")
 
     @Test fun earlyReturnBeforeConstructionDoesNotReadAnUninitializedOwner() = agrees("""
         import std.io
@@ -84,7 +165,10 @@ class FoundationOwnershipExecTest {
         import std.io
         pack Value { var id: Int }
         impl Value { dtor .() { println(self.id) } }
-        variant enum Item { Empty; Held(value: Value) }
+        variant enum Item {
+            Empty
+            Held(value: Value)
+        }
         func make(): Item {
             var value = Value(7)
             return Item.Held(take value)

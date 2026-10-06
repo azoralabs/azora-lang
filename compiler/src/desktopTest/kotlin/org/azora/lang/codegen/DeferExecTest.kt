@@ -18,6 +18,23 @@ import kotlin.test.assertIs
  * runs only on a failing exit. A `return`'s value is computed before them.
  */
 class DeferExecTest {
+    @Test fun anEarlyExitCanPrecedeALocalCapturedByALaterDefer() {
+        val source = """
+            import std.io
+            func work(early: Bool): Int {
+                if early { return 7 }
+                fin value = 8
+                defer { println(value) }
+                return 9
+            }
+            func main() { println(work(true))
+                println(work(false)) }
+        """.trimIndent()
+        val result = assertIs<CompilationResult.Success>(Compiler().compile(source))
+        assertEquals("7\n8\n9", IrInterpreter().interpret(result.ir).trim())
+        if (LlvmExec.available) for (release in listOf(false, true)) assertEquals("7\n8\n9", LlvmExec.run(source, release))
+        if (WasmExec.available) assertEquals("7\n8\n9", WasmExec.run(source).trim())
+    }
     private val program = """
         import std.io
         error E { Bad }

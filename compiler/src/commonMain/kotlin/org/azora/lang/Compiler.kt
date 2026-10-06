@@ -36,6 +36,7 @@ import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.InferredTypeArgs
 import org.azora.lang.semantic.InlineCallables
 import org.azora.lang.semantic.SemanticPipeline
+import org.azora.lang.semantic.SemanticFacts
 import org.azora.lang.semantic.Witnesses
 import org.azora.lang.semantic.SemanticRedundantVariantQualifier
 import org.azora.lang.semantic.SemanticSymbolNamespace
@@ -114,6 +115,7 @@ import org.azora.lang.stdlib.UnresolvedTypeAccess
  */
 sealed class CompilationResult {
     abstract val diagnostics: List<AzoraDiagnostic>
+    abstract val semanticFacts: SemanticFacts
     /**
      * Successful compilation result containing all generated outputs and metadata.
      *
@@ -136,6 +138,7 @@ sealed class CompilationResult {
         override val diagnostics: List<AzoraDiagnostic> = emptyList(),
         /** A target with an entry here has no executable output. Semantic checking can still succeed. */
         val backendErrors: Map<String, String> = emptyMap(),
+        override val semanticFacts: SemanticFacts = SemanticFacts(),
     ) : CompilationResult()
 
     /**
@@ -146,6 +149,7 @@ sealed class CompilationResult {
     data class Failure(
         val errors: List<String>,
         override val diagnostics: List<AzoraDiagnostic> = emptyList(),
+        override val semanticFacts: SemanticFacts = SemanticFacts(),
     ) : CompilationResult()
 }
 
@@ -175,6 +179,7 @@ data class LibrarySource(
  */
 class Compiler(
     private val librarySources: List<LibrarySource> = emptyList(),
+    private val analysisSources: List<SourceUnit> = emptyList(),
 ) {
 
     private fun sourceSpan(
@@ -373,6 +378,7 @@ class Compiler(
         val diagnostics = mutableListOf<AzoraDiagnostic>()
         var program: Program? = null
         var blocked = false
+        val facts = mutableListOf<SemanticFacts>()
         for (rootId in roots.sortedBy { it.value }) {
             if (request.cancellation.isCancelled()) throw AnalysisCancelledException()
             val root = byId[rootId] ?: continue
@@ -381,7 +387,7 @@ class Compiler(
                 .filter { it.id != rootId }
                 .map { LibrarySource(it.displayPath, it.text, validateModulePath = false) }
                 .toList()
-            val result = Compiler(librarySources + workspaceLibraries).compileSource(
+            val result = Compiler(librarySources + workspaceLibraries, request.sources).compileSource(
                 root,
                 request.policy.warningsAsErrors,
                 release = false,
@@ -391,6 +397,7 @@ class Compiler(
                 reportUnreachableLibraryWarnings = request.mode != AnalysisMode.IDE,
             )
             diagnostics += result.diagnostics
+            facts += result.semanticFacts
             when (result) {
                 is CompilationResult.Success -> if (program == null) program = result.ast
                 is CompilationResult.Failure -> blocked = true
@@ -407,7 +414,8 @@ class Compiler(
             diagnostics = diagnostics
                 .take(request.policy.maximumDiagnostics)
                 .sortedWith(compareBy({ byId[it.primary.span.source]?.uri.orEmpty() }, { it.primary.span.start.value }, { it.code.value })),
-            completeness = if (blocked) AnalysisCompleteness.BLOCKED else AnalysisCompleteness.COMPLETE,
+            completeness = if (!blocked) AnalysisCompleteness.COMPLETE else if (facts.any { value -> value.occurrences.any { it.type != null || it.symbol != null } }) AnalysisCompleteness.PARTIAL else AnalysisCompleteness.BLOCKED,
+            semanticFacts = SemanticFacts.merge(facts),
         )
     }
 
@@ -676,6 +684,7 @@ class Compiler(
         var semantic = SemanticPipeline().analyze(
             InferredTypeArgs.apply(Witnesses.addDescriptorFields(ast)),
             defines = defines,
+            retainSemanticFacts = !generateBackends,
         )
         // A tuple's behaviour is specialized for the shapes the program uses it
         // on, which only type resolution can say - so it says, and analysis runs
@@ -694,10 +703,25 @@ class Compiler(
             semantic = SemanticPipeline().analyze(
                 InferredTypeArgs.apply(Witnesses.addDescriptorFields(specialized.program)),
                 defines = defines,
+                retainSemanticFacts = !generateBackends,
             )
         }
         val shorthandDiagnostics = semantic.redundantVariantQualifiers.map {
             redundantVariantQualifierDiagnostic(sourceUnit, it)
+        }
+        // Tooling retains successful resolutions even when a later expression
+        // has errors. Written source programs supply locations, not bindings.
+        val facts = if (generateBackends) SemanticFacts() else {
+            val written = mutableListOf(sourceUnit to rawAst)
+            for (source in analysisSources.filter { it.id != sourceUnit.id }) {
+                try {
+                    written += source to Parser(Lexer(source.text).tokenize()).parse()
+                } catch (_: IllegalStateException) {
+                    // An unusable unrelated workspace unit has no proven facts.
+                } catch (_: IllegalArgumentException) {
+                }
+            }
+            SemanticFacts.from(semantic.symbolTable, written, sourceUnit.id)
         }
 
         // A library source nothing here imports was skipped rather than fatal;
@@ -738,6 +762,7 @@ class Compiler(
             return CompilationResult.Failure(
                 errors = renderedErrors,
                 diagnostics = unresolvedDiagnostics + remainingDiagnostics + shorthandDiagnostics,
+                semanticFacts = facts,
             )
         }
         if (warningsAsErrors && warnings.isNotEmpty()) {
@@ -751,7 +776,14 @@ class Compiler(
                         defaultStage = DiagnosticStage.SEMANTIC,
                     )
                 },
+                semanticFacts = facts,
             )
+        }
+
+        if (!generateBackends) {
+            val emptyIr = IrProgram(semantic.program.moduleName, emptyList())
+            return CompilationResult.Success("", "", semantic.program, emptyIr, emptyIr,
+                semantic.effects, warnings, diagnostics = shorthandDiagnostics, semanticFacts = facts)
         }
 
         // ===============================================================
@@ -803,6 +835,7 @@ class Compiler(
             warnings,
             diagnostics = shorthandDiagnostics,
             backendErrors = backendErrors,
+            semanticFacts = facts,
         )
     }
 }

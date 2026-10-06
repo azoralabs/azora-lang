@@ -31,6 +31,7 @@ import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.frontend.Capture
 import org.azora.lang.frontend.CaptureExclusion
 import org.azora.lang.frontend.CaptureMode
+import org.azora.lang.frontend.CallableKind
 import org.azora.lang.frontend.CastKind
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.arrayCallLiteral
@@ -138,17 +139,32 @@ class TypeResolver(private val table: SymbolTable) {
         is Expr.SetLiteral -> value.elements.flatMap(::escapingBorrows)
         is Expr.InferredMember -> value.ctorArgs.orEmpty().flatMap(::escapingBorrows)
         is Expr.Call -> {
-            val function = table.lookupFunction(value.callee)
-            if (table.lookupStruct(value.callee) != null || value.callee in setOf("tuple", "var")) {
+            val struct = table.lookupStruct(value.callee)
+            val probe = if (struct != null) {
+                (value.args.size..value.args.size + 8).firstNotNullOfOrNull {
+                    table.lookupFunction(ctorFactorySymbol(value.callee, it))
+                } ?: (value.args.size downTo 1).firstNotNullOfOrNull {
+                    table.lookupFunction(ctorFactorySymbol(value.callee, it))?.takeIf { f -> f.isVariadic }
+                }
+            } else null
+            val factory = probe?.let {
+                table.lookupFunction(ctorFactorySymbol(value.callee, it.params.size - it.contextualParams)) ?: it
+            }?.takeIf { f -> f.params.take(f.contextualParams).all { (_, t) ->
+                contextualValues.any { frame -> frame.values.any { it.second == t } }
+            } }
+            val function = factory ?: table.lookupFunction(value.callee)
+            if ((struct != null && factory == null) || value.callee in setOf("tuple", "var")) {
                 value.args.flatMap(::escapingBorrows)
             } else if (function?.returnType?.let(::mayStoreClosure) == true) {
-                value.args.flatMapIndexed { index, argument ->
+                val arguments = if (factory != null) bindCtorArguments(value, factory)?.toList().orEmpty() else value.args
+                arguments.flatMapIndexed { index, argument ->
                     val expected = function.params.getOrNull(index + function.contextualParams)?.second
                     // A non-escaping callback may be invoked synchronously to
                     // produce data (sequence/flow builders). Its declaration's
                     // body is checked for escapes; its input borrows are not a
                     // lifetime obligation of that produced data.
-                    if (expected is IrType.Function && !expected.isEscaping) emptyList() else escapingBorrows(argument)
+                    if (argument == null || (expected is IrType.Function && !expected.isEscaping)) emptyList()
+                    else escapingBorrows(argument)
                 }
             } else emptyList()
         }
@@ -228,6 +244,7 @@ class TypeResolver(private val table: SymbolTable) {
         }.groupBy({ it.first }, { it.second })
 
     fun resolve(program: Program): List<String> {
+        table.semanticFacts.reset()
         stableArraySizes.clear()
         closureBorrows.clear()
         this.program = program
@@ -368,6 +385,7 @@ class TypeResolver(private val table: SymbolTable) {
                 for (method in item.methods) {
                     val mangled = "${item.typeName}_${method.name}"
                     val func = table.lookupFunction(mangled) ?: continue
+                    val previousFactOwner = table.semanticFacts.enterOwner(func.name, method.line)
                     table.pushScope()
                     for ((index, param) in func.params.withIndex()) {
                         val (name, type) = param
@@ -381,6 +399,7 @@ class TypeResolver(private val table: SymbolTable) {
                         table.defineVariable(
                             VariableSymbol(name, type, mutable = mutable, sharedBorrow = shared, receiver = isReceiver),
                         )
+                        table.lookupVariable(name)?.let { table.semanticFacts.declaration(it, method.line) }
                         if (type is IrType.Function && !type.isEscaping) {
                             table.lookupVariable(name)?.let { closureBorrows.add(it to listOf(ClosureBorrow(name, null, method.line))) }
                         }
@@ -407,7 +426,9 @@ class TypeResolver(private val table: SymbolTable) {
                             listOf(
                                 Expr.Identifier("self", method.line, method.column) to
                                     (receiverTupleType ?: IrType.Named(item.typeName)),
-                            ),
+                            ) + func.params.drop(1).take(method.contextualParams).map { (name, type) ->
+                                Expr.Identifier(name, method.line, method.column) to type
+                            },
                             prefersMembers = false,
                         ),
                     )
@@ -447,6 +468,7 @@ class TypeResolver(private val table: SymbolTable) {
                     reactiveContext = savedReactive
                     asyncContext = savedAsync
                     table.popScope()
+                    table.semanticFacts.leaveOwner(previousFactOwner)
                 }
             }
         }
@@ -561,6 +583,7 @@ class TypeResolver(private val table: SymbolTable) {
             signatureValid = false
         }
         if (!signatureValid) return
+        val previousFactOwner = table.semanticFacts.enterOwner(symbol.name, func.line)
 
         table.pushScope()
 
@@ -581,6 +604,7 @@ class TypeResolver(private val table: SymbolTable) {
             val ref = func.params.getOrNull(i)?.type as? TypeRef.Named
             table.defineVariable(VariableSymbol(name, type, mutable, sharedBorrow = shared,
                 nonNullGeneric = ref?.name in func.typeParams))
+            table.lookupVariable(name)?.let { table.semanticFacts.declaration(it, func.line) }
             if (type is IrType.Function && !type.isEscaping) {
                 table.lookupVariable(name)?.let { closureBorrows.add(it to listOf(ClosureBorrow(name, null, func.line))) }
             }
@@ -634,6 +658,7 @@ class TypeResolver(private val table: SymbolTable) {
         declaredFailSets = savedFailSets
 
         table.popScope()
+        table.semanticFacts.leaveOwner(previousFactOwner)
     }
 
     /** Error sets declared by the function currently being resolved. */
@@ -1370,10 +1395,7 @@ class TypeResolver(private val table: SymbolTable) {
         referring: IrType.Named,
         declared: IrType,
     ): IrType {
-        if (referring.args.isEmpty() || struct.typeParams.isEmpty()) return declared
-        val position = struct.field(fieldName)?.typeParamIndex ?: -1
-        if (position < 0 || position >= referring.args.size) return declared
-        return referring.args[position]
+        return struct.field(fieldName)?.let { instantiateField(struct, referring, it) } ?: declared
     }
 
     /**
@@ -2448,6 +2470,12 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     private fun resolveExpr(expr: Expr): IrType? {
+        val type = resolveExprInner(expr)
+        if (table.semanticFacts.enabled) table.semanticFacts.expression(expr, type, table.visibleVariables())
+        return type
+    }
+
+    private fun resolveExprInner(expr: Expr): IrType? {
         return when (expr) {
             // Reached with no expected type: `.Name` on its own says nothing.
             is Expr.InferredMember -> resolveInferredMember(expr, null)
@@ -2519,7 +2547,10 @@ class TypeResolver(private val table: SymbolTable) {
                             null
                         }
                     }
-                } else sym.type
+                } else {
+                    table.semanticFacts.reference(expr, sym)
+                    sym.type
+                }
             }
             is Expr.UpperScopeAccess -> {
                 val selectedScope = table.variableScopeIndexInUpperScope(expr.name, expr.depth)
@@ -2838,6 +2869,7 @@ class TypeResolver(private val table: SymbolTable) {
                                     errors.add("line ${expr.line}: arg ${i + 1} of '${expr.callee}': expected ${expected.shown()}, got ${actual.shown()}")
                                 }
                             }
+                            table.semanticFacts.callable(expr, factory)
                             return factory.returnType
                         }
                     }
@@ -3001,6 +3033,7 @@ class TypeResolver(private val table: SymbolTable) {
                     return IrType.String
                 }
                 val func = table.lookupFunction(expr.callee)
+                if (func != null) table.semanticFacts.callable(expr, func)
                 if (func == null) {
                     // Maybe a lambda stored in a variable.
                     val v = table.lookupVariable(expr.callee)
@@ -3633,6 +3666,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = table.lookupMethod(targetType.name, expr.name)
                     if (mangled != null) {
                         val func = instantiateMember(table, targetType, table.lookupFunction(mangled)!!)
+                        table.semanticFacts.callable(expr, func, targetType)
                         if (!requireReactiveCaller(func, expr.line)) return null
                 if (!requireTestCaller(func.name, expr.line)) return null
                         if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
@@ -3992,6 +4026,8 @@ class TypeResolver(private val table: SymbolTable) {
             }
             is Expr.Cast -> {
                 resolveExpr(expr.expr) ?: return null
+                if ((expr.targetType as? TypeRef.Reference)?.kind == TypeRef.RefKind.MUTABLE &&
+                    !checkValueMutable(expr.expr, expr.line, "borrow mutably through a reference cast")) return null
                 val target = resolveDeclaredType(expr.targetType)
                 // A dynamic cast (`x as? T`) may fail, so its result is `T?`.
                 if (expr.kind == CastKind.DYNAMIC && target !is IrType.Nullable) IrType.Nullable(target) else target
@@ -6289,6 +6325,7 @@ class TypeResolver(private val table: SymbolTable) {
             table.lookupVariable(name)?.let { rememberArraySize(it, initializer, initType) }
         }
         rememberClosureBorrows(table.lookupVariable(name), initializer)
+        table.lookupVariable(name)?.let { table.semanticFacts.declaration(it, line) }
         movedBindings.remove(name)
         // `let m: User! = user.!` - the borrow now lives as long as `m` does,
         // rather than ending with the expression that made it.

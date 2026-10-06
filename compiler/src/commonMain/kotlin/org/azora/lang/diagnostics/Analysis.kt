@@ -10,6 +10,7 @@ package org.azora.lang.diagnostics
 import kotlin.jvm.JvmInline
 
 import org.azora.lang.frontend.Program
+import org.azora.lang.semantic.SemanticFacts
 
 @JvmInline value class AnalysisSnapshotId(val value: String)
 
@@ -49,6 +50,7 @@ data class AnalysisSnapshot(
     val program: Program?,
     val diagnostics: List<AzoraDiagnostic>,
     val completeness: AnalysisCompleteness,
+    val semanticFacts: SemanticFacts = SemanticFacts(),
 )
 
 interface DiagnosticSink {

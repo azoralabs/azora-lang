@@ -643,7 +643,7 @@ impl Serializer<Duration> for DurationSerializer {
         var fields: ArrayList<SerialField> = .()
         fields.add(SerialField("seconds", SerialValue.Number(value.seconds as String)))
         fields.add(SerialField("nanosecondAdjustment", SerialValue.Number(value.nanosecondAdjustment as String)))
-        return SerialValue.Object(fields)
+        return SerialValue.Object(take fields)
     }
 
     func &.fromSerialValue(value: SerialValue&): Duration ?! SerializationError {

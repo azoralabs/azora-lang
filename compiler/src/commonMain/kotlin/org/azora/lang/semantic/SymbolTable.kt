@@ -252,6 +252,8 @@ data class TraitConformance(
  * with inner scopes shadowing outer ones.
  */
 class SymbolTable {
+    /** Resolution observations retained before function-local scopes are popped. */
+    val semanticFacts = SemanticFactRecorder()
 
     private val functions = mutableMapOf<String, FunctionSymbol>()
     private val scopes = ArrayDeque<MutableMap<String, VariableSymbol>>()
@@ -673,6 +675,11 @@ class SymbolTable {
      */
     fun defineVariable(symbol: VariableSymbol) {
         scopes.last()[symbol.name] = symbol
+    }
+
+    /** An immutable snapshot with the innermost binding winning each spelling. */
+    fun visibleVariables(): Map<String, VariableSymbol> = buildMap {
+        scopes.forEach { putAll(it) }
     }
 
     /**

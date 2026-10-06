@@ -10,6 +10,35 @@ import kotlin.test.assertTrue
 
 class ConstructorResultTest {
     companion object {
+        val returnedTree = """
+            import std.io
+            import std.traits::Copy
+            pack Entity derives Copy { var id: Int }
+            pack NodeScope { var next: Int = 0 }
+            pack Caption
+            impl Caption {
+                react ctor (context: NodeScope!).(text: String): Entity {
+                    context.next += 1
+                    println(text)
+                    return Entity(context.next)
+                }
+            }
+            pack Group
+            impl Group {
+                react ctor (context: NodeScope!).(children: inline react NodeScope!.() -> Unit): Entity {
+                    Caption("parent")
+                    using context { children() }
+                    return Entity(context.next)
+                }
+            }
+            react func build(context: NodeScope!, text: String): Entity {
+                using context { return Group { Caption(text) } }
+            }
+            react func main() {
+                var context = NodeScope()
+                println(build(context, "child").id)
+            }
+        """.trimIndent()
         val tree = """
             import std.io
             pack NodeScope { var next: Int = 0 }
@@ -48,6 +77,11 @@ class ConstructorResultTest {
                 println(zero)
             }
         """.trimIndent()
+    }
+
+    @Test fun returnedConstructorTreeDoesNotRetainSynchronousChildBorrows() {
+        val result = assertIs<CompilationResult.Success>(Compiler().compile(returnedTree))
+        assertEquals("parent\nchild\n2", IrInterpreter().interpret(result.ir).trim())
     }
 
     @Test fun contextualConstructorsBuildNestedTreesAndPreserveDeclaredResults() {

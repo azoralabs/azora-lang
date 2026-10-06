@@ -1785,13 +1785,18 @@ class StdlibInjector private constructor(
                     val module = declaringModule(item, name)
                     val key = identityKey(module, name)
                     if (scopeModule != null) walk.bindings.getOrPut(scopeModule) { mutableMapOf() }[name] = key
-                    if (key in walk.injected) continue
+                    if (key in walk.injected) {
+                        // Already present, but this module may use extensions
+                        // the earlier reference could not see.
+                        attachImplsForType(item, name, walk, next, scopeModule)
+                        continue
+                    }
                     walk.add(key, item, module, next)
-                    attachImplsForType(item, name, walk, next)
+                    attachImplsForType(item, name, walk, next, scopeModule)
                     attachStaticMembersForType(name, module, walk, next)
                     continue
                 }
-                attachImplsForType(null, name, walk, next)
+                attachImplsForType(null, name, walk, next, scopeModule)
                 if (name !in walk.externs) {
                     index.externs[name]?.let { walk.externs[name] = it }
                 }
@@ -1910,7 +1915,9 @@ class StdlibInjector private constructor(
         is TopLevel.Deco -> "deco:${item.name}"
         is TopLevel.Slot -> "slot:${item.name}"
         is TopLevel.Meta -> "meta:${item.name}"
-        is TopLevel.Impl -> "impl:${item.typeName}:${item.traitName.orEmpty()}:${item.line}:${item.column}"
+        // Two modules can each implement a type at the same line and column:
+        // a type's own impl and an extension elsewhere are different blocks.
+        is TopLevel.Impl -> "impl:${item.declaringModule.orEmpty()}:${item.typeName}:${item.traitName.orEmpty()}:${item.line}:${item.column}"
         is TopLevel.Bridge -> "bridge:${item.target}:" +
             item.funcs.joinToString(",") { it.localName ?: it.name } + ":" +
             item.values.joinToString(",") { it.name }
@@ -2188,16 +2195,52 @@ class StdlibInjector private constructor(
         }
     }
 
+    /** Member and method names a library [module]'s own source uses. */
+    private val moduleMemberNames = mutableMapOf<String, Set<String>>()
+
+    private fun memberNamesUsedBy(module: String): Set<String> = moduleMemberNames.getOrPut(module) {
+        val names = mutableSetOf<String>()
+        val saved = memberSink
+        memberSink = names
+        try {
+            programs.filter { it.moduleName == module }.forEach { program ->
+                program.items.forEach { collectNamesFromItem(it, names) }
+            }
+        } finally {
+            memberSink = saved
+        }
+        names
+    }
+
+    /** Set while [memberNamesUsedBy] walks a module; receives `x.name` member names. */
+    private var memberSink: MutableSet<String>? = null
+
+    /** The modules a library [module]'s own imports reach. */
+    private val moduleImportReach = mutableMapOf<String, Set<String>>()
+
+    private fun importedModulesOf(module: String): Set<String> = moduleImportReach.getOrPut(module) {
+        index.importsOfModule[module].orEmpty().flatMapTo(mutableSetOf()) { request ->
+            resolveSelectedLibraryPath(request.path)?.first?.let { listOf(it) } ?: modulesForPath(request.path)
+        }
+    }
+
     /**
      * Pulls in the impls on a type. An impl belongs to [type] when its own module
      * names that declaration by the impl's type name - a same-named type from
      * another module keeps its impls to itself.
      */
-    private fun attachImplsForType(type: TopLevel?, typeName: String, walk: Walk, next: MutableList<Ref>) {
+    private fun attachImplsForType(type: TopLevel?, typeName: String, walk: Walk, next: MutableList<Ref>, scope: String? = null) {
         val keys = linkedSetOf(typeName, normalizedTypeName(typeName))
         // The type's own module implements it wherever the type goes, including
         // when a library, not the program, is what brought it in.
         val home = type?.let { declaringModule(it, typeName) }
+        // A library module calls the free extensions (`func Type&.m()`) of the
+        // modules it imports, whether or not the program imports those modules
+        // itself - but only the ones it names: a module importing `std.time`
+        // for a `Duration` must not drag in every unit suffix on `Long` and
+        // their whole dependency closure. Other impls keep the
+        // program-reachability rule above.
+        val scopeImports = scope?.let(::importedModulesOf).orEmpty()
         for (keyName in keys) {
             index.implsByType[keyName]?.filter { impl ->
                 // An impl on a widely-used type (`Int`, `String`) must not arrive
@@ -2205,7 +2248,9 @@ class StdlibInjector private constructor(
                 // extension in an unimported module would otherwise drag its whole
                 // module's transitive closure into every program. A module the
                 // program cannot see contributes nothing it could have called.
-                (impl.declaringModule == null || impl.declaringModule in walk.reachable || impl.declaringModule == home) &&
+                (impl.declaringModule == null || impl.declaringModule in walk.reachable || impl.declaringModule == home ||
+                    (scope != null && impl.isExtension && (impl.declaringModule in scopeImports || impl.declaringModule == scope) &&
+                        impl.methods.any { it.name in memberNamesUsedBy(scope) })) &&
                     (type == null || implTarget(impl)?.let { it === type } ?: true)
             }?.forEach { impl ->
                 // Include the member names: a multi-operator impl (`oper[.. , >..]`)
@@ -2684,8 +2729,14 @@ class StdlibInjector private constructor(
             }
             is Expr.Unary -> collectNamesFromExpr(expr.operand, names)
             is Expr.Grouping -> collectNamesFromExpr(expr.expr, names)
-            is Expr.Member -> collectNamesFromExpr(expr.target, names)
-            is Expr.SafeMember -> collectNamesFromExpr(expr.target, names)
+            is Expr.Member -> {
+                memberSink?.add(expr.name)
+                collectNamesFromExpr(expr.target, names)
+            }
+            is Expr.SafeMember -> {
+                memberSink?.add(expr.name)
+                collectNamesFromExpr(expr.target, names)
+            }
             is Expr.Index -> {
                 collectNamesFromExpr(expr.target, names)
                 collectNamesFromExpr(expr.index, names)

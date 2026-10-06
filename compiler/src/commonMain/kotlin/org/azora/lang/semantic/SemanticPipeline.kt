@@ -147,7 +147,9 @@ class SemanticPipeline(
         // BEFORE symbol collection. This flattens conditional function
         // declarations so SymbolCollector can see them.
         // ---------------------------------------------------------------
-        var currentProgram = program
+        // An implementation written with its own parameter names is typed by
+        // its pack's (`impl Box<U>` for `pack Box<T>`).
+        var currentProgram = ImplParameterAligner.align(program)
         val topLevelCtfe = CtfeEvaluator(table)
         val topResult = topLevelCtfe.evaluateTopLevel(currentProgram)
         allErrors.addAll(topResult.errors)

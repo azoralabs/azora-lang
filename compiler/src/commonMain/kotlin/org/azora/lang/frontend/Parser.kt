@@ -4053,12 +4053,38 @@ class Parser(
             is TypeRef.Reference -> namedTypeName(t.inner) to t.kind.paramModifier
             else -> namedTypeName(t) to decl.receiverModifier
         }
+        // `func<T> Box<T>.unwrap(): T` means what `impl Box<T> { func .unwrap(): T }`
+        // means: the receiver's own arguments are the implementation's
+        // parameters, so a call on a `Box<Int>` answers an Int. Only a parameter
+        // the receiver binds completely moves - one with a `where` bound stays
+        // the function's, where its witness is passed.
+        val target = ((recv.type as? TypeRef.Reference)?.inner ?: recv.type) as? TypeRef.Named
+        val bounded = mutableSetOf<String>()
+        fun collectBounded(clause: Expr?) {
+            when (clause) {
+                is Expr.IsCheck -> (clause.expr as? Expr.Identifier)?.let { bounded += it.name }
+                is Expr.Binary -> { collectBounded(clause.left); collectBounded(clause.right) }
+                is Expr.Grouping -> collectBounded(clause.expr)
+                else -> {}
+            }
+        }
+        collectBounded(decl.whereClause)
+        val receiverParams = target?.args
+            ?.map { arg -> (arg as? TypeRef.Named)?.takeIf { it.args.isEmpty() && it.qualifier == null && !it.variadic }?.name }
+            ?.takeIf { names -> names.isNotEmpty() && names.all { it != null && it in decl.typeParams && it !in bounded } && names.toSet().size == names.size }
+            ?.filterNotNull()
+            .orEmpty()
         val method = decl.copy(
             receiverModifier = modifier,
             receiverName = recv.name,
             extensionReceiver = null,
+            typeParams = decl.typeParams - receiverParams.toSet(),
         )
-        return TopLevel.Impl(typeName, listOf(method), null, decl.line, decl.column, isExtension = true)
+        return TopLevel.Impl(
+            typeName, listOf(method), null, decl.line, decl.column,
+            isExtension = true,
+            typeParams = receiverParams,
+        )
     }
 
     /** The bare type name of a (possibly generic) named type ref, for extension targets. */
@@ -5937,9 +5963,13 @@ class Parser(
             parseImplicitMemberReceiver() ?: parseExplicitMemberReceiver() ?: parseTypedMemberReceiver()
         } else {
             if (check(TokenType.AMP) || check(TokenType.BANG) || check(TokenType.DOT)) {
+                // Show the spelling with the author's own sigil and member name.
+                val sigil = if (check(TokenType.DOT)) "" else peek().lexeme
+                val member = tokens.getOrNull(current + if (sigil.isEmpty()) 1 else 2)
+                    ?.takeIf { it.type == TokenType.IDENTIFIER }?.lexeme ?: "member"
                 error(
                     "line ${peek().line}: '&.', '!.' and '.' receiver shorthands require an impl or spec; " +
-                        "a free extension names its receiver, for example 'func (self: Type&).member()'",
+                        "a free extension writes its receiver type, for example 'func Type$sigil.$member()'",
                 )
             }
             parseExplicitMemberReceiver() ?: parseTypedMemberReceiver()
@@ -5964,7 +5994,7 @@ class Parser(
         if (check(TokenType.L_BRACKET)) {
             error(
                 "line ${peek().line}: function receivers no longer use brackets; " +
-                    "write 'func &.$name(…)' in an impl or 'func (self: Type&).$name(…)' for an extension",
+                    "write 'func &.$name(…)' in an impl or 'func Type&.$name(…)' for an extension",
             )
         }
         if (!inImplBlock) {
@@ -8745,6 +8775,31 @@ class Parser(
             advance() // '.'
             return PropReceiver("self", type, ParamModifier.NONE, borrowWritten = false)
         }
+        // `Box<T>.member` - the owned receiver of a generic type. Its argument
+        // list closes immediately before the dot; `func Box<T>(…)`, the
+        // misplaced type-parameter list diagnosed later, never does.
+        if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.LESS) {
+            var close = current + 1
+            var depth = 0
+            while (close < tokens.size) {
+                when (tokens[close].type) {
+                    TokenType.LESS -> depth++
+                    TokenType.GREATER -> depth--
+                    TokenType.SHIFT_RIGHT -> depth -= 2
+                    TokenType.L_PAREN, TokenType.L_BRACE, TokenType.NEWLINE, TokenType.EOF -> break
+                    else -> {}
+                }
+                if (depth <= 0) break
+                close++
+            }
+            if (depth == 0 && tokens.getOrNull(close + 1)?.type == TokenType.DOT &&
+                tokens.getOrNull(close + 2)?.type == TokenType.IDENTIFIER
+            ) {
+                val type = parseTypeName(allowReceiverCallable = false)
+                consume(TokenType.DOT, "Expected '.' between extension receiver and member name")
+                return PropReceiver("self", type, ParamModifier.NONE, borrowWritten = false)
+            }
+        }
         var i = current
         var angleDepth = 0
         var found = false
@@ -8752,6 +8807,7 @@ class Parser(
             when (tokens[i].type) {
                 TokenType.LESS -> angleDepth++
                 TokenType.GREATER -> if (angleDepth > 0) angleDepth--
+                TokenType.SHIFT_RIGHT -> angleDepth = if (angleDepth > 2) angleDepth - 2 else 0
                 TokenType.AMP, TokenType.BANG -> {
                     if (angleDepth == 0 && tokens.getOrNull(i + 1)?.type == TokenType.DOT) found = true
                     break
@@ -8846,7 +8902,7 @@ class Parser(
         // The receiver is optional here: a top-level `prop name: T = …` with nothing
         // to extend is a constant, as used by receiver-free implementation members.
         if (check(TokenType.L_BRACKET)) {
-            error("property receivers no longer use brackets; write 'prop &.$name: T' or 'prop (self: Type&).$name: T' at line ${peek().line}")
+            error("property receivers no longer use brackets; write 'prop &.$name: T' or 'prop Type&.$name: T' at line ${peek().line}")
         }
         val receiver = prefixReceiver ?: PropReceiver("self", null, ParamModifier.SHARED)
         requireObservingReceiver(receiver, name, start.line)

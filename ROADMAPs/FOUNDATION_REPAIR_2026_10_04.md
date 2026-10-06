@@ -194,7 +194,33 @@ not destroy components in its registered storages (recursive field destruction).
 Known compiler gaps recorded by the Studio work, not yet repaired:
 - An explicit-type-argument call to a `Clone`-bounded generic is specialised;
   an inline `store(pass)` argument inside it then folds `T.typeName` to `"T"`.
-- Free extension members do not resolve from another module.
 - A program function named like an LLVM runtime helper (e.g. `isDigit`)
   collides at link time.
 - `"${x}"` with a single interpolated value does not copy `x`.
+
+## Receiver spelling and extension visibility — 2026-10-06
+
+FUNCTIONS_DIP §5.3 is implemented end to end and the codebase uses it: one
+receiver is written as its type (`func Type&.m()`, `func Type!.m()`,
+`func Type.m()`, `prop Type&.p`), several unnamed ones as `(A&, B&).m()` read
+through `self.0`, `self.1`. Repairs, each covered by `ReceiverSpellingExecTest`
+(interpreter and LLVM) or `ReceiverShorthandTest`:
+
+- Owned generic receivers parse (`func<T> Box<T>.unwrap(): T`); `>>` closes two
+  levels in receiver heads (`Box<List<T>>&.m()`).
+- A generic extension behaves as `impl Box<T> { … }`: the receiver's arguments
+  are the implementation's parameters, so a call on `Box<Int>` answers `Int`.
+  Implementations that name a pack's parameters differently (`impl Box<U>` for
+  `pack Box<T>`) are aligned to the declaration before symbol collection; they
+  previously typed every member against an unknown `U`.
+- Extensions declared in a module other than their type's are visible wherever
+  that module is imported, including from library modules. Two library impls at
+  the same line and column were deduplicated as one; their identity now includes
+  the declaring module. A library module admits an imported extension only when
+  it uses one of its member names, so importing `std.time` for `Duration` does
+  not inject every unit suffix and its dependency closure.
+- Diagnostics recommend `func Type&.m()` / `prop Type&.p`.
+- `std.serializer`'s decoder borrows its options (`fin options: SerializerOptions&`)
+  instead of storing a borrowed value by ownership; exposed once the wider
+  visibility injected it into an Engine build.
+

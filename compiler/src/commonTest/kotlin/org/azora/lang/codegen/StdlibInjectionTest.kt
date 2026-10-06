@@ -546,7 +546,7 @@ class StdlibInjectionTest {
         val result = Compiler(listOf(modelLibrary)).compile("""
             import std.io
             import lib.model
-            prop (self: Model&).leaked: Double = self._secret
+            prop Model&.leaked: Double = self._secret
             func main() {
                 println(Model(3.0, 1.0).leaked)
             }
@@ -562,7 +562,7 @@ class StdlibInjectionTest {
         val result = Compiler(listOf(modelLibrary)).compile("""
             import std.io
             import lib.model
-            prop (self: Model&).doubled: Double = self.width * 2.0
+            prop Model&.doubled: Double = self.width * 2.0
             func main() {
                 fin m = Model(3.0, 1.0)
                 println(m.doubled)

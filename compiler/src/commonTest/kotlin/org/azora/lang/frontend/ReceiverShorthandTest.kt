@@ -24,7 +24,9 @@ import kotlin.test.assertTrue
 /**
  * Inside an `impl` the receiver's type is never in question, so it may be left
  * out: `&.member` and `!.member` declare read-only and mutable borrows;
- * `(self: Self&).member` spells the receiver name and type explicitly.
+ * `(self: Self&).member` spells the receiver name and type explicitly. Outside
+ * one, a single receiver is written as its type (`Type&.member`) and several as
+ * an unnamed group (`(A&, B&).member`, read as `self.0`, `self.1`).
  *
  * ```
  * impl A {
@@ -114,12 +116,40 @@ class ReceiverShorthandTest {
         assertEquals(listOf("scale"), x.params.take(x.contextualParams).map { it.name })
     }
 
+    @Test fun aFreeFunctionWritesItsReceiverAsAType() {
+        val items = Parser(
+            Lexer(
+                """
+                func Gauge&.read(): Int { return 1 }
+                func Gauge!.reset() {}
+                func Ticket.redeem() {}
+                func<T> Box<T>.unwrap(): T { return take self.value }
+                func<T> Box<List<T>>&.depth(): Int { return 2 }
+                func (A&, B&).merge() {}
+                """.trimIndent(),
+            ).tokenize(),
+        ).parse().items.filterIsInstance<TopLevel.Impl>()
+        val byName = items.associate { impl -> impl.methods.single().name to impl }
+        assertEquals(ParamModifier.SHARED, byName.getValue("read").methods.single().receiverModifier)
+        assertEquals(ParamModifier.EXCLUSIVE, byName.getValue("reset").methods.single().receiverModifier)
+        assertEquals(ParamModifier.NONE, byName.getValue("redeem").methods.single().receiverModifier)
+        assertEquals("Box", byName.getValue("unwrap").typeName)
+        assertEquals(listOf("T"), byName.getValue("unwrap").typeParams, "the receiver's arguments parameterise the impl")
+        assertEquals(ParamModifier.NONE, byName.getValue("unwrap").methods.single().receiverModifier)
+        assertEquals("Box", byName.getValue("depth").typeName)
+        for (name in listOf("read", "reset", "redeem", "unwrap", "depth")) {
+            assertEquals("self", byName.getValue(name).methods.single().receiverName, name)
+        }
+        assertEquals("__receiver0", byName.getValue("merge").methods.single().receiverName)
+        assertEquals(1, byName.getValue("merge").methods.single().contextualParams)
+    }
+
     @Test fun removedBracketReceiversHaveAMigrationDiagnostic() {
         val message = assertFailsWith<Exception> {
             member(impl("func x[other&]() {}"), "x")
         }.message.orEmpty()
         assertTrue("receivers no longer use brackets" in message, message)
-        assertTrue("func &.x" in message && "func (self: Type&).x" in message, message)
+        assertTrue("func &.x" in message && "func Type&.x" in message, message)
     }
 
     @Test fun theShorthandIsOnlyForBodiesThatKnowTheirSelf() {
@@ -127,7 +157,7 @@ class ReceiverShorthandTest {
         val message = assertFailsWith<Exception> {
             Parser(Lexer("func &.x() {}").tokenize()).parse()
         }.message.orEmpty()
-        assertTrue("require an impl or spec" in message && "(self: Type&).member" in message, message)
+        assertTrue("require an impl or spec" in message && "func Type&.x()" in message, message)
     }
 
     @Test fun aSpecMemberTakesTheShorthand() {

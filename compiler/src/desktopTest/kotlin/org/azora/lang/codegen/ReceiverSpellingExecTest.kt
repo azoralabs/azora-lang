@@ -58,6 +58,27 @@ class ReceiverSpellingExecTest {
         func main() { println(Box<Int>(7).unwrap()) }
     """))
 
+    @Test fun aGenericReceiverInstantiatesTheResultFromItsArguments() = assertEquals("8\n9\n10\nab", run("""
+        import std.io
+        pack Box<T> { var value: T }
+        pack Pair<A, B> { var first: A
+            var second: B }
+        func<U> Box<U>&.peek(): U { return self.value }
+        func<U> Box<U>!.swap(value: U): U {
+            fin old = self.value
+            self.value = value
+            return old
+        }
+        func<X, Y> Pair<X, Y>&.right(): Y { return self.second }
+        func main() {
+            var box = Box<Int>(8)
+            println(box.peek())
+            println(box.swap(9) + 1)
+            println(box.peek() + 1)
+            println("a" + Pair<Int, String>(1, "b").right())
+        }
+    """))
+
     @Test fun unnamedReceiversArePositionsOfSelf() = assertEquals("30\n21", run("""
         import std.io
         pack A { var a: Int = 1 }
@@ -94,6 +115,29 @@ class ReceiverSpellingExecTest {
             module lib.style
             import lib.kinds
             func Measure&.twice(): Measure { return self.plus(self.amount) }
+        """.trimIndent()),
+    )))
+
+    @Test fun aLibraryModuleCallsTheExtensionsItImports() = assertEquals("6.0", run("""
+        import std.io
+        import lib.panel
+        func main() { println(sized()) }
+    """, listOf(
+        LibrarySource("lib/kinds.az", """
+            module lib.kinds
+            pack Measure { var amount: Double = 0.0 }
+            impl Measure { func &.plus(v: Double): Measure { return Measure(self.amount + v) } }
+        """.trimIndent()),
+        LibrarySource("lib/style.az", """
+            module lib.style
+            import lib.kinds
+            func Measure&.tripled(): Measure { return self.plus(self.amount * 2.0) }
+        """.trimIndent()),
+        LibrarySource("lib/panel.az", """
+            module lib.panel
+            import lib.kinds
+            import lib.style
+            func sized(): Double { return Measure(2.0).tripled().amount }
         """.trimIndent()),
     )))
 

@@ -496,7 +496,8 @@ func decodeSerialValue(
 pack _SerialReader {
     var input: String
     var index: Int
-    fin options: SerializerOptions
+    /** The caller's limits, read for the length of one decode. */
+    fin options: SerializerOptions&
 }
 
 impl _SerialReader {

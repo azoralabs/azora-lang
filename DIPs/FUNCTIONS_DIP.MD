@@ -424,7 +424,10 @@ func<T, U> (first: T&, second: U&).hello() {} // multiple receivers
 - Bare `T` transfers ownership into the call. Unless the function returns or
   stores the value in an allowed destination, it is consumed when the call
   finishes.
-- The full form names and types every receiver inside `(...)`.
+- The full form names and types every receiver inside `(...)`. A single
+  receiver named `self` is written as its type instead: `func T&.hello()`
+  (§5.3); the compiler's diagnostics and the codebase use that spelling.
+  Several unnamed receivers are `(T&, U&).hello()`, read as `self.0`, `self.1`.
 - `self` is conventional, not required. `(type: T&)` binds the receiver as
   `type`; it does not synthesize an additional `self` name.
 - Multiple explicitly named receivers preserve their declared order and are
@@ -506,7 +509,9 @@ allow it.
 A receiver group is either entirely named (`name: Type`) or entirely unnamed
 (`Type`). Mixing the two forms is rejected. A one-entry unnamed receiver is
 written without parentheses (`T&.read()`); the formatter diagnoses or rewrites
-the redundant `(T&).read()` form. If the intended single receiver is itself a
+the redundant `(T&).read()` form. A generic receiver's arguments are the
+implementation's parameters, exactly as in `impl Box<T>`: `func<T> Box<T>.unwrap(): T`
+called on a `Box<Int>` answers an `Int`, whatever the parameter is named. If the intended single receiver is itself a
 tuple type, use the named form to remove ambiguity:
 `func (self: (T, U)&).inspect()`.
 
@@ -594,7 +599,7 @@ receivers.
 A returned borrow identifies its origin as usual:
 
 ```azora
-func (self: Buffer&).first(): Byte&|self|
+func Buffer&.first(): Byte&|self|
 func<A, B> (left: A&, right: B&).choose(flag: Bool): Item&|left, right|
 ```
 
@@ -789,7 +794,7 @@ delimiter).
 | `pack<T> Box` | `pack Box<T>` |
 | `ref T` / `mut ref T` | `T&` / `T!` |
 | `ref self` / `mut ref self` | `(self: Self&)` / `(self: Self!)`, or `&.` / `!.` in an impl/spec |
-| `func method()[self: Type&]` or `func [self: Type&].method()` | `func (self: Type&).method()` or `func Type&.method()` |
+| `func method()[self: Type&]` or `func [self: Type&].method()` | `func Type&.method()` (or the named `func (self: Type&).method()`) |
 | `prop name[self: Self&]: T` | `prop &.name: T` |
 | bracket-delimited borrow origins | `T&|self|` / `T!|source|` |
 | `T!E` / `T![A, B]` | `T ?! E` / `T ?! [A, B]` |

@@ -5988,7 +5988,7 @@ class Parser(
             returnTypeDeclared = false
             TypeAnnotation.Inferred
         }
-        val funcWhereClause = parseWhereClause()
+        val funcWhereClause = withInlineBounds(typeParamsBefore.boundClause, parseWhereClause(), start.line)
         val minVariadicLength = variadicMinLengthOf(funcWhereClause)
         // A receiver is part of the declaration signature. Function bodies never
         // introduce receivers; `func read[self: Self&]()` is the sole spelling.
@@ -6678,7 +6678,16 @@ class Parser(
         val typeDefaults: Map<String, TypeRef> = emptyMap(),
         /** Parameters written `T::` - the member they drive is a static. */
         val staticParams: Set<String> = emptySet(),
+        /** `<T: Clone>` - the inline form of `where T: Clone`, as the clause it means. */
+        val boundClause: Expr? = null,
     )
+
+    /** [inline] and [written] bounds as one where clause, inline ones first. */
+    private fun withInlineBounds(inline: Expr?, written: Expr?, line: Int): Expr? = when {
+        inline == null -> written
+        written == null -> inline
+        else -> Expr.Binary(inline, TokenType.AND_AND, written, line)
+    }
 
     /** `<T, U>` type-parameter list. A parameter may be variadic via the `...T` prefix form, or a const value param via `N: Int`. */
     private fun parseTypeParams(): TypeParams {
@@ -6690,6 +6699,7 @@ class Parser(
         val typeDefaults = mutableMapOf<String, TypeRef>()
         val staticParams = mutableSetOf<String>()
         val constEnums = mutableMapOf<String, String>()
+        var boundClause: Expr? = null
         var variadic: String? = null
         do {
             val prefixVariadic = match(TokenType.ELLIPSIS) // `...T` prefix form
@@ -6710,6 +6720,7 @@ class Parser(
             //  - `T: Spec` → a conformance constraint (accepted, not yet enforced).
             var constEnum: String? = null
             if (match(TokenType.COLON)) {
+                val at = peek()
                 val constraint = parseTypeName()
                 val constraintName = (constraint as? TypeRef.Named)?.name
                 if (constraintName == "Int") {
@@ -6718,6 +6729,11 @@ class Parser(
                     constParams.add(name)
                     constEnum = constraintName
                     constEnums[name] = constraintName
+                } else if (constraintName != null) {
+                    // A conformance bound means what `where T: Spec` means, so
+                    // generic code sees one shape for both spellings.
+                    val check = Expr.IsCheck(Expr.Identifier(name, at.line, at.column, name.length), constraintName, at.line, at.column)
+                    boundClause = boundClause?.let { Expr.Binary(it, TokenType.AND_AND, check, at.line) } ?: check
                 }
             }
             // `= <default>` - the same slot holds either kind of default:
@@ -6748,7 +6764,7 @@ class Parser(
         // consume a close left by its bound/default, but reject a fresh `>>`.
         if (pendingGreater) pendingGreater = false
         else consume(TokenType.GREATER, "Expected '>' after type parameters")
-        return TypeParams(names, variadic, constParams, constDefaults, constEnums, typeDefaults, staticParams)
+        return TypeParams(names, variadic, constParams, constDefaults, constEnums, typeDefaults, staticParams, boundClause)
     }
 
     /**

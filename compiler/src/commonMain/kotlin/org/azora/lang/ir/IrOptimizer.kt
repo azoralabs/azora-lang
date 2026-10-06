@@ -39,7 +39,12 @@ class IrOptimizer {
      * @param program the unoptimized IR program
      * @return a new [IrProgram] with all optimizations applied
      */
+    /** Function → its borrowed parameters, which a call may write through. */
+    private var borrowedParams: Map<String, Set<Int>> = emptyMap()
+
     fun optimize(program: IrProgram): IrProgram {
+        borrowedParams = program.items.filterIsInstance<IrTopLevel.Func>()
+            .associate { it.function.name to (it.function.refParams + it.function.exclusiveParams) }
         var result = program
         result = constantFold(result)
         result = constantPropagation(result)
@@ -239,6 +244,9 @@ class IrOptimizer {
             // location, and reads of that binding cannot use an old constant.
             forEachIncrement(stmt) { constants.remove(it.target.name) }
             invalidate(constants, collectExchanged(stmt))
+            // A borrowed argument is storage the callee may write: it must stay
+            // a place at the call, and is no longer known afterwards.
+            invalidate(constants, borrowedArguments(stmt))
             // A closure that captures by reference may write the original binding
             // whenever it is called, which is not a write this pass can see. Its
             // referenced captures therefore stop being known constants here - a
@@ -460,6 +468,9 @@ class IrOptimizer {
         stmts.forEach(::visit)
         stmts.forEach { assigned.addAll(collectExchanged(it)) }
         stmts.forEach { stmt -> forEachIncrement(stmt) { assigned.add(it.target.name) } }
+        // An argument for a borrowed parameter may be written by the callee:
+        // `bump(count)` with `n: Int!` changes `count`, so it is not a constant.
+        stmts.forEach { assigned.addAll(borrowedArguments(it)) }
         return assigned
     }
 
@@ -503,6 +514,33 @@ class IrOptimizer {
     }
 
     private var incrementSink: ((IrExpr.IncDec) -> Unit)? = null
+
+    private var callSink: ((IrExpr.Call) -> Unit)? = null
+
+    /** The bindings [stmt] passes, whole or by a field or element, to a borrowed parameter. */
+    private fun borrowedArguments(stmt: IrStmt): Set<String> {
+        val names = mutableSetOf<String>()
+        forEachCall(stmt) { call ->
+            for (index in borrowedParams[call.name].orEmpty()) {
+                var place = call.args.getOrNull(index)
+                while (place is IrExpr.Member || place is IrExpr.Index) {
+                    place = if (place is IrExpr.Member) place.target else (place as IrExpr.Index).target
+                }
+                if (place is IrExpr.Var) names.add(place.name)
+            }
+        }
+        return names
+    }
+
+    private fun forEachCall(stmt: IrStmt, action: (IrExpr.Call) -> Unit) {
+        val saved = callSink
+        callSink = action
+        try {
+            collectReferencedNamesFromStmt(stmt, mutableSetOf())
+        } finally {
+            callSink = saved
+        }
+    }
 
     private fun forEachIncrement(stmt: IrStmt, action: (IrExpr.IncDec) -> Unit) {
         val saved = incrementSink
@@ -973,6 +1011,7 @@ class IrOptimizer {
             is IrExpr.Var -> names.add(expr.name)
             is IrExpr.Call -> {
                 names.add(expr.name)
+                callSink?.invoke(expr)
                 // `purge` runs the value's destructor, found by its type's name.
                 if (expr.name == "__purge") expr.args.forEach { noteMember(it.type, "dtor") }
                 expr.receiver?.let { collectReferencedNamesFromExpr(it, names) }

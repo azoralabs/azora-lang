@@ -2027,11 +2027,25 @@ class IrInterpreter {
                 }
             }
             val result = executeFunction(func, wrappedArgs)
-            // Propagate ref/out mutations back to the caller's variables.
+            // Propagate ref/out mutations back to the caller's variables. An
+            // exclusive borrow of a field or an element writes that place.
             for ((i, cell) in refCells) {
                 val argExpr = expr.args.getOrNull(i)
                 if (argExpr is IrExpr.Var) {
                     assignVar(argExpr.name, cell.value)
+                } else if (i in func.exclusiveParams && argExpr is IrExpr.Member) {
+                    var owner = evalExpr(argExpr.target)
+                    if (owner is Pointer) owner = owner.value
+                    @Suppress("UNCHECKED_CAST")
+                    val map = owner as? MutableMap<String, Any?>
+                    if (map != null) map[unionSlotKey(map) ?: argExpr.name] = cell.value
+                } else if (i in func.exclusiveParams && argExpr is IrExpr.Index) {
+                    val owner = evalExpr(argExpr.target)
+                    if (owner is MutableList<*>) {
+                        @Suppress("UNCHECKED_CAST")
+                        val list = owner as MutableList<Any?>
+                        list[slot(evalExpr(argExpr.index), owner.size)] = cell.value
+                    }
                 }
             }
             return result

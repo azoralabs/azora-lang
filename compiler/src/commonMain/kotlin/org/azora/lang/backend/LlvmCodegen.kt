@@ -110,6 +110,20 @@ class LlvmCodegen {
     /** Declared parameter types per function (user functions + bridge externs), for call-site coercion. */
     private val funcReturnTypes = mutableMapOf<String, IrType>()
     private val funcParamTypes = mutableMapOf<String, List<IrType>>()
+
+    /**
+     * Function → indices of `x!` parameters passed as the address of the
+     * caller's storage. A value copy would lose an assignment, a scalar
+     * update or an array's reallocation; a pack is already a pointer, so
+     * writes through it reach the caller without this.
+     */
+    private val slotParams = mutableMapOf<String, Set<Int>>()
+
+    private fun passesBySlot(type: IrType): Boolean = when (type) {
+        is IrType.Integer, IrType.Bool, IrType.Char, IrType.Double, IrType.Float, IrType.String -> true
+        is IrType.Array, is IrType.Map, is IrType.Set -> true
+        else -> false
+    }
     private val nativeExterns = mutableMapOf<String, IrTopLevel.Extern>()
 
     /** LLVM element types for top-level and thread-local variables. */
@@ -196,6 +210,7 @@ class LlvmCodegen {
     private var usesStrstr = false
     private var usesIsCheck = false
     private var usesMemcpy = false
+    private var usesStackSave = false
     // std.os / std.filesystem native support.
     private var usesGetenv = false
     private var usesAccess = false
@@ -277,6 +292,7 @@ class LlvmCodegen {
         usesStrcat = false
         usesStrcmp = false
         usesMemcpy = false
+        usesStackSave = false
         usesGetenv = false
         usesAccess = false
         usesStdio = false
@@ -338,10 +354,20 @@ class LlvmCodegen {
         for (t in specDispatch.values) {
             for (m in t.methods) deferredFunctions += renderSpecDispatcher(t, m)
         }
+        // Spec implementations are also called through dispatch tables, which
+        // forward plain values, so they keep the value convention.
+        val dispatched = specDispatch.values.flatMap { table -> table.impls.flatMap { it.methodFuncs.values } }.toSet()
         for (item in program.items) {
             when (item) {
                 is IrTopLevel.Func -> {
                     funcParamTypes[item.function.name] = item.function.params.map { it.second }
+                    if (!item.function.isTask && item.function.name !in dispatched && item.function.name != "main") {
+                        item.function.exclusiveParams
+                            .filter { it < item.function.params.size && passesBySlot(item.function.params[it].second) }
+                            .toSet()
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { slotParams[item.function.name] = it }
+                    }
                     // A task's public symbol is its spawner, not its payload body.
                     funcReturnTypes[item.function.name] =
                         if (item.function.isTask && item.function.name != "main") IrType.Task(item.function.returnType)
@@ -568,6 +594,10 @@ class LlvmCodegen {
         if (usesStrncmp) line("declare i32 @strncmp(i8*, i8*, i64)")
         if (usesStrstr) line("declare i8* @strstr(i8*, i8*)")
         if (usesMemcpy) line("declare i8* @memcpy(i8*, i8*, i64)")
+        if (usesStackSave) {
+            line("declare i8* @llvm.stacksave()")
+            line("declare void @llvm.stackrestore(i8*)")
+        }
         if (usesMemset) line("declare i8* @memset(i8*, i32, i64)")
         if (usesGetenv) line("declare i8* @getenv(i8*)")
         if (usesAccess) line("declare i32 @access(i8*, i32)")
@@ -794,16 +824,24 @@ class LlvmCodegen {
         currentReturnType = if (isMain) null else func.returnType
         val retType = if (isMain) "i32" else abiReturnType(func.returnType)
 
-        val params = func.params.joinToString(", ") { (name, type) ->
-            "${mapType(type)} %arg.$name"
+        val bySlot = slotParams[func.name].orEmpty()
+        val params = func.params.withIndex().joinToString(", ") { (index, param) ->
+            val (name, type) = param
+            if (index in bySlot) "${mapType(type)}* %arg.$name" else "${mapType(type)} %arg.$name"
         }
 
         line("define $retType @${func.name}($params) {")
         line("entry:")
 
         // Spill parameters to the stack so they can be referenced (and reassigned).
-        for ((name, type) in func.params) {
+        // A parameter passed by slot already is the caller's storage.
+        for ((index, param) in func.params.withIndex()) {
+            val (name, type) = param
             val t = mapType(type)
+            if (index in bySlot) {
+                localVars[name] = "%arg.$name" to t
+                continue
+            }
             val alloca = nextTmp()
             emit("  $alloca = alloca $t")
             emit("  store $t %arg.$name, $t* $alloca")
@@ -5637,10 +5675,16 @@ end:
             stringIntrinsicOf(it.name) == null && mathIntrinsicOf(it) == null && osIntrinsicBody(it) == null
         }
         if (native != null) NativeAbi.checkSignature(native)
+        val bySlot = if (native == null) slotParams[expr.name].orEmpty() else emptySet()
+        val writeBacks = mutableListOf<() -> Unit>()
         val args = expr.args.mapIndexed { i, arg ->
             val paramType = declared?.getOrNull(i) ?: arg.type
             if (native != null && paramType is IrType.Function) {
                 return@mapIndexed "${nativeType(paramType)} ${emitNativeCallback(arg, paramType)}"
+            }
+            if (i in bySlot) {
+                val type = mapType(paramType)
+                return@mapIndexed "$type* ${emitArgumentSlot(arg, paramType, writeBacks)}"
             }
             val emitted = emitExpr(arg)
             if (native == null) qualifyConcreteOwnership(emitted, arg.type)
@@ -5651,15 +5695,67 @@ end:
         val retType = if (native == null) mapType(physicalReturn) else nativeReturnType(physicalReturn)
         return if (expr.type == IrType.Unit || expr.type == IrType.Nothing) {
             emit("  call void @${expr.name}($args)")
+            writeBacks.asReversed().forEach { it() }
             "void"
         } else {
             val tmp = nextTmp()
             emit("  $tmp = call $retType @${expr.name}($args)")
+            writeBacks.asReversed().forEach { it() }
             if (expr.type is IrType.Task) emitTaskScopeAttach(tmp)
             val result = coerceNumeric(tmp, physicalReturn, expr.type)
             if (native == null) qualifyConcreteOwnership(result, expr.type)
             result
         }
+    }
+
+    /**
+     * The address a `x!` argument is passed by: the variable's own slot, a
+     * field or an array element in place. Storage held in another width (an
+     * erased field), a lazy or reactive binding, or a temporary is copied into
+     * a fresh slot that is written back after the call, so the callee's
+     * writes still reach the place the caller named.
+     */
+    private fun emitArgumentSlot(arg: IrExpr, paramType: IrType, writeBacks: MutableList<() -> Unit>): String {
+        val type = mapType(paramType)
+        val direct: Pair<String, String>? = when (arg) {
+            is IrExpr.Var -> if (arg.name in lazyLocals || (currentFunctionName to arg.name) in reactiveStorage) null
+                else localVars[arg.name] ?: globalVars[arg.name]?.let { "@${arg.name}" to mapType(arg.type) }
+            is IrExpr.Member -> emitFieldPtr(arg.target, arg.name)?.let { it.first to it.third }
+            is IrExpr.Index -> if (arg.target.type !is IrType.Array) null else {
+                val raw = emitExpr(arg.target)
+                val index = indexToI64(emitExpr(arg.index), arg.index.type)
+                emitBoundsCheck(raw, index)
+                val element = mapType(arg.type)
+                val data = nextTmp()
+                emit("  $data = getelementptr i8, i8* $raw, i64 8")
+                val typed = nextTmp()
+                emit("  $typed = bitcast i8* $data to $element*")
+                val address = nextTmp()
+                emit("  $address = getelementptr $element, $element* $typed, i64 $index")
+                address to element
+            }
+            else -> null
+        }
+        if (direct != null && direct.second == type) return direct.first
+        // Copy in, call, copy out. The slot is released after the call, so a
+        // call in a loop does not grow the stack.
+        val value = coerceNumeric(emitExpr(arg), arg.type, paramType)
+        usesStackSave = true
+        val mark = nextTmp()
+        emit("  $mark = call i8* @llvm.stacksave()")
+        val spill = nextTmp()
+        emit("  $spill = alloca $type")
+        emit("  store $type $value, $type* $spill")
+        writeBacks += {
+            if (direct != null) {
+                val updated = nextTmp()
+                emit("  $updated = load $type, $type* $spill")
+                val stored = if (direct.second == type) updated else coerceNumeric(updated, paramType, arg.type)
+                emit("  store ${direct.second} $stored, ${direct.second}* ${direct.first}")
+            }
+            emit("  call void @llvm.stackrestore(i8* $mark)")
+        }
+        return spill
     }
 
     private fun nativeType(type: IrType): String = if (type is IrType.Function) {

@@ -87,6 +87,9 @@ private const val WITNESS_EQUAL = "__witness_equal"
 /** Orders two erased values (-1, 0, 1) by the concrete type their descriptor names; see [Witnesses]. */
 private const val WITNESS_COMPARE = "__witness_compare"
 
+/** Copies an erased value as the concrete type its descriptor names; see [Witnesses]. */
+private const val WITNESS_CLONE = "__witness_clone"
+
 class IrGenerator(private val table: SymbolTable) {
     private var typeFunctions = emptyList<TypeFunctionDecl>()
     private var functionDecls = emptyMap<String, FuncDecl>()
@@ -859,7 +862,14 @@ class IrGenerator(private val table: SymbolTable) {
             buildSpecTables(),
             ownedSlots = program.items.filterIsInstance<TopLevel.Slot>().filterNot { it.isError }.map { it.name }.toSet(),
         )
-        return OwnershipCleanup.lower(IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces))
+        return OwnershipCleanup.lower(
+            IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces),
+            returnsBorrow = { name -> table.lookupFunction(name)?.returnTypeRef is TypeRef.Reference },
+        ) { type ->
+            val name = (type as? IrType.Named)?.name
+            name != null && table.lookupStruct(name)?.isBridge == false && table.lookupEnum(name) == null &&
+                table.lookupFail(name) == null && table.conformsTo(name, "Copy")
+        }
     }
 
     /**
@@ -1013,6 +1023,7 @@ class IrGenerator(private val table: SymbolTable) {
             func.isUnsafe,
             isFailable = declaredFailable(func),
             isReactive = func.isReactive,
+            exclusiveParams = func.params.indices.filter { func.params[it].modifier == ParamModifier.EXCLUSIVE }.toSet(),
         )
     }
 
@@ -1141,6 +1152,7 @@ class IrGenerator(private val table: SymbolTable) {
             body,
             refParams = symbol.sharedParams + symbol.exclusiveParams + symbol.returnedParams + 0,
             isFailable = declaredFailable(method),
+            exclusiveParams = symbol.exclusiveParams,
         )
     }
 
@@ -2361,7 +2373,20 @@ class IrGenerator(private val table: SymbolTable) {
         is Expr.Grouping -> declaredRefOf(expr.expr)
         is Expr.Member -> fieldRefOf(expr.target, expr.name)
         is Expr.Index -> elementRefOf(declaredRefOf(expr.target))
+        is Expr.Call -> returnedRefOf(expr)
         else -> null
+    }
+
+    /** What a call returns when it returns a value of one of its written type arguments: `get<T>(…)` holds a `T`. */
+    private fun returnedRefOf(call: Expr.Call): TypeRef? {
+        if (call.receiver != null || call.typeArgs.isEmpty()) return null
+        val decl = functionDecls[call.callee]
+            ?: table.lookupFunction(call.callee)?.let { functionDecls[it.name] }
+            ?: return null
+        val returned = stripRef((decl.returnType as? TypeAnnotation.Explicit)?.ref) as? TypeRef.Named ?: return null
+        if (returned.args.isNotEmpty()) return null
+        val index = decl.typeParams.indexOf(returned.name)
+        return call.typeArgs.getOrNull(index)?.takeUnless { it.isHole }
     }
 
     private fun fieldRefOf(target: Expr, field: String): TypeRef? {
@@ -2577,6 +2602,7 @@ class IrGenerator(private val table: SymbolTable) {
         return listOf(
             dispatch(WITNESS_HASH, Witnesses.HASH, 1, IrType.ULong) { (v) -> returning(Expr.Member(v, "hash", 0)) },
             dispatch(WITNESS_EQUAL, Witnesses.EQUAL, 2, IrType.Bool) { (a, b) -> returning(Expr.Binary(a, TokenType.EQUAL_EQUAL, b, 0)) },
+            dispatch(WITNESS_CLONE, Witnesses.CLONE, 1, IrType.Any) { (v) -> returning(Expr.MethodCall(v, "clone", emptyList(), 0)) },
             // -1, 0 or 1 from the type's own `<`, asked both ways.
             dispatch(WITNESS_COMPARE, Witnesses.ORDER, 2, IrType.Int) { (a, b) ->
                 listOf(
@@ -3842,6 +3868,14 @@ class IrGenerator(private val table: SymbolTable) {
                 // `x.clone()` with no written member - the compiler-provided
                 // `Clone` default is an independent deep copy.
                 if (expr.name == "clone" && expr.args.isEmpty()) {
+                    // A value of a type parameter bounded by `Clone` is an
+                    // erased pointer; the descriptor names the type whose
+                    // copy it needs, so the copy is independent of the slot.
+                    val param = witnessParamOf(expr.target)
+                    if (param != null && Witnesses.CLONE in witnessBounds[param].orEmpty()) {
+                        val value = lowerExpr(expr.target)
+                        return witnessCall(WITNESS_CLONE, listOf(witnessSources.getValue(param), value), value.type)
+                    }
                     val target = lowerExpr(expr.target)
                     // A pack registers its conformance under its name, a
                     // primitive under the spelling of its own type, and an

@@ -37,11 +37,14 @@ internal object Witnesses {
     const val HASH = "Hash"
     const val EQUAL = "Equal"
     const val ORDER = "Order"
+    const val CLONE = "Clone"
 
     /** The one spec a set of needs names in a diagnostic: what the bound must say. */
     fun named(needs: Set<String>): String = when {
         HASH in needs -> HASH
         ORDER in needs -> ORDER
+        EQUAL in needs -> EQUAL
+        CLONE in needs -> CLONE
         else -> EQUAL
     }
 
@@ -69,6 +72,9 @@ internal object Witnesses {
                         HASH -> found.getOrPut(param) { linkedSetOf() }.addAll(listOf(HASH, EQUAL))
                         ORDER -> found.getOrPut(param) { linkedSetOf() }.addAll(listOf(ORDER, EQUAL))
                         EQUAL -> found.getOrPut(param) { linkedSetOf() }.add(EQUAL)
+                        // An erased slot is a shared pointer; only the concrete
+                        // type knows how to make an independent copy of it.
+                        CLONE -> found.getOrPut(param) { linkedSetOf() }.add(CLONE)
                     }
                 }
                 is Expr.Grouping -> visit(expr.expr)

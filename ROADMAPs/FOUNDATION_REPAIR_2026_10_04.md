@@ -151,3 +151,50 @@ migrated and its compiler regression passes.
 cleanup probes and language unit tests do not close automatic lifetime handling,
 real Engine projects, native compiler/language services or the native Studio port.
 
+
+## Repair evidence — 2026-10-06 (native Studio bring-up)
+
+Found by running the windowed native Studio and Engine under Apple ASan/UBSan.
+Each repair has an execution test in `FoundationArgumentOwnershipExecTest`
+(interpreter, LLVM debug and LLVM release, the LLVM runs under ASan/UBSan).
+
+- F09 progress — automatic scope cleanup (added 2026-10-05) exposed aliasing
+  that leaking had hidden:
+  - A named `Copy` value stored into an array/map/set, a field, an owned local
+    by assignment, or a parameter an erased generic keeps is now copied
+    (`OwnershipCleanup` retains-parameter analysis; copies at the concrete call
+    site because the erased body cannot). Previously the keeper and the
+    binding's cleanup both owned one allocation.
+  - Returning a `Copy` place the function does not own (a global such as
+    `Entity::invalid`, a parameter, a field) returns a copy unless the function
+    returns a borrow.
+  - `.clone()` on an erased `T: Clone` dispatches through a new `Clone` witness;
+    inline `<T: Clone>` bounds now mean `where T: Clone` instead of being
+    dropped by the parser.
+- Exclusive borrows in native code: `x!` scalars, strings and collections are
+  passed by the address of the caller's storage (copy-in/copy-out with a
+  stack-restored slot for temporaries and erased fields). `bump(n: Int!)`,
+  array growth and assignment previously did not reach the caller; growth also
+  double-freed. The interpreter now writes back field and element borrows, and
+  constant propagation treats borrowed arguments as written. Spec-dispatched
+  methods, tasks and packs keep the value convention.
+- Build: `VariadicMonomorphizer` used the JVM-only `putIfAbsent`; the native
+  compiler did not compile.
+
+Full suite after the repairs: **2,849 tests, 6 failures**, identical to the
+untouched baseline measured in a detached worktree (2,842 tests, 8 failures,
+including two since-passing tests): FoundationAbiExecTest ×2 (Homebrew clang
+ASan deadlock picked from PATH), GpuStdlibTest, LiteralFactoryExecTest (Wasm
+clone), SemanticFactsTest ×2.
+
+Engine: `qualify-native.sh headless` and `game` pass with the native compiler.
+`foundation` still fails its last `owned-ecs` check: a `World` leaving scope does
+not destroy components in its registered storages (recursive field destruction).
+
+Known compiler gaps recorded by the Studio work, not yet repaired:
+- An explicit-type-argument call to a `Clone`-bounded generic is specialised;
+  an inline `store(pass)` argument inside it then folds `T.typeName` to `"T"`.
+- Free extension members do not resolve from another module.
+- A program function named like an LLVM runtime helper (e.g. `isDigit`)
+  collides at link time.
+- `"${x}"` with a single interpolated value does not copy `x`.

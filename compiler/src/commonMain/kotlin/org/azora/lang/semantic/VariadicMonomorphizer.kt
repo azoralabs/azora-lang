@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.putIfAbsentCompat
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Annotation
@@ -1814,7 +1815,7 @@ private class MonoContext(
                 when {
                     expected is TypeRef.Reference -> bind(expected.inner, (actual as? TypeRef.Reference)?.inner ?: actual)
                     expected is TypeRef.Named && expected.args.isEmpty() && expected.name in function.typeParams ->
-                        found.putIfAbsent(expected.name, actual)
+                        found.putIfAbsentCompat(expected.name, actual)
                     expected is TypeRef.Named && actual is TypeRef.Named && expected.name == actual.name ->
                         expected.args.zip(actual.args).forEach { (left, right) -> bind(left, right) }
                     expected is TypeRef.Array && actual is TypeRef.Array -> bind(expected.element, actual.element)

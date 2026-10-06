@@ -6,22 +6,142 @@ package org.azora.lang.ir
  * null-safe cleanup path. The function's own owners are registered as defers:
  * user defers reached later still see their owners alive. */
 object OwnershipCleanup {
-    fun lower(program: IrProgram): IrProgram {
+    /**
+     * [copied] answers whether a value of a type duplicates implicitly (`Copy`).
+     * Such a value stays its binding's after it is handed to something that
+     * keeps it, so whatever keeps it receives an independent copy instead of
+     * an alias the binding's own cleanup would later free.
+     */
+    fun lower(
+        program: IrProgram,
+        returnsBorrow: (String) -> Boolean = { false },
+        copied: (IrType) -> Boolean = { false },
+    ): IrProgram {
         val functions = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }.associateBy { it.name }
+        val fields = program.items.filterIsInstance<IrTopLevel.Struct>().associate { struct -> struct.name to struct.fields.associateBy { it.name } }
+        val context = Context(functions, retainedParameters(functions), fields, copied)
         return program.copy(items = program.items.map { item ->
         when (item) {
-            is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(functions).lower(
+            is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(context, returnsBorrow(item.function.name)).lower(
                 item.function.body, root = true, initialOwners = item.function.params.mapIndexedNotNull { i, (name, type) ->
                     if (type is IrType.Function && i !in item.function.refParams) IrExpr.Var(name, type) else null
                 },
             )))
-            is IrTopLevel.Test -> item.copy(body = Body(functions).lower(item.body, root = true))
+            is IrTopLevel.Test -> item.copy(body = Body(context).lower(item.body, root = true))
             else -> item
         }
         })
     }
 
-    private class Body(val functions: Map<String, IrFunction>) {
+    private class Context(
+        val functions: Map<String, IrFunction>,
+        val retained: Map<String, Set<Int>>,
+        val fields: Map<String, Map<String, IrField>>,
+        val copied: (IrType) -> Boolean,
+    )
+
+    /** Builtin container members that keep their arguments. */
+    private val storingMembers = setOf("add", "insert", "put", "push", "addFirst", "addLast", "set")
+
+    private fun stores(call: IrExpr.MethodCall): Boolean =
+        call.name in storingMembers && (call.target.type is IrType.Array || call.target.type is IrType.Set || call.target.type is IrType.Map)
+
+    /** A type parameter's erased slot: its value's real type is known only at the call site. */
+    private fun erased(type: IrType): Boolean = type == IrType.Any || (type is IrType.Nullable && type.inner == IrType.Any)
+
+    /**
+     * By-value parameters each function keeps beyond the call: stored in a
+     * container, a field or a constructed value, returned, moved out, or passed
+     * to a parameter that is itself kept. Parameters are borrowed by the callee,
+     * so a kept one must arrive as a value nobody else will free; an erased
+     * generic body cannot copy it, so its concrete caller does.
+     */
+    private fun retainedParameters(functions: Map<String, IrFunction>): Map<String, Set<Int>> {
+        val retained = functions.mapValues { mutableSetOf<Int>() }
+        var changed = true
+        while (changed) {
+            changed = false
+            for (function in functions.values) {
+                val found = retained.getValue(function.name)
+                val parameters = function.params.withIndex()
+                    .filter { it.index !in function.refParams }
+                    .associate { it.value.first to it.index }
+                val aliases = mutableMapOf<String, Int>()
+                fun parameter(value: IrExpr?): Int? = when (value) {
+                    is IrExpr.Var -> aliases[value.name] ?: parameters[value.name]
+                    is IrExpr.Call -> if (value.name == "__take") parameter(value.args.singleOrNull()) else null
+                    else -> null
+                }
+                fun keep(value: IrExpr?) {
+                    val index = parameter(value) ?: return
+                    if (found.add(index)) changed = true
+                }
+                // A lambda body holds statements, so the expression walk reaches
+                // back into the statement walk declared after it.
+                var nested: (IrStmt) -> Unit = {}
+                fun visit(expr: IrExpr?) {
+                    when (expr) {
+                        null -> {}
+                        is IrExpr.Call -> {
+                            val kept = retained[expr.name].orEmpty()
+                            expr.args.forEachIndexed { i, arg -> if (i in kept || expr.name == "__take") keep(arg); visit(arg) }
+                            visit(expr.receiver)
+                        }
+                        is IrExpr.MethodCall -> { if (stores(expr)) expr.args.forEach(::keep); visit(expr.target); expr.args.forEach(::visit) }
+                        is IrExpr.StructCtor -> expr.args.forEach { keep(it); visit(it) }
+                        is IrExpr.ArrayLiteral -> expr.elements.forEach { keep(it); visit(it) }
+                        is IrExpr.SetLit -> expr.elements.forEach { keep(it); visit(it) }
+                        is IrExpr.TupleLit -> expr.elements.forEach { keep(it); visit(it) }
+                        is IrExpr.MapLit -> expr.entries.forEach { (key, value) -> keep(key); keep(value); visit(key); visit(value) }
+                        is IrExpr.Binary -> { visit(expr.left); visit(expr.right) }
+                        is IrExpr.Unary -> visit(expr.operand)
+                        is IrExpr.Member -> visit(expr.target)
+                        is IrExpr.Index -> { visit(expr.target); visit(expr.index) }
+                        is IrExpr.IfExpr -> { visit(expr.condition); visit(expr.thenExpr); visit(expr.elseExpr) }
+                        is IrExpr.CatchExpr -> { visit(expr.expr); visit(expr.fallback) }
+                        is IrExpr.NumCast -> visit(expr.value)
+                        is IrExpr.Await -> visit(expr.value)
+                        is IrExpr.Lambda -> expr.body.forEach { nested(it) }
+                        else -> {}
+                    }
+                }
+                fun declare(name: String, initializer: IrExpr) {
+                    if (initializer is IrExpr.Var) parameter(initializer)?.let { aliases[name] = it } else keep(initializer)
+                    visit(initializer)
+                }
+                fun statement(stmt: IrStmt) {
+                    when (stmt) {
+                        is IrStmt.VarDecl -> declare(stmt.name, stmt.initializer)
+                        is IrStmt.FinDecl -> declare(stmt.name, stmt.initializer)
+                        is IrStmt.LetDecl -> declare(stmt.name, stmt.initializer)
+                        is IrStmt.Assignment -> { keep(stmt.value); visit(stmt.value) }
+                        is IrStmt.IndexAssign -> { keep(stmt.value); visit(stmt.target); visit(stmt.index); visit(stmt.value) }
+                        is IrStmt.MemberAssign -> { keep(stmt.value); visit(stmt.target); visit(stmt.value) }
+                        is IrStmt.Return -> { keep(stmt.value); visit(stmt.value) }
+                        is IrStmt.Throw -> { keep(stmt.value); visit(stmt.value) }
+                        is IrStmt.ExprStmt -> visit(stmt.expr)
+                        is IrStmt.Scope -> stmt.body.forEach(::statement)
+                        is IrStmt.If -> { visit(stmt.condition); stmt.thenBranch.forEach(::statement); stmt.elseBranch?.forEach(::statement) }
+                        is IrStmt.While -> { visit(stmt.condition); stmt.body.forEach(::statement) }
+                        is IrStmt.For -> { visit(stmt.start); visit(stmt.end); visit(stmt.step); stmt.body.forEach(::statement) }
+                        is IrStmt.ForEach -> { visit(stmt.iterable); stmt.body.forEach(::statement) }
+                        is IrStmt.Loop -> stmt.body.forEach(::statement)
+                        is IrStmt.When -> { visit(stmt.scrutinee); stmt.branches.forEach { it.body.forEach(::statement) }; stmt.elseBranch?.forEach(::statement) }
+                        is IrStmt.Try -> { stmt.body.forEach(::statement); stmt.catchBody?.forEach(::statement) }
+                        is IrStmt.Defer -> stmt.body.forEach(::statement)
+                        else -> {}
+                    }
+                }
+                nested = ::statement
+                function.body.forEach(::statement)
+            }
+        }
+        return retained
+    }
+
+    /** [borrowedReturn]: the function returns `T&`, so a returned place stays its owner's. */
+    private class Body(val context: Context, val borrowedReturn: Boolean = false) {
+        val functions get() = context.functions
         private data class Frame(val owners: MutableList<IrExpr.Var>, val root: Boolean, val loop: Boolean, val label: String?, val delayed: Boolean, val aliases: MutableMap<String, IrExpr.Var> = mutableMapOf())
         private val frames = mutableListOf<Frame>()
         private var temporary = 0
@@ -63,8 +183,12 @@ object OwnershipCleanup {
                     is IrStmt.Return -> {
                         val value = stmt.value
                         val owner = (value as? IrExpr.Var)?.let(::origin)
+                        // A returned owner moves out. Any other `Copy` place - a
+                        // parameter, a global, a field - belongs to someone else,
+                        // and the caller will own and free what it receives.
                         val transfer = if (owner != null)
-                            IrExpr.Call("__take", listOf(owner), value!!.type) else value
+                            IrExpr.Call("__take", listOf(owner), value!!.type)
+                        else if (value != null && !borrowedReturn) isolatedPlace(value) else value
                         val nestedCleanup = cleanup(frames.filterNot { it.root })
                         if (transfer != null && (transfer !== value || nestedCleanup.isNotEmpty())) {
                             val name = "__owner_return_${temporary++}"
@@ -81,7 +205,7 @@ object OwnershipCleanup {
                             // Evaluate before dropping the old value; `x = take x`
                             // and a failed initializer cannot destroy the input early.
                             val name = "__owner_replace_${temporary++}"
-                            result += IrStmt.FinDecl(name, stmt.value.type, stmt.value)
+                            result += IrStmt.FinDecl(name, stmt.value.type, isolatedPlace(stmt.value))
                             result += purge(owner)
                             result += stmt.copy(value = IrExpr.Var(name, stmt.value.type))
                         }
@@ -127,8 +251,12 @@ object OwnershipCleanup {
             is IrStmt.ForEach -> stmt.copy(iterable = expression(stmt.iterable))
             is IrStmt.For -> stmt.copy(start = expression(stmt.start), end = expression(stmt.end), step = stmt.step?.let { expression(it) })
             is IrStmt.When -> stmt.copy(scrutinee = expression(stmt.scrutinee))
-            is IrStmt.MemberAssign -> stmt.copy(target = expression(stmt.target), value = expression(stmt.value))
-            is IrStmt.IndexAssign -> stmt.copy(target = expression(stmt.target), index = expression(stmt.index), value = expression(stmt.value))
+            is IrStmt.MemberAssign -> stmt.copy(target = expression(stmt.target), value = expression(stmt.value).let {
+                if (ownsField(stmt.target.type, stmt.name)) isolatedPlace(it) else it
+            })
+            is IrStmt.IndexAssign -> stmt.copy(target = expression(stmt.target), index = expression(stmt.index), value = expression(stmt.value).let {
+                if (stmt.target.type is IrType.Array || stmt.target.type is IrType.Map) isolatedPlace(it) else it
+            })
             is IrStmt.Throw -> stmt.copy(value = expression(stmt.value))
             is IrStmt.Assert -> stmt.copy(condition = expression(stmt.condition), message = expression(stmt.message))
             else -> stmt
@@ -138,11 +266,21 @@ object OwnershipCleanup {
             is IrExpr.Call -> expr.copy(args = expr.args.mapIndexed { i, value ->
                 val argument = expression(value, task = expr.name == "async" || expr.name == "__launch")
                 val callee = functions[expr.name]
-                if (callee != null && callee.params.getOrNull(i)?.second is IrType.Function && i !in callee.refParams)
-                    copyCallablePlace(argument) else argument
+                val parameter = callee?.params?.getOrNull(i)?.second
+                when {
+                    callee == null || i in callee.refParams -> argument
+                    parameter is IrType.Function -> copyCallablePlace(argument)
+                    // An erased parameter the callee keeps: only this call site
+                    // knows the value is a `Copy` it must not share.
+                    parameter != null && erased(parameter) && i in context.retained[expr.name].orEmpty() -> isolatedPlace(argument)
+                    else -> argument
+                }
             }, receiver = expr.receiver?.let { expression(it) })
             is IrExpr.StructCtor -> expr.copy(args = expr.args.map { expression(it) })
-            is IrExpr.MethodCall -> expr.copy(target = expression(expr.target), args = expr.args.map { copyCallablePlace(expression(it)) })
+            is IrExpr.MethodCall -> expr.copy(target = expression(expr.target), args = expr.args.map {
+                val argument = copyCallablePlace(expression(it))
+                if (stores(expr)) isolatedPlace(argument) else argument
+            })
             is IrExpr.ArrayLiteral -> expr.copy(elements = expr.elements.map { expression(it) })
             is IrExpr.TupleLit -> expr.copy(elements = expr.elements.map { expression(it) })
             is IrExpr.Binary -> expr.copy(left = expression(expr.left), right = expression(expr.right))
@@ -160,9 +298,23 @@ object OwnershipCleanup {
                 val parameters = expr.params.take((expr.type as IrType.Function).params.size).mapNotNull { (name, type) ->
                     if (type is IrType.Function) IrExpr.Var(name, type) else null
                 }
-                expr.copy(body = Body(functions).lower(expr.body, root = true, initialOwners = captures + parameters))
+                expr.copy(body = Body(context).lower(expr.body, root = true, initialOwners = captures + parameters))
             }
             else -> expr
+        }
+
+        /**
+         * [value] as an independent copy when it names a `Copy` value that
+         * something else already owns - a binding, a field or an element. A
+         * temporary has no other owner, so handing it over moves it.
+         */
+        private fun isolatedPlace(value: IrExpr): IrExpr =
+            if ((value is IrExpr.Var || value is IrExpr.Member || value is IrExpr.Index) && context.copied(value.type))
+                IrExpr.Call("__isolated", listOf(value), value.type) else value
+
+        private fun ownsField(owner: IrType, name: String): Boolean {
+            val pack = (owner as? IrType.Named)?.name ?: return false
+            return context.fields[pack]?.get(name)?.ownsValue ?: false
         }
 
         private fun copyCallablePlace(value: IrExpr): IrExpr =

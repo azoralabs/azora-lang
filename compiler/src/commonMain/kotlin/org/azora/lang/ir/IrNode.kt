@@ -1330,6 +1330,12 @@ data class IrFunction(
      * ones nothing reaches, while the program's own functions stay as written.
      */
     val isLibrary: Boolean = false,
+    /**
+     * Indices of `x!` parameters: the callee may write the caller's binding
+     * itself, not just what it points at. A backend that passes values must
+     * pass these by the address of the argument's storage.
+     */
+    val exclusiveParams: Set<Int> = emptySet(),
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {

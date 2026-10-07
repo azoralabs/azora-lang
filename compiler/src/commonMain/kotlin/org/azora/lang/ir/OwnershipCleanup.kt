@@ -19,7 +19,7 @@ object OwnershipCleanup {
     ): IrProgram {
         val functions = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }.associateBy { it.name }
         val fields = program.items.filterIsInstance<IrTopLevel.Struct>().associate { struct -> struct.name to struct.fields.associateBy { it.name } }
-        val context = Context(functions, retainedParameters(functions), fields, copied)
+        val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow), returnsBorrow)
         return program.copy(items = program.items.map { item ->
         when (item) {
             is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(context, returnsBorrow(item.function.name)).lower(
@@ -38,13 +38,80 @@ object OwnershipCleanup {
         val retained: Map<String, Set<Int>>,
         val fields: Map<String, Map<String, IrField>>,
         val copied: (IrType) -> Boolean,
+        val fresh: Set<String>,
+        val returnsBorrow: (String) -> Boolean,
     )
+
+    /** A type whose values are allocations an owner frees: a pack or an array. */
+    private fun allocates(type: IrType, fields: Map<String, Map<String, IrField>>): Boolean =
+        type is IrType.Array || (type is IrType.Named && type.name in fields)
+
+    /**
+     * Functions whose every result is a new allocation the caller then owns: a
+     * constructed value, an owned local, a moved or copied value, or another
+     * such call. A result that may be a place someone else owns - a field, a
+     * global, an element - is not, and neither is a borrowed (`T&`) result.
+     */
+    private fun freshResults(
+        functions: Map<String, IrFunction>,
+        fields: Map<String, Map<String, IrField>>,
+        returnsBorrow: (String) -> Boolean,
+    ): Set<String> {
+        val candidates = functions.values.filter { allocates(it.returnType, fields) && !returnsBorrow(it.name) }
+        // Optimistic: recursion is assumed fresh until a return says otherwise.
+        val fresh = candidates.mapTo(mutableSetOf()) { it.name }
+        var changed = true
+        while (changed) {
+            changed = false
+            for (function in candidates) {
+                if (function.name !in fresh) continue
+                val owned = mutableSetOf<String>()
+                var ok = true
+                fun freshValue(value: IrExpr?): Boolean = when (value) {
+                    is IrExpr.StructCtor, is IrExpr.ArrayLiteral -> true
+                    is IrExpr.Call -> value.name == "__take" || value.name == "__isolated" || value.name in fresh
+                    is IrExpr.Var -> value.name in owned
+                    is IrExpr.IfExpr -> freshValue(value.thenExpr) && freshValue(value.elseExpr)
+                    else -> false
+                }
+                fun walk(stmts: List<IrStmt>) {
+                    for (stmt in stmts) {
+                        when (stmt) {
+                            is IrStmt.VarDecl -> if (stmt.ownsValue) owned += stmt.name
+                            is IrStmt.FinDecl -> if (stmt.ownsValue) owned += stmt.name
+                            is IrStmt.LetDecl -> if (stmt.ownsValue) owned += stmt.name
+                            is IrStmt.Return -> if (!freshValue(stmt.value)) ok = false
+                            is IrStmt.Scope -> walk(stmt.body)
+                            is IrStmt.If -> { walk(stmt.thenBranch); stmt.elseBranch?.let(::walk) }
+                            is IrStmt.While -> walk(stmt.body)
+                            is IrStmt.For -> walk(stmt.body)
+                            is IrStmt.ForEach -> walk(stmt.body)
+                            is IrStmt.Loop -> walk(stmt.body)
+                            is IrStmt.When -> { stmt.branches.forEach { walk(it.body) }; stmt.elseBranch?.let(::walk) }
+                            is IrStmt.Try -> { walk(stmt.body); stmt.catchBody?.let(::walk) }
+                            else -> {}
+                        }
+                    }
+                }
+                walk(function.body)
+                if (!ok) {
+                    fresh -= function.name
+                    changed = true
+                }
+            }
+        }
+        return fresh
+    }
 
     /** Builtin container members that keep their arguments. */
     private val storingMembers = setOf("add", "insert", "put", "push", "addFirst", "addLast", "set")
 
     private fun stores(call: IrExpr.MethodCall): Boolean =
         call.name in storingMembers && (call.target.type is IrType.Array || call.target.type is IrType.Set || call.target.type is IrType.Map)
+
+    /** Whether compiler intrinsic [name] keeps its argument [index]: a move, or a value stored behind a pointer. */
+    private fun keptByIntrinsic(name: String, index: Int): Boolean =
+        name == "__take" || name == "__alloc" || (name == "__derefAssign" && index == 1)
 
     /** A type parameter's erased slot: its value's real type is known only at the call site. */
     private fun erased(type: IrType): Boolean = type == IrType.Any || (type is IrType.Nullable && type.inner == IrType.Any)
@@ -84,7 +151,7 @@ object OwnershipCleanup {
                         null -> {}
                         is IrExpr.Call -> {
                             val kept = retained[expr.name].orEmpty()
-                            expr.args.forEachIndexed { i, arg -> if (i in kept || expr.name == "__take") keep(arg); visit(arg) }
+                            expr.args.forEachIndexed { i, arg -> if (i in kept || keptByIntrinsic(expr.name, i)) keep(arg); visit(arg) }
                             visit(expr.receiver)
                         }
                         is IrExpr.MethodCall -> { if (stores(expr)) expr.args.forEach(::keep); visit(expr.target); expr.args.forEach(::visit) }
@@ -105,15 +172,17 @@ object OwnershipCleanup {
                         else -> {}
                     }
                 }
-                fun declare(name: String, initializer: IrExpr) {
-                    if (initializer is IrExpr.Var) parameter(initializer)?.let { aliases[name] = it } else keep(initializer)
+                // A binding that owns its value and starts as a parameter has
+                // taken the parameter over: it frees it when it goes.
+                fun declare(name: String, initializer: IrExpr, owns: Boolean) {
+                    if (initializer is IrExpr.Var && !owns) parameter(initializer)?.let { aliases[name] = it } else keep(initializer)
                     visit(initializer)
                 }
                 fun statement(stmt: IrStmt) {
                     when (stmt) {
-                        is IrStmt.VarDecl -> declare(stmt.name, stmt.initializer)
-                        is IrStmt.FinDecl -> declare(stmt.name, stmt.initializer)
-                        is IrStmt.LetDecl -> declare(stmt.name, stmt.initializer)
+                        is IrStmt.VarDecl -> declare(stmt.name, stmt.initializer, stmt.ownsValue)
+                        is IrStmt.FinDecl -> declare(stmt.name, stmt.initializer, stmt.ownsValue)
+                        is IrStmt.LetDecl -> declare(stmt.name, stmt.initializer, stmt.ownsValue)
                         is IrStmt.Assignment -> { keep(stmt.value); visit(stmt.value) }
                         is IrStmt.IndexAssign -> { keep(stmt.value); visit(stmt.target); visit(stmt.index); visit(stmt.value) }
                         is IrStmt.MemberAssign -> { keep(stmt.value); visit(stmt.target); visit(stmt.value) }
@@ -268,11 +337,21 @@ object OwnershipCleanup {
                 val callee = functions[expr.name]
                 val parameter = callee?.params?.getOrNull(i)?.second
                 when {
-                    callee == null || i in callee.refParams -> argument
+                    callee == null -> argument
+                    // A shared borrow cannot be kept, so a new allocation lent
+                    // to one is freed after the call too - unless the result is
+                    // itself a borrow, which may point into it.
+                    i in callee.refParams -> if (i !in callee.exclusiveParams && !context.returnsBorrow(expr.name) &&
+                        freshArgument(argument)) IrExpr.Call("__temporary", listOf(argument), argument.type) else argument
                     parameter is IrType.Function -> copyCallablePlace(argument)
                     // An erased parameter the callee keeps: only this call site
                     // knows the value is a `Copy` it must not share.
                     parameter != null && erased(parameter) && i in context.retained[expr.name].orEmpty() -> isolatedPlace(argument)
+                    // A new allocation lent to a parameter the callee only
+                    // borrows has no owner once the call returns: this call
+                    // site frees it, right after the call.
+                    i !in context.retained[expr.name].orEmpty() && expr.name != "async" && expr.name != "__launch" &&
+                        freshArgument(argument) -> IrExpr.Call("__temporary", listOf(argument), argument.type)
                     else -> argument
                 }
             }, receiver = expr.receiver?.let { expression(it) })
@@ -311,6 +390,14 @@ object OwnershipCleanup {
         private fun isolatedPlace(value: IrExpr): IrExpr =
             if ((value is IrExpr.Var || value is IrExpr.Member || value is IrExpr.Index) && context.copied(value.type))
                 IrExpr.Call("__isolated", listOf(value), value.type) else value
+
+        /** A value nothing owns yet: constructed, or returned new by a call. */
+        private fun freshArgument(value: IrExpr): Boolean = allocates(value.type, context.fields) &&
+            !((value.type as? IrType.Array)?.element?.let(::erased) ?: false) && when (value) {
+            is IrExpr.StructCtor, is IrExpr.ArrayLiteral -> true
+            is IrExpr.Call -> value.name in context.fresh
+            else -> false
+        }
 
         private fun ownsField(owner: IrType, name: String): Boolean {
             val pack = (owner as? IrType.Named)?.name ?: return false

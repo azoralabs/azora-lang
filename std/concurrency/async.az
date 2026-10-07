@@ -40,7 +40,7 @@ module std.concurrency.async
 @Experimental(since: "0.1")
 async func timeout(ms: Int, action: () -> Unit): Bool {
     var completed = false
-    fin handle = async [completed.!] {
+    fin handle = async [completed.!, action] {
         action()
         completed = true
     }
@@ -79,8 +79,8 @@ async func retry(attempts: Int, delayMs: Int, action: () -> Bool): Bool {
  */
 @Experimental(since: "0.1")
 async func parallel(a: () -> Unit, b: () -> Unit) {
-    fin t1 = async { a() }
-    fin t2 = async { b() }
+    fin t1 = async [a.&] { a() }
+    fin t2 = async [b.&] { b() }
     await(t1)
     await(t2)
 }
@@ -94,11 +94,11 @@ async func parallel(a: () -> Unit, b: () -> Unit) {
 @Experimental(since: "0.1")
 async func race(a: () -> Unit, b: () -> Unit) {
     var done = false
-    fin t1 = async [done.!] {
+    fin t1 = async [done.!, a] {
         a()
         done = true
     }
-    fin t2 = async [done.!] {
+    fin t2 = async [done.!, b] {
         b()
         done = true
     }

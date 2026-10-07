@@ -1009,8 +1009,18 @@ class LlvmCodegen {
         emitDeferred(failing)
     }
 
-    /** A `defer` of the function being emitted, and the counter its registrations raise. */
-    private class DeferSlot(val stmt: IrStmt.Defer, val counter: String)
+    /**
+     * A `defer` of the function being emitted, and the counter its registrations raise.
+     *
+     * [bindings] are the locals its body names, as they were bound where it was
+     * registered. A body is emitted at every exit, and by then a later local of
+     * the same name - a sibling scope's `value`, one unrolled iteration's
+     * `current` - may have taken the name; resolving it there would drop that
+     * one instead, or an uninitialised slot when its scope never ran.
+     */
+    private class DeferSlot(val stmt: IrStmt.Defer, val counter: String) {
+        var bindings: Map<String, Pair<String, String>>? = null
+    }
 
     /** The `defer`s of the function being emitted, in source order. */
     private val deferSlots = mutableListOf<DeferSlot>()
@@ -1064,6 +1074,11 @@ class LlvmCodegen {
     private fun emitDeferRegistration(stmt: IrStmt.Defer) {
         val slot = deferSlots.firstOrNull { it.stmt === stmt }
             ?: error("LLVM cannot lower a 'defer' outside a function body yet")
+        if (slot.bindings == null) {
+            val named = linkedMapOf<String, IrType>()
+            collectReferencedVars(slot.stmt.body, named)
+            slot.bindings = named.keys.mapNotNull { name -> localVars[name]?.let { name to it } }.toMap()
+        }
         val count = nextTmp()
         emit("  $count = load i32, i32* ${slot.counter}")
         val raised = nextTmp()
@@ -1098,7 +1113,12 @@ class LlvmCodegen {
                 val drained = nextTmp()
                 emit("  $drained = sub i32 $count, 1")
                 emit("  store i32 $drained, i32* ${slot.counter}")
+                val shadowed = slot.bindings?.keys?.associateWith { localVars[it] }.orEmpty()
+                slot.bindings?.let { localVars.putAll(it) }
                 emitStmts(slot.stmt.body)
+                for ((name, previous) in shadowed) {
+                    if (previous == null) localVars.remove(name) else localVars[name] = previous
+                }
                 // `rescue`: the error it ran for is handled, so the caller's
                 // check sees none and takes the function's zero value.
                 if (failing && slot.stmt.suppress) {
@@ -2279,7 +2299,11 @@ class LlvmCodegen {
                     val value = lambda.captureInitializers[capture.name]?.let(::emitExpr) ?: run {
                         val loaded = nextTmp()
                         emit("  $loaded = load ${capture.llvmType}, ${capture.llvmType}* ${storage.first}")
-                        loaded
+                        // A copied capture is the environment's own: the context's
+                        // drop releases it, so it must not be the binding's object -
+                        // a parameter captured by copy would otherwise be freed under
+                        // the function still using it.
+                        copiedCapture(loaded, capture)
                     }
                     emit("  store ${capture.llvmType} $value, ${capture.llvmType}* $field, align 1")
                 }
@@ -2345,6 +2369,20 @@ end:
 }
 """.trimIndent()
             "__azora_closure_env_release"
+        }
+    }
+
+    /** [value], loaded from a binding, as a copy the closure environment can own. */
+    private fun copiedCapture(value: String, capture: Capture): String {
+        val type = capture.type
+        val copies = type is IrType.Function || type is IrType.Array || (type is IrType.Named && type.name in structDefs)
+        if (!copies || !capture.llvmType.endsWith("*")) return value
+        val raw = if (capture.llvmType == mapType(type)) value else nextTmp().also {
+            emit("  $it = bitcast ${capture.llvmType} $value to ${mapType(type)}")
+        }
+        val copy = isolatedCopy(raw, type)
+        return if (capture.llvmType == mapType(type)) copy else nextTmp().also {
+            emit("  $it = bitcast ${mapType(type)} $copy to ${capture.llvmType}")
         }
     }
 
@@ -3241,7 +3279,12 @@ end:
                 collectReferencedVars(expr.left, refs)
                 collectReferencedVars(expr.right, refs)
             }
-            is IrExpr.Call -> expr.args.forEach { collectReferencedVars(it, refs) }
+            // An indirect call reads its callee: `content(index)` inside a nested
+            // lambda captures `content` just as `content` alone would.
+            is IrExpr.Call -> {
+                expr.receiver?.let { collectReferencedVars(it, refs) }
+                expr.args.forEach { collectReferencedVars(it, refs) }
+            }
             is IrExpr.ArrayLiteral -> expr.elements.forEach { collectReferencedVars(it, refs) }
             is IrExpr.MapLit -> expr.entries.forEach {
                 collectReferencedVars(it.first, refs)
@@ -4089,6 +4132,10 @@ end:
                 }
                 "remove" -> {
                     if (expr.args.size == 1) return emitArrayRemoveAt(expr.target, expr.args[0], arrayType.element, transfer = false)
+                }
+                "insert" -> if (expr.args.size == 2) {
+                    emitArrayInsert(expr.target, expr.args[0], expr.args[1], arrayType.element)
+                    return "void"
                 }
                 "removeAt" -> if (expr.args.size == 1) return emitArrayRemoveAt(expr.target, expr.args[0], arrayType.element, transfer = true)
                 "removeFirst" -> return emitArrayRemoveAt(expr.target, IrExpr.IntLiteral(0), arrayType.element, transfer = true)
@@ -4948,6 +4995,78 @@ end:
         }
     }
 
+    /**
+     * `array.insert(index, value)`: grows the array by one, moves the elements
+     * from [indexExpr] on one place along, and stores [valueExpr] in the gap.
+     * An index past the end is the same failure an index read reports.
+     */
+    private fun emitArrayInsert(target: IrExpr, indexExpr: IrExpr, valueExpr: IrExpr, elemType: IrType) {
+        usesArrayGrow = true
+        val et = mapType(elemType)
+        val raw = emitExpr(target)
+        val oldLen = emitArrayLengthI64(raw)
+        val index = indexToI64(emitExpr(indexExpr), indexExpr.type)
+        val nonNegative = nextTmp()
+        emit("  $nonNegative = icmp sge i64 $index, 0")
+        val notPast = nextTmp()
+        emit("  $notPast = icmp sle i64 $index, $oldLen")
+        val valid = nextTmp()
+        emit("  $valid = and i1 $nonNegative, $notPast")
+        val failLabel = nextLabel("arr_insert_fail")
+        val okLabel = nextLabel("arr_insert_ok")
+        emitTerminator("  br i1 $valid, label %$okLabel, label %$failLabel")
+        startBlock(failLabel)
+        usesIndexFail = true
+        emit("  call void @__azora_index_fail(i64 $index, i64 $oldLen)")
+        emitTerminator("  unreachable")
+        startBlock(okLabel)
+        val rawValue = emitExpr(valueExpr)
+        val value = coerceNumeric(rawValue, valueExpr.type, elemType)
+        val grown = nextTmp()
+        emit("  $grown = call i8* @__azora_array_grow(i8* $raw, i64 ${sizeOfScalar(elemType)})")
+        registerArrayDrop(grown, elemType)
+        val dataRaw = nextTmp()
+        emit("  $dataRaw = getelementptr i8, i8* $grown, i64 8")
+        val data = nextTmp()
+        emit("  $data = bitcast i8* $dataRaw to $et*")
+
+        // Walk down from the new last slot, copying each element up by one.
+        val condLabel = nextLabel("arr_insert_shift_cond")
+        val bodyLabel = nextLabel("arr_insert_shift_body")
+        val doneLabel = nextLabel("arr_insert_shift_done")
+        val nextSlot = "%arr_insert_next_${labelCounter++}"
+        val preheader = currentBlock
+        emitTerminator("  br label %$condLabel")
+        startBlock(condLabel)
+        val slot = nextTmp()
+        emit("  $slot = phi i64 [ $oldLen, %$preheader ], [ $nextSlot, %$bodyLabel ]")
+        val more = nextTmp()
+        emit("  $more = icmp sgt i64 $slot, $index")
+        emitTerminator("  br i1 $more, label %$bodyLabel, label %$doneLabel")
+        startBlock(bodyLabel)
+        emit("  $nextSlot = sub i64 $slot, 1")
+        val sourcePtr = nextTmp()
+        emit("  $sourcePtr = getelementptr $et, $et* $data, i64 $nextSlot")
+        val moved = nextTmp()
+        emit("  $moved = load $et, $et* $sourcePtr, align 1")
+        val destinationPtr = nextTmp()
+        emit("  $destinationPtr = getelementptr $et, $et* $data, i64 $slot")
+        emit("  store $et $moved, $et* $destinationPtr, align 1")
+        emitTerminator("  br label %$condLabel")
+        startBlock(doneLabel)
+        val gap = nextTmp()
+        emit("  $gap = getelementptr $et, $et* $data, i64 $index")
+        emit("  store $et $value, $et* $gap, align 1")
+
+        val storage = variableStorage(target)
+        if (storage != null) {
+            val (addr, type) = storage
+            emit("  store $type $grown, $type* $addr")
+        } else {
+            error("LLVM cannot grow an array that is not held in a variable or a field yet")
+        }
+    }
+
     private fun emitArrayContains(target: IrExpr, needleExpr: IrExpr, elemType: IrType): String {
         val et = mapType(elemType)
         val raw = emitExpr(target)
@@ -5319,7 +5438,7 @@ end:
                 }
             }
             else -> {
-                error("LLVM cannot apply ${expr.op} to ${expr.left.type.shown()} yet")
+                error("LLVM cannot apply ${expr.op} to ${expr.left.type.shown()} yet (in '$currentFunctionName')")
             }
         }
         return tmp
@@ -5464,10 +5583,33 @@ end:
      * The check goes here rather than at every use of the result so that a
      * failed call never reaches the code that would consume its value.
      */
+    /**
+     * Arguments marked `__temporary` while the call that receives them is being
+     * emitted: new allocations only lent to it. They are freed once it returns.
+     */
+    private val pendingTemporaries = mutableListOf<Pair<String, IrType>>()
+
     private fun emitCall(expr: IrExpr.Call): String {
         if (expr.name == Intrinsics.NULL_COALESCE) return emitNullCoalesce(expr)
+        if (expr.name == "__temporary") {
+            val value = emitExpr(expr.args.single())
+            pendingTemporaries += value to expr.type
+            return value
+        }
+        val mark = pendingTemporaries.size
         val result = emitCallValue(expr)
         if (expr.name in failableFunctions) emitErrorCheck()
+        if (pendingTemporaries.size > mark) {
+            val lent = pendingTemporaries.subList(mark, pendingTemporaries.size)
+            for ((value, type) in lent.asReversed()) {
+                val raw = if (mapType(type) == "i8*") value else nextTmp().also {
+                    emit("  $it = bitcast ${mapType(type)} $value to i8*")
+                }
+                usesAllocatorRuntime = true
+                emit("  call void @__azora_free(i8* $raw)")
+            }
+            lent.clear()
+        }
         return when (expr.type) {
             // Unit remains a first-class singleton even where the ABI erases
             // the return slot. Zero is its private native representation.

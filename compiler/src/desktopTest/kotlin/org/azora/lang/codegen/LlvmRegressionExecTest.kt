@@ -338,4 +338,75 @@ class LlvmRegressionExecTest {
             """.trimIndent()
         )
     )
+
+    /**
+     * Two owned locals of one name in sibling scopes each drop their own slot.
+     *
+     * Ownership drops are deferred to every exit, and the deferred body used to
+     * resolve its variable by name at the exit - where the *last* declaration of
+     * that name had taken it. An unrolled `inline for` declares the same `value`
+     * once per iteration, so the first iteration's exit drop freed the second's
+     * slot: uninitialised when its branch never ran, which freed a stray pointer
+     * (a live ECS storage in Studio) and corrupted the heap.
+     */
+    @Test fun siblingLocalsOfOneNameDropTheirOwnSlots() {
+        val source = """
+            import std.io
+            import std.traits
+            pack A derives Clone { var x: Double = 0.0 }
+            pack B derives Clone { var y: Double = 0.0 }
+            func pick(which: Int): Double {
+                var total: Double = 0.0
+                if which == 0 {
+                    var value = A()
+                    value.x = 1.5
+                    total = total + value.x
+                }
+                if which == 1 {
+                    var value = B()
+                    value.y = 2.5
+                    total = total + value.y
+                }
+                return total
+            }
+            func main() {
+                println(pick(0) + pick(1) + pick(2))
+            }
+        """.trimIndent()
+        check("4.0", source)
+        if (!LlvmExec.available) return
+        val ir = LlvmExec.compile(source)
+        val body = ir.substringAfter("define double @pick(").substringBefore("\n}")
+        // Each deferred drop reads the slot its own declaration stored to.
+        val stores = Regex("""store %struct\.(\w+)\* %t\d+, %struct\.\w+\*\* (%loc\d+\.value)""")
+            .findAll(body).associate { it.groupValues[2] to it.groupValues[1] }
+        val drops = Regex("""defer\.run\.\d+:\n(?:.*\n){2}\s*%t\d+ = load %struct\.(\w+)\*, %struct\.\w+\*\* (%loc\d+\.value)""")
+            .findAll(body).map { it.groupValues[2] to it.groupValues[1] }.toList()
+        assertTrue(drops.isNotEmpty(), "expected deferred drops in:\n$body")
+        for ((slot, type) in drops) {
+            assertEquals(stores[slot], type, "the drop through $slot reads it as $type")
+        }
+    }
+
+    /** `insert` grows the array and shifts the tail, for owned and plain elements alike. */
+    @Test fun arrayInsertShiftsTheTail() = check(
+        "abcd\n135 3",
+        """
+        import std.io
+        func main() {
+            var items: Array<String> = Array<String>()
+            items.add("b")
+            items.insert(0, "a")
+            items.insert(2, "d")
+            items.insert(2, "c")
+            var text = ""
+            for i in 0..<items.size { text = "${'$'}{text}${'$'}{items[i]}" }
+            println(text)
+            var numbers: Array<Int> = [5]
+            numbers.insert(0, 1)
+            numbers.insert(1, 3)
+            println("${'$'}{numbers[0]}${'$'}{numbers[1]}${'$'}{numbers[2]} ${'$'}{numbers.size}")
+        }
+        """.trimIndent(),
+    )
 }

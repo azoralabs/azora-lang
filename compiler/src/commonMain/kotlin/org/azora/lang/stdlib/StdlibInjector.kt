@@ -375,6 +375,12 @@ class StdlibInjector private constructor(
         val importsOfModule = LinkedHashMap<String, MutableList<ImportRequest>>()
         /** name → every module registering it, to find which one declared an item. */
         val modulesDeclaring = LinkedHashMap<String, MutableList<String>>()
+        /**
+         * decorator name → every (module, declaration name) carrying it. What a
+         * `reflect<*>.withAnnot<D>` loop enumerates is everything decorated `@D`,
+         * which no name in the program references.
+         */
+        val annotatedBy = LinkedHashMap<String, MutableList<Pair<String, String>>>()
     }
 
     private val index: Index by lazy { buildIndex() }
@@ -1306,6 +1312,16 @@ class StdlibInjector private constructor(
             val alwaysOn = program.isExported && evalExportIf(program.exportCondition, boolOverrides) &&
                 program.moduleVisibility == ModuleVisibility.PUBLIC
             for (item in program.items) {
+                val decorated = when (item) {
+                    is TopLevel.Pack -> item.name to item.annotations
+                    is TopLevel.Enum -> item.name to item.annotations
+                    is TopLevel.Fail -> item.name to item.annotations
+                    is TopLevel.Func -> item.decl.name to item.decl.annotations
+                    else -> null
+                }
+                decorated?.second?.forEach { annotation ->
+                    idx.annotatedBy.getOrPut(annotation.name) { mutableListOf() }.add(module to decorated.first)
+                }
                 when (item) {
                     is TopLevel.Func -> register(item.decl.name, item)
                     is TopLevel.FinDecl -> register(item.name, item)
@@ -1802,6 +1818,13 @@ class StdlibInjector private constructor(
                 }
             }
             frontier = next
+            // A `reflect<*>.withAnnot<D>` loop enumerates every declaration
+            // decorated `@D` - in the program or in a library it reaches - and
+            // nothing names them, so they are brought in for the loop here, and
+            // whatever they reference after them.
+            if (frontier.isEmpty()) {
+                frontier = enumeratedDeclarations(program, walk)
+            }
         }
         val injected = walk.injected
         val injectedExterns = walk.externs
@@ -1954,6 +1977,46 @@ class StdlibInjector private constructor(
      * the program's own declaration - not a second copy under a hidden identity
      * that the program's `String` would then disagree with.
      */
+    /** Decorators some `reflect<*>.withAnnot<D>` in [items] enumerates. */
+    private fun enumeratedDecorators(items: Collection<TopLevel>, into: MutableSet<String>) {
+        val finder = object : org.azora.lang.frontend.AstMapper() {
+            override fun expr(e: Expr): Expr {
+                if (e is Expr.Call && e.callee == "__withAnnot") {
+                    (e.typeArgs.singleOrNull() as? TypeRef.Named)?.let { into.add(it.name.substringAfterLast("__")) }
+                }
+                return super.expr(e)
+            }
+        }
+        for (item in items) {
+            when (item) {
+                is TopLevel.Func -> finder.stmts(item.decl.body)
+                is TopLevel.Impl -> item.methods.forEach { finder.stmts(it.body) }
+                is TopLevel.Test -> finder.stmts(item.body)
+                else -> {}
+            }
+        }
+    }
+
+    /**
+     * References to every declaration a `withAnnot` loop in the program or in
+     * what has been injected enumerates, from modules the program reaches and
+     * not yet brought in.
+     */
+    private fun enumeratedDeclarations(program: Program, walk: Walk): List<Ref> {
+        val decorators = linkedSetOf<String>()
+        enumeratedDecorators(program.items, decorators)
+        enumeratedDecorators(walk.injected.values, decorators)
+        val refs = mutableListOf<Ref>()
+        for (decorator in decorators) {
+            for ((module, name) in index.annotatedBy[decorator].orEmpty()) {
+                if (module !in walk.reachable || module == walk.ownModule) continue
+                val ref = Ref(name, module)
+                if (ref !in walk.seen) refs.add(ref)
+            }
+        }
+        return refs
+    }
+
     private inner class Walk(val reachable: Set<String>, val ownModule: String? = null) {
         val injected = LinkedHashMap<String, TopLevel>()
         val moduleOf = HashMap<String, String?>()

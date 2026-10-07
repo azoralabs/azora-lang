@@ -273,4 +273,107 @@ class ReflectDecoExpanderTest {
             "expected a compile-time-only diagnostic, got: $reported"
         )
     }
+
+    // A library that builds UI - a dock that composes its panels, a runner that
+    // calls its systems from inside `compose(pass) { … }` - reaches for the loop
+    // inside a lambda as often as at the top of a function. Every block a
+    // statement can stand in has to unroll it.
+
+    @Test fun loopsUnrollInsideATrailingLambda() {
+        assertEquals("alpha\nbeta", run("""
+            import std.io
+            $marked
+
+            @Marked
+            func alpha() { println("alpha") }
+
+            @Marked
+            func beta() { println("beta") }
+
+            func each(body: inline () -> Unit) { body() }
+
+            func main() {
+                each {
+                    inline for S in reflect<*>.withAnnot<Marked> {
+                        S()
+                    }
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun loopsUnrollInsideALambdaThatTakesParameters() {
+        assertEquals("1 alpha\n1 beta", run("""
+            import std.io
+            $marked
+
+            @Marked(tag: "alpha")
+            pack Alpha { var v: Int }
+
+            @Marked(tag: "beta")
+            pack Beta { var v: Int }
+
+            func passing(value: Int, body: inline (Int) -> Unit) { body(value) }
+
+            func main() {
+                passing(1) { index ->
+                    inline for S in reflect<*>.withAnnot<Marked> {
+                        println("${'$'}{index} ${'$'}{reflect<S>.annotMeta<Marked>.tag}")
+                    }
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun loopsUnrollInsideDeferAndNestedBlocks() {
+        assertEquals("body\nalpha\nbeta", run("""
+            import std.io
+            $marked
+
+            @Marked
+            func alpha() { println("alpha") }
+
+            @Marked
+            func beta() { println("beta") }
+
+            func main() {
+                defer {
+                    inline for S in reflect<*>.withAnnot<Marked> {
+                        S()
+                    }
+                }
+                println("body")
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aVariantShorthandArgumentKeepsItsType() {
+        // `@Spot(area: .Center)` read back where no comparison supplies the enum:
+        // as an argument, the folded value has to name its type itself.
+        assertEquals("A 1\nB 0", run("""
+            import std.io
+            enum Area {
+                Left
+                Center
+            }
+            annot @Spot for .Pack {
+                fin area: Area = .Left
+            }
+            func index(area: Area): Int {
+                return when area {
+                    Area.Left -> 0
+                    else -> 1
+                }
+            }
+            @Spot(area: .Center)
+            pack A { }
+            @Spot
+            pack B { }
+            func main() {
+                inline for P in reflect<*>.withAnnot<Spot> {
+                    println("${'$'}{reflect<P>.declName} ${'$'}{index(reflect<P>.annotMeta<Spot>.area)}")
+                }
+            }
+        """.trimIndent()))
+    }
 }

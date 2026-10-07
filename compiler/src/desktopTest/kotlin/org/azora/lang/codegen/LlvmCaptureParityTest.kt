@@ -89,4 +89,40 @@ class LlvmCaptureParityTest {
         }
         """.trimIndent(),
     )
+
+    /**
+     * An inline callable called from a block nested inside another inline call.
+     *
+     * The child block reads the parameter only as a callee. It still has to reach
+     * the environment by reference: copying it would hand the block an owner of a
+     * closure the enclosing function also frees, and leaving it out entirely left
+     * the native backend loading a module global that does not exist.
+     */
+    @Test fun aNestedBlockCallsAnInlineCallableParameter() = agrees(
+        "plain 7\nreact 8",
+        """
+        import std.io
+
+        func outer(children: inline () -> Unit) { children() }
+
+        func dock(count: Int, content: inline (Int) -> Unit) {
+            outer {
+                content(count)
+            }
+        }
+
+        react func reactOuter(children: inline react () -> Unit) { children() }
+
+        react func reactDock(count: Int, content: inline react (Int) -> Unit) {
+            reactOuter {
+                content(count + 1)
+            }
+        }
+
+        react func main() {
+            dock(7) { i -> println("plain ${'$'}{i}") }
+            reactDock(7) { i -> println("react ${'$'}{i}") }
+        }
+        """.trimIndent(),
+    )
 }

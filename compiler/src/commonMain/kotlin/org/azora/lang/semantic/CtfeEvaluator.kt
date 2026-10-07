@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.ir.Intrinsics
+import org.azora.lang.frontend.AstMapper
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -88,6 +89,13 @@ class CtfeEvaluator(private val table: SymbolTable) {
     private var compileTimeDepth = 0
     private var activeErrors: MutableList<String>? = null
 
+    /**
+     * The type parameters of the function being folded, when it is emitted as
+     * code. Generics are erased, so inside its body these have no name at run
+     * time; an inline body is only ever copied, so it lends its own none.
+     */
+    private var erasedTypeParams: Set<String> = emptySet()
+
     private fun foldCompileTimeExpr(expr: Expr, program: Program): Pair<Expr, Boolean> {
         compileTimeDepth++
         return try {
@@ -146,6 +154,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             inlineEnv.putAll(topLevelEnv)
             reflectionTypes.clear()
             decl.params.forEach { reflectionTypes[it.name] = it.type.displayName() }
+            erasedTypeParams = if (decl.isInline) emptySet() else decl.typeParams.toSet()
             val newParams = decl.params.map { param ->
                 val default = param.defaultValue ?: return@map param
                 val (foldedDefault, defaultChanged) = foldCompileTimeExpr(default, program)
@@ -176,6 +185,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 inlineEnv.putAll(topLevelEnv)
                 reflectionTypes.clear()
                 item.decl.params.forEach { reflectionTypes[it.name] = it.type.displayName() }
+                erasedTypeParams = if (item.decl.isInline) emptySet() else item.decl.typeParams.toSet()
                 // A parameter default is code the caller runs, so it has to be
                 // folded like a body. Leaving it alone lets a default that names
                 // an `inline fin` survive as a reference to a constant that no
@@ -202,6 +212,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 inlineEnv.putAll(seedConstants)
                 inlineEnv.putAll(topLevelEnv)
                 reflectionTypes.clear()
+                erasedTypeParams = emptySet()
                 shadowConstants(emptyList(), item.body)
                 val (newBody, bodyChanged) = foldBody(item.body, program, errors)
                 if (bodyChanged) changed = true
@@ -420,6 +431,23 @@ class CtfeEvaluator(private val table: SymbolTable) {
             }
         }
         return Pair(result, true)
+    }
+
+    /** Whether [body] holds a compile-time statement at any depth, lambdas included. */
+    private fun hasCompileTimeStatement(body: List<Stmt>): Boolean {
+        var found = false
+        object : AstMapper() {
+            override fun expandStmt(s: Stmt): List<Stmt> {
+                if (s is Stmt.InlineFor || s is Stmt.InlineIf || s is Stmt.InlineBlock ||
+                    s is Stmt.InlineFin || s is Stmt.InlineLet || s is Stmt.InlineVar ||
+                    s is Stmt.InlineAssignment || s is Stmt.DeepInlineIf || s is Stmt.DeepInlineBlock
+                ) {
+                    found = true
+                }
+                return if (found) listOf(s) else super.expandStmt(s)
+            }
+        }.stmts(body)
+        return found
     }
 
     // -- Body-level folding (handles inline if/fin expansion) ---------------
@@ -1201,7 +1229,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         val decl = program.functions.find { it.name == call.callee && it.isInline } ?: return null
         if (decl.params.any { it.variadic }) return null
         val returned = (decl.body.singleOrNull() as? Stmt.Return)?.value
-            ?.let { foldTypeNames(it, decl.typeParams, call.typeArgs) } ?: return null
+            ?.let { foldTypeNames(it, decl.typeParams, call.typeArgs, call) } ?: return null
         val bindings = mutableMapOf<String, Expr>()
         bindings.putAll(constTypeArguments(decl, call.typeArgs))
         for ((index, param) in decl.params.withIndex()) {
@@ -1218,12 +1246,27 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * where `T` stops being a parameter. Nothing later knows what it was, so the
      * name is put in here or not at all.
      */
-    private fun foldTypeNames(expr: Expr, typeParams: List<String>, typeArgs: List<TypeRef>): Expr {
+    private fun foldTypeNames(expr: Expr, typeParams: List<String>, typeArgs: List<TypeRef>, call: Expr.Call): Expr {
         if (typeParams.isEmpty() || typeArgs.isEmpty()) return expr
         val bound = typeParams.withIndex().mapNotNull { (index, param) ->
             typeArgs.getOrNull(index)?.let { param to it }
         }.toMap()
         if (bound.isEmpty()) return expr
+        // Bound to a parameter of the erased generic being folded, `T.typeName`
+        // would fold to the parameter's own name - one string shared by every
+        // instantiation, so a lookup keyed by it finds the wrong thing for all
+        // of them. Nothing later can recover the type, so it is an error here.
+        for ((param, ref) in bound) {
+            var bare = ref
+            while (bare is TypeRef.Reference) bare = bare.inner
+            val erased = (bare as? TypeRef.Named)?.takeIf { it.args.isEmpty() && it.name in erasedTypeParams } ?: continue
+            if (!readsTypeName(expr, param)) continue
+            activeErrors?.add(
+                "line ${call.line}: '${call.callee}<${erased.name}>' needs the name of '${erased.name}', but generics are " +
+                    "erased, so inside a generic function '${erased.name}' has none at run time - take what is " +
+                    "looked up by name (such as the Storage<${erased.name}>) as a parameter from a caller that names the type"
+            )
+        }
         // `T.typeName` names the *type*, not how it is borrowed: `Box&` and
         // `Box!` are both `Box`. A borrow is how a value is reached, not what it
         // is, so anything keyed by the name answers the same for all three.
@@ -1277,6 +1320,18 @@ class CtfeEvaluator(private val table: SymbolTable) {
             else -> e
         }
         return fold(expr)
+    }
+
+    /** Whether [expr] reads `[param].typeName` anywhere. */
+    private fun readsTypeName(expr: Expr, param: String): Boolean {
+        var found = false
+        object : AstMapper() {
+            override fun expr(e: Expr): Expr {
+                if (e is Expr.Member && e.name == "typeName" && (e.target as? Expr.Identifier)?.name == param) found = true
+                return super.expr(e)
+            }
+        }.expr(expr)
+        return found
     }
 
     /**
@@ -1430,7 +1485,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     Pair(expr.copy(condition = condition, thenExpr = thenExpr, elseExpr = elseExpr), cc || tc || ec)
                 }
             }
-            is Expr.CatchExpr, is Expr.Lambda -> Pair(expr, false)
+            is Expr.CatchExpr -> Pair(expr, false)
+            // A lambda body is a block like any other: `inline for`, `inline if`
+            // and their kin unroll inside it, and an `inline func` it calls is
+            // expanded there as it would be in a function body.
+            is Expr.Lambda -> {
+                val (body, changed) = foldScopedBody(expr.body, program, activeErrors ?: mutableListOf())
+                Pair(if (changed) expr.copy(body = body) else expr, changed)
+            }
             is Expr.SafeMember -> {
                 // `(reflect X).scope?.label` / `?.isInline` - fold the safe terminal.
                 foldScopeTerminal(expr.target, expr.name, program, expr.line)?.let { return Pair(it, true) }

@@ -16,6 +16,7 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.TypeRef
 import org.azora.lang.frontend.Annotation
 import org.azora.lang.frontend.DecoTarget
 import org.azora.lang.frontend.Expr
@@ -105,9 +106,31 @@ object DecoratorMetadata {
         val index = applied.declaration.fields.indexOfFirst { it.name == fieldName }
         if (index < 0) return null
         val application = applied.directApplication
-        application?.namedArgs?.firstOrNull { it.first == fieldName }?.second?.let { return it }
-        application?.args?.getOrNull(index)?.let { return it }
-        return chosenDefault(applied, index)?.value
+        val value = application?.namedArgs?.firstOrNull { it.first == fieldName }?.second
+            ?: application?.args?.getOrNull(index)
+            ?: chosenDefault(applied, index)?.value
+        return value?.let { qualified(it, applied.declaration.fields[index].type) }
+    }
+
+    /**
+     * [value] with a variant shorthand spelled out against [type].
+     *
+     * `@Panel(area: .Center)` is checked against the decorator's field, but the
+     * folded value lands wherever the reading code put it - an argument, a
+     * comparison, a constructor - and `.Center` means nothing there without the
+     * type it came from.
+     */
+    private fun qualified(value: Expr, type: TypeRef): Expr {
+        // A decorator's own arguments keep the shorthand as written, `.Center`;
+        // an expression position parses it as an inferred member.
+        val member = when (value) {
+            is Expr.InferredMember -> value.name
+            is Expr.Identifier -> value.name.takeIf { it.startsWith(".") && it.length > 1 }?.substring(1)
+            else -> null
+        } ?: return value
+        val named = type as? TypeRef.Named ?: return value
+        if (named.args.isNotEmpty()) return value
+        return Expr.Member(Expr.Identifier(named.name, value.line, value.column, named.name.length), member, value.line, value.column, value.length)
     }
 
     /**

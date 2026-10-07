@@ -495,7 +495,7 @@ object SerializationDeriver {
             "Bool" -> "try ${qualified(helpers.provider, "serialAsBool")}($raw)"
             "Char" -> "try ${qualified(helpers.provider, "serialAsChar")}($raw)"
             in integerTypes -> "try ${qualified(helpers.provider, "serialAs${named.name}")}($raw)"
-            in floatingTypes -> "try ${qualified(helpers.provider, "serialAsDouble")}($raw) as ${named.name}"
+            in floatingTypes -> "try ${qualified(helpers.provider, "serialAsReal")}($raw) as ${named.name}"
             else -> "try $receiverValue.fromSerialValue($raw)"
         }
     }

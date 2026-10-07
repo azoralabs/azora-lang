@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.frontend.Annotation
+import org.azora.lang.frontend.AstMapper
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.NamedTypeMacroCall
 import org.azora.lang.frontend.TypeFormKind
@@ -69,30 +70,44 @@ object ReflectDecoExpander {
             for (a in annotations) decoratedByName.getOrPut(a.name) { mutableListOf() }.add(name)
         }
         if (decoratedByName.isEmpty()) return program
+        val expander = Expander(decoratedByName, program)
         return program.copy(items = program.items.map { item ->
             when (item) {
-                is TopLevel.Func -> item.copy(decl = expandDecl(item.decl, decoratedByName, program))
-                is TopLevel.Impl -> item.copy(methods = item.methods.map { expandDecl(it, decoratedByName, program) })
+                is TopLevel.Func -> item.copy(decl = item.decl.copy(body = expander.stmts(item.decl.body)))
+                is TopLevel.Impl -> item.copy(methods = item.methods.map { it.copy(body = expander.stmts(it.body)) })
+                is TopLevel.Test -> item.copy(body = expander.stmts(item.body))
                 else -> item
             }
         })
     }
 
-    private fun expandDecl(decl: FuncDecl, decorated: Map<String, List<String>>, program: Program): FuncDecl =
-        decl.copy(body = expandStmts(decl.body, decorated, program))
-
-    private fun expandStmts(stmts: List<Stmt>, decorated: Map<String, List<String>>, program: Program): List<Stmt> =
-        stmts.flatMap { stmt ->
-            val deco = withAnnotName(stmt)
-            if (stmt is Stmt.InlineFor && deco != null) {
-                val names = decorated[deco].orEmpty()
-                names.flatMap { name ->
-                    val sub = Substitution(stmt.name, name, program)
-                    sub.stmts(expandStmts(stmt.body, decorated, program))
-                }
-            } else {
-                listOf(recurseStmt(stmt, decorated, program))
+    /**
+     * Unrolls `withAnnot` loops wherever a statement can stand - a lambda body
+     * (`compose(pass) { … }`, a trailing child block), `using`, `defer` and every
+     * other block - since [AstMapper] reaches all of them.
+     */
+    private class Expander(val decorated: Map<String, List<String>>, val program: Program) : AstMapper() {
+        override fun expandStmt(s: Stmt): List<Stmt> {
+            val deco = withAnnotName(s) ?: return super.expandStmt(s)
+            val loop = s as Stmt.InlineFor
+            return decorated[deco].orEmpty().flatMap { name ->
+                ownScope(Substitution(loop.name, name, program).stmts(stmts(loop.body)), loop)
             }
+        }
+    }
+
+    /**
+     * One unrolled iteration, in a scope of its own when it declares anything.
+     *
+     * A runtime loop body is a fresh scope on every pass; unrolling must keep
+     * that, or the `fin at = …` each iteration writes becomes one name declared
+     * once per decorated type in a single block.
+     */
+    private fun ownScope(iteration: List<Stmt>, loop: Stmt.InlineFor): List<Stmt> =
+        if (iteration.any { it is Stmt.FinDecl || it is Stmt.VarDecl || it is Stmt.LetDecl }) {
+            listOf(Stmt.Scope(iteration, loop.line, loop.column))
+        } else {
+            iteration
         }
 
     /** The decorator name if [stmt] is `inline for X in reflect<*>.withAnnot<D>`, else null. */
@@ -103,20 +118,6 @@ object ReflectDecoExpander {
         return (call.typeArgs.singleOrNull() as? TypeRef.Named)?.name
     }
 
-    /** Recurses into nested statement bodies so `withAnnot` loops anywhere are expanded. */
-    private fun recurseStmt(stmt: Stmt, decorated: Map<String, List<String>>, program: Program): Stmt = when (stmt) {
-        is Stmt.If -> stmt.copy(thenBranch = expandStmts(stmt.thenBranch, decorated, program), elseBranch = stmt.elseBranch?.let { expandStmts(it, decorated, program) })
-        is Stmt.While -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
-        is Stmt.For -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
-        is Stmt.Loop -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
-        is Stmt.Scope -> stmt.copy(body = expandStmts(stmt.body, decorated, program))
-        is Stmt.When -> stmt.copy(
-            branches = stmt.branches.map { it.copy(body = expandStmts(it.body, decorated, program)) },
-            elseBranch = stmt.elseBranch?.let { expandStmts(it, decorated, program) },
-        )
-        else -> stmt
-    }
-
     // -- Loop-variable substitution -----------------------------------------
 
     /**
@@ -124,7 +125,7 @@ object ReflectDecoExpander {
      * declaration [to], and resolves the `reflect<[from]>` queries that only
      * this binding can answer.
      */
-    private class Substitution(val from: String, val to: String, val program: Program) {
+    private class Substitution(val from: String, val to: String, val program: Program) : AstMapper() {
 
         private fun subName(name: String): String = when {
             name == from -> to
@@ -139,79 +140,29 @@ object ReflectDecoExpander {
          * parameter's name or its mutability is something a body does, not
          * something a call does - so both positions unroll here.
          */
-        fun stmts(body: List<Stmt>): List<Stmt> = body.flatMap { s ->
+        override fun expandStmt(s: Stmt): List<Stmt> =
             if (s is Stmt.InlineFor && boundParams(s.iterable)) {
-                params().flatMap { param -> ParamSub(s.name, param, program).stmts(s.body).map { stmt(it) } }
+                params().flatMap { param -> ownScope(stmts(ParamSub(s.name, param, program).stmts(s.body)), s) }
             } else {
-                listOf(stmt(s))
+                super.expandStmt(s)
             }
-        }
 
-        fun stmt(stmt: Stmt): Stmt = when (stmt) {
-            is Stmt.ExprStmt -> stmt.copy(expr = expr(stmt.expr))
-            is Stmt.Return -> stmt.copy(value = stmt.value?.let { expr(it) })
-            is Stmt.VarDecl -> stmt.copy(type = type(stmt.type), initializer = expr(stmt.initializer))
-            is Stmt.FinDecl -> stmt.copy(type = type(stmt.type), initializer = expr(stmt.initializer))
-            is Stmt.LetDecl -> stmt.copy(type = type(stmt.type), initializer = expr(stmt.initializer))
-            is Stmt.Assignment -> stmt.copy(value = expr(stmt.value))
-            is Stmt.MemberAssign -> stmt.copy(target = expr(stmt.target), value = expr(stmt.value))
-            is Stmt.Exchange -> stmt.copy(left = expr(stmt.left), right = expr(stmt.right))
-            is Stmt.IndexAssign -> stmt.copy(target = expr(stmt.target), index = expr(stmt.index), value = expr(stmt.value))
-            is Stmt.If -> stmt.copy(condition = expr(stmt.condition), thenBranch = stmts(stmt.thenBranch), elseBranch = stmt.elseBranch?.let { stmts(it) })
-            is Stmt.While -> stmt.copy(condition = expr(stmt.condition), body = stmts(stmt.body))
-            is Stmt.For -> stmt.copy(iterable = expr(stmt.iterable), step = stmt.step?.let(::expr), body = stmts(stmt.body))
-            is Stmt.Loop -> stmt.copy(body = stmts(stmt.body))
-            is Stmt.Scope -> stmt.copy(body = stmts(stmt.body))
-            is Stmt.When -> stmt.copy(
-                scrutinee = expr(stmt.scrutinee),
-                branches = stmt.branches.map { b -> b.copy(patterns = b.patterns.map { expr(it) }, body = stmts(b.body)) },
-                elseBranch = stmt.elseBranch?.let { stmts(it) },
-            )
-            else -> stmt
-        }
+        override fun typeRef(ref: TypeRef): TypeRef =
+            super.typeRef(if (ref is TypeRef.Named && ref.name == from) ref.copy(name = to) else ref)
 
-        fun type(ann: TypeAnnotation): TypeAnnotation =
-            if (ann is TypeAnnotation.Explicit) TypeAnnotation.Explicit(typeRef(ann.ref)) else ann
-
-        fun typeRef(ref: TypeRef): TypeRef = when (ref) {
-            is TypeRef.Named -> ref.copy(name = if (ref.name == from) to else ref.name, args = ref.args.map { typeRef(it) })
-            is TypeRef.Array -> ref.copy(element = typeRef(ref.element))
-            is TypeRef.Nullable -> ref.copy(inner = typeRef(ref.inner))
-            is TypeRef.Reference -> ref.copy(inner = typeRef(ref.inner))
-            else -> ref
-        }
-
-        fun expr(e: Expr): Expr {
+        override fun expr(e: Expr): Expr {
             reflectQuery(e)?.let { return it }
             return when (e) {
                 is Expr.Identifier -> if (e.name == from) e.copy(name = to) else e
                 // The applied type arguments travel with the call, so
                 // `nameOf<C>()` is bound for what `C` stands for on this
                 // iteration rather than left naming the loop variable.
-                is Expr.Call -> e.copy(
-                    callee = subName(e.callee),
-                    args = e.args.flatMap { arg(it) },
-                    receiver = e.receiver?.let { expr(it) },
-                    typeArgs = e.typeArgs.map { typeRef(it) },
-                )
-                is Expr.MethodCall -> e.copy(target = expr(e.target), args = e.args.map { expr(it) })
-                is Expr.Member -> e.copy(target = expr(e.target))
-                is Expr.SafeMember -> e.copy(target = expr(e.target))
-                is Expr.Index -> e.copy(target = expr(e.target), index = expr(e.index))
-                is Expr.TupleAccess -> e.copy(target = expr(e.target))
-                is Expr.Binary -> e.copy(left = expr(e.left), right = expr(e.right))
-                is Expr.Unary -> e.copy(operand = expr(e.operand))
-                is Expr.IncDec -> e.copy(target = expr(e.target))
-                is Expr.Grouping -> e.copy(expr = expr(e.expr))
-                is Expr.Cast -> e.copy(expr = expr(e.expr), targetType = typeRef(e.targetType))
-                is Expr.ArrayLiteral -> e.copy(elements = e.elements.map { expr(it) })
-                is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->
-                    if (part is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(expr(part.expr)) else part
-                })
-                is Expr.CatchExpr -> e.copy(expr = expr(e.expr), fallback = expr(e.fallback))
-                else -> e
+                is Expr.Call -> super.expr(e.copy(callee = subName(e.callee)))
+                else -> super.expr(e)
             }
         }
+
+        override fun args(args: List<Expr>): List<Expr> = args.flatMap { arg(it) }
 
         // -- Parameters ------------------------------------------------------
 
@@ -337,7 +288,7 @@ object ReflectDecoExpander {
      * name, because that is where its statics are declared: `Rows<Shape>` and
      * `Store&` reach `Rows::provide` and `Store::provide`.
      */
-    private class ParamSub(val from: String, val param: Param, val program: Program) {
+    private class ParamSub(val from: String, val param: Param, val program: Program) : AstMapper() {
 
         private val type: TypeRef get() = param.type
 
@@ -348,44 +299,12 @@ object ReflectDecoExpander {
             else -> null
         }
 
-        fun typeRef(ref: TypeRef): TypeRef = when (ref) {
-            is TypeRef.Named ->
-                if ((ref.name == from || ref.name == "$from.ActualType") && ref.args.isEmpty()) type
-                else ref.copy(args = ref.args.map { typeRef(it) })
-            is TypeRef.Array -> ref.copy(element = typeRef(ref.element))
-            is TypeRef.Nullable -> ref.copy(inner = typeRef(ref.inner))
-            is TypeRef.Reference -> ref.copy(inner = typeRef(ref.inner))
-            else -> ref
-        }
+        override fun typeRef(ref: TypeRef): TypeRef =
+            if (ref is TypeRef.Named && (ref.name == from || ref.name == "$from.ActualType") && ref.args.isEmpty()) type
+            else super.typeRef(ref)
 
         /** Whether [e] names a member of the bound parameter. */
         private fun onParam(e: Expr): Boolean = (e as? Expr.Identifier)?.name == from
-
-        fun stmts(body: List<Stmt>): List<Stmt> = body.map { stmt(it) }
-
-        fun stmt(s: Stmt): Stmt = when (s) {
-            is Stmt.ExprStmt -> s.copy(expr = expr(s.expr))
-            is Stmt.Return -> s.copy(value = s.value?.let { expr(it) })
-            is Stmt.VarDecl -> s.copy(type = typeAnn(s.type), initializer = expr(s.initializer))
-            is Stmt.FinDecl -> s.copy(type = typeAnn(s.type), initializer = expr(s.initializer))
-            is Stmt.LetDecl -> s.copy(type = typeAnn(s.type), initializer = expr(s.initializer))
-            is Stmt.Assignment -> s.copy(value = expr(s.value))
-            is Stmt.MemberAssign -> s.copy(target = expr(s.target), value = expr(s.value))
-            is Stmt.If -> s.copy(condition = expr(s.condition), thenBranch = stmts(s.thenBranch), elseBranch = s.elseBranch?.let { stmts(it) })
-            is Stmt.While -> s.copy(condition = expr(s.condition), body = stmts(s.body))
-            is Stmt.For -> s.copy(iterable = expr(s.iterable), step = s.step?.let(::expr), body = stmts(s.body))
-            is Stmt.Loop -> s.copy(body = stmts(s.body))
-            is Stmt.Scope -> s.copy(body = stmts(s.body))
-            is Stmt.When -> s.copy(
-                scrutinee = expr(s.scrutinee),
-                branches = s.branches.map { b -> b.copy(patterns = b.patterns.map { expr(it) }, body = stmts(b.body)) },
-                elseBranch = s.elseBranch?.let { stmts(it) },
-            )
-            else -> s
-        }
-
-        private fun typeAnn(ann: TypeAnnotation): TypeAnnotation =
-            if (ann is TypeAnnotation.Explicit) TypeAnnotation.Explicit(typeRef(ann.ref)) else ann
 
         /** The decorator [name] written on this parameter, or null. */
         private fun annotationOn(name: String?): Annotation? =
@@ -411,7 +330,7 @@ object ReflectDecoExpander {
                 it.callee == callee && ((it.args.singleOrNull() as? Expr.Identifier)?.name == from)
             }
 
-        fun expr(e: Expr): Expr = when (e) {
+        override fun expr(e: Expr): Expr = when (e) {
             // `P.annotMeta<D>.field` - what the parameter's decorator was given.
             is Expr.Member if about(e.target, "__annotMeta") != null -> {
                 val query = e.target as Expr.Call
@@ -435,20 +354,9 @@ object ReflectDecoExpander {
                 // `Rows<Shape>::provide` is specialized for `Shape` and not for
                 // whatever `Rows`' parameter would otherwise erase to.
                 val typeArgs = if (callee != e.callee && e.typeArgs.isEmpty()) named?.args.orEmpty() else e.typeArgs.map { typeRef(it) }
-                e.copy(callee = callee, args = e.args.map { expr(it) }, typeArgs = typeArgs, receiver = e.receiver?.let { expr(it) })
+                e.copy(callee = callee, args = args(e.args), typeArgs = typeArgs, receiver = e.receiver?.let { expr(it) })
             }
-            is Expr.MethodCall -> e.copy(target = expr(e.target), args = e.args.map { expr(it) })
-            is Expr.Index -> e.copy(target = expr(e.target), index = expr(e.index))
-            is Expr.Binary -> e.copy(left = expr(e.left), right = expr(e.right))
-            is Expr.Unary -> e.copy(operand = expr(e.operand))
-            is Expr.IncDec -> e.copy(target = expr(e.target))
-            is Expr.Grouping -> e.copy(expr = expr(e.expr))
-            is Expr.Cast -> e.copy(expr = expr(e.expr), targetType = typeRef(e.targetType))
-            is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->
-                if (part is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(expr(part.expr)) else part
-            })
-            is Expr.ArrayLiteral -> e.copy(elements = e.elements.map { expr(it) })
-            else -> e
+            else -> super.expr(e)
         }
 
         /**

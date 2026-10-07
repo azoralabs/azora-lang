@@ -1361,6 +1361,9 @@ class WasmCodegen {
         check(expr.name != "__delay") {
             "WebAssembly delay requires a host clock, which this target does not support yet"
         }
+        // A call argument the LLVM target frees after the call. This target
+        // does not free it yet, so it is the value itself.
+        if (expr.name == "__temporary") return emitExpr(expr.args.single())
         if (expr.name == "__panic") {
             // The message is evaluated even though the MVP target has no host
             // panic reporter. `unreachable` is Wasm's bottom instruction.

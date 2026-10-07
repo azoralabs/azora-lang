@@ -421,10 +421,13 @@ class TypeResolver(private val table: SymbolTable) {
                     reactiveContext = method.isReactive
                     val savedAsync = asyncContext
                     asyncContext = method.isTask
+                    // The receiver is a contextual value under the name it was
+                    // declared with: `(anchor: Anchor!).rows()` calling `rows()`
+                    // again supplies `anchor`, which is all the body can see.
                     contextualValues.addLast(
                         ContextFrame(
                             listOf(
-                                Expr.Identifier("self", method.line, method.column) to
+                                Expr.Identifier(if (receiverTupleType != null) "self" else method.receiverName, method.line, method.column) to
                                     (receiverTupleType ?: IrType.Named(item.typeName)),
                             ) + func.params.drop(1).take(method.contextualParams).map { (name, type) ->
                                 Expr.Identifier(name, method.line, method.column) to type
@@ -3035,8 +3038,12 @@ class TypeResolver(private val table: SymbolTable) {
                 val func = table.lookupFunction(expr.callee)
                 if (func != null) table.semanticFacts.callable(expr, func)
                 if (func == null) {
-                    // Maybe a lambda stored in a variable.
+                    // Maybe a lambda stored in a variable. Calling it reads it, so
+                    // a nested lambda captures it the way it would capture any
+                    // other value it names - `content(index)` inside a child block
+                    // needs `content` in that block's environment.
                     val v = table.lookupVariable(expr.callee)
+                    if (v != null && (v.type is IrType.Function || v.type == IrType.Any)) checkCapture(expr.callee, expr.line)
                     if (v != null && v.type is IrType.Function) {
                         return resolveCallableArguments(expr.callee, v.type, expr.args, expr.line)
                     }
@@ -3952,7 +3959,11 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 val t1 = resolveExpr(expr.thenExpr) ?: return null
                 val t2 = resolveExpr(expr.elseExpr) ?: return null
-                joinExpressionTypes(t1, t2, expr.line, "if")
+                // A literal branch states no width: it reads at the other
+                // branch's, so `if first { 0.0 } else { distance }` is a Double.
+                val then = literalAdopting(expr.thenExpr, t1, t2)
+                val otherwise = literalAdopting(expr.elseExpr, t2, t1)
+                joinExpressionTypes(then, otherwise, expr.line, "if")
             }
             is Expr.NamedArg -> resolveExpr(expr.value)
             is Expr.MapLit -> {
@@ -4865,6 +4876,13 @@ class TypeResolver(private val table: SymbolTable) {
      * first-arm inference; changing that broader least-upper-bound policy is
      * separate from making Nothing a bottom type.
      */
+    /** [type] of the branch [branch], or [other]'s when the branch is a bare literal of the same family. */
+    private fun literalAdopting(branch: Expr, type: IrType, other: IrType): IrType = when {
+        isUntypedDoubleLiteral(branch) && other in IrType.floatTypes -> other
+        isUntypedIntLiteral(branch) && IrType.isInteger(other) && IrType.isInteger(type) -> other
+        else -> type
+    }
+
     private fun joinExpressionTypes(first: IrType, second: IrType, line: Int, construct: String): IrType? = when {
         first == IrType.Nothing -> second
         second == IrType.Nothing -> first

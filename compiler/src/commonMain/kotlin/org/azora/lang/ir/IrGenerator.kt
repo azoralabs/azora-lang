@@ -1264,6 +1264,10 @@ class IrGenerator(private val table: SymbolTable) {
             !(lowered is IrExpr.Call && lowered.name == "__isolated")) return false
         if (lowered is IrExpr.Var || lowered is IrExpr.Member || lowered is IrExpr.Index) return false
         if (lowered is IrExpr.Call && lowered.name == "__deref") return false
+        // A conditional owns its value only when every branch does: a branch
+        // that names a place it did not copy hands back a value that place
+        // still owns, and freeing it here would free it twice.
+        if (lowered is IrExpr.IfExpr && (leavesPlace(lowered.thenExpr) || leavesPlace(lowered.elseExpr))) return false
         if (borrowsResult(lowered)) return false
         if (lowered is IrExpr.MethodCall && (lowered.target.type as? IrType.Named)?.let {
                 table.lookupSpecMethod(it.name, lowered.name)?.returnTypeRef is TypeRef.Reference
@@ -1279,6 +1283,22 @@ class IrGenerator(private val table: SymbolTable) {
             is IrType.Nullable -> ((lowered.type as IrType.Nullable).inner as? IrType.Named)?.let { table.lookupStruct(it.name)?.isBridge == false } == true
             else -> false
         }
+    }
+
+    /** Whether returning [value] would hand the caller something this function does not own. */
+    private fun returnsUnownedPlace(value: Expr): Boolean = when (value) {
+        is Expr.Grouping -> returnsUnownedPlace(value.expr)
+        is Expr.Member, is Expr.Index, is Expr.Deref -> true
+        is Expr.Identifier -> table.variableScopeIndex(value.name) == 0
+        else -> false
+    }
+
+    /** Whether [expr] yields a value some place still owns (directly or through a branch). */
+    private fun leavesPlace(expr: IrExpr): Boolean = when (expr) {
+        is IrExpr.Var, is IrExpr.Member, is IrExpr.Index -> true
+        is IrExpr.IfExpr -> leavesPlace(expr.thenExpr) || leavesPlace(expr.elseExpr)
+        is IrExpr.Call -> expr.name == "__deref" || borrowsResult(expr)
+        else -> false
     }
 
     private fun withBindingCopy(annotation: TypeAnnotation, source: Expr, lowered: IrExpr): IrExpr {
@@ -1302,6 +1322,15 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun withImplicitCopy(source: Expr, lowered: IrExpr): IrExpr {
+        // A conditional binds whichever branch it took, so each branch is bound
+        // as it would be on its own: a place of a copyable type is copied there.
+        if (source is Expr.Grouping) return withImplicitCopy(source.expr, lowered)
+        if (source is Expr.IfExpr && lowered is IrExpr.IfExpr) {
+            return lowered.copy(
+                thenExpr = withImplicitCopy(source.thenExpr, lowered.thenExpr),
+                elseExpr = withImplicitCopy(source.elseExpr, lowered.elseExpr),
+            )
+        }
         if (source !is Expr.Identifier && source !is Expr.Member && source !is Expr.Index && source !is Expr.Deref) return lowered
         if (lowered.type is IrType.Function) return IrExpr.Call("__isolated", listOf(lowered), lowered.type)
         val name = (lowered.type as? IrType.Named)?.name ?: return lowered
@@ -1599,7 +1628,14 @@ class IrGenerator(private val table: SymbolTable) {
                 IrStmt.MemberAssign(target, stmt.name, value)
             }
             is Stmt.Return -> IrStmt.Return(
-                stmt.value?.let { expecting(currentReturnRef) { coerceToFloat(lowerExpr(it), currentReturnType) } },
+                stmt.value?.let { value ->
+                    val lowered = expecting(currentReturnRef) { coerceToFloat(lowerExpr(value), currentReturnType) }
+                    // A returned value belongs to the caller. A place the function
+                    // does not own - a global like `Entity::invalid`, a field, an
+                    // element - is handed over as a copy when its type copies, or
+                    // the caller would free the original.
+                    if (returnsUnownedPlace(value) && currentReturnRef !is TypeRef.Reference) withImplicitCopy(value, lowered) else lowered
+                },
             )
             is Stmt.ExprStmt -> IrStmt.ExprStmt(lowerExpr(stmt.expr))
             is Stmt.If -> {

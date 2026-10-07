@@ -1807,6 +1807,11 @@ class IrInterpreter {
         if (expr.name == "__isolated") {
             return deepCopy(args[0])
         }
+        // A call argument the native targets free after the call; values
+        // here are collected, so it is the value itself.
+        if (expr.name == "__temporary") {
+            return args[0]
+        }
         if (expr.name == "__inject") {
             val typeName = args[0] as String
             // Fast path: cached singleton (no suspend inside synchronized).

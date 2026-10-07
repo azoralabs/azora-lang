@@ -45,7 +45,7 @@ async func<T> sleep(ms: T) {
  */
 @Experimental(since: "0.1")
 async func<T> spawnAsync(ms: T, action: () -> Unit) {
-    fin handle = async { action() }
+    fin handle = async [action.&] { action() }
     delay ms
     await handle
 }

@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.putIfAbsentCompat
+import org.azora.lang.frontend.AstMapper
 import org.azora.lang.frontend.ParamModifier
 import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.Annotation
@@ -106,6 +107,36 @@ internal object VariadicMonomorphizer {
         )
     }
 
+    /**
+     * Whether any body reads `reflect<X>.fields`.
+     *
+     * Such a loop needs this pass even in a program with nothing generic in it:
+     * the pass is where the fields are unrolled, so skipping it would leave the
+     * loop for later stages that cannot evaluate it.
+     */
+    private fun reflectsFields(program: Program): Boolean {
+        var found = false
+        val finder = object : AstMapper() {
+            override fun expr(e: Expr): Expr {
+                if (e is Expr.Member && e.name == "fields") {
+                    val call = (e.target as? Expr.Grouping)?.expr ?: e.target
+                    if (call is Expr.Call && call.callee == "__reflect") found = true
+                }
+                return if (found) e else super.expr(e)
+            }
+        }
+        for (item in program.items) {
+            if (found) break
+            when (item) {
+                is TopLevel.Func -> finder.stmts(item.decl.body)
+                is TopLevel.Impl -> item.methods.forEach { finder.stmts(it.body) }
+                is TopLevel.Test -> finder.stmts(item.body)
+                else -> {}
+            }
+        }
+        return found
+    }
+
     fun monomorphize(program: Program): Program {
         val compileTimeOwners = program.items.filterIsInstance<TopLevel.Impl>()
             .filter { it.methods.any { method -> method.body.any(::hasCompileTimeChoice) } }
@@ -126,8 +157,12 @@ internal object VariadicMonomorphizer {
                     // `Tuple<...T>` is the compiler's structural tuple, so there is no
                     // pack to materialise for a shape; any other variadic pack, a
                     // bridge one included, is specialised per instantiation.
+                    // A bridge pack's layout is the bridge's, whatever its parameters:
+                    // `Int<N>` gaining an impl with a compile-time choice (a math
+                    // library's `oper+<N: Int> Ty&.(…)`) must not make `Int` a template,
+                    // or every impl on it - `oper ..` included - is dropped as one.
                     if (!isStructuralTuple(item) && (item.variadicParam != null || item.fields.any { it.condition != null } ||
-                            (item.typeParams.isNotEmpty() && item.name in compileTimeOwners))) {
+                            (item.typeParams.isNotEmpty() && item.name in compileTimeOwners && !item.isBridge))) {
                         packTemplates[item.name] = item
                     }
                 }
@@ -172,7 +207,7 @@ internal object VariadicMonomorphizer {
             )
         }
         val typeMacroRules = program.typeMacroRules
-        if (packTemplates.isEmpty() && funcTemplates.isEmpty() && typeMacroRules.isEmpty()) return program
+        if (packTemplates.isEmpty() && funcTemplates.isEmpty() && typeMacroRules.isEmpty() && !reflectsFields(program)) return program
 
         val methodReturns = linkedMapOf<Pair<String, String>, CallableReturn>()
         for (item in program.items) {
@@ -205,6 +240,7 @@ internal object VariadicMonomorphizer {
             program.scopeTypeNamespaces,
             program.items.filterIsInstance<TopLevel.Pack>().associate { it.name to it.fields },
             program.items.filterIsInstance<TopLevel.Enum>().associate { it.name to it.variants },
+            program.items.filterIsInstance<TopLevel.Deco>().associateBy { it.name },
         )
         // An impl on an ordinary pack still needs its reflected loops expanded - the
         // pack's own fields are known even when it is not monomorphised.
@@ -284,6 +320,8 @@ private class MonoContext(
     private val plainPackFields: Map<String, List<PackField>>,
     /** Every declared enum's variants, for resolving variant const arguments. */
     private val enumVariants: Map<String, List<String>>,
+    /** Every declared decorator, so a reflected field can answer what it was annotated with. */
+    private val decorators: Map<String, TopLevel.Deco> = emptyMap(),
 ) {
 
     /**
@@ -649,6 +687,13 @@ private class MonoContext(
      * this is the only difference between the two cases.
      */
     fun expandPlainImplReflection(item: TopLevel, program: Program): TopLevel {
+        // A free function or a test has no `Self`, but `reflect<Point>.fields`
+        // names its pack outright, so the loop expands there the same way -
+        // including inside the lambdas and blocks of the body.
+        if (item is TopLevel.Func && item.decl.name !in funcTemplates) {
+            return item.copy(decl = item.decl.copy(body = expandReflectedFields(item.decl.body, emptyList())))
+        }
+        if (item is TopLevel.Test) return item.copy(body = expandReflectedFields(item.body, emptyList()))
         if (item !is TopLevel.Impl) return item
         if (item.typeName in packTemplates) return item
         val pack = program.items.filterIsInstance<TopLevel.Pack>().firstOrNull { it.name == item.typeName }
@@ -1201,6 +1246,33 @@ private class MonoContext(
                     )
                 }
             }
+            // `reflect<f>.hasAnnot<D>` / `reflect<f>.annotMeta<D>.x` - what the field's declaration
+            // was annotated with, so an inspector hint (a range, a list of
+            // choices) is written once, on the field it describes.
+            if (expr is Expr.Call && expr.callee == "__hasAnnot" &&
+                (expr.args.singleOrNull() as? Expr.Identifier)?.name == binding.variable
+            ) {
+                val wanted = expr.typeArgs.singleOrNull()?.displayName()
+                return Expr.BoolLiteral(binding.field.annotations.any { it.name == wanted }, expr.line, expr.column)
+            }
+            if (expr is Expr.Member && (expr.target as? Expr.Call)?.callee == "__annotMeta" &&
+                ((expr.target as Expr.Call).args.singleOrNull() as? Expr.Identifier)?.name == binding.variable
+            ) {
+                val wanted = (expr.target as Expr.Call).typeArgs.singleOrNull()?.displayName()
+                val declaration = decorators[wanted]
+                if (declaration != null) {
+                    val applied = DecoratorMetadata.Applied(declaration, binding.field.annotations.firstOrNull { it.name == wanted })
+                    DecoratorMetadata.fieldValue(applied, expr.name)?.let { return it }
+                }
+            }
+            // `f.name` / `f.typeName` - the field's declared name and type, as text.
+            // A label or a serialized key is written once for every field this way.
+            if (expr is Expr.Member && (expr.target as? Expr.Identifier)?.name == binding.variable) {
+                when (expr.name) {
+                    "name" -> return Expr.StringLiteral(binding.field.name, expr.line, expr.column)
+                    "typeName" -> return Expr.StringLiteral(binding.field.type.displayName(), expr.line, expr.column)
+                }
+            }
             if (expr is Expr.Member && expr.name == "value" &&
                 (expr.target as? Expr.Identifier)?.name == binding.variable
             ) {
@@ -1259,7 +1331,9 @@ private class MonoContext(
         when (item) {
         // Drop variadic templates - they are replaced by their monomorphized instances.
         is TopLevel.Pack -> if (item.variadicParam != null) null
-            else item.copy(fields = item.fields.map { it.copy(type = rewriteType(it.type)) })
+            // A default is an expression like any other: `Vec3(0.0, 0.0, 0.0)` names
+            // a specialization the same way it would in a function body.
+            else item.copy(fields = item.fields.map { it.copy(type = rewriteType(it.type), default = it.default?.let(::rewriteExpr)) })
         is TopLevel.Func -> if (item.decl.name in funcTemplates && item.decl.variadicParam != null) null
             else item.copy(decl = rewriteFuncDecl(item.decl))
         // An impl on a monomorphised pack is a template: `expandImpls` emits one copy

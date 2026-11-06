@@ -23,7 +23,7 @@ import kotlin.test.assertIs
  */
 class BuiltinNameShadowExecTest {
     private val functions = """
-        func contains(xs: Array<Int>, x: Int): Bool {
+        func contains(xs: Array<Int>&, x: Int): Bool {
             for v in xs {
                 if v == x then return true
             }

@@ -32,8 +32,8 @@ self.height = measured
 fin (id, name) = lookup()
 ```
 
-A collection literal is a runtime value whose target type selects a static
-`literal` factory. A tuple has a fixed arity and possibly heterogeneous element
+A collection literal is a runtime value whose target type's variadic
+constructor builds it. A tuple has a fixed arity and possibly heterogeneous element
 types. Destructuring reads the components of one tuple value.
 
 ## 2. Goals
@@ -96,12 +96,12 @@ import a::{b::{x, y}, c::*}
 > and associative literals, including `[:]`; the old `![...]` form is removed.
 > Standard `arr`, `vec`, `map` and `set` construction macros are absent.
 >
-> Target-owned List/Set/Map/custom literal factories described below are still
-> pending. The compiler diagnoses these contextual targets rather than assigning
-> array storage to a different collection type. Implicit collection conversion
-> is not inferred from short type names. This profile does not qualify
-> generic/spec boxing, all ownership models, arbitrary-width numeric ABI layout,
-> or whole-program inference. Parsing `[:]` is not completed Map allocation.
+> Target-owned List/Set/Map/custom literals (§5.7) were added on 2026-09-19 and
+> call the target's variadic constructor since 2026-11-06. A target without one
+> is diagnosed rather than given array storage of a different collection type.
+> Implicit collection conversion is not inferred from short type names. This
+> profile does not qualify generic/spec boxing, all ownership models,
+> arbitrary-width numeric ABI layout, or whole-program inference.
 
 ### 5.1 Sequence literals
 
@@ -206,9 +206,9 @@ fin sorted: TreeMap<String, Int> = ["a": 1]
 fin set: Set<Int> = [1, 2, 2, 3]
 ```
 
-The target's literal factory decides duplicate handling. For the standard set,
+The target's constructor decides duplicate handling. For the standard set,
 duplicates collapse according to `Equal` and `Hash`/`Order`. For maps, the
-standard factories use last-written-value-wins unless the target type documents
+standard constructors use last-written-value-wins unless the target type documents
 a stricter policy.
 
 ### 5.5 Contextual typing
@@ -266,56 +266,11 @@ built.
 
 Associative literals infer keys and values independently using the same rules.
 
-### 5.7 Literal factories belong to the target type
+### 5.7 A literal calls the target's variadic constructor
 
-There is no `List<T>([1, 2, 3])` form in this proposal. Explicit construction
-uses ordinary varargs:
-
-```azora
-fin xs = List<Int>(1, 2, 3)
-fin concrete = ArrayList<Int>(1, 2, 3)
-```
-
-Because `List<T>` is a spec rather than a concrete pack, its ordinary vararg
-constructor is itself a normal type-owned bridge factory selecting the standard
-implementation. That facility is independent of literal syntax: it receives
-ordinary call arguments, participates in ordinary call diagnostics, and may be
-used even if this DIP is not involved. Conceptually:
-
-```azora
-spec List<T> {
-    bridge ctor .(...elements: T): Self {
-        return ArrayList<T>(...elements)
-    }
-}
-```
-
-The bracket-specific `literal` factory exists so contextual source can say
-`fin xs: List<Int> = [1, 2, 3]` without inventing a constructor call or an
-intermediate collection.
-
-Contextual bracket construction is defined by a new static declaration named
-`literal`. A sequence literal factory has this conceptual syntax:
-
-```azora
-spec List<T> {
-    bridge literal [...elements: T]: Self {
-        return ArrayList<T>(...elements)
-    }
-}
-```
-
-An associative literal factory receives variadic entry tuples:
-
-```azora
-spec Map<K, V> {
-    bridge literal [...entries: (K, V)]: Self {
-        return LinkedHashMap<K, V>(...entries)
-    }
-}
-```
-
-For a concrete custom type:
+A bracket literal is a call to its target type's variadic constructor. There
+is no separate declaration for literals: the constructor a type already uses
+for `Type(a, b, c)` is the one `[a, b, c]` calls where that type is expected.
 
 ```azora
 pack SmallVec<T> {
@@ -323,37 +278,84 @@ pack SmallVec<T> {
 }
 
 impl SmallVec<T> {
-    literal [...elements: T]: SmallVec<T> {
-        return SmallVec<T>(...elements)
+    ctor .(...elements: T) {
+        for i in 0..<elements.size {
+            self.push(elements[i])
+        }
     }
 }
 
-fin values: SmallVec<Int> = [1, 2, 3]
+fin values: SmallVec<Int> = [1, 2, 3]       // calls the ctor above
+fin same = SmallVec<Int>(1, 2, 3)           // the same call, written out
 ```
 
-The exact body may use a capacity-aware private constructor or builder. The
-surface protocol does not require the compiler to know those details.
+The element type decides the literal's shape. A constructor whose variadic
+element is a 2-tuple receives entries, one `(key, value)` per `key: value`:
 
-Normative properties of `literal` are:
+```azora
+impl TreeMap<K, V> {
+    ctor .(...entries: (K, V)) {
+        for i in 0..<entries.size {
+            self.put(entries[i].0, entries[i].1)
+        }
+    }
+}
 
-- it is static and has no receiver;
-- it is selected at compile time from the expected target type;
-- it is not ordinary overload resolution by the name `literal`;
-- it cannot be called as `List.literal(...)` in version 1;
-- a target may define at most one sequence factory per element arity pattern;
-- a target may define at most one associative factory per key/value pattern;
-- its result must be the containing target type or a concrete value assignable
-  to that target when the containing target is a spec;
+fin ports: TreeMap<String, Int> = ["http": 80, "https": 443]
+```
+
+A sequence literal needs a sequence constructor and an associative literal an
+entry constructor; one does not stand in for the other.
+
+A spec has no storage of its own, so it declares the constructor in its body,
+with an Azora body that returns the standard concrete value:
+
+```azora
+spec List<T> {
+    ctor .(...elements: T): Self {
+        return _arrayListOf(take elements)
+    }
+}
+
+spec Map<K, V> {
+    ctor .(...entries: (K, V)): Self where K: Hash {
+        return _linkedHashMapOf(take entries)
+    }
+}
+
+fin xs: List<Int> = [1, 2, 3]
+```
+
+A spec still cannot be constructed by name. In version 1 its constructor runs
+only for a literal, and `List<Int>(1, 2, 3)` is rejected with a pointer to an
+implementing type such as `ArrayList<Int>(1, 2, 3)`.
+
+The constructor `[...]` calls is the one whose only parameter is variadic. It
+is an ordinary inherent constructor: not a spec conformance's member, not a
+repeated (`ctor*`) constructor, without scope receivers and without type
+parameters of its own. A constructor taking fixed parameters before its
+variadic one is not a literal target.
+
+Normative properties:
+
+- the target is selected at compile time from the expected type;
+- a type declares at most one variadic constructor a literal could call;
+- a target with none rejects the literal and says which constructor to declare;
+- the result is the containing type, or for a spec a concrete value assignable
+  to it; a constructor declaring another result is rejected as a literal target;
 - it may be generic over the containing type's parameters;
-- it participates in ordinary `where` constraints;
-- failure types declared by the factory become failure requirements of the
-  literal expression;
-- literal construction is direct dispatch; it never requires a runtime spec
-  method table.
+- its `where` clause applies to the literal, which is rejected where the
+  clause does not hold;
+- failure types it declares (`ctor .(...elements: T) ?! E`) become failure
+  requirements of the literal expression, which fails like the call does;
+- construction is direct dispatch; it never requires a runtime spec method
+  table.
 
-For a spec such as `List<T>`, the body designates the standard concrete value
-that is returned as that spec. For a concrete pack, the body normally returns
-that pack directly.
+An earlier draft introduced a dedicated `literal [...elements: T]` declaration
+and an implementation shipped it on 2026-09-19. It was removed on 2026-11-06
+(user decision): a variadic constructor already says everything a literal
+needs, and constructors gained `where` clauses and `?! E` so nothing a
+`literal` declaration could say was lost. There is no `literal` keyword.
 
 ### 5.8 No intermediate collection
 
@@ -366,7 +368,7 @@ fin xs: SmallVec<Int> = [a(), b(), c()]
 lowers conceptually to:
 
 ```azora
-fin xs: SmallVec<Int> = SmallVec<Int>.__literal(a(), b(), c())
+fin xs: SmallVec<Int> = SmallVec<Int>(a(), b(), c())
 ```
 
 It does not lower to:
@@ -375,9 +377,10 @@ It does not lower to:
 SmallVec<Int>(List<Int>(a(), b(), c()))
 ```
 
-The literal's elements become direct variadic arguments to the selected factory.
-The backend may further specialize the standard factories into capacity
-allocation plus ordered insertion.
+The literal's elements become direct variadic arguments to the selected
+constructor, packed once into the array its variadic parameter holds; that
+array belongs to the call. The backend may further specialize the standard
+constructors into capacity allocation plus ordered insertion.
 
 ### 5.9 Evaluation order
 
@@ -397,7 +400,7 @@ has the order:
 3. `key1()`
 4. `value1()`
 
-The literal factory receives the resulting arguments in that order. A factory
+The constructor receives the resulting arguments in that order. A constructor
 may organize storage differently, but it may not cause an expression to be
 evaluated again.
 
@@ -412,12 +415,12 @@ fin borrowed: List<Resource&> = [resource.&]
 ```
 
 - `Copy` elements may be passed implicitly.
-- A named, non-`Copy` owned value requires `take` when the factory takes it by
-  value.
+- A named, non-`Copy` owned value requires `take` when the constructor takes it
+  by value.
 - A literal may contain shared or exclusive borrows only when the target
   element type permits those borrows and their inferred lifetime does not
   outlive the literal result.
-- The literal factory may not retain a borrow beyond the result type's declared
+- The constructor may not retain a borrow beyond the result type's declared
   borrow origins.
 - Moving one element does not move any other element.
 - If evaluation of a later element fails, already-evaluated owned temporaries
@@ -444,8 +447,8 @@ fin merged: Map<String, Int> = [...defaults, "port": 8080]
 
 Spread order is insertion order. Duplicate behavior remains target-defined.
 
-Because a spread has runtime length, a factory receiving one cannot always be
-lowered to a single fixed variadic call. The compiler instead uses the target's
+Because a spread has runtime length, a constructor receiving one cannot always
+be lowered to a single fixed variadic call. The compiler instead uses the target's
 builder form. Version 1 may reject spread literals until that builder hook is
 implemented; it must not silently materialize an unrelated temporary list.
 
@@ -845,8 +848,8 @@ opens selectors. Statements use ordinary names and assignable expressions.
 ## 10. Compiler integration
 
 Keep collection shape, tuple elements, expected types, and source spans through
-resolution. Resolve each collection literal through the target's `literal`
-factory, with no intermediate collection. Validate tuple patterns against source
+resolution. Resolve each collection literal through the target's variadic
+constructor, with no intermediate collection. Validate tuple patterns against source
 arity and ownership before lowering their positional reads and writes.
 
 All backends must observe the same element order, one evaluation of a destructured
@@ -866,7 +869,7 @@ source, and normal cleanup for partially initialized values.
 Test empty and nested literals, contextual target selection, generic inference,
 element type errors, spreads, source order, tuple identity and access, and
 single-evaluation destructuring. Test import selectors independently of value
-expressions. Exercise standard and custom factories on every supported backend.
+expressions. Exercise standard and custom constructors on every supported backend.
 
 ## 13. Companion operator vocabulary
 

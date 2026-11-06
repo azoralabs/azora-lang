@@ -107,8 +107,8 @@ spec List<T> : Indexed<T> {
     func &.subList(from: Int, to: Int): List<T>
 
     /** `[a, b, c]` where a `List<T>` is expected: an `ArrayList<T>` in source order. */
-    literal [...elements: T]: Self {
-        return _arrayListOf(elements)
+    ctor .(...elements: T): Self {
+        return _arrayListOf(take elements)
     }
 }
 
@@ -155,8 +155,8 @@ spec MutableList<T> : List<T> {
     func !.clear()
 
     /** `[a, b, c]` where a `MutableList<T>` is expected: an `ArrayList<T>` in source order. */
-    literal [...elements: T]: Self {
-        return _arrayListOf(elements)
+    ctor .(...elements: T): Self {
+        return _arrayListOf(take elements)
     }
 }
 
@@ -185,7 +185,7 @@ impl ArrayList<T> {
         self._capacity = count
     }
 
-    // this is .(1, 2, 3)
+    // this is .(1, 2, 3), and what `[1, 2, 3]` calls where an `ArrayList<T>` is expected
     ctor .(...args: T) {
         self._data = alloc args
         self._size = args.length
@@ -197,11 +197,6 @@ impl ArrayList<T> {
         self._data = alloc^ .(fill) * count
         self._size = count
         self._capacity = count
-    }
-
-    /** `[a, b, c]` where an `ArrayList<T>` is expected, in source order. */
-    literal [...elements: T]: ArrayList<T> {
-        return _arrayListOf(elements)
     }
 }
 

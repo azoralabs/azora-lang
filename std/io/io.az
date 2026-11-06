@@ -50,7 +50,7 @@ scope fmt {
  * @param value The value to write.
  */
 @Since("0.1")
-bridge func print(value: Any): Unit
+bridge func print(value: Any&): Unit
 
 /**
  * Console output intrinsic.
@@ -58,11 +58,12 @@ bridge func print(value: Any): Unit
  * A real, importable bridge whose implementation is supplied by each
  * backend and the interpreter. Reach as `println` after `import std.io`.
  * Accepts `Any` so it prints every type; the backend dispatches on the
- * argument's concrete type.
+ * argument's concrete type. It borrows what it prints: printing a value
+ * never gives it away.
  */
 /** Prints `value` followed by a newline. */
 @Since("0.1")
-bridge func println(value: Any): Unit
+bridge func println(value: Any&): Unit
 
 /**
  * Creates a separator string by repeating a character.

@@ -93,8 +93,8 @@ spec Set<T> : Indexed<T> {
      * `[a, b, c]` where a `Set<T>` is expected: a `LinkedHashSet<T>`, so
      * iteration follows the literal. A repeated element is kept once.
      */
-    literal [...elements: T]: Self where T: Equal {
-        return _linkedHashSetOf(elements)
+    ctor .(...elements: T): Self where T: Equal {
+        return _linkedHashSetOf(take elements)
     }
 }
 
@@ -126,8 +126,8 @@ spec MutableSet<T> : Set<T> {
     func !.clear()
 
     /** `[a, b, c]` where a `MutableSet<T>` is expected: a `LinkedHashSet<T>`, as for `Set<T>`. */
-    literal [...elements: T]: Self where T: Equal {
-        return _linkedHashSetOf(elements)
+    ctor .(...elements: T): Self where T: Equal {
+        return _linkedHashSetOf(take elements)
     }
 }
 
@@ -153,9 +153,11 @@ pack LinkedHashSet<T> where T: Equal {
 // ---------------------------------------------------------------------
 
 impl LinkedHashSet<T> {
-    /** `[a, b, c]` where a `LinkedHashSet<T>` is expected, in literal order without repeats. */
-    literal [...elements: T]: LinkedHashSet<T> {
-        return _linkedHashSetOf(elements)
+    /** `.(a, b, c)`, and `[a, b, c]` where a `LinkedHashSet<T>` is expected: in order, without repeats. */
+    ctor .(...elements: T) {
+        for i in 0..<elements.size {
+            self.add(elements[i])
+        }
     }
 
     /** Doubles the backing buffer, copying existing elements. */
@@ -386,13 +388,11 @@ impl Clone for HashSet {
 }
 
 impl HashSet<T> {
-    /** `[a, b, c]` where a `HashSet<T>` is expected. A repeated element is kept once. */
-    literal [...elements: T]: HashSet<T> {
-        var result = HashSet<T>()
+    /** `.(a, b, c)`, and `[a, b, c]` where a `HashSet<T>` is expected. A repeated element is kept once. */
+    ctor .(...elements: T) {
         for i in 0..<elements.size {
-            result.add(elements[i])
+            self.add(elements[i])
         }
-        return result
     }
 
     @Experimental(since: "0.1")
@@ -584,13 +584,11 @@ func<T> treeSetOf(...elements: T): TreeSet<T> where T: Order {
 }
 
 impl TreeSet<T> {
-    /** `[a, b, c]` where a `TreeSet<T>` is expected. A repeated element is kept once. */
-    literal [...elements: T]: TreeSet<T> {
-        var result = TreeSet<T>()
+    /** `.(a, b, c)`, and `[a, b, c]` where a `TreeSet<T>` is expected. A repeated element is kept once. */
+    ctor .(...elements: T) {
         for i in 0..<elements.size {
-            result.add(elements[i])
+            self.add(elements[i])
         }
-        return result
     }
 
     @Experimental(since: "0.1")

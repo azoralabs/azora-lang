@@ -11,7 +11,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * A literal needs its target's factory and whatever that factory builds, which
+ * A literal needs its target's constructor and whatever that constructor builds, which
  * the program never names. Importing the target is enough to bring them in;
  * importing it does not make those dependencies nameable in source.
  */
@@ -21,20 +21,23 @@ class FactoryDependencyTest {
             module lib.seq
             spec Seq<T> {
                 prop &.size: Int
-                literal [...items: T]: Self { return Vector<T>(items.size) }
+                ctor .(...items: T): Self { return Vector<T>(items.size) }
             }
             pack Vector<T> { var count: Int }
             impl Seq<T> for Vector<T> { prop &.size: Int = self.count }
             spec Table<K, V> {
                 prop &.size: Int
-                literal [...entries: (K, V)]: Self { return Rows<K, V>(entries.size) }
+                ctor .(...entries: (K, V)): Self { return Rows<K, V>(entries.size) }
             }
             pack Rows<K, V> { var count: Int }
             impl Table<K, V> for Rows<K, V> { prop &.size: Int = self.count }
-            pack Bag<T> { var count: Int }
+            pack Bag<T> { var count: Int = 0 }
             impl Bag<T> {
-                literal [...items: T]: Bag<T> { return Bag<T>(items.size * 10) }
-                literal [...entries: (String, T)]: Bag<T> { return Bag<T>(entries.size * 100) }
+                ctor .(...items: T) { self.count = items.size * 10 }
+            }
+            pack NamedBag<T> { var count: Int = 0 }
+            impl NamedBag<T> {
+                ctor .(...entries: (String, T)) { self.count = entries.size * 100 }
             }
             func unrelated(): Int { return 99 }
         """.trimIndent()),
@@ -57,13 +60,15 @@ class FactoryDependencyTest {
         }
     """))
 
-    @Test fun aSelectedPackBringsBothOfItsFactories() = assertEquals("20\n100", run("""
+    // A constructor is overloaded by arity, so one pack has one variadic
+    // constructor: the sequence and the entries shapes live on two packs.
+    @Test fun aSelectedPackBringsItsConstructor() = assertEquals("20\n100", run("""
         import std.io
-        import lib.seq::Bag
+        import lib.seq::{Bag, NamedBag}
         func main() {
             fin items: Bag<Int> = [1, 2]
             println(items.count)
-            fin named: Bag<Int> = ["one": 1]
+            fin named: NamedBag<Int> = ["one": 1]
             println(named.count)
         }
     """))

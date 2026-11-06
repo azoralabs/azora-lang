@@ -356,7 +356,7 @@ func<T> isOdd(n: T): Bool {
  * @return The sum of all elements.
  */
 @Experimental(since: "0.1")
-func<T> sum(arr: Array<T>): T {
+func<T> sum(arr: Array<T>&): T {
     var total = 0
     for i in 0..<arr.size {
         total += arr[i]
@@ -371,7 +371,7 @@ func<T> sum(arr: Array<T>): T {
  * @return The sum of all elements.
  */
 @Experimental(since: "0.1")
-func<T> sumReal(arr: Array<T>): T {
+func<T> sumReal(arr: Array<T>&): T {
     var total = 0.0
     for i in 0..<arr.size {
         total += arr[i]
@@ -386,7 +386,7 @@ func<T> sumReal(arr: Array<T>): T {
  * @return The product of all elements.
  */
 @Experimental(since: "0.1")
-func<T> product(arr: Array<T>): T {
+func<T> product(arr: Array<T>&): T {
     if arr.size == 0 { return 0 }
     var result = 1
     for i in 0..<arr.size {
@@ -452,7 +452,7 @@ in {
  * @return The average as a real number.
  */
 @Experimental(since: "0.1")
-func average(arr: Array<Int>): Double
+func average(arr: Array<Int>&): Double
 in {
     assert arr.size > 0 panic "Input must not be empty"
 } scope {

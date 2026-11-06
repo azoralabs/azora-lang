@@ -101,15 +101,14 @@ class AstValidator(private val libraryDecorators: Map<String, LibraryDecorator>?
         val seen = mutableSetOf<String>()
         for (func in program.functions) {
             if (!seen.add(func.name)) {
-                // A type builds a sequence literal one way; the lifted name
-                // `Type__literal` is an implementation detail.
-                val sequence = func.name.removeSuffix("__$LITERAL_FACTORY")
-                val associative = func.name.removeSuffix("__$LITERAL_ENTRIES_FACTORY")
+                // A type's `[…]` literal calls one constructor; the lifted name
+                // `Type__ctor.brackets` is an implementation detail.
+                val owner = func.name.removeSuffix("__$BRACKET_CONSTRUCTOR")
                 errors.add(
-                    when {
-                        sequence != func.name -> "line ${func.line}: type '$sequence' declares more than one sequence literal factory"
-                        associative != func.name -> "line ${func.line}: type '$associative' declares more than one associative literal factory"
-                        else -> "line ${func.line}: duplicate function '${func.name}'"
+                    if (owner != func.name) {
+                        "line ${func.line}: type '$owner' declares more than one variadic constructor a '[…]' literal could call"
+                    } else {
+                        "line ${func.line}: duplicate function '${func.name}'"
                     },
                 )
             }

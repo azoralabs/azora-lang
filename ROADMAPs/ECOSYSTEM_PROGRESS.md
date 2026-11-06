@@ -9,9 +9,11 @@ The ordered short- and long-term plan for the language, Engine and Studio
 (every OS and graphics backend, written in Azora; packages; editor plugins;
 self-hosting; a flagship game as the qualification) is
 [the 2026-11 roadmap](ECOSYSTEM_ROADMAP_2026_11.md).
-Last full run, native tools required: **2,878 tests, 0 failures, 0 skipped**;
-AZLS 91 tests, 0 failures (roadmap step A1, closed 2026-11-06; see the entries
-at the end).
+Last full run, native tools required: **2,898 tests, 0 failures, 0 skipped**;
+AZLS 91 tests, 0 failures. Roadmap steps A1 and A2 closed 2026-11-06, with
+decision D-6 (by-value parameters transfer ownership) implemented, and the
+`literal` keyword replaced by variadic constructors (user decision); see the
+entries at the end.
 
 ## Status — 2026-10-04
 
@@ -3393,3 +3395,236 @@ AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:ins
 
 Compiler: **2,878 tests, 0 failures, 0 skipped**. AZLS: **91 tests, 0 failures**.
 CLI distribution built. A1 is closed.
+
+## 2026-11-06 (continued) — A2: ownership across the World, templates, clones and constructions
+
+Roadmap step A2. The gate was `owned-ecs` passing and the Engine probes and
+Studio's scripted drag running clean under ASan/UBSan.
+
+### 1. A dropped `World` destroys its components (Engine)
+
+`owned-ecs` failed its last check, "world scope cleanup must destroy registered
+owned components", since early October. Recursive field destruction already
+worked for typed fields on every backend (a probe of nested packs and
+`Array<Pack>` fields destroys each value once); what failed was
+`World.storages: Array<Any>`. An array owns its elements only when its header
+carries a drop callback, registered where the element type is known, and an
+`Any` slot may hold a plain value as raw bits, so an `Array<Any>` cannot free
+its elements. The world's storages are all storages, so the field is now
+`Array<Storage<Any>>` (`azora-ecs/src/ecs.az`): a dropped world frees each
+storage through the concrete drop its own call site registered, and
+`registerStorageNamed` replacing a storage now destroys the old one, as its
+comment already claimed. `World.resources` is still `Array<Any>`: resources of
+owned types are not destroyed with their world on LLVM (open).
+
+### 2. A template builds a string of its own
+
+`"${text}"` with one `String` part was lowered to `text` itself. Inside Azora
+that is invisible, but a `bridge` result can point into foreign memory: Studio's
+asset listing read freed text after closing its buffer, and worked around it by
+padding and slicing (`ownedText`). The single-part template now copies through a
+new runtime helper, `__azora_str_copy` (Azora allocator, like
+`__azora_str_concat`). `FoundationAbiExecTest.aTemplateOfOneForeignStringOwnsItsText`
+links a C buffer that is freed after the template; the CLI built before this
+change reports a heap-use-after-free on the same program. What a `bridge`
+`String` result means in general is decision D-5 in the roadmap.
+
+### 3. Storing an owned array, set or map local requires `take`
+
+`Holder(xs)` with an owned `xs: Array<Int>` type-checked, and both the field and
+the local freed the array (a native crash at scope exit). The checker asked this
+of packs (`checkByValueTransfer`) but exempted arrays. A construction argument
+naming a local that owns a new array, set or map (bound to a literal, a
+construction, `.() * n`, `take x`, `x.clone()` or a non-borrowing call) is now
+rejected with "transfer ownership with 'take xs', or create an independent
+value with 'xs.clone()'", in a `return` too, as the DIP's own
+`return App(database: take database)` writes it. Bindings that only read a
+place are not reported. Migrated to the rule: `std.gpu` `rowMajor` and
+`columnMajor` (`take strides`) and the robotics fixture in `RoboticsEngineTest`
+(`take` on six locals none of which is read again). New:
+`AggregateStoreOwnershipTest` (6). The cleanup pass's move of a returned
+construction's locals stays as a backstop.
+
+### 4. A derived `clone` copies the arrays a pack owns
+
+Studio crashed on exit under ASan once the world destroyed its icon atlas:
+`studio.icons` was `atlas.clone()`, and LLVM's pack copy duplicated nested packs
+only, so both values shared the `names: Array<String>` buffer and both freed it.
+`isolatedCopy` now duplicates every owned array, closure and pack field, and
+keeps a field that was moved out (null) null. New exec tests in
+`FoundationArgumentOwnershipExecTest` (sanitized, debug and release).
+
+### 5. Engine probe and templates
+
+- `dock-layout` printed its layouts and then its pass line, so
+  `qualify-native.sh foundation` (which compares the whole output) failed on it
+  since it was added. The probe now asserts both layouts instead of printing
+  them; the expected text is the layout the probe's own comments describe.
+- Four templates do not build, none because of this work: `game-racing` and
+  `game-sidescroller-3d` use `scope "frame" { … }`, which the parser rejects and
+  no DIP documents; `game-ecs` passes a `World` by value (the existing pack
+  rule); `ui-compose` uses the removed `[receivers; captures]` lambda form.
+
+### Still open from A2
+
+- Decision D-6: by-value parameters of non-`Copy` types are borrows in the
+  compiler but transfers in the DIP, so a callee that keeps one shares the
+  caller's value.
+- `World.resources` (above).
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist \
+  --offline --console=plain --continue
+azora-engine/tests/qualify-native.sh headless && azora-engine/tests/qualify-native.sh foundation
+```
+
+- Compiler: **2,886 tests, 0 failures, 0 skipped** (native tools required). AZLS:
+  **91 tests, 0 failures**. CLI distribution built.
+- Engine: `headless-ecs`, `owned-ecs`, `scheduled-ecs`, `constructor-ui`,
+  `scene-io` and `dock-layout` pass, and each relinked with Apple clang
+  `-fsanitize=address,undefined` reports nothing.
+- Studio and the launcher build. Studio under ASan/UBSan: 104 frames, a
+  screenshot and shutdown, then a 30-step scripted drag of the move gizmo
+  (Ground to X = 2.217) and shutdown, with no reports.
+
+## 2026-11-06 (continued) — D-6: by-value parameters transfer ownership, as the DIP says
+
+Decision D-6 (user, 2026-11-06): follow OWNERSHIP_BORROWING_DIP §8/§10/§11.
+Passing a non-`Copy` value by value gives it away; the callee owns it and
+destroys it unless it moves it on; a function that only reads declares `T&`.
+
+### Checker
+
+- `checkByValueTransfer` covers a binding, a field (`h.res`) or an element
+  (`xs[i]`) that owns the value - not only a bare name - and arrays, sets and
+  maps (always non-`Copy`) as well as packs. Temporaries are never reported.
+  Fixes offered: `take`, `.clone()` when the type can, `T&` on the parameter.
+- Applied to free calls (before), method calls (their by-value parameters had
+  no check at all), constructions, the storing members `add`/`insert` on
+  arrays, `add` on sets, `put` on maps, and assignments into an owning field
+  (`h.items = xs`), an element (`list[0] = r`) or an owning local (`ys = zs`).
+  Re-pointing a borrow binding (`var x: T& = …`) moves nothing and is not
+  reported.
+- `Copy` derivation: a pack that writes a `dtor`, or holds an exclusive borrow
+  (`T!`), is no longer `Copy` (§8, §12, §21). `Res` with a destructor had been
+  passed by value freely.
+- Type-argument witness inference reads through `take x` / `x.&`
+  (`_linkedHashMapOf(take entries)` had lost `K`).
+
+### Lowering
+
+- A by-value parameter whose type the checker transfers (an array; a non-`Copy`
+  pack once the capability lattice is in scope) is an owner of its callee:
+  destroyed at every exit unless moved on, as locals are. Its call site no
+  longer frees a temporary passed to it.
+- Erased-generic and variadic parameters keep the call-site convention: an
+  erased body copies `T` bit for bit, and a variadic's packed array holds a
+  spread's elements, so neither may be destroyed by the callee yet.
+- Compiler-generated functions declare the borrows they make: the array
+  renderer (`println(xs)` emptied `xs` once its helper owned the array), trace
+  helpers' captures, and constructor factories, which now forward each argument
+  in the mode the ctor declared (`anchor: Anchor!`, `modifier: Modifier&`; the
+  Engine's `constructor-ui` crashed when the factory destroyed the anchor).
+- `print`/`println` borrow (`value: Any&`): printing a non-`Copy` pack had been
+  rejected outright.
+
+### Migration (no behaviour change intended)
+
+- std: 47 read-only array parameters in `functional`, `math`, `ml`, `gpu`,
+  `algorithm`, `search`, `sort`, `random`, `io.convert`, `quantum` and three
+  `security` bridges became `&`; `_insertionSortRange`/`_mergeRange` write in
+  place, so `!`; the list/set/map literal factories, `std.ml`'s tensor and
+  dataset constructors and `std.gpu`'s layouts `take` what they keep; three
+  `algorithm`/`functional` stores `take` their fresh locals; `fromChars` and
+  `charsToString` borrow.
+- Engine: `azora-app` `addStartupSystem`/`addUpdateSystem` `take` the system;
+  the Tetris template borrows its masks and colours; the 2D sidescroller's
+  platform helpers write their arrays in place (`!`).
+- Studio needed no change.
+- Fixtures: `BuiltinNameShadowExecTest` (`contains` borrows),
+  `FoundationArgumentOwnershipExecTest` (`take shape`).
+
+### Tests
+
+`ByValueTransferTest` (8), and in `FoundationArgumentOwnershipExecTest`
+(interpreter and LLVM under ASan/UBSan, debug and release)
+`aByValueParameterOwnsWhatItIsGiven` - a destructor count of `1 1 1 6 3 2 2 4`:
+the callee destroys what it consumed, a moved-on value survives, a temporary
+is destroyed, a returned parameter is the caller's - and
+`aParameterStoredWithTakeOutlivesTheCall`.
+
+### Open
+
+- D-7: a binding from a place (`var b = a`) is a non-owning alias.
+- Erased-generic and variadic parameters (above); `World.resources`.
+
+### Evidence
+
+- `AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue`:
+  compiler **2,896 tests, 0 failures, 0 skipped**; AZLS **91, 0 failures**; CLI built.
+- std: every module checks, `azora test std` 16 passed. Engine: every probe and
+  buildable template checks; `qualify-native.sh headless` and `foundation` pass
+  (6/6) and each probe relinked with `-fsanitize=address,undefined` reports
+  nothing. Studio and the launcher build; Studio under ASan/UBSan runs a 30-step
+  scripted gizmo drag and shuts down with no reports.
+
+## 2026-11-06 — Bracket literals call variadic constructors; no `literal` keyword
+
+User decision: the `literal` keyword and declaration (added 2026-09-19 under
+010.C3.4, never requested) are removed. A `[…]` calls its target type's
+variadic constructor, the one `Type(a, b, c)` already calls; GTC_DIP §5.7 is
+rewritten to match.
+
+### Language
+
+- `impl T { ctor .(...elements: E) { … } }` is what `[a, b]` calls where a `T`
+  is expected; `ctor .(...entries: (K, V))` is what `[k: v]` calls. A type
+  declares at most one such constructor; a constructor with fixed parameters
+  before its variadic one, a conformance's ctor, `ctor*`, scope receivers or
+  ctor type parameters do not make a literal target.
+- A spec declares `ctor .(...elements: T): Self { … }` in its body, with an
+  Azora body (no `bridge`: the user's correction). It runs only for a literal;
+  `List<Int>(1, 2)` is still rejected with a pointer to `ArrayList`.
+- Constructors may declare `where` clauses and `?! E` (user choice), so a
+  literal keeps its target's constraints and failures.
+- std: `ArrayList` already had its constructor; `LinkedHashSet`, `HashSet`,
+  `TreeSet`, `HashMap`, `LinkedHashMap` and `TreeMap` gained theirs; the
+  `List`, `MutableList`, `Set`, `MutableSet`, `Map` and `MutableMap` specs
+  declare theirs. AZLS no longer
+  highlights `literal`.
+
+### Lowering
+
+- A bounded pack's constructor with arguments gets its descriptors: the call
+  site builds the value with them and the factory runs the ctor on it (022.1's
+  open item).
+- A variadic parameter's array belongs to the call. The IR now records which
+  parameter is variadic (`IrFunction.variadicParam`) instead of finding it by a
+  name that canonicalization had changed, so std functions, constructor
+  factories and the bracket constructor agree. The default map literal had
+  freed its entries twice on LLVM and WebAssembly.
+- A tuple written at a call is built at the layout of the parameter it fills:
+  a generic callee reads erased `(K, V)` components (`LinkedHashMap<Int, Int>((1, 10))`
+  and `second((1, 10))` read `0`). Tuples held in variables or arrays remain
+  under A3.
+
+### Tests
+
+`LiteralFactoryTest` (22, migrated to constructors, with new cases for a
+missing, duplicate or wrongly shaped constructor), `FactoryDependencyTest`,
+`LiteralFactoryExecTest`, and `VariadicPackExecTest` (3; interpreter, LLVM
+debug and optimized, WebAssembly).
+
+### Evidence
+
+- `AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue`:
+  compiler **2,898 tests, 0 failures, 0 skipped**; AZLS **91, 0 failures**; CLI built.
+  (The run before the variadic-pack fix failed 12 LLVM/WebAssembly tests, all
+  the default map literal.)
+- std: all 49 modules check, `azora test std` 16 passed. Engine: every probe
+  and buildable template checks; `qualify-native.sh headless` and `foundation`
+  pass (6/6) and each probe relinked with `-fsanitize=address,undefined` reports
+  nothing. Studio under ASan/UBSan runs the 30-step scripted gizmo drag and
+  exits with no reports; Studio and the launcher rebuild without sanitizers.

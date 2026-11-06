@@ -50,7 +50,7 @@ fun Program.writtenImports(): List<TopLevel.UseImport> {
  * to match. [names] maps each spelling the module uses to that identity; a name
  * it does not contain is left as written.
  *
- * `Owner__member` - a type's lifted static, such as its literal factory - moves
+ * `Owner__member` - a type's lifted static, such as its bracket constructor - moves
  * with its owner. A parameter, local or lambda parameter shadows a value of the
  * same name, and a type parameter shadows a type, exactly as in the source.
  *

@@ -526,7 +526,7 @@ bridge func toChars(value: String): Array<Char>
 
 /** A string built by concatenating `chars` in order. */
 @Experimental(since: "0.1")
-bridge func fromChars(chars: Array<Char>): String
+bridge func fromChars(chars: Array<Char>&): String
 
 /** Whether `value` is an ASCII alphabetic character. */
 @Experimental(since: "0.1")

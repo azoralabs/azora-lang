@@ -276,7 +276,7 @@ class SymbolCollector {
                     returnType = callReturnType,
                     returnTypeRef = (func.returnType as? TypeAnnotation.Explicit)?.ref,
                     // Source types, so a type-scoped member - a lifted static or
-                    // a literal factory - can be instantiated for its owner.
+                    // the constructor a literal calls - can be instantiated for its owner.
                     paramTypeRefs = func.params.map { it.type },
                     whereClause = func.whereClause,
                     isInline = func.isInline,
@@ -589,6 +589,9 @@ class SymbolCollector {
                                 returnedParams = method.params.indices
                                     .filterTo(mutableSetOf()) { method.params[it].returnsOwnership }
                                     .mapTo(mutableSetOf()) { it + 1 },
+                                // Its factory packs a variadic ctor's arguments, so
+                                // the ctor receives them as a variadic call's array.
+                                isVariadic = method.name == "ctor" && method.params.lastOrNull()?.variadic == true,
                             ))
                         }
                         // A member that wrote no receiver belongs to the type: it is
@@ -641,9 +644,15 @@ class SymbolCollector {
                         if (method.name == "ctor" && method.params.isNotEmpty() && !item.isBridge) {
                             val written = method.params.drop(method.contextualParams)
                             // A ctor that declared a return type yields that; one
-                            // that declared none yields the value it filled.
-                            val yields = (method.returnType as? TypeAnnotation.Explicit)
-                                ?.let { IrType.resolve(it.ref, emptySet()) } ?: selfType
+                            // that declared none yields the value it filled - and
+                            // `ctor .(…) ?! E`, which declared only its errors,
+                            // yields that value or fails.
+                            val declaredRef = (method.returnType as? TypeAnnotation.Explicit)?.ref
+                            val failsOnly = (declaredRef as? TypeRef.Failable)
+                                ?.takeIf { (it.ok as? TypeRef.Named)?.let { ok -> ok.name == "Unit" && ok.synthesized } == true }
+                            val yields = if (failsOnly != null) selfType
+                                else declaredRef?.let { IrType.resolve(it, emptySet()) } ?: selfType
+                            val yieldsRef = failsOnly?.let { TypeRef.Failable(selfRef, it.errSets) } ?: declaredRef ?: selfRef
                             run {
                                 val arity = written.size
                                 table.defineFunction(FunctionSymbol(
@@ -655,8 +664,9 @@ class SymbolCollector {
                                     // satisfied by any number of arguments, none
                                     // included, exactly as a variadic `func` is.
                                     isVariadic = method.params.lastOrNull()?.variadic == true,
-                                    returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref ?: selfRef,
+                                    returnTypeRef = yieldsRef,
                                     paramTypeRefs = method.params.map { it.type },
+                                    whereClause = method.whereClause,
                                     visibility = method.visibility,
                                     contextualParams = method.contextualParams,
                                     isReactive = method.isReactive,
@@ -976,12 +986,19 @@ class SymbolCollector {
             .filterNot { it.isBridge || it.isUnion }
         val slots = program.items.filterIsInstance<TopLevel.Slot>()
         if (packs.isEmpty() && slots.isEmpty()) return
+        // A pack that writes a destructor has destruction behaviour: duplicating
+        // it implicitly would run that destructor once per copy
+        // (OWNERSHIP_BORROWING_DIP §8, §21). It can still be `Clone`.
+        val destroyed = program.items.filterIsInstance<TopLevel.Impl>()
+            .filter { impl -> impl.methods.any { it.name == "dtor" } }
+            .mapTo(hashSetOf()) { it.typeName }
         var changed = true
         while (changed) {
             changed = false
             for (capability in listOf("Clone", "Copy")) {
                 for (pack in packs) {
                     if (table.conformsTo(pack.name, capability)) continue
+                    if (capability == "Copy" && pack.name in destroyed) continue
                     if (!pack.fields.all { fieldHasCapability(it.type, capability, table, pack.typeParams.toSet()) }) continue
                     if (table.defineConformance(TraitConformance(pack.name, capability))) changed = true
                 }
@@ -1016,8 +1033,10 @@ class SymbolCollector {
         table: SymbolTable,
         typeParams: Set<String>,
     ): Boolean = when (ref) {
-        // A borrow does not own what it points at, so it never blocks a derive.
-        is TypeRef.Reference -> true
+        // A borrow does not own what it points at, so it never blocks a derive -
+        // except `Copy` of an exclusive one: two copies would be two live
+        // mutable borrows of one value (§12).
+        is TypeRef.Reference -> !(capability == "Copy" && ref.kind == TypeRef.RefKind.MUTABLE)
         is TypeRef.Nullable -> fieldHasCapability(ref.inner, capability, table, typeParams)
         // A field typed by the pack's own parameter says nothing until the pack
         // is instantiated, so it cannot be what withholds the capability.

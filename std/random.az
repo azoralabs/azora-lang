@@ -82,7 +82,7 @@ impl Random {
  * Shuffles an array in-place using Fisher-Yates algorithm.
  */
 @Experimental(since: "0.1")
-func<T> shuffle(arr: Array<T>, rng: Random): Array<T> {
+func<T> shuffle(arr: Array<T>&, rng: Random): Array<T> {
     var result: Array<T> = .() * arr.size
     var i = 0
     while i < arr.size {
@@ -104,7 +104,7 @@ func<T> shuffle(arr: Array<T>, rng: Random): Array<T> {
  * Returns a random sample of n elements from the array.
  */
 @Experimental(since: "0.1")
-func<T> sample(arr: Array<T>, count: Int, rng: Random): Array<T> {
+func<T> sample(arr: Array<T>&, count: Int, rng: Random): Array<T> {
     var shuffled: Array<T> = shuffle<T>(arr, rng)
     var limit: Int = count
     if limit > shuffled.size { limit = shuffled.size }

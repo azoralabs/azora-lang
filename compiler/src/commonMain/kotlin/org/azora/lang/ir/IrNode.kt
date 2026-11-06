@@ -1336,6 +1336,12 @@ data class IrFunction(
      * pass these by the address of the argument's storage.
      */
     val exclusiveParams: Set<Int> = emptySet(),
+    /**
+     * Index of the parameter a variadic `...name: T` packs its arguments into,
+     * or null. Its array belongs to the call: the call site frees a packed
+     * temporary, and a spread hands on an array its caller still owns.
+     */
+    val variadicParam: Int? = null,
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {

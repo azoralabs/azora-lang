@@ -11,9 +11,11 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * A `[…]` literal whose expected type is a pack is built by that pack's
- * `literal` factory: selected from the target type, fed the elements as its
- * variadic arguments, and never reachable by name.
+ * A `[…]` literal whose expected type is a pack calls that pack's variadic
+ * constructor (`ctor .(...elements: T)`) with the elements as its arguments:
+ * `fin b: Bag<Int> = [3, 4, 5]` is `Bag<Int>(3, 4, 5)`. Where a spec is
+ * expected, the spec's own `ctor .(...elements: T): Self { … }` builds the
+ * value. (These were `literal` factories until 2026-11-06.)
  */
 class LiteralFactoryTest {
     companion object {
@@ -21,13 +23,15 @@ class LiteralFactoryTest {
         val bag = """
             import std.io
             pack Bag<T> {
-                var count: Int
+                var count: Int = 0
                 var first: T
                 var last: T
             }
             impl Bag<T> {
-                literal [...items: T]: Bag<T> {
-                    return Bag<T>(items.size, items[0], items[items.size - 1])
+                ctor .(...items: T) {
+                    self.count = items.size
+                    self.first = items[0]
+                    self.last = items[items.size - 1]
                 }
             }
             func width(bag: Bag<Int>): Int { return bag.last - bag.first }
@@ -44,12 +48,12 @@ class LiteralFactoryTest {
         /** Elements run once each, left to right, and reach the factory in that order. */
         val digits = """
             import std.io
-            pack Digits { var value: Int }
+            pack Digits { var value: Int = 0 }
             impl Digits {
-                literal [...parts: Int]: Digits {
+                ctor .(...parts: Int) {
                     var value = 0
                     for i in 0..<parts.size { value = value * 10 + parts[i] }
-                    return Digits(value)
+                    self.value = value
                 }
             }
             pack Log { var digits: Int }
@@ -77,7 +81,7 @@ class LiteralFactoryTest {
                 prop &.size: Int
                 func &.top(): T
                 func &.choose(fallback: T, useFallback: Bool): T
-                literal [...items: T]: Self {
+                ctor .(...items: T): Self {
                     return ArrayStack<T>(items.size, items[items.size - 1])
                 }
             }
@@ -108,13 +112,15 @@ class LiteralFactoryTest {
         val ledger = """
             import std.io
             pack Ledger<K, V> {
-                var count: Int
+                var count: Int = 0
                 var firstKey: K
                 var lastValue: V
             }
             impl Ledger<K, V> {
-                literal [...entries: (K, V)]: Ledger<K, V> {
-                    return Ledger<K, V>(entries.size, entries[0].0, entries[entries.size - 1].1)
+                ctor .(...entries: (K, V)) {
+                    self.count = entries.size
+                    self.firstKey = entries[0].0
+                    self.lastValue = entries[entries.size - 1].1
                 }
             }
             func total(ledger: Ledger<Int, Int>): Int { return ledger.firstKey + ledger.lastValue }
@@ -135,12 +141,12 @@ class LiteralFactoryTest {
                 log.digits = log.digits * 10 + digit
                 return digit
             }
-            pack Pairs { var sum: Int }
+            pack Pairs { var sum: Int = 0 }
             impl Pairs {
-                literal [...entries: (Int, Int)]: Pairs {
+                ctor .(...entries: (Int, Int)) {
                     var sum = 0
                     for i in 0..<entries.size { sum = sum * 100 + entries[i].0 * 10 + entries[i].1 }
-                    return Pairs(sum)
+                    self.sum = sum
                 }
             }
             func main() {
@@ -157,11 +163,14 @@ class LiteralFactoryTest {
         val pairedBag = """
             import std.io
             pack Bag<T> {
-                var count: Int
+                var count: Int = 0
                 var first: T
             }
             impl Bag<T> {
-                literal [...items: T]: Bag<T> { return Bag<T>(items.size, items[0]) }
+                ctor .(...items: T) {
+                    self.count = items.size
+                    self.first = items[0]
+                }
             }
             func main() {
                 fin pairs: Bag<(Int, Int)> = [(1, 2), (3, 4)]
@@ -176,9 +185,9 @@ class LiteralFactoryTest {
             spec Keyed { prop &.key: Int }
             pack Name { var key: Int }
             impl Keyed for Name { prop &.key: Int = self.key }
-            pack Index<T> { var count: Int }
+            pack Index<T> { var count: Int = 0 }
             impl Index<T> {
-                literal [...items: T]: Index<T> where T is Keyed { return Index<T>(items.size) }
+                ctor .(...items: T) where T is Keyed { self.count = items.size }
             }
             func<T> wrap(item: T): Index<T> { return [item] }
             func main() {
@@ -194,19 +203,19 @@ class LiteralFactoryTest {
             error SizeError {
                 TooMany
             }
-            pack Small { var count: Int }
+            pack Small { var count: Int = 0 }
             impl Small {
-                literal [...items: Int]: Small ?! SizeError {
+                ctor .(...items: Int) ?! SizeError {
                     if items.size > 2 {
                         error SizeError.TooMany
                     }
-                    return Small(items.size)
+                    self.count = items.size
                 }
             }
             func main() {
                 fin two: Small = [1, 2]
                 println(two.count)
-                fin none: Small = [1, 2, 3] catch Small(0)
+                fin none: Small = [1, 2, 3] catch Small()
                 println(none.count)
             }
         """.trimIndent()
@@ -215,9 +224,9 @@ class LiteralFactoryTest {
         val owned = """
             import std.io
             pack Res { var id: Int }
-            pack Holder { var first: Res }
+            pack Holder { var first: Res = Res(0) }
             impl Holder {
-                literal [...items: Res]: Holder { return Holder(items[0]) }
+                ctor .(...items: Res) { self.first = items[0] }
             }
             func main() {
                 fin res = Res(7)
@@ -261,22 +270,22 @@ class LiteralFactoryTest {
             spec Shape { func &.area(): Double }
             func main() { fin shape: Shape = [1.0] }
         """,
-        "type 'Shape' does not define a sequence literal factory",
+        "type 'Shape' has no variadic constructor for a '[…]' literal",
     )
 
-    // A parent's factory builds the parent; the child spec asks for more.
+    // A parent's constructor builds the parent; the child spec asks for more.
     @Test fun aChildSpecDoesNotInheritItsParentsFactory() = assertRejects(
         """
             spec Sized<T> {
                 prop &.size: Int
-                literal [...items: T]: Self { return Counted<T>(items.size) }
+                ctor .(...items: T): Self { return Counted<T>(items.size) }
             }
             spec Growable<T>: Sized<T> { func &.grow(): Int }
             pack Counted<T> { var count: Int }
             impl Sized<T> for Counted<T> { prop &.size: Int = self.count }
             func main() { fin grown: Growable<Int> = [1, 2] }
         """,
-        "type 'Growable' does not define a sequence literal factory",
+        "type 'Growable' has no variadic constructor for a '[…]' literal",
     )
 
     @Test fun aSpecsFactoryReturnsAnImplementation() {
@@ -284,7 +293,7 @@ class LiteralFactoryTest {
             """
                 spec Shape {
                     func &.area(): Double
-                    literal [...sides: Double]: Self { return Plain(1) }
+                    ctor .(...sides: Double): Self { return Plain(1) }
                 }
                 pack Plain { var value: Int }
                 func main() { fin shape: Shape = [1.0] }
@@ -300,7 +309,7 @@ class LiteralFactoryTest {
 
     @Test fun aViolatedWhereClauseRejectsTheLiteral() = assertRejects(
         keyed.replace("fin names: Index<Name> = [Name(1), Name(2)]", "fin names: Index<Int> = [1, 2]"),
-        "a 'Index' literal does not satisfy its factory's 'where' clause",
+        "a 'Index' literal does not satisfy its constructor's 'where' clause",
     )
 
     @Test fun aFailingFactoryFailsTheLiteralLikeACall() {
@@ -312,11 +321,10 @@ class LiteralFactoryTest {
             error SizeError {
                 TooMany
             }
-            pack Small { var count: Int }
+            pack Small { var count: Int = 0 }
             impl Small {
-                literal [...items: Int]: Small ?! SizeError {
+                ctor .(...items: Int) ?! SizeError {
                     error SizeError.TooMany
-                    return Small(items.size)
                 }
             }
             func main() {
@@ -352,13 +360,13 @@ class LiteralFactoryTest {
             pack Plain { var value: Int }
             func main() { fin plain: Plain = [1] }
         """,
-        "type 'Plain' does not define a sequence literal factory",
+        "type 'Plain' has no variadic constructor for a '[…]' literal",
     )
 
     @Test fun elementsMustHaveTheFactorysElementType() = assertRejects(
         """
-            pack Digits { var value: Int }
-            impl Digits { literal [...parts: Int]: Digits { return Digits(parts.size) } }
+            pack Digits { var value: Int = 0 }
+            impl Digits { ctor .(...parts: Int) { self.value = parts.size } }
             func main() { fin number: Digits = ["one"] }
         """,
         "an element of a 'Digits' literal must have type Int",
@@ -366,8 +374,8 @@ class LiteralFactoryTest {
 
     @Test fun aSpreadIsNotPassedToAFactory() = assertRejects(
         """
-            pack Digits { var value: Int }
-            impl Digits { literal [...parts: Int]: Digits { return Digits(parts.size) } }
+            pack Digits { var value: Int = 0 }
+            impl Digits { ctor .(...parts: Int) { self.value = parts.size } }
             func main() {
                 fin parts = [1, 2]
                 fin number: Digits = [...parts]
@@ -379,20 +387,34 @@ class LiteralFactoryTest {
     @Test fun aFactoryBuildsItsOwnTarget() = assertRejects(
         """
             pack Other { var value: Int }
-            pack Digits { var value: Int }
-            impl Digits { literal [...parts: Int]: Other { return Other(parts.size) } }
+            pack Digits { var value: Int = 0 }
+            impl Digits { ctor .(...parts: Int): Other { return Other(parts.size) } }
             func main() { fin number: Digits = [1] }
         """,
-        "the literal factory of 'Digits' builds Other",
+        "the variadic constructor of 'Digits' builds Other",
     )
 
-    @Test fun aFactoryTakesOneVariadicParameter() = assertRejects(
-        """
-            pack Digits { var value: Int }
-            impl Digits { literal [parts: Int]: Digits { return Digits(parts) } }
-        """,
-        "a literal factory takes one variadic parameter",
-    )
+    /** Only a constructor whose one parameter is variadic is what a `[…]` calls. */
+    @Test fun aConstructorWithoutAVariadicParameterIsNotALiteralTarget() {
+        assertRejects(
+            """
+                pack Digits { var value: Int = 0 }
+                impl Digits { ctor .(parts: Int) { self.value = parts } }
+                func main() { fin number: Digits = [1] }
+            """,
+            "type 'Digits' has no variadic constructor for a '[…]' literal",
+        )
+        assertRejects(
+            """
+                spec Shape {
+                    func &.area(): Double
+                    ctor .(side: Double): Self { return Plain(1) }
+                }
+                pack Plain { var value: Int }
+            """,
+            "a spec's constructor takes one variadic parameter",
+        )
+    }
 
     @Test fun anAssociativeFactoryBuildsItsTargetFromEntries() {
         for (optimized in listOf(false, true)) {
@@ -412,88 +434,69 @@ class LiteralFactoryTest {
         }
     }
 
-    @Test fun eachShapeNeedsItsOwnFactory() {
+    /** A constructor of entries takes `[k: v]`; given `[a, b]` its elements must be entries too. */
+    @Test fun eachShapeNeedsItsOwnConstructor() {
         assertRejects(
             """
-                pack Pairs { var sum: Int }
-                impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(entries.size) } }
+                pack Pairs { var sum: Int = 0 }
+                impl Pairs { ctor .(...entries: (Int, Int)) { self.sum = entries.size } }
                 func main() { fin pairs: Pairs = [1, 2] }
             """,
-            "type 'Pairs' does not define a sequence literal factory",
+            "an element of a 'Pairs' literal must have type (Int, Int)",
         )
         assertRejects(
             """
-                pack Digits { var value: Int }
-                impl Digits { literal [...parts: Int]: Digits { return Digits(parts.size) } }
+                pack Digits { var value: Int = 0 }
+                impl Digits { ctor .(...parts: Int) { self.value = parts.size } }
                 func main() { fin digits: Digits = [1: 2] }
             """,
-            "type 'Digits' does not define an associative literal factory",
+            "type 'Digits' has no variadic constructor for a '[k: v]' literal",
         )
     }
 
     @Test fun entriesMustHaveTheFactorysKeyAndValueTypes() {
         val pairs = """
-            pack Pairs { var sum: Int }
-            impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(entries.size) } }
+            pack Pairs { var sum: Int = 0 }
+            impl Pairs { ctor .(...entries: (Int, Int)) { self.sum = entries.size } }
         """
         assertRejects("$pairs\nfunc main() { fin p: Pairs = [\"one\": 1] }", "a key of a 'Pairs' literal must have type Int")
         assertRejects("$pairs\nfunc main() { fin p: Pairs = [1: \"one\"] }", "a value of a 'Pairs' literal must have type Int")
     }
 
-    @Test fun aTypeHasOneAssociativeFactory() = assertRejects(
-        """
-            pack Pairs { var sum: Int }
-            impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(1) } }
-            impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(2) } }
-        """,
-        "type 'Pairs' declares more than one associative literal factory",
-    )
-
-    @Test fun aTypeHasOneSequenceFactory() = assertRejects(
-        """
-            pack Digits { var value: Int }
-            impl Digits { literal [...parts: Int]: Digits { return Digits(1) } }
-            impl Digits { literal [...parts: Int]: Digits { return Digits(2) } }
-        """,
-        "type 'Digits' declares more than one sequence literal factory",
-    )
-
-    @Test fun aFactoryIsDeclaredInItsTargetsImpl() {
-        assertRejects(
+    /** Two variadic constructors would be two answers to one `[…]`. */
+    @Test fun aTypeHasOneVariadicConstructor() {
+        val found = errors(
             """
-                literal [...parts: Int]: Int { return 1 }
+                pack Digits { var value: Int = 0 }
+                impl Digits { ctor .(...parts: Int) { self.value = 1 } }
+                impl Digits { ctor .(...parts: Int) { self.value = 2 } }
+                func main() { fin d: Digits = [1] }
             """,
-            "declare 'literal [...elements: T]: Type { … }' inside 'impl Type { … }'",
         )
-        assertRejects(
-            """
-                pack Digits {
-                    var value: Int
-                    literal [...parts: Int]: Digits { return Digits(1) }
-                }
-            """,
-            "declare 'literal [...elements: T]: Type { … }' inside 'impl Type { … }'",
-        )
+        assertTrue(found.any { "more than one" in it || "already" in it || "duplicate" in it }, found.toString())
     }
 
-    @Test fun literalIsReservedAndTheFactoryHasNoCallableName() {
-        errors(
+    /**
+     * `literal` is an ordinary name again (it was a keyword until 2026-11-06),
+     * and the member a literal calls has no name a program can write.
+     */
+    @Test fun literalIsAnOrdinaryNameAndTheTargetHasNone() {
+        val result = Compiler().compile(
             """
-                func main() { fin literal = 1 }
-            """,
+                import std.io
+                func main() {
+                    fin literal = 1
+                    println(literal)
+                }
+            """.trimIndent(),
         )
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("1", IrInterpreter().interpret(result.ir).trim())
         errors(
             """
-                pack Digits { var value: Int }
-                impl Digits { literal [...parts: Int]: Digits { return Digits(parts.size) } }
+                pack Digits { var value: Int = 0 }
+                impl Digits { ctor .(...parts: Int) { self.value = parts.size } }
                 func main() { fin number = Digits::literal(1, 2) }
-            """,
-        )
-        errors(
-            """
-                pack Pairs { var sum: Int }
-                impl Pairs { literal [...entries: (Int, Int)]: Pairs { return Pairs(entries.size) } }
-                func main() { fin pairs = Pairs::literal_entries((1, 2)) }
             """,
         )
     }

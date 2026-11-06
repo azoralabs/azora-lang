@@ -242,7 +242,7 @@ func deutschJozsa(qubits: Int, mask: Int): Circuit {
 
 /** Creates the Bernstein-Vazirani circuit for a hidden classical bit string. */
 @Experimental(since: "0.1")
-func bernsteinVazirani(secret: Array<Int>): Circuit
+func bernsteinVazirani(secret: Array<Int>&): Circuit
 in assert secret.size > 0 panic "Bernstein-Vazirani needs a non-empty secret"
 scope {
     var result: Circuit = circuit(secret.size + 1)

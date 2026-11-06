@@ -112,8 +112,8 @@ spec Map<K, V> {
      * `[k: v, …]` where a `Map<K, V>` is expected: a `LinkedHashMap<K, V>`, so
      * iteration follows the literal. A repeated key keeps its last value.
      */
-    literal [...entries: (K, V)]: Self where K: Hash {
-        return _linkedHashMapOf(entries)
+    ctor .(...entries: (K, V)): Self where K: Hash {
+        return _linkedHashMapOf(take entries)
     }
 }
 
@@ -155,8 +155,8 @@ spec MutableMap<K, V> : Map<K, V> {
     func !.getOrPut(key: K, defaultValue: () -> V): V
 
     /** `[k: v, …]` where a `MutableMap<K, V>` is expected: a `LinkedHashMap<K, V>`, as for `Map<K, V>`. */
-    literal [...entries: (K, V)]: Self where K: Hash {
-        return _linkedHashMapOf(entries)
+    ctor .(...entries: (K, V)): Self where K: Hash {
+        return _linkedHashMapOf(take entries)
     }
 }
 
@@ -296,13 +296,14 @@ impl Clone for HashMap {
 }
 
 impl HashMap<K, V> {
-    /** `[k: v, …]` where a `HashMap<K, V>` is expected. A repeated key keeps its last value. */
-    literal [...entries: (K, V)]: HashMap<K, V> {
-        var result: HashMap<K, V> = .()
-        for i in 0..<entries.size {
-            result.put(entries[i].0, entries[i].1)
+    /** `.((k, v), …)`, and `[k: v, …]` where a `HashMap<K, V>` is expected. A repeated key keeps its last value. */
+    ctor .(...entries: (K, V)) {
+        for i in 0..<self.capacity {
+            self.occupied[i] = false
         }
-        return result
+        for i in 0..<entries.size {
+            self.put(entries[i].0, entries[i].1)
+        }
     }
 
     ctor .() {
@@ -529,9 +530,14 @@ impl MutableMap<K, V> for HashMap<K, V> {
 // ---------------------------------------------------------------------
 
 impl LinkedHashMap<K, V> {
-    /** `[k: v, …]` where a `LinkedHashMap<K, V>` is expected, in literal order; a repeated key keeps its last value. */
-    literal [...entries: (K, V)]: LinkedHashMap<K, V> {
-        return _linkedHashMapOf(entries)
+    /** `.((k, v), …)`, and `[k: v, …]` where a `LinkedHashMap<K, V>` is expected: in order; a repeated key keeps its last value. */
+    ctor .(...entries: (K, V)) {
+        for i in 0..<self.bucketCapacity {
+            self.buckets[i] = -1
+        }
+        for i in 0..<entries.size {
+            self.put(entries[i].0, entries[i].1)
+        }
     }
 
     ctor .() {
@@ -754,13 +760,11 @@ impl MutableMap<K, V> for LinkedHashMap<K, V> {
 // ---------------------------------------------------------------------
 
 impl TreeMap<K, V> {
-    /** `[k: v, …]` where a `TreeMap<K, V>` is expected. A repeated key keeps its last value. */
-    literal [...entries: (K, V)]: TreeMap<K, V> {
-        var result: TreeMap<K, V> = .()
+    /** `.((k, v), …)`, and `[k: v, …]` where a `TreeMap<K, V>` is expected. A repeated key keeps its last value. */
+    ctor .(...entries: (K, V)) {
         for i in 0..<entries.size {
-            result.put(entries[i].0, entries[i].1)
+            self.put(entries[i].0, entries[i].1)
         }
-        return result
     }
 
     dtor .() {

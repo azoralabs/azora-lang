@@ -2247,7 +2247,7 @@ class StdlibInjector private constructor(
     private fun attachStaticMembersForType(typeName: String, module: String?, walk: Walk, next: MutableList<Ref>) {
         // Only a declared type has a `::` block. Without this, a module-qualified
         // name (`std__io__println`) would look like a member of a type `std__io`.
-        // A spec owns one too: the literal factory designating what `[…]` builds.
+        // A spec owns one too: the constructor designating what `[…]` builds.
         val declarations = module?.let { index.modules[it] } ?: return
         val owner = declarations[typeName]
         if (owner !is TopLevel.Pack && owner !is TopLevel.Enum && owner !is TopLevel.Spec) return

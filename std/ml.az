@@ -88,7 +88,7 @@ func tensor(shape: Array<Int>, values: Array<Double>): Tensor {
         expected = expected * shape[i]
     }
     assert expected == values.size panic "tensor shape does not match values"
-    return Tensor(shape, values)
+    return Tensor(take shape, take values)
 }
 
 /** Creates a one-dimensional tensor from values. */
@@ -96,7 +96,7 @@ func tensor(shape: Array<Int>, values: Array<Double>): Tensor {
 func vector(values: Array<Double>): Tensor {
     var shape: Array<Int> = .() * 1
     shape[0] = values.size
-    return tensor(shape, values)
+    return tensor(take shape, take values)
 }
 
 /** Creates a zero-filled vector. */
@@ -123,7 +123,7 @@ func ones(size: Int): Array<Double> {
 
 /** Applies ReLU element by element. */
 @Experimental(since: "0.1")
-func relu(values: Array<Double>): Array<Double> {
+func relu(values: Array<Double>&): Array<Double> {
     var result: Array<Double> = .() * values.size
     for i in 0..<values.size {
         result[i] = if values[i] > 0.0 { values[i] } else { 0.0 }
@@ -133,7 +133,7 @@ func relu(values: Array<Double>): Array<Double> {
 
 /** Computes numerically stable softmax probabilities. */
 @Experimental(since: "0.1")
-func softmax(values: Array<Double>): Array<Double> {
+func softmax(values: Array<Double>&): Array<Double> {
     assert values.size > 0 panic "softmax needs at least one value"
     var maximum = values[0]
     for i in 1..<values.size {
@@ -153,7 +153,7 @@ func softmax(values: Array<Double>): Array<Double> {
 
 /** Returns the index of the largest value. */
 @Experimental(since: "0.1")
-func argmax(values: Array<Double>): Int {
+func argmax(values: Array<Double>&): Int {
     assert values.size > 0 panic "argmax needs at least one value"
     var best = 0
     for i in 1..<values.size {
@@ -164,7 +164,7 @@ func argmax(values: Array<Double>): Int {
 
 /** Computes mean squared error over two equally sized vectors. */
 @Experimental(since: "0.1")
-func meanSquaredError(predicted: Array<Double>, target: Array<Double>): Double {
+func meanSquaredError(predicted: Array<Double>&, target: Array<Double>&): Double {
     assert predicted.size == target.size panic "metric vectors must have equal size"
     if predicted.size == 0 { return 0.0 }
     var total: Double = 0.0
@@ -177,7 +177,7 @@ func meanSquaredError(predicted: Array<Double>, target: Array<Double>): Double {
 
 /** Computes classification accuracy over integer labels. */
 @Experimental(since: "0.1")
-func accuracy(predicted: Array<Int>, target: Array<Int>): Double {
+func accuracy(predicted: Array<Int>&, target: Array<Int>&): Double {
     assert predicted.size == target.size panic "accuracy vectors must have equal size"
     if predicted.size == 0 { return 0.0 }
     var correct = 0
@@ -191,7 +191,7 @@ func accuracy(predicted: Array<Int>, target: Array<Int>): Double {
 @Experimental(since: "0.1")
 func dataset(inputs: Array<Tensor>, targets: Array<Tensor>): Dataset {
     assert inputs.size == targets.size panic "dataset inputs and targets differ"
-    return Dataset(inputs, targets)
+    return Dataset(take inputs, take targets)
 }
 
 /** Connects to a model artifact or provider. */

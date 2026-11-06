@@ -68,6 +68,9 @@ that depends on them starts.
 | D-2 | **TLS and cryptography.** | TLS 1.3 and its primitives in Azora, with published test vectors, constant-time review and fuzzing; or the OS's TLS where the OS has one (Apple, Windows), with Azora's own only on Linux and Android. |
 | D-3 | **DX12 shader bytecode.** | Emit DXIL directly from the Azora shader compiler; or compile generated HLSL with the D3D compiler that ships with Windows (an OS component, Shader Model 5.1 only). |
 | D-4 | **Store purchases and ad networks.** Apple's store API is an OS framework; Google Play billing and ad networks are reachable only through their vendors' client libraries. | Keep them out of the Engine (a project-level choice); or allow platform-vendor client libraries as a named exception. |
+| D-5 | **A `String` returned by a `bridge`.** No DIP says whether Azora borrows the foreign memory or owns a copy. Today it borrows: `fin t = bufferText(b); closeBuffer(b); println(t)` reads freed memory. (A template such as `"${t}"` now always builds its own string.) | Copy every foreign `String` result into Azora memory at the call; or keep borrowing and make the result a borrow the checker ties to its source. |
+| D-6 | ✅ *Decided 2026-11-06: follow the DIP.* **By-value parameters of non-`Copy` types** transfer ownership: callers write `take` or `.clone()`, the callee destroys what it was given unless it moves it on, and read-only parameters are declared `T&`. Done and qualified the same day (progress log). | — |
+| D-7 | **A binding initialised from a place** (`var b = a`, `fin v = h.items`) is a non-owning alias today, not the move or copy §10 describes. | Require `take`/`.clone()` (or a borrow type) for non-`Copy` values; or keep aliases and amend the DIP. |
 
 ## Where things stand (measured 2026-11-06)
 
@@ -125,11 +128,11 @@ reaches mobile; D runs alongside from week 3.
 | # | Milestone | Done when |
 |---|---|---|
 | A1 | ✅ *Closed 2026-11-06.* **Zero failing tests.** Fix `SemanticFactsTest` ×2 (tooling facts lost after a type error, and for imported calls), WebAssembly `clone` of a pack (`LiteralFactoryExecTest`), and `FoundationAbiExecTest`'s choice of a sanitizer toolchain that hangs. | `AZORA_REQUIRE_NATIVE_TESTS=1` full run: 0 failures. |
-| A2 | **Ownership is complete (F09/F11).** Recursive field destruction (the `owned-ecs` World), storing a non-`Copy` local without `take` outside a `return` (a checker error per the ownership DIP), parameters a callee keeps, and `"${x}"` copying its single value. | `owned-ecs` passes; ASan/UBSan clean on the Engine probes and on Studio's scripted drag benchmark. |
-| A3 | **No known miscompiles (§1.1).** Checking derivations against field capabilities, `hash` parity across backends, the `Out` conflict rule, spec return types adopted by impls, an explicit-type-argument `Clone` generic folding `T.typeName`, library bridges that collide with a program's own names, and recursive `clone` on WebAssembly (packs owning packs, arrays, functions or pointers are an explicit diagnostic today). | Each one has a regression test on every backend. |
+| A2 | ✅ *Closed 2026-11-06, D-6 included.* **Ownership is complete (F09/F11).** Recursive field destruction (the `owned-ecs` World), storing a non-`Copy` local without `take` (a checker error per the ownership DIP, `return` included), `"${x}"` copying its single value, and a derived `clone` sharing array fields. By-value parameters follow the DIP (D-6); owned `World` resources in `Array<Any>` remain (see the progress log). | `owned-ecs` passes; ASan/UBSan clean on the Engine probes and on Studio's scripted drag benchmark. |
+| A3 | **No known miscompiles (§1.1).** Checking derivations against field capabilities, `hash` parity across backends, the `Out` conflict rule, spec return types adopted by impls, an explicit-type-argument `Clone` generic folding `T.typeName`, library bridges that collide with a program's own names, and recursive `clone` on WebAssembly (packs owning packs, arrays, functions or pointers are an explicit diagnostic today). Erased generics on LLVM (found 2026-11-06): a tuple built at a concrete layout and read through an erased `(K, V)` - `Int` is 32-bit, so `(Int, Int)` packs its components at 0/4 where `(Any, Any)` reads 0/8 (a tuple written in place at the call is now built at the callee's layout; one held in a variable or an array is not, plan items 021/053); an erased `V?` holding `0` reads as `null` (`LinkedHashMap<String, Int>` with value `0`); and `"${map.get(k)}"` rendering an erased `V?`. | Each one has a regression test on every backend. |
 | A4 | **Text on LLVM.** `contains`, `trim`, `replace`, `split`, `toUpper`, `toLower` and `toChars` are native: UTF-8 aware and leak-free. | They run under ASan with the interpreter's output. |
 | A5 | **Package manager v1 (`azpm` in the CLI).** `azora new`, `build`, `run`, `test`, `add`, `remove`; an `azora.azon` manifest; path and git dependencies; `azora.lock`; workspaces (the Engine already is one). | A clean machine creates a project, adds the Engine by git, builds and tests it. |
-| A6 | **Decisions written down.** Stability policy (§11); target triples (macOS arm64/x64, iOS arm64, Android arm64-v8a, Windows x64/arm64, Linux x64/arm64, wasm32); the web path (the in-house WebAssembly backend brought to parity with LLVM, with browser host glue generated by Azora); the generics strategy (erasure plus monomorphization where it pays); self-hosting accepted and staged as Track E; and D-1 to D-4 above. | Merged in the DIPs and this roadmap. |
+| A6 | **Decisions written down.** Stability policy (§11); target triples (macOS arm64/x64, iOS arm64, Android arm64-v8a, Windows x64/arm64, Linux x64/arm64, wasm32); the web path (the in-house WebAssembly backend brought to parity with LLVM, with browser host glue generated by Azora); the generics strategy (erasure plus monomorphization where it pays); self-hosting accepted and staged as Track E; and D-1 to D-7 above. | Merged in the DIPs and this roadmap. |
 
 **0.1 stable ships when A1–A6 are done.** Estimate: **8 weeks of focused work
 (range 6–12).** The range comes from A2 (ownership) and A5 (packages).
@@ -283,9 +286,8 @@ E self-host                         (starts after 0.1) [E1 parser][E2 ...
 ## First steps
 
 1. ~~Close A1~~ — done 2026-11-06.
-2. A2: recursive destruction for `owned-ecs`, then the checker rule for storing
-   a non-`Copy` local without `take`.
-3. Settle D-1 to D-4.
+2. ~~A2~~ — done 2026-11-06, D-6 included.
+3. Settle D-1 to D-5 and D-7.
 4. Write three DIPs before code: the `azora-gpu` interface, the platform layer,
    and the shader language.
 5. B1 spike: an empty Azora program on the iOS simulator and the Android

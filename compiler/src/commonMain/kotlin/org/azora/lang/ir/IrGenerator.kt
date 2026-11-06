@@ -752,11 +752,31 @@ class IrGenerator(private val table: SymbolTable) {
                 // constructor - `modifier: Modifier& = .()` - can be read at all.
                 val written = ctor.params.drop(ctor.contextualParams)
                 listOf(written.size).map { arity ->
-                    val taken = params
-                    val filled = params.map { (name, t) -> IrExpr.Var(name, t) }
+                    // A pack with a `Hash`/`Equal`/`Order` bound keeps its
+                    // descriptors in hidden fields, which only a call site that
+                    // names the type arguments can fill. Its factory takes the
+                    // value that call site built and runs the ctor on it.
+                    val bounded = item.typeName in packWitnessBounds
+                    val taken = if (bounded) listOf("__self" to type) + params else params
+                    // Each argument is handed on once. One the factory owns (by
+                    // value, not a borrow) moves into the ctor, which owns it in
+                    // turn; passing it as a plain name would leave both to free it.
+                    // A variadic pack belongs to the call, so it is passed on as is.
+                    val variadic = variadicIndex(ctor.params, params)
+                    val filled = params.mapIndexed { i, (name, t) ->
+                        val value = IrExpr.Var(name, t)
+                        val owned = ctor.params[i].modifier == ParamModifier.NONE && i != variadic &&
+                            (t is IrType.Array || (t is IrType.Named && table.lookupStruct(t.name)?.isBridge == false))
+                        if (owned) IrExpr.Call("__take", listOf(value), t) else value
+                    }
                     // A ctor that declared a return type yields that value; one
                     // that declared none has filled `__self`, which is the value.
-                    val declared = (ctor.returnType as? TypeAnnotation.Explicit)?.let { resolveType(it.ref) }
+                    // `ctor .(…) ?! E` declares only its errors: it still fills
+                    // `__self`, and the factory fails when the ctor does.
+                    val declaredRef = (ctor.returnType as? TypeAnnotation.Explicit)?.ref
+                    val failsOnly = (declaredRef as? TypeRef.Failable)?.ok
+                        ?.let { it is TypeRef.Named && it.name == "Unit" && it.synthesized } == true
+                    val declared = if (failsOnly) null else declaredRef?.let { resolveType(it) }
                     val call = IrExpr.Call(
                         ctorSymbol(item.typeName, arity, ctor.isRepeated, ctorOverloaded),
                         listOf(IrExpr.Var("__self", type)) + filled,
@@ -768,16 +788,29 @@ class IrGenerator(private val table: SymbolTable) {
                         IrExpr.StructCtor(item.typeName, struct.fields.map { it.name }, fieldDefaults, type),
                         ownsValue = true,
                     )
+                    val self = IrExpr.Var("__self", type)
                     IrTopLevel.Func(IrFunction(
                         ctorFactorySymbol(item.typeName, arity, ctor.isRepeated),
                         taken,
                         declared ?: type,
-                        if (declared != null) {
-                            ctorResultBody(fresh, IrExpr.Var("__self", type), call, declared)
-                        } else {
-                            listOf(fresh, IrStmt.ExprStmt(call), IrStmt.Return(IrExpr.Var("__self", type)))
+                        when {
+                            declared != null && bounded -> ctorResultBody(
+                                IrStmt.VarDecl("__constructed", type, IrExpr.Call("__take", listOf(self), type), ownsValue = true),
+                                IrExpr.Var("__constructed", type), call.copy(args = listOf(IrExpr.Var("__constructed", type)) + call.args.drop(1)), declared,
+                            )
+                            declared != null -> ctorResultBody(fresh, self, call, declared)
+                            bounded -> listOf(IrStmt.ExprStmt(call), IrStmt.Return(IrExpr.Call("__take", listOf(self), type)))
+                            else -> listOf(fresh, IrStmt.ExprStmt(call), IrStmt.Return(self))
                         },
                         isLibrary = fromLibrary(item),
+                        isFailable = declaredRef is TypeRef.Failable,
+                        // The factory hands each argument on in the mode the ctor
+                        // declared it: a borrow there (`anchor: Anchor!`,
+                        // `modifier: Modifier&`) is a borrow here, never a value
+                        // the factory owns and destroys.
+                        refParams = ctor.params.indices.filter { ctor.params[it].modifier != ParamModifier.NONE }
+                            .mapTo(mutableSetOf()) { if (bounded) it + 1 else it },
+                        variadicParam = variadic?.let { if (bounded) it + 1 else it },
                     ))
                 }
             }
@@ -866,14 +899,29 @@ class IrGenerator(private val table: SymbolTable) {
             buildSpecTables(),
             ownedSlots = program.items.filterIsInstance<TopLevel.Slot>().filterNot { it.isError }.map { it.name }.toSet(),
         )
-        return OwnershipCleanup.lower(
-            IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces),
-            returnsBorrow = { name -> table.lookupFunction(name)?.returnTypeRef is TypeRef.Reference },
-        ) { type ->
+        val copied: (IrType) -> Boolean = { type ->
             val name = (type as? IrType.Named)?.name
             name != null && table.lookupStruct(name)?.isBridge == false && table.lookupEnum(name) == null &&
                 table.lookupFail(name) == null && table.conformsTo(name, "Copy")
         }
+        // A value the checker made the caller give away (`take`, or a temporary)
+        // when it was passed by value: an array always, a non-`Copy` pack once
+        // the capability lattice is in scope to say it is not `Copy`.
+        val lattice = table.conformsTo("Int", "Copy")
+        val transferred: (IrType) -> Boolean = { type ->
+            when (type) {
+                is IrType.Array -> true
+                is IrType.Named -> lattice && table.lookupStruct(type.name)?.isBridge == false && !copied(type)
+                else -> false
+            }
+        }
+        return OwnershipCleanup.lower(
+            IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces),
+            returnsBorrow = { name -> table.lookupFunction(name)?.returnTypeRef is TypeRef.Reference },
+            transferredByValue = transferred,
+            copied = copied,
+            variadic = { name -> table.lookupFunction(name)?.isVariadic == true },
+        )
     }
 
     /**
@@ -1028,7 +1076,14 @@ class IrGenerator(private val table: SymbolTable) {
             isFailable = declaredFailable(func),
             isReactive = func.isReactive,
             exclusiveParams = func.params.indices.filter { func.params[it].modifier == ParamModifier.EXCLUSIVE }.toSet(),
+            variadicParam = variadicIndex(func.params, symbol.params),
         )
+    }
+
+    /** Where [params]' trailing `...name` sits among the lowered [lowered] parameters. */
+    private fun variadicIndex(params: List<Param>, lowered: List<Pair<String, IrType>>): Int? {
+        val name = params.lastOrNull()?.takeIf { it.variadic }?.name ?: return null
+        return lowered.indexOfFirst { it.first == name }.takeIf { it >= 0 }
     }
 
     /** True when [func] declares a `T ?! E` return type. */
@@ -1157,6 +1212,7 @@ class IrGenerator(private val table: SymbolTable) {
             refParams = symbol.sharedParams + symbol.exclusiveParams + symbol.returnedParams + 0,
             isFailable = declaredFailable(method),
             exclusiveParams = symbol.exclusiveParams,
+            variadicParam = variadicIndex(method.params, symbol.params),
         )
     }
 
@@ -2076,7 +2132,8 @@ class IrGenerator(private val table: SymbolTable) {
         val name = "__render_" + MonoNames.mangleType(typeRefOf(unsized)).replace(Regex("[^A-Za-z0-9_]"), "_")
         if (name in generatedRenderFunctions) return name
         // Registered before its body is built, so an array of arrays reaches it.
-        generatedRenderFunctions[name] = IrFunction(name, listOf("values" to unsized), IrType.String, emptyList())
+        // The array is borrowed: writing it out must not give it away.
+        generatedRenderFunctions[name] = IrFunction(name, listOf("values" to unsized), IrType.String, emptyList(), refParams = setOf(0))
         val values = IrExpr.Var("values", unsized)
         val out = IrExpr.Var("out", IrType.String)
         val index = IrExpr.Var("index", IrType.Int)
@@ -2099,7 +2156,7 @@ class IrGenerator(private val table: SymbolTable) {
             ),
             IrStmt.Return(IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(out), IrExpr.IrTemplatePart.Literal("]")))),
         )
-        generatedRenderFunctions[name] = IrFunction(name, listOf("values" to unsized), IrType.String, body)
+        generatedRenderFunctions[name] = IrFunction(name, listOf("values" to unsized), IrType.String, body, refParams = setOf(0))
         return name
     }
 
@@ -2246,11 +2303,13 @@ class IrGenerator(private val table: SymbolTable) {
             captureArgs += IrExpr.Var(name, type)
         }
 
+        // The captured values are only read to format the message: borrowed.
         generatedTraceFunctions += IrFunction(
             functionName,
             listOf("level" to IrType.Named("LogLevel")) + captureParams,
             IrType.String,
             listOf(IrStmt.Return(bodyExpr)),
+            refParams = (1..captureParams.size).toSet(),
         )
         val call = IrExpr.Call(functionName, listOf(level) + captureArgs, IrType.String)
         return IrStmt.Trace(level, call, variants, displayLevel = displayLevel)
@@ -2411,6 +2470,8 @@ class IrGenerator(private val table: SymbolTable) {
     private fun declaredRefOf(expr: Expr): TypeRef? = when (expr) {
         is Expr.Identifier -> declaredRefs[expr.name]
         is Expr.Grouping -> declaredRefOf(expr.expr)
+        // `take x`, `lend x`, `x.&`: the value is still `x`'s, of `x`'s type.
+        is Expr.Isolated -> declaredRefOf(expr.value)
         is Expr.Member -> fieldRefOf(expr.target, expr.name)
         is Expr.Index -> elementRefOf(declaredRefOf(expr.target))
         is Expr.Call -> returnedRefOf(expr)
@@ -2670,7 +2731,7 @@ class IrGenerator(private val table: SymbolTable) {
      */
     private fun lowerEntriesFactoryLiteral(expr: Expr.MapLit, factoryName: String): IrExpr {
         val target = resolveType(expr.contextualType!!) as IrType.Named
-        val factory = table.lookupFunction(factoryName) ?: error("literal factory '$factoryName' is not registered")
+        val factory = table.lookupFunction(factoryName) ?: error("bracket constructor '$factoryName' is not registered")
         val slots = factory.params.single().second as IrType.Array
         val (keyType, valueType) = (literalFactoryTypes(table, target, factory).first as IrType.Tuple).elements
         val entries = expr.entries.map { (key, value) ->
@@ -2689,7 +2750,7 @@ class IrGenerator(private val table: SymbolTable) {
 
     private fun lowerFactoryLiteral(expr: Expr.ArrayLiteral, factoryName: String): IrExpr {
         val target = resolveType(expr.contextualType!!) as IrType.Named
-        val factory = table.lookupFunction(factoryName) ?: error("literal factory '$factoryName' is not registered")
+        val factory = table.lookupFunction(factoryName) ?: error("bracket constructor '$factoryName' is not registered")
         val slots = factory.params.single().second as IrType.Array
         val (element, _) = literalFactoryTypes(table, target, factory)
         val elements = expr.elements.map { coerceToFloat(lowerExpr(it), element) }
@@ -2778,7 +2839,26 @@ class IrGenerator(private val table: SymbolTable) {
         val args = call.args.map { lowerExpr(it) }
         val factory = ctorFactorySymbol(call.callee, args.size + 1, repeated = true)
         if (table.lookupFunction(factory) == null) return null
-        return IrExpr.Call(factory, args + loweredCount, IrType.Named(call.callee))
+        return IrExpr.Call(factory, listOfNotNull(boundedSelf(call.callee, call.typeArgs, call.line)) + args + loweredCount, IrType.Named(call.callee))
+    }
+
+    /**
+     * The value a bounded pack's ctor factory runs on, built where the type
+     * arguments are known: field defaults, and the `Hash`/`Equal`/`Order`
+     * descriptors those arguments give. Null for a pack without such a bound,
+     * whose factory builds the value itself.
+     */
+    private fun boundedSelf(pack: String, typeArgs: List<TypeRef>, line: Int): IrExpr? {
+        if (pack !in packWitnessBounds) return null
+        val struct = table.lookupStruct(pack) ?: return null
+        val names = struct.fields.map { it.name }
+        val resolved = typeArgs.map { resolveType(it, currentGenericTypeParams) }
+        return IrExpr.StructCtor(
+            pack,
+            names,
+            withDescriptors(pack, names, loweredFieldValues(struct, emptyList(), resolved), typeArgs, line),
+            IrType.Named(pack, resolved),
+        )
     }
 
     /**
@@ -3398,9 +3478,10 @@ class IrGenerator(private val table: SymbolTable) {
                         expr.typeArgs.map { resolveType(it, currentGenericTypeParams) },
                         expr.typeArgs.map { (it as? TypeRef.Const)?.value })
                     val typedCtor = declaredCtor?.let { instantiateMember(table, ownerType, it) }
-                    if (typedCtor != null && actualCallee in packWitnessBounds) {
-                        error("'$actualCallee' has a Hash or Equal bound; a ctor with arguments cannot be given its descriptors yet")
-                    }
+                    // A bounded pack's descriptors come from the type arguments
+                    // this call names: build the value here, with them, and let
+                    // the factory run the ctor on it.
+                    val builtSelf = if (typedCtor != null) listOfNotNull(boundedSelf(actualCallee, expr.typeArgs, expr.line)) else emptyList()
                     if (typedCtor != null) {
                         val physicalCtor = declaredCtor!!
                         val declaredCtor = typedCtor
@@ -3458,10 +3539,15 @@ class IrGenerator(private val table: SymbolTable) {
                                 // Pack the callee's physical slots. A generic ctor
                                 // reads erased elements even when the caller knows T.
                                 val element = (physicalCtor.params.last().second as IrType.Array).element
-                                val packed = IrExpr.ArrayLiteral(rest, IrType.Array(element, rest.size.toLong()))
+                                // `Type(...items)` handing on an array already laid
+                                // out as the callee's slots passes that array: a copy
+                                // would hold the same elements as a second owner.
+                                val whole = (rest.singleOrNull() as? IrExpr.Spread)?.array
+                                    ?.takeIf { (it.type as? IrType.Array)?.element == element }
+                                val packed = whole ?: IrExpr.ArrayLiteral(rest.map { tupleAtSlot(it, element) }, IrType.Array(element, rest.size.toLong()))
                                 return IrExpr.Call(
                                     declaredCtor.name,
-                                    scopeArgs.filterNotNull() + fixed + packed,
+                                    builtSelf + scopeArgs.filterNotNull() + fixed + packed,
                                     declaredCtor.returnType,
                                 )
                             }
@@ -3475,7 +3561,7 @@ class IrGenerator(private val table: SymbolTable) {
                             }
                             return IrExpr.Call(
                                 declaredCtor.name,
-                                scopeArgs.filterNotNull() + bound,
+                                builtSelf + scopeArgs.filterNotNull() + bound,
                                 declaredCtor.returnType,
                             )
                         }
@@ -3543,7 +3629,7 @@ class IrGenerator(private val table: SymbolTable) {
                             ?: homogeneousVariadicType
                             ?: IrType.Any
                         val restSize: kotlin.Long? = if (hasSpread) null else rest.size.toLong()
-                        fixed + listOf(IrExpr.ArrayLiteral(rest, IrType.Array(elemType, restSize)))
+                        fixed + listOf(IrExpr.ArrayLiteral(rest.map { tupleAtSlot(it, elemType) }, IrType.Array(elemType, restSize)))
                     } else if (hasSpread) {
                         // Non-variadic with spread: keep spread args for evalCall to splice.
                         args
@@ -3606,7 +3692,7 @@ class IrGenerator(private val table: SymbolTable) {
                         // An integer literal passed where a float is declared becomes
                         // one here, so the callee never receives the wrong machine type.
                         effectiveArgs.mapIndexed { i, arg ->
-                            func.params.getOrNull(i)?.let { coerceToFloat(arg, it.second) } ?: arg
+                            func.params.getOrNull(i)?.let { coerceToFloat(tupleAtSlot(arg, it.second), it.second) } ?: arg
                         }
                     }
                     // A bounded type parameter's descriptor follows the written arguments.
@@ -4435,6 +4521,17 @@ class IrGenerator(private val table: SymbolTable) {
         if (actual.name == spec.name || table.lookupSpec(spec.name) == null) return widened
         return IrExpr.NumCast(widened, declared)
     }
+
+    /**
+     * A tuple written in place, built at the layout of the [slot] it is passed
+     * to: a generic callee reads `(K, V)` as erased components, which a
+     * backend may lay out wider than `(Int, Int)`. A bracket literal builds its
+     * entries the same way.
+     */
+    private fun tupleAtSlot(value: IrExpr, slot: IrType): IrExpr =
+        if (value is IrExpr.TupleLit && slot is IrType.Tuple && value.type != slot && value.elements.size == slot.elements.size)
+            IrExpr.TupleLit(value.elements, slot)
+        else value
 
     private fun coerceToFloat(expr: IrExpr, target: IrType): IrExpr =
         if (IrType.isNumeric(target) && target != expr.type &&

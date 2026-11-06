@@ -253,6 +253,8 @@ class LlvmCodegen {
         stringIntrinsics.firstOrNull { symbolDenotes(symbol, it) }
     private var usesSnprintf = false
     private var usesStrConcat = false
+    /** A template of one `String` part: it still builds a string of its own. */
+    private var usesStrCopy = false
     private var usesStrRepeat = false
     private var usesStrHash = false
     private var usesArrayGrow = false
@@ -314,6 +316,7 @@ class LlvmCodegen {
         usesGetpid = false
         usesSnprintf = false
         usesStrConcat = false
+        usesStrCopy = false
         usesStrRepeat = false
         usesStrHash = false
         usesArrayGrow = false
@@ -2601,8 +2604,11 @@ entry:
     private fun emitIsolatedCopy(arg: IrExpr): String = isolatedCopy(emitExpr(arg), arg.type)
 
     /**
-     * [value], of [type], duplicated as `__isolated` promises. A pack is
-     * copied one level deep, as above. An array owns its buffer, so the buffer is
+     * [value], of [type], duplicated as `__isolated` promises. A pack's bytes are
+     * copied, then every field it owns that is itself an allocation - a pack, an
+     * array or a closure - is duplicated in turn, so the copy shares nothing its
+     * drop would free. Copying only nested packs left an `Array` field shared:
+     * both packs freed the one buffer. An array owns its buffer, so the buffer is
      * copied whole and each element that is itself an array or a pack is copied
      * in turn: `[1, 2, 3].clone()` must not share the slots it was copied from
      * (OWNERSHIP_BORROWING_DIP: both values "own independent state").
@@ -2629,15 +2635,26 @@ entry:
         registerNamedDrop(raw, named)
         for ((i, field) in structDefs.getValue(named.name).fields.withIndex()) {
             val concrete = concreteFieldType(structDefs.getValue(named.name), i, named)
-            if (field.ownsValue && concrete is IrType.Named && concrete.name in structDefs) {
+            val duplicated = concrete is IrType.Array || concrete is IrType.Function ||
+                (concrete is IrType.Named && concrete.name in structDefs)
+            if (field.ownsValue && duplicated && mapType(field.type).endsWith("*")) {
                 val address = nextTmp()
                 val old = nextTmp()
                 emit("  $address = getelementptr $st, $st* $ptr, i32 0, i32 $i")
                 emit("  $old = load ${mapType(field.type)}, ${mapType(field.type)}* $address")
+                // A field moved out (`take self.items`) is null: the copy keeps it so.
+                val present = nextTmp()
+                emit("  $present = icmp ne ${mapType(field.type)} $old, null")
+                val copyField = nextLabel("isolate.field")
+                val fieldDone = nextLabel("isolate.field.done")
+                emitTerminator("  br i1 $present, label %$copyField, label %$fieldDone")
+                startBlock(copyField)
                 val typed = coerceNumeric(old, field.type, concrete)
                 val duplicate = isolatedCopy(typed, concrete)
                 val stored = coerceNumeric(duplicate, concrete, field.type)
                 emit("  store ${mapType(field.type)} $stored, ${mapType(field.type)}* $address")
+                emitTerminator("  br label %$fieldDone")
+                startBlock(fieldDone)
             }
         }
         return ptr
@@ -5590,6 +5607,18 @@ end:
                 tmp
             }
         }
+        // `"${text}"` builds a string; it does not hand back `text`. A
+        // `String` can name memory Azora does not own (a bridge's result into a
+        // foreign buffer), and the template's value must outlive that buffer
+        // like any other template's does. Every other single part is already
+        // converted into a new string.
+        val single = (expr.parts.singleOrNull() as? IrExpr.IrTemplatePart.Expr)?.expr
+        if (acc != null && single != null && single.type == IrType.String) {
+            usesStrCopy = true
+            val copy = nextTmp()
+            emit("  $copy = call i8* @__azora_str_copy(i8* $acc)")
+            return copy
+        }
         return acc ?: gepString(addStringConstant(""))
     }
 
@@ -6414,7 +6443,7 @@ end:
 
         // Values created by language helpers follow the active allocation scope.
         // Runtime bookkeeping is handled separately with __azora_alloc_raw.
-        if (usesStrConcat || usesStrRepeat || usesArrayGrow || usesMapGrow ||
+        if (usesStrConcat || usesStrCopy || usesStrRepeat || usesArrayGrow || usesMapGrow ||
             usesIntToStr || usesUintToStr || usesDoubleToStr || usesCharToStr
         ) {
             usesAllocatorRuntime = true
@@ -6744,6 +6773,20 @@ allocate:
             sb.appendLine("  %buf = call i8* @__azora_alloc(i64 %size)")
             sb.appendLine("  %c1 = call i8* @strcpy(i8* %buf, i8* %a)")
             sb.appendLine("  %c2 = call i8* @strcat(i8* %buf, i8* %b)")
+            sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
+        if (usesStrCopy) {
+            usesStrlen = true; usesMemcpy = true
+            sb.appendLine("; runtime: string copy")
+            sb.appendLine("define i8* @__azora_str_copy(i8* %s) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %len = call i64 @strlen(i8* %s)")
+            sb.appendLine("  %size = add i64 %len, 1")
+            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 %size)")
+            sb.appendLine("  %c = call i8* @memcpy(i8* %buf, i8* %s, i64 %size)")
             sb.appendLine("  ret i8* %buf")
             sb.appendLine("}")
             sb.appendLine()

@@ -31,8 +31,12 @@ import std.traits::Order
  * Merge sort - O(n log n) stable sorting algorithm.
  */
 @Experimental(since: "0.1")
-func<T: Order> mergeSort(arr: Array<T>): Array<T> {
-    if arr.size <= 1 then return arr
+func<T: Order> mergeSort(arr: Array<T>&): Array<T> {
+    if arr.size <= 1 {
+        var copy: Array<T> = .() * arr.size
+        for i: Int in 0..<arr.size then copy[i] = arr[i]
+        return copy
+    }
     var mid: Int = arr.size / 2
     var left: Array<T> = .() * mid
     var right: Array<T> = .() * arr.size - mid
@@ -47,7 +51,7 @@ func<T: Order> mergeSort(arr: Array<T>): Array<T> {
  * Merges two sorted arrays into one sorted array.
  */
 @Experimental(since: "0.1")
-func<T: Order> merge(a: Array<T>, b: Array<T>): Array<T> {
+func<T: Order> merge(a: Array<T>&, b: Array<T>&): Array<T> {
     var result: Array<T> = .() * a.size + b.size
     var ri: Int = 0
     var ai: Int = 0
@@ -75,7 +79,7 @@ func<T: Order> merge(a: Array<T>, b: Array<T>): Array<T> {
  * @return A new array ordered by [key]; the original is unchanged.
  */
 @Experimental(since: "0.1")
-func<T, K> sortBy(arr: Array<T>, key: (T) -> K): Array<T> where K: Order
+func<T, K> sortBy(arr: Array<T>&, key: (T) -> K): Array<T> where K: Order
 out {
     assert it.size == arr.size panic "sortBy must preserve length"
 } scope {
@@ -136,7 +140,7 @@ out {
  * Returns array of arrays where each sub-array has elements with the same key.
  */
 @Experimental(since: "0.1")
-func<T> groupBy(arr: Array<T>, key: (T) -> T): Array<T> {
+func<T> groupBy(arr: Array<T>&, key: (T) -> T): Array<T> {
     var keys: Array<T> = .() * arr.size
     var groups: Array<T> = .() * arr.size
     var keyCount: Int = 0
@@ -150,7 +154,7 @@ func<T> groupBy(arr: Array<T>, key: (T) -> T): Array<T> {
         } else {
             var g: Array<T> = groups[found]
             g[g.size] = arr[i]
-            groups[found] = g
+            groups[found] = take g
         }
     }
     // Trim groups to actual count
@@ -163,7 +167,7 @@ func<T> groupBy(arr: Array<T>, key: (T) -> T): Array<T> {
  * Interleaves two arrays: [a1, b1, a2, b2, ...].
  */
 @Experimental(since: "0.1")
-func<T> interleave(a: Array<T>, b: Array<T>): Array<T> {
+func<T> interleave(a: Array<T>&, b: Array<T>&): Array<T> {
     var result: Array<T> = .() * a.size + b.size
     var ri: Int = 0
     var maxLen: Int = a.size
@@ -179,7 +183,7 @@ func<T> interleave(a: Array<T>, b: Array<T>): Array<T> {
  * Returns a sliding window of given size over the array.
  */
 @Experimental(since: "0.1")
-func<T> windows(arr: Array<T>, size: Int): Array<T> {
+func<T> windows(arr: Array<T>&, size: Int): Array<T> {
     fin count: Int = if arr.size >= size then arr.size - size + 1 else 0
     var result: Array<T> = .() * count
     var ri: Int = 0
@@ -187,7 +191,7 @@ func<T> windows(arr: Array<T>, size: Int): Array<T> {
     while i + size <= arr.size {
         var w: Array<T> = .() * size
         for j: Int in 0..<size then w[j] = arr[i + j]
-        result[ri++] = w
+        result[ri++] = take w
         i++
     }
     return result
@@ -197,7 +201,7 @@ func<T> windows(arr: Array<T>, size: Int): Array<T> {
  * Returns array with elements at even indices.
  */
 @Experimental(since: "0.1")
-func<T> evens(arr: Array<T>): Array<T> {
+func<T> evens(arr: Array<T>&): Array<T> {
     fin count: Int = (arr.size + 1) / 2
     var result: Array<T> = .() * count
     for i: Int in 0..<arr.size by 2 with index then result[index] = arr[i]
@@ -208,7 +212,7 @@ func<T> evens(arr: Array<T>): Array<T> {
  * Returns array with elements at odd indices.
  */
 @Experimental(since: "0.1")
-func<T> odds(arr: Array<T>): Array<T> {
+func<T> odds(arr: Array<T>&): Array<T> {
     fin count: Int = arr.size / 2
     var result: Array<T> = .() * count
     for i: Int in 1..<arr.size by 2 with index then result[index] = arr[i]

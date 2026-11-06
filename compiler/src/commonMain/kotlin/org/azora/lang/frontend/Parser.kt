@@ -1116,7 +1116,6 @@ class Parser(
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
             check(TokenType.SPEC) -> parseSpec()
             check(TokenType.IMPL) -> parseImpl(annotations = annotations)
-            check(TokenType.LITERAL) -> misplacedLiteralFactory()
             else -> error(
                 "Expected 'func', 'fin', 'var', 'let', 'test', 'typealias', 'pack', 'enum', " +
                     "'spec', 'impl', 'inline', or 'deepinline' at top level, got " +
@@ -2825,7 +2824,6 @@ class Parser(
         }
         val name = when {
             enforceNumFields && check(TokenType.INT_LITERAL) -> advance().lexeme
-            check(TokenType.LITERAL) -> misplacedLiteralFactory()
             else -> consumeIdentifierLike("Expected field name")
         }
         val type: TypeRef
@@ -3734,7 +3732,6 @@ class Parser(
                         else -> error("Expected 'fin', 'prop' or 'func' after 'bridge' in impl block at line ${peek().line}")
                     }
                 }
-                check(TokenType.LITERAL) -> methods.add(parseLiteralFactory(memberAnnotations, visibility))
                 // `ctor .(…) { … }` - a constructor is a member of the
                 // type it builds, so it lives in the impl beside everything else.
                 check(TokenType.CTOR) -> {
@@ -3774,6 +3771,11 @@ class Parser(
                     // the type is written where any other return type would be.
                     val ctorReturn = if (match(TokenType.COLON)) {
                         TypeAnnotation.Explicit(parseTypeName())
+                    } else if (check(TokenType.QMARK_BANG)) {
+                        // `ctor .(…) ?! E` - fills the value it is a member of, and
+                        // may fail instead, as `func f() ?! E` may: the ok type is
+                        // Unit, only the error set is written.
+                        TypeAnnotation.Explicit(parseTypeSuffixes(TypeRef.Named("Unit", synthesized = true)))
                     } else {
                         TypeAnnotation.Inferred
                     }
@@ -3791,6 +3793,9 @@ class Parser(
                         }
                         true
                     } else false
+                    // `where T is Keyed` - decided for the type arguments a
+                    // construction (or a `[…]` literal) chooses, as a function's is.
+                    val ctorWhere = parseWhereClause()
                     val contracts = parseContractClauses()
                     val ctorBody = parseMemberBody("ctor", "ctor .(…) { … }")
                     // A repetition of none builds nothing, so the count is checked
@@ -3827,7 +3832,21 @@ class Parser(
                         constParams = ctorTypeParams.constParams,
                         constDefaults = ctorTypeParams.constDefaults,
                         constEnums = ctorTypeParams.constEnums,
+                        whereClause = ctorWhere,
                     ))
+                    // A variadic constructor is also what a `[…]` literal calls
+                    // where this type is expected: `[1, 2, 3]` is `Type(1, 2, 3)`.
+                    val bracketTarget = ctorParams.singleOrNull()?.takeIf { it.variadic }
+                    if (bracketTarget != null && traitName == null && !repeated && scopeReceivers.isEmpty() &&
+                        ctorTypeParams.names.isEmpty()
+                    ) {
+                        methods.add(
+                            bracketConstructorCall(
+                                typeName, implTypeParams.names, bracketTarget, ctorStart, visibility,
+                                ctorWhere, (ctorReturn as? TypeAnnotation.Explicit)?.ref,
+                            ),
+                        )
+                    }
                 }
                 // `dtor .() { … }` - instance teardown, with no parameters to take.
                 check(TokenType.DTOR) -> {
@@ -5492,11 +5511,12 @@ class Parser(
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             parseAnnotations() // trailing metadata on a requirement is accepted and dropped
-            // `literal [...elements: T]: Self { … }` - not a requirement but the
-            // spec's own factory, designating the concrete value a `[…]` builds
-            // where the spec is expected. `Self` here is the spec itself.
-            if (check(TokenType.LITERAL)) {
-                val factory = bindSelf(listOf(parseLiteralFactory(emptyList(), Visibility.PUBLIC)), name).single()
+            // `ctor .(...elements: T): Self { … }` - not a requirement but the
+            // spec's own constructor, written in Azora, designating the concrete
+            // value a `[…]` builds where the spec is expected. `Self` here is the
+            // spec itself.
+            if (check(TokenType.CTOR)) {
+                val factory = bindSelf(listOf(parseSpecBracketConstructor()), name).single()
                 pendingTopLevels.add(mangleTopLevel(withImplTypeParams(TopLevel.Func(factory), typeParams.names), name))
                 skipNewlines()
                 continue
@@ -6220,39 +6240,82 @@ class Parser(
         )
     }
 
-    private fun misplacedLiteralFactory(): Nothing = error(
-        "a literal factory at line ${peek().line} belongs to the type it builds; declare " +
-            "'literal [...elements: T]: Type { … }' inside 'impl Type { … }'",
-    )
+    /**
+     * The member a `[…]` literal calls where [typeName] is expected, made from
+     * its variadic constructor `ctor .(...elements: T)`: it calls that
+     * constructor with the literal's elements, so the literal *is* the call.
+     * Without a type it is lifted like any receiver-free member, under a name
+     * no source can spell ([BRACKET_CONSTRUCTOR]).
+     */
+    private fun bracketConstructorCall(
+        typeName: String,
+        typeParams: List<String>,
+        variadic: Param,
+        at: Token,
+        visibility: Visibility,
+        /** The constructor's own `where` clause, decided for the literal's target. */
+        whereClause: Expr?,
+        /**
+         * What the constructor declared it yields: nothing (the value it fills),
+         * only its errors (`?! E` - a failing constructor fails the literal), or
+         * another type, which the literal's target then has to accept.
+         */
+        declared: TypeRef?,
+    ): FuncDecl {
+        val element = (variadic.type as? TypeRef.Array)?.element ?: variadic.type
+        val typeArgs = typeParams.map { TypeRef.Named(it) }
+        val type = TypeRef.Named(typeName, typeArgs)
+        val failsOnly = (declared as? TypeRef.Failable)
+            ?.takeIf { (it.ok as? TypeRef.Named)?.let { ok -> ok.name == "Unit" && ok.synthesized } == true }
+        val built = when {
+            failsOnly != null -> TypeRef.Failable(type, failsOnly.errSets)
+            declared != null -> declared
+            else -> type
+        }
+        val construct = Expr.Call(
+            typeName,
+            listOf(Expr.Spread(Expr.Identifier(variadic.name, at.line, at.column), at.line, at.column)),
+            at.line, at.column,
+            typeArgs = typeArgs,
+        )
+        return FuncDecl(
+            BRACKET_CONSTRUCTOR,
+            listOf(Param(variadic.name, TypeRef.Array(element), variadic = true)),
+            TypeAnnotation.Explicit(built),
+            listOf(Stmt.Return(construct, at.line, at.column)),
+            false, emptyList(), at.line, at.column,
+            visibility = visibility, declaresReceiver = false,
+            whereClause = whereClause,
+        )
+    }
 
     /**
-     * `literal [...elements: T]: Target { … }` - how a `[…]` literal whose
-     * expected type is this impl's type is built. It has no receiver, so it is
-     * lifted like any other type-scoped member; the literal reaches it through
-     * its target type, never by name.
+     * `ctor .(...elements: T): Self { … }` in a spec - the spec's own
+     * constructor, with an Azora body that builds the concrete value: what a
+     * `[…]` literal builds where the spec is expected.
      */
-    private fun parseLiteralFactory(annotations: List<Annotation>, visibility: Visibility): FuncDecl {
-        val start = advance()
-        val shape = "write 'literal [...elements: T]: Type { … }'"
-        consume(TokenType.L_BRACKET, "Expected '[' after 'literal' at line ${start.line}; $shape")
+    private fun parseSpecBracketConstructor(): FuncDecl {
+        val start = advance() // ctor
+        val shape = "write 'ctor .(...elements: T): Self { … }'"
+        consume(TokenType.DOT, "Expected '.' after 'ctor' in a spec at line ${start.line}; $shape")
+        consume(TokenType.L_PAREN, "Expected '(' after 'ctor .' at line ${start.line}; $shape")
         if (!match(TokenType.ELLIPSIS)) {
-            error("a literal factory takes one variadic parameter at line ${start.line}; $shape")
+            error("a spec's constructor takes one variadic parameter at line ${start.line}; $shape")
         }
-        val name = consumeIdentifierLike("Expected the elements' name after '...' in a literal factory at line ${start.line}")
+        val name = consumeIdentifierLike("Expected the elements' name after '...' at line ${start.line}")
         consume(TokenType.COLON, "Expected ':' and the element type after '...$name' at line ${start.line}")
         val element = parseTypeName()
-        val associative = element is TypeRef.Tuple && element.elements.size == 2
-        consume(TokenType.R_BRACKET, "A literal factory takes one variadic parameter at line ${start.line}; $shape")
-        consume(TokenType.COLON, "Expected ':' and the type a literal factory builds at line ${start.line}")
+        consume(TokenType.R_PAREN, "A spec's constructor takes one variadic parameter at line ${start.line}; $shape")
+        consume(TokenType.COLON, "Expected ':' and the type a spec's constructor builds at line ${start.line}")
         val result = parseTypeName()
-        // `where T is Hash` - decided for the target's arguments when a literal selects it.
+        // `where K: Hash` - decided for the target's arguments when a literal selects it.
         val whereClause = parseWhereClause()
-        val body = parseMemberBody("literal", "literal [...elements: T]: Type { … }")
+        val body = parseMemberBody("ctor", "ctor .(...elements: T): Self { … }")
         return FuncDecl(
-            if (associative) LITERAL_ENTRIES_FACTORY else LITERAL_FACTORY,
+            BRACKET_CONSTRUCTOR,
             listOf(Param(name, TypeRef.Array(element), variadic = true)), TypeAnnotation.Explicit(result), body,
             false, emptyList(), start.line, start.column,
-            annotations = annotations, visibility = visibility, declaresReceiver = false,
+            visibility = Visibility.PUBLIC, declaresReceiver = false,
             whereClause = whereClause,
         )
     }

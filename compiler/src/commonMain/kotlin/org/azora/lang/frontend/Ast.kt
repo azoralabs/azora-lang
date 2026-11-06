@@ -36,18 +36,18 @@ package org.azora.lang.frontend
 val OPTIONAL_UNWRAP = setOf("require", "take")
 
 /**
- * The type-scoped member a sequence literal factory lifts to: `Type__literal`.
- * `literal` is a keyword, so no source can name the member itself.
+ * The type-scoped member a `[…]` literal calls where its type is expected.
+ *
+ * A pack's variadic constructor (`ctor .(...elements: T)`) provides it - the
+ * parser adds one that calls the constructor, so a literal is that call - and a
+ * spec declares its own constructor, `ctor .(...elements: T): Self { … }`,
+ * designating the concrete value. A `.` cannot appear in an Azora name, so no
+ * source can name or declare the member itself.
+ *
+ * Its declared element type decides the shape it takes: a two-tuple `(K, V)`
+ * takes `[k: v, …]`; anything else, a type parameter included, `[a, b, …]`.
  */
-const val LITERAL_FACTORY = "literal"
-
-/**
- * The member an associative factory - `literal [...entries: (K, V)]` - lifts to:
- * `Type__literal_entries`. A declared element type that is itself a pair is
- * what makes a factory associative; a sequence of pairs declares its element
- * as a type parameter. No source token can spell the name.
- */
-const val LITERAL_ENTRIES_FACTORY = "literal_entries"
+const val BRACKET_CONSTRUCTOR = "ctor.brackets"
 
 /**
  * Which ownership operation an [Expr.Isolated] performs.

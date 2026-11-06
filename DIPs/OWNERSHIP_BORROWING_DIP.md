@@ -9,7 +9,7 @@
 | §1 capability specs (`Clone`, `Copy requires Clone`) | **done** - specs in `std/traits/traits.az`, with implementations generated in `std/traits/core.az`. There is no third capability for moving: every value can be given away, so `take` asks nothing of its operand |
 | §2–§6, §24 the four binding modes | **done** |
 | §7 binding mutability vs ownership capability | **done** |
-| §8 implicit copying | **done** - a named non-`Copy` value passed by value is rejected |
+| §8 implicit copying | **done** - a non-`Copy` value that a binding, field or element owns is rejected without `take` or `.clone()` when it is passed by value (to a function, a method, a constructor, a collection's `add`/`insert`/`put`) or stored by assignment in a field, an element or an owning local; arrays are never `Copy`. A pack that writes a `dtor`, or holds an exclusive borrow (`T!`), is never `Copy` (2026-11-06, decision D-6) |
 | §9 `.clone()` | **done** - a `bridge spec Clone` member; the compiler supplies a field-wise clone, and a written `impl` overrides it |
 | §10 `take` | **done** - move recorded, use-after-take reported, including across control flow: a move inside a loop is rejected (the next iteration would use it), and a move every branch makes outlives the branch |
 | §11 moving a field out | **done** - a field is spent on its own (`take a.db` leaves the rest of `a` usable and only `a.db` unreadable), and moving one out asks the same access a write does, so a shared borrow of the owner is rejected |
@@ -23,7 +23,7 @@
 | §18 smart pointers | **partial** - shared counter storage and atomic reference operations are implemented; automatic scope cleanup, owned pointee destruction and safe weak promotion remain unqualified |
 | §15 async ownership | **done** - a borrowed parameter still read after an `await` or `delay` is rejected, with the three fixes named; a borrow that ends before the suspension is an ordinary borrow |
 | §16 closure captures | **done** for what a body shows - borrow and clone captures are accepted, and a `take` inside a closure moves the outer binding, in an `async` closure as much as a plain one. Which closures *escape* is not analysed, so an escaping capture is not yet required to be explicit |
-| §14 destruction | **partial** - explicit `purge` invokes written pack destructors on the interpreter, LLVM and WASM; automatic destruction on scope exit is not implemented |
+| §14 destruction | **partial** - owners are destroyed on every scope exit, with recursive field destruction; a by-value parameter owns what it receives and is destroyed by its callee unless moved on (2026-11-06). Not yet: failed partial construction, and erased-generic and variadic parameters, which keep the older convention (the call site frees a temporary the callee does not keep) |
 | §19 non-movable types | **removed** - every value is movable |
 
 Enforced today: which values may be duplicated, which may be given away, which
@@ -51,6 +51,11 @@ Three places where the implementation deliberately differs from the text below:
   duplication needs saying - that one then wins.
 - **The capabilities are named `Clone` and `Copy`.** There is no third one for
   moving: every value can be given away with `take`.
+- **A binding initialised from a place is an alias.** `var b = a`, `fin v = h.items`
+  and `fin e = xs[i]` do not move or copy a non-`Copy` value: the new name reads
+  the same value and owns nothing, so nothing is destroyed twice. §10's
+  `var destination = take source` is the way to move. Making these an error
+  without `take` is not decided.
 
 An `impl` of a spec member may omit its return type and take the one the spec
 declared. That is what makes `func &.clone()` in §21 legal without
@@ -937,13 +942,12 @@ The returned view may not outlive `text`.
 
 ## 14. Destruction and scope exit
 
-**Implementation note (2026-10-04):** the automatic cleanup described below is
-still the target design. Current code must use explicit `purge`, normally in a
-`defer` block, to run a written pack destructor and free its allocation. The
-compiler rejects purging borrowed or already-consumed values. It does not yet
-insert scope-exit destruction, clean up failed partial construction, or generate
-recursive field destruction. A raw pointer purge frees its storage and does not
-invoke a destructor on each pointed-to value.
+**Implementation note (2026-11-06):** owned values are destroyed on every exit
+from their scope (since 2026-10-05), fields recursively, and a by-value parameter
+by its callee unless it was moved on. `purge` still destroys a value explicitly;
+the compiler rejects purging borrowed or already-consumed values. Not yet
+implemented: cleanup of a failed partial construction. A raw pointer purge frees
+its storage and does not invoke a destructor on each pointed-to value.
 
 Owned values are destroyed automatically when their ownership scope ends.
 

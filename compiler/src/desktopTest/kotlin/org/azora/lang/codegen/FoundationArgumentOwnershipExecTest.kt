@@ -187,11 +187,13 @@ class FoundationArgumentOwnershipExecTest {
     """, "3 40 39 8 1 after")
 
     /**
-     * `return Pack(local)` moves the local into the result. The array was left
+     * A construction that takes a local owns it, and the local's cleanup no
+     * longer frees it. Before, `return Layout(shape, strides)` left `strides`
      * registered for its scope's cleanup, so the caller received a pack whose
      * field had already been freed (std.gpu's `rowMajor` read zero strides).
+     * The checker now asks for `take` (see `AggregateStoreOwnershipTest`).
      */
-    @Test fun aReturnedConstructionOwnsTheLocalItStores() = sanitized("""
+    @Test fun aConstructionThatTakesALocalOwnsIt() = sanitized("""
         import std.io
         pack Layout {
             var shape: Array<Int>
@@ -208,22 +210,24 @@ class FoundationArgumentOwnershipExecTest {
                 remaining = remaining / shape[i]
                 strides[i] = remaining
             }
-            return Layout(shape, strides)
+            return Layout(take shape, take strides)
         }
         func wrapped(): Wrapper {
             fin strides: Array<Int> = [5, 6]
             fin tag: Array<Int> = [7]
-            return Wrapper(Layout([1, 2], strides), tag)
+            return Wrapper(Layout([1, 2], take strides), take tag)
         }
         func main() {
             fin layout = rowMajor([2, 3, 4])
             fin w = wrapped()
-            println("${'$'}{layout.strides[0]} ${'$'}{layout.strides[2]} ${'$'}{w.layout.strides[1]} ${'$'}{w.tag[0]}")
+            fin kept: Array<Int> = [8, 9]
+            fin holder = Wrapper(Layout([3], take kept), [10])
+            println("${'$'}{layout.strides[0]} ${'$'}{layout.strides[2]} ${'$'}{w.layout.strides[1]} ${'$'}{w.tag[0]} ${'$'}{holder.layout.strides[1]}")
         }
-    """, "12 1 6 7")
+    """, "12 1 6 7 9")
 
-    /** A local the result names twice cannot move to both; it is still freed once. */
-    @Test fun aLocalStoredTwiceIsNotMovedTwice() = sanitized("""
+    /** Values cloned into a construction stay independent of their source. */
+    @Test fun aLocalStoredTwiceIsClonedNotShared() = sanitized("""
         import std.io
         pack Pair {
             var left: Array<Int>
@@ -236,6 +240,127 @@ class FoundationArgumentOwnershipExecTest {
         }
         func main() { println(both()) }
     """, "10")
+
+    /**
+     * A derived `clone` copies every allocation the pack owns.
+     *
+     * It copied nested packs only; an `Array` field was shared, so the clone
+     * and the original both freed one buffer when they went (Studio crashed on
+     * exit once a dropped `World` destroyed its icon atlas and Studio's clone).
+     */
+    @Test fun aClonedPackOwnsCopiesOfItsArrays() = sanitized("""
+        import std.io
+        import std.traits
+        pack Atlas derives Clone {
+            var cell: Int = 64
+            var names: Array<String> = Array<String>()
+            var ids: Array<Int> = Array<Int>()
+            var nested: Array<Array<Int>> = Array<Array<Int>>()
+        }
+        func main() {
+            var a = Atlas()
+            a.names.add("x")
+            a.ids.add(1)
+            a.nested.add([1, 2])
+            var b = a.clone()
+            b.names.add("y")
+            b.ids[0] = 5
+            b.nested[0][0] = 9
+            println("${'$'}{a.names.size} ${'$'}{b.names.size} ${'$'}{a.ids[0]} ${'$'}{b.ids[0]} ${'$'}{a.nested[0][0]} ${'$'}{b.nested[0][0]}")
+        }
+    """, "1 2 1 5 1 9")
+
+    /**
+     * A by-value parameter owns what it is given (decision D-6, the ownership
+     * DIP §10): the callee destroys it unless it moves it on, a moved-on value
+     * is destroyed by its new owner, a temporary is destroyed by its callee and
+     * a returned parameter belongs to the caller. Before, the callee treated
+     * every by-value parameter as a borrow: a value given with `take` was
+     * never destroyed.
+     */
+    @Test fun aByValueParameterOwnsWhatItIsGiven() = sanitized("""
+        import std.io
+        import std.traits
+        pack Audit { var destroyed: Int = 0 }
+        pack Res {
+            var id: Int
+            var audit: Audit!
+        }
+        impl Res {
+            dtor .() { self.audit.destroyed += 1 }
+        }
+        pack Holder { var items: Array<Res> }
+        func consume(r: Res): Int = r.id
+        func keep(h: Holder!, r: Res) { h.items.add(take r) }
+        func total(xs: Array<Int>): Int {
+            var s = 0
+            for x in xs { s += x }
+            return s
+        }
+        func pass(r: Res): Res = take r
+        func main() {
+            var audit = Audit()
+            fin a = Res(1, audit)
+            fin first = consume(take a)
+            fin afterConsume = audit.destroyed
+            var h = Holder(Array<Res>())
+            fin b = Res(2, audit)
+            keep(h, take b)
+            fin afterKeep = audit.destroyed
+            fin xs: Array<Int> = [1, 2, 3]
+            fin sum = total(take xs)
+            fin third = consume(Res(3, audit))
+            fin afterTemporary = audit.destroyed
+            fin c = pass(Res(4, audit))
+            println("${'$'}{first} ${'$'}{afterConsume} ${'$'}{afterKeep} ${'$'}{sum} ${'$'}{third} ${'$'}{afterTemporary} ${'$'}{audit.destroyed} ${'$'}{c.id}")
+        }
+    """, "1 1 1 6 3 2 2 4")
+
+    /** A parameter stored with `take` belongs to its new owner after the call returns. */
+    @Test fun aParameterStoredWithTakeOutlivesTheCall() = sanitized("""
+        import std.io
+        pack Holder { var items: Array<Int> }
+        func setItems(h: Holder!, xs: Array<Int>) {
+            h.items = take xs
+        }
+        func main() {
+            var h = Holder([])
+            fin xs: Array<Int> = [1, 2]
+            setItems(h, take xs)
+            setItems(h, [7, 8, 9])
+            println(h.items.size)
+        }
+    """, "3")
+
+    /**
+     * A constructor's generated factory moves each owned argument into the
+     * constructor. It passed them as plain names, so once a by-value parameter
+     * owned its value the factory and the constructor both freed it.
+     */
+    @Test fun aConstructorArgumentIsFreedOnce() = sanitized("""
+        import std.io
+        pack Counter {
+            var n: Int = 0
+            var seen: Array<Int> = []
+        }
+        impl Counter {
+            func !.bump(amount: Int) {
+                self.n += amount
+                self.seen.add(amount)
+            }
+            ctor .(...steps: Int) {
+                for i in 0..<steps.size {
+                    self.bump(steps[i])
+                }
+            }
+        }
+        func main() {
+            fin c = Counter(1, 2, 3)
+            fin arr: Array<Int> = [4, 5]
+            fin d = Counter(...arr)
+            println("${'$'}{c.n} ${'$'}{c.seen.size} ${'$'}{d.n}")
+        }
+    """, "6 3 9")
 
     private fun sanitized(source: String, expected: String) {
         val program = source.trimIndent()

@@ -93,6 +93,49 @@ class FoundationAbiExecTest {
         """.trimIndent(),
     )
 
+    /**
+     * A string template builds a string of its own, even from one `String`.
+     *
+     * `"${text}"` was lowered to `text` itself. When `text` came from a bridge
+     * pointing into a foreign buffer, closing the buffer left the template's
+     * value dangling: AddressSanitizer reports a heap use-after-free here.
+     */
+    @Test fun aTemplateOfOneForeignStringOwnsItsText() = execute(
+        "azora text\nazora text!",
+        """
+        import std.io
+        bridge .C {
+            func openBuffer(): Long
+            func bufferText(buffer: Long): String
+            func closeBuffer(buffer: Long)
+        }
+        func main() {
+            fin buffer = openBuffer()
+            fin alone = "${'$'}{bufferText(buffer)}"
+            fin joined = "${'$'}{bufferText(buffer)}!"
+            closeBuffer(buffer)
+            println(alone)
+            println(joined)
+        }
+        """.trimIndent(),
+        """
+        #include <stdint.h>
+        #include <stdlib.h>
+        #include <string.h>
+        int64_t openBuffer(void) {
+            char *text = malloc(16);
+            strcpy(text, "azora text");
+            return (int64_t)(intptr_t)text;
+        }
+        const char *bufferText(int64_t buffer) { return (const char *)(intptr_t)buffer; }
+        void closeBuffer(int64_t buffer) {
+            char *text = (char *)(intptr_t)buffer;
+            memset(text, 'x', 15);
+            free(text);
+        }
+        """.trimIndent(),
+    )
+
     @Test fun statelessCallbacksHaveTheCSignatureAndStaticLifetime() = execute(
         "42\n42.5\ntrue\n-5\ncallback\n47",
         """

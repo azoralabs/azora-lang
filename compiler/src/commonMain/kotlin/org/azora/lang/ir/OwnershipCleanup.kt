@@ -12,19 +12,30 @@ object OwnershipCleanup {
      * keeps it, so whatever keeps it receives an independent copy instead of
      * an alias the binding's own cleanup would later free.
      */
+    /**
+     * [transferredByValue] answers whether a by-value parameter of a type takes
+     * ownership of its argument (OWNERSHIP_BORROWING_DIP §10): the caller gave
+     * the value away (`take`, or a temporary), so the callee destroys it unless
+     * it moves it on. Other by-value parameters - `Copy` values, erased type
+     * parameters - keep the convention below, where the call site frees a
+     * temporary the callee does not keep.
+     */
     fun lower(
         program: IrProgram,
         returnsBorrow: (String) -> Boolean = { false },
+        transferredByValue: (IrType) -> Boolean = { false },
         copied: (IrType) -> Boolean = { false },
+        variadic: (String) -> Boolean = { false },
     ): IrProgram {
         val functions = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }.associateBy { it.name }
         val fields = program.items.filterIsInstance<IrTopLevel.Struct>().associate { struct -> struct.name to struct.fields.associateBy { it.name } }
-        val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow), returnsBorrow)
+        val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow), returnsBorrow, transferredByValue, variadic)
         return program.copy(items = program.items.map { item ->
         when (item) {
             is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(context, returnsBorrow(item.function.name)).lower(
                 item.function.body, root = true, initialOwners = item.function.params.mapIndexedNotNull { i, (name, type) ->
-                    if (type is IrType.Function && i !in item.function.refParams) IrExpr.Var(name, type) else null
+                    if ((type is IrType.Function || context.ownsParameter(item.function, i)) && i !in item.function.refParams)
+                        IrExpr.Var(name, type) else null
                 },
             )))
             is IrTopLevel.Test -> item.copy(body = Body(context).lower(item.body, root = true))
@@ -40,7 +51,32 @@ object OwnershipCleanup {
         val copied: (IrType) -> Boolean,
         val fresh: Set<String>,
         val returnsBorrow: (String) -> Boolean,
-    )
+        val transferredByValue: (IrType) -> Boolean,
+        val variadic: (String) -> Boolean,
+    ) {
+        /**
+         * Whether [function] owns its by-value parameter [index] and destroys it.
+         *
+         * Not when the parameter's elements or type arguments are erased: erased
+         * code copies a `T` bit for bit, so a generic body that moved elements
+         * into another container would leave them owned twice. Those keep the
+         * call-site convention, as temporaries of erased arrays already do.
+         * Nor a variadic parameter: the call packs its arguments, a spread's
+         * elements included, into an array whose elements another array still
+         * owns.
+         */
+        fun ownsParameter(function: IrFunction, index: Int): Boolean {
+            if (index in function.refParams) return false
+            if (index == function.variadicParam || (index == function.params.lastIndex && variadic(function.name))) return false
+            val type = function.params.getOrNull(index)?.second ?: return false
+            if (!allocates(type, fields) || !transferredByValue(type)) return false
+            return when (type) {
+                is IrType.Array -> !erased(type.element)
+                is IrType.Named -> type.args.none(::erased)
+                else -> false
+            }
+        }
+    }
 
     /** A type whose values are allocations an owner frees: a pack or an array. */
     private fun allocates(type: IrType, fields: Map<String, Map<String, IrField>>): Boolean =
@@ -344,6 +380,8 @@ object OwnershipCleanup {
                     i in callee.refParams -> if (i !in callee.exclusiveParams && !context.returnsBorrow(expr.name) &&
                         freshArgument(argument)) IrExpr.Call("__temporary", listOf(argument), argument.type) else argument
                     parameter is IrType.Function -> copyCallablePlace(argument)
+                    // The callee owns what it was given and destroys it.
+                    context.ownsParameter(callee, i) -> argument
                     // An erased parameter the callee keeps: only this call site
                     // knows the value is a `Copy` it must not share.
                     parameter != null && erased(parameter) && i in context.retained[expr.name].orEmpty() -> isolatedPlace(argument)

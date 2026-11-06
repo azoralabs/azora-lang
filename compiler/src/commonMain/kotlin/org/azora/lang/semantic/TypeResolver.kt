@@ -22,8 +22,7 @@ import org.azora.lang.ir.Intrinsics
 import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.frontend.asRepeatedConstruction
 import org.azora.lang.frontend.lambdaReceiverName
-import org.azora.lang.frontend.LITERAL_ENTRIES_FACTORY
-import org.azora.lang.frontend.LITERAL_FACTORY
+import org.azora.lang.frontend.BRACKET_CONSTRUCTOR
 import org.azora.lang.frontend.OPTIONAL_UNWRAP
 import org.azora.lang.frontend.OwnershipOp
 import org.azora.lang.frontend.Param
@@ -1841,6 +1840,12 @@ class TypeResolver(private val table: SymbolTable) {
                 if (resolvesInPlace(stmt.compoundOp, stmt.value, varSym.type)) return
                 if (stmt.compoundOp == null) seedExpectedValue(stmt.value, varSym.type)
                 val valueType = resolveExpr(stmt.value) ?: return
+                // Replacing an owner's value hands it the new one. A borrow
+                // binding (`var x: T& = …`) is re-pointed instead: nothing moves.
+                val borrowBinding = varSym.sharedBorrow || stmt.name in borrowedNames || borrowBindings.any { it === varSym }
+                if (stmt.compoundOp == null && !borrowBinding) {
+                    checkByValueTransfer(stmt.value, valueType, stmt.line, storeInto = stmt.name)
+                }
                 rememberClosureBorrows(varSym, stmt.value, merge = true)
                 if (table.variableScopeIndex(stmt.name) == 0) checkEscapingValue(stmt.value, "is stored in global storage")
                 if ((varSym.nonNullGeneric && valueType is IrType.Nullable) ||
@@ -2158,6 +2163,8 @@ class TypeResolver(private val table: SymbolTable) {
                 if (!isCompatible(targetType.element, adoptLiteralType(stmt.value, valueType, targetType.element))) {
                     errors.add("line ${stmt.line}: cannot assign $valueType to array of ${targetType.element}")
                 }
+                // The array owns its elements: storing one gives it away.
+                checkByValueTransfer(stmt.value, valueType, stmt.line, storeInto = "${ownedPlaceSpelling(stmt.target) ?: "the array"}[…]")
                 val integer = targetType.element as? IrType.Integer
                 val literal = untypedIntLiteral(stmt.value)
                 if (integer != null && literal != null && !integerLiteralFits(literal, integer)) {
@@ -2230,6 +2237,11 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                     if (!isCompatible(field.type, adoptLiteralType(stmt.value, valueType, field.type))) {
                         errors.add("line ${stmt.line}: cannot assign $valueType to field '${stmt.name}' of type ${field.type}")
+                    }
+                    // A field that owns its value takes it over (§10 "moving into an existing mutable field").
+                    if (field.typeRef !is TypeRef.Reference) {
+                        val owner = ownedPlaceSpelling(stmt.target) ?: "the value"
+                        checkByValueTransfer(stmt.value, valueType, stmt.line, storeInto = "$owner.${stmt.name}")
                     }
                     val root = borrowRoot(stmt.target)
                     val fieldType = field.type as? IrType.Function
@@ -2836,6 +2848,9 @@ class TypeResolver(private val table: SymbolTable) {
                         }
                     }
                     val typedFactory = factory?.let { instantiateMember(table, ownerType, it) }
+                    // A ctor's `where` clause is decided for the type arguments
+                    // this construction chooses, as a generic call's is.
+                    if (factory?.whereClause != null && !constructorConstraintHolds(ownerType, factory.whereClause, expr.line)) return null
                     if (typedFactory != null) {
                         val factory = typedFactory
                         val scoped = factory.params.take(factory.contextualParams).all { (_, t) ->
@@ -3736,6 +3751,10 @@ class TypeResolver(private val table: SymbolTable) {
                                     expr.line,
                                     "borrow mutably for parameter '${func.paramNames.getOrNull(parameter) ?: (i + 1).toString()}'",
                                 )
+                            } else if (parameter !in func.sharedParams) {
+                                // By value, a method's parameter owns what it gets, as a function's does.
+                                checkLend(argument, parameter, func, expr.name, expr.line)
+                                if (!isLend(argument)) checkByValueTransfer(argument, argType, expr.line)
                             }
                         }
                         for (i in positioned.indices) {
@@ -4387,12 +4406,16 @@ class TypeResolver(private val table: SymbolTable) {
             }
             "add" -> {
                 if (args.size != 1) { errors.add("line $line: 'add' expects 1 argument"); return null }
-                resolveExpr(args[0]) ?: return null
+                val added = resolveExpr(args[0]) ?: return null
+                // The array owns what it holds: adding a value gives it away.
+                checkByValueTransfer(args[0], added, line)
                 IrType.Unit
             }
             "insert" -> {
                 if (args.size != 2) { errors.add("line $line: 'insert' expects 2 arguments"); return null }
-                resolveExpr(args[0]) ?: return null; resolveExpr(args[1]) ?: return null
+                resolveExpr(args[0]) ?: return null
+                val inserted = resolveExpr(args[1]) ?: return null
+                checkByValueTransfer(args[1], inserted, line)
                 IrType.Unit
             }
             "remove", "removeAt" -> {
@@ -4474,7 +4497,11 @@ class TypeResolver(private val table: SymbolTable) {
     private fun resolveSetMethod(name: String, args: List<Expr>, line: Int): IrType? = when (name) {
         "add", "remove", "contains" -> {
             if (args.size != 1) { errors.add("line $line: '$name' expects 1 argument"); null }
-            else { resolveExpr(args[0]) ?: return null; IrType.Bool }
+            else {
+                val element = resolveExpr(args[0]) ?: return null
+                if (name == "add") checkByValueTransfer(args[0], element, line)
+                IrType.Bool
+            }
         }
         "clear" -> {
             if (args.isNotEmpty()) { errors.add("line $line: 'clear' expects 0 arguments"); null }
@@ -4497,7 +4524,11 @@ class TypeResolver(private val table: SymbolTable) {
         }
         "put" -> {
             if (args.size != 2) { errors.add("line $line: 'put' expects 2 arguments"); null }
-            else { resolveExpr(args[0]); resolveExpr(args[1]); IrType.Unit }
+            else {
+                resolveExpr(args[0])?.let { checkByValueTransfer(args[0], it, line) }
+                resolveExpr(args[1])?.let { checkByValueTransfer(args[1], it, line) }
+                IrType.Unit
+            }
         }
         "containsKey" -> {
             if (args.size != 1) { errors.add("line $line: 'containsKey' expects 1 argument"); null }
@@ -5195,23 +5226,24 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Literal lowering currently converts numeric constants, not boxed/spec values. */
     /**
-     * `[…]` whose target is not array storage: the target type's `literal`
-     * factory builds it, and every element becomes one of its arguments.
+     * `[…]` whose target is not array storage: the target type's variadic
+     * constructor builds it, and every element becomes one of its arguments.
      */
     private fun resolveFactoryLiteral(expr: Expr.ArrayLiteral, target: IrType): IrType? {
         val named = target as? IrType.Named
-        val factory = named?.let { table.lookupTypeStatic(it.name, LITERAL_FACTORY) }
+        val factory = named?.let { table.lookupTypeStatic(it.name, BRACKET_CONSTRUCTOR) }
         if (named == null || factory == null) {
             errors.add(
-                "line ${expr.line}: type '$target' does not define a sequence literal factory; " +
-                    "define 'literal [...elements: T]' in its impl or construct it explicitly",
+                "line ${expr.line}: type '$target' has no variadic constructor for a '[…]' literal; " +
+                    "declare 'ctor .(...elements: T)' in its impl (a spec: 'ctor .(...elements: T): Self { … }') " +
+                    "or construct it explicitly",
             )
             return null
         }
         if (!factoryConstraintHolds(named, factory, expr.line)) return null
         val (element, built) = literalFactoryTypes(table, named, factory)
         if (!isCompatible(target, built)) {
-            errors.add("line ${expr.line}: the literal factory of '$target' builds $built, not $target")
+            errors.add("line ${expr.line}: the variadic constructor of '$target' builds $built, not $target")
             return null
         }
         for (value in expr.elements) {
@@ -5239,17 +5271,25 @@ class TypeResolver(private val table: SymbolTable) {
         val name = table.allStructNames()
             .firstOrNull { it == STANDARD_MAP || it.endsWith("__$STANDARD_MAP") }
             ?: return null
-        if (table.lookupTypeStatic(name, LITERAL_ENTRIES_FACTORY) == null) return null
+        val factory = table.lookupTypeStatic(name, BRACKET_CONSTRUCTOR) ?: return null
+        if (!takesEntries(factory)) return null
         return IrType.Named(name, listOf(key, value))
+    }
+
+    /** A bracket constructor takes `[k: v, …]` when its declared element is a pair. */
+    private fun takesEntries(factory: FunctionSymbol): Boolean {
+        val declared = factory.paramTypeRefs.firstOrNull()?.let { (it as? TypeRef.Array)?.element ?: it }
+        return declared is TypeRef.Tuple && declared.elements.size == 2
     }
 
     private fun resolveEntriesFactoryLiteral(expr: Expr.MapLit, target: IrType): IrType? {
         val named = target as? IrType.Named
-        val factory = named?.let { table.lookupTypeStatic(it.name, LITERAL_ENTRIES_FACTORY) }
+        val factory = named?.let { table.lookupTypeStatic(it.name, BRACKET_CONSTRUCTOR) }?.takeIf(::takesEntries)
         if (named == null || factory == null) {
             errors.add(
-                "line ${expr.line}: type '$target' does not define an associative literal factory; " +
-                    "define 'literal [...entries: (K, V)]' in its impl or construct it explicitly",
+                "line ${expr.line}: type '$target' has no variadic constructor for a '[k: v]' literal; " +
+                    "declare 'ctor .(...entries: (K, V))' in its impl (a spec: 'ctor .(...entries: (K, V)): Self { … }') " +
+                    "or construct it explicitly",
             )
             return null
         }
@@ -5257,7 +5297,7 @@ class TypeResolver(private val table: SymbolTable) {
         val (entry, built) = literalFactoryTypes(table, named, factory)
         val (keyType, valueType) = (entry as IrType.Tuple).elements
         if (!isCompatible(target, built)) {
-            errors.add("line ${expr.line}: the literal factory of '$target' builds $built, not $target")
+            errors.add("line ${expr.line}: the variadic constructor of '$target' builds $built, not $target")
             return null
         }
         for ((key, value) in expr.entries) {
@@ -5373,7 +5413,29 @@ class TypeResolver(private val table: SymbolTable) {
         }
         val outcome = ConstraintEvaluator.evaluate(clause, bindings, table)
         if (outcome is ConstraintEvaluator.Outcome.Violated) {
-            errors.add("line $line: a '$target' literal does not satisfy its factory's 'where' clause: ${outcome.reason}")
+            errors.add("line $line: a '$target' literal does not satisfy its constructor's 'where' clause: ${outcome.reason}")
+            return false
+        }
+        return true
+    }
+
+    /**
+     * A constructor's `where` clause for the pack [owner] a construction builds:
+     * the pack's type parameters take the construction's type arguments. One not
+     * written (still to be inferred) leaves the clause to the code that names it.
+     */
+    private fun constructorConstraintHolds(owner: IrType.Named, clause: Expr, line: Int): Boolean {
+        val params = table.lookupStruct(owner.name)?.typeParams ?: return true
+        val bindings = mutableMapOf<String, ConstraintEvaluator.Binding>()
+        for ((index, param) in params.withIndex()) {
+            val argument = owner.args.getOrNull(index)?.takeUnless { it == IrType.Any } ?: return true
+            // Still generic in the enclosing code's own parameters: its bounds answer.
+            if (argument is IrType.Named && argument.name in currentFuncTypeParams) return true
+            bindings[param] = ConstraintEvaluator.bindingOf(typeRefOf(argument)) ?: return true
+        }
+        val outcome = ConstraintEvaluator.evaluate(clause, bindings, table)
+        if (outcome is ConstraintEvaluator.Outcome.Violated) {
+            errors.add("line $line: '${owner.shown()}' does not satisfy its constructor's 'where' clause: ${outcome.reason}")
             return false
         }
         return true
@@ -6031,46 +6093,91 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     /**
-     * Rejects handing a named non-`Copy` value to a by-value parameter.
-     *
-     * A `Copy` type duplicates implicitly, so passing one is a copy and the
-     * caller keeps its value. Anything else would be giving the value away, and
-     * the ownership model asks for that to be written: `take` to transfer, or
-     * `.clone()` for a second independent value.
-     *
-     * Only a *named* binding is checked. A temporary - a call result, a literal,
-     * a freshly constructed value - has no other owner, so passing it transfers
-     * nothing that anyone could observe.
+     * How [value] is written when it names a place someone owns: a binding,
+     * one of its fields or one of its elements. Null for anything else - a
+     * temporary (a literal, a construction, a call result) has no other owner,
+     * so passing it transfers nothing anyone could observe.
      */
-    private fun checkByValueTransfer(arg: Expr, argType: IrType, line: Int, construction: Boolean = false) {
+    private fun ownedPlaceSpelling(value: Expr): String? = when (value) {
+        is Expr.Identifier -> value.name.takeIf { table.lookupVariable(it) != null }
+        is Expr.Member -> ownedPlaceSpelling(value.target)?.let { "$it.${value.name}" }
+        is Expr.Index -> ownedPlaceSpelling(value.target)?.let { "$it[…]" }
+        is Expr.Grouping -> ownedPlaceSpelling(value.expr)
+        else -> null
+    }
+
+    /** Locals declared with a borrow type (`var x: T& = …`), by identity: assigning one re-points it. */
+    private val borrowBindings = mutableListOf<VariableSymbol>()
+
+    /** True when [spelling]'s root binding is itself a borrow, which can give nothing away. */
+    private fun rootIsBorrowed(spelling: String): Boolean {
+        val root = spelling.substringBefore('.').substringBefore('[')
+        val variable = table.lookupVariable(root) ?: return false
+        return root in borrowedNames || variable.sharedBorrow
+    }
+
+    /**
+     * Rejects handing a non-`Copy` value that a place owns to something that
+     * takes it by value (OWNERSHIP_BORROWING_DIP §8, §10, §11).
+     *
+     * Passing by value transfers ownership: the receiver owns what it gets and
+     * destroys it. A `Copy` type duplicates implicitly, so the caller keeps its
+     * value. Anything else has to be written: `take` to transfer, `.clone()`
+     * for a second independent value - or the receiver declares `T&` and only
+     * borrows it.
+     *
+     * Packs need the capability lattice to answer "is it `Copy`"; arrays, sets
+     * and maps never are. A temporary is not a place, so it is never reported.
+     * A type parameter of the enclosing function is left alone: it may be
+     * instantiated with a `Copy` type.
+     */
+    private fun checkByValueTransfer(
+        arg: Expr,
+        argType: IrType,
+        line: Int,
+        construction: Boolean = false,
+        /** The storage an assignment writes, for `h.items = xs`; null for an argument. */
+        storeInto: String? = null,
+    ) {
+        val aggregate = argType is IrType.Array || argType is IrType.Set || argType is IrType.Map
+        val pack = (argType as? IrType.Named)?.let { table.lookupStruct(it.name) }
         // Only meaningful once the capability lattice is actually in scope. A
         // program that declares its own bare `Copy` - or never imports
         // `std.traits` - has no conformances to judge against, and rejecting
         // every by-value argument on that basis would be nonsense.
-        val pack = (argType as? IrType.Named)?.let { table.lookupStruct(it.name) }
-        if (!table.conformsTo("Int", "Copy") && !(construction && pack != null && !pack.isBridge)) return
+        if (!aggregate && !table.conformsTo("Int", "Copy") && !((construction || storeInto != null) && pack != null && !pack.isBridge)) return
         val value = when (arg) {
             is Expr.NamedArg -> arg.value
             is Expr.Grouping -> arg.expr
             else -> arg
         }
-        val name = (value as? Expr.Identifier)?.name ?: return
-        if (table.lookupVariable(name) == null) return
-        val typeName = conformanceName(argType) ?: return
-        if (currentFuncTypeParams.contains(typeName)) return
-        if (table.conformsTo(typeName, "Copy")) return
-        // Every value can be given away, so `take` is always an answer; an
-        // independent copy is only one when the type can produce it.
-        val fixes = buildList {
-            add("transfer ownership with 'take $name'")
-            if (table.conformsTo(typeName, "Clone")) {
-                add("create an independent value with '$name.clone()'")
-            }
+        val spelling = ownedPlaceSpelling(value) ?: return
+        val shown: String
+        val clonable: Boolean
+        if (aggregate) {
+            shown = argType.shown()
+            clonable = table.isClonable(argType)
+        } else {
+            val typeName = conformanceName(argType) ?: return
+            if (currentFuncTypeParams.contains(typeName)) return
+            if (table.conformsTo(typeName, "Copy")) return
+            shown = typeName
+            clonable = table.conformsTo(typeName, "Clone")
         }
-        errors.add(
-            "line $line: cannot pass '$name' by ownership - '$typeName' is not Copy" +
-                if (fixes.isEmpty()) "" else "; ${fixes.joinToString(", or ")}",
-        )
+        // Every owned value can be given away, so `take` is an answer unless the
+        // place is itself only a borrow; an independent copy is one when the
+        // type can produce it.
+        val fixes = buildList {
+            if (!rootIsBorrowed(spelling)) add("transfer ownership with 'take $spelling'")
+            if (clonable) add("create an independent value with '$spelling.clone()'")
+            if (!construction && storeInto == null) add("declare the parameter '$shown&' to borrow it")
+        }
+        val action = when {
+            storeInto != null -> "cannot store '$spelling' in '$storeInto'"
+            construction && aggregate -> "cannot store '$spelling' in a constructed value"
+            else -> "cannot pass '$spelling' by ownership"
+        }
+        errors.add("line $line: $action - '$shown' is not Copy; ${fixes.joinToString(", or ")}")
     }
 
     /**
@@ -6355,6 +6462,9 @@ class TypeResolver(private val table: SymbolTable) {
         }
         rememberClosureBorrows(table.lookupVariable(name), initializer)
         table.lookupVariable(name)?.let { table.semanticFacts.declaration(it, line) }
+        if ((typeAnn as? TypeAnnotation.Explicit)?.ref is TypeRef.Reference) {
+            table.lookupVariable(name)?.let(borrowBindings::add)
+        }
         movedBindings.remove(name)
         // `let m: User! = user.!` - the borrow now lives as long as `m` does,
         // rather than ending with the expression that made it.

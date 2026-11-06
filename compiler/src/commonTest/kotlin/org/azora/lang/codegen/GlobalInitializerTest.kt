@@ -58,15 +58,15 @@ class GlobalInitializerTest {
             }
         """.trimIndent()
 
-        /** Thread-local globals also retain target-owned factories, including empty literals. */
+        /** Thread-local globals also retain the constructors their literals call, empty literals included. */
         val threadLocal = """
             import std.io
-            pack Digits { var value: Int }
+            pack Digits { var value: Int = 0 }
             impl Digits {
-                literal [...items: Int]: Digits {
+                ctor .(...items: Int) {
                     var result = 0
                     for i in 0..<items.size { result = result * 10 + items[i] }
-                    return Digits(result)
+                    self.value = result
                 }
             }
             threadlocal fin digits: Digits = [1, 2, 3]

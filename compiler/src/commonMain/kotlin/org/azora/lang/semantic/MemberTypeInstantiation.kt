@@ -22,7 +22,7 @@ internal fun instantiateMember(
     receiver: IrType.Named,
     function: FunctionSymbol,
 ): FunctionSymbol {
-    // A spec owns members too: the literal factory it designates.
+    // A spec owns members too: the constructor its `[…]` literals call.
     val ownerParams = table.lookupStruct(receiver.name)?.typeParams
         ?: table.lookupSpec(receiver.name)?.typeParams
         ?: return function
@@ -122,10 +122,10 @@ internal fun conformedSpec(actual: IrType.Named, conformance: TraitConformance):
 }
 
 /**
- * What a sequence literal factory takes and builds for [target]: the element
- * type of its variadic parameter and its result, with the target's type
- * arguments in place. The factory is lifted with its owner's parameters as its
- * own, so they are released here to be bound by the target.
+ * What the bracket constructor a sequence literal calls takes and builds for
+ * [target]: the element type of its variadic parameter and its result, with the
+ * target's type arguments in place. It is lifted with its owner's parameters as
+ * its own, so they are released here to be bound by the target.
  */
 internal fun literalFactoryTypes(table: SymbolTable, target: IrType.Named, factory: FunctionSymbol): Pair<IrType, IrType> {
     val physical = factory.params.single().second

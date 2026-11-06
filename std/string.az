@@ -188,7 +188,7 @@ func strToChars(s: String): Array<Char> = toChars(s)
  * @return The concatenated string.
  */
 @Experimental(since: "0.1")
-func charsToString(chars: Array<Char>): String = fromChars(chars)
+func charsToString(chars: Array<Char>&): String = fromChars(chars)
 
 /**
  * Checks if a string is empty.

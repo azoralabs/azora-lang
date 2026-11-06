@@ -233,11 +233,11 @@ bridge func secureRandom(count: Int): Array<UByte>
 
 /** Computes a provider-backed digest over bytes. */
 @Experimental(since: "0.1")
-bridge func hash(algorithm: HashAlgorithm, data: Array<UByte>): Digest
+bridge func hash(algorithm: HashAlgorithm, data: Array<UByte>&): Digest
 
 /** Compares secret material without an input-dependent early exit. */
 @Experimental(since: "0.1")
-bridge func constantTimeEqual(left: Array<UByte>, right: Array<UByte>): Bool
+bridge func constantTimeEqual(left: Array<UByte>&, right: Array<UByte>&): Bool
 
 /** Loads a secret from an approved manager by reference, not by plaintext. */
 @Experimental(since: "0.1")
@@ -282,7 +282,7 @@ bridge func verifier(key: KeyHandle, algorithm: SignatureAlgorithm): Verifier
 
 /** Signs a message; the message itself is not logged by the provider. */
 @Experimental(since: "0.1")
-bridge func sign(signer: Signer, message: Array<UByte>): Signature
+bridge func sign(signer: Signer, message: Array<UByte>&): Signature
 
 /** Verifies a signature against the exact message bytes. */
 @Experimental(since: "0.1")

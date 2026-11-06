@@ -51,17 +51,17 @@ class RoboticsEngineTest {
                     fin names: Array<String> = ["arm"]
                     fin positions: Array<Double> = [0.0]
                     fin velocities: Array<Double> = [0.0]
-                    fin point0 = engine::TrajectoryPoint(0.0, positions, velocities)
+                    fin point0 = engine::TrajectoryPoint(0.0, take positions, take velocities)
       fin points: Array<engine::TrajectoryPoint> = [take point0]
-                    fin trajectory = engine::Trajectory(names, points)
+                    fin trajectory = engine::Trajectory(take names, take points)
                     println(engine::validTrajectory(trajectory))
 
       fin badNames: Array<String> = ["arm"]
       fin badPositions: Array<Double> = [0.0]
       fin badVelocities: Array<Double> = [0.0]
-      fin badPoint = engine::TrajectoryPoint(-1.0, badPositions, badVelocities)
+      fin badPoint = engine::TrajectoryPoint(-1.0, take badPositions, take badVelocities)
       fin badPoints: Array<engine::TrajectoryPoint> = [take badPoint]
-      fin badTrajectory = engine::Trajectory(badNames, badPoints)
+      fin badTrajectory = engine::Trajectory(take badNames, take badPoints)
                     println(engine::validTrajectory(badTrajectory))
                 }
                 """,

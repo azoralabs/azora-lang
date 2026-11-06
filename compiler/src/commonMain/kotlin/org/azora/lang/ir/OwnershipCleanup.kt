@@ -250,7 +250,7 @@ object OwnershipCleanup {
                 }
                 when (stmt) {
                     is IrStmt.Return -> {
-                        val value = stmt.value
+                        val value = stmt.value?.let(::moveOwnersIntoResult)
                         val owner = (value as? IrExpr.Var)?.let(::origin)
                         // A returned owner moves out. Any other `Copy` place - a
                         // parameter, a global, a field - belongs to someone else,
@@ -259,7 +259,7 @@ object OwnershipCleanup {
                             IrExpr.Call("__take", listOf(owner), value!!.type)
                         else if (value != null && !borrowedReturn) isolatedPlace(value) else value
                         val nestedCleanup = cleanup(frames.filterNot { it.root })
-                        if (transfer != null && (transfer !== value || nestedCleanup.isNotEmpty())) {
+                        if (transfer != null && (transfer !== stmt.value || nestedCleanup.isNotEmpty())) {
                             val name = "__owner_return_${temporary++}"
                             result += IrStmt.FinDecl(name, transfer.type, transfer)
                             result += nestedCleanup
@@ -380,6 +380,59 @@ object OwnershipCleanup {
                 expr.copy(body = Body(context).lower(expr.body, root = true, initialOwners = captures + parameters))
             }
             else -> expr
+        }
+
+        /**
+         * The value a `return` hands back, with each owned local it stores into
+         * a constructed value moved there.
+         *
+         * `return Layout(shape, strides)` stores the local `strides` in a field
+         * the result owns. The checker does not ask for `take` on an array, so
+         * the local stayed registered for cleanup and was freed as the function
+         * left: the caller received a layout whose array was already destroyed.
+         * Nothing can read the local after its function returns, so moving it
+         * is exactly what the source means. A local named twice keeps its
+         * cleanup; only one owner could receive it.
+         */
+        private fun moveOwnersIntoResult(value: IrExpr): IrExpr {
+            val uses = mutableMapOf<String, Int>()
+            fun count(expr: IrExpr) {
+                when (expr) {
+                    is IrExpr.Var -> uses[expr.name] = (uses[expr.name] ?: 0) + 1
+                    is IrExpr.StructCtor -> expr.args.forEach(::count)
+                    is IrExpr.ArrayLiteral -> expr.elements.forEach(::count)
+                    is IrExpr.TupleLit -> expr.elements.forEach(::count)
+                    is IrExpr.Call -> { expr.args.forEach(::count); expr.receiver?.let(::count) }
+                    is IrExpr.MethodCall -> { count(expr.target); expr.args.forEach(::count) }
+                    is IrExpr.Member -> count(expr.target)
+                    is IrExpr.Index -> { count(expr.target); count(expr.index) }
+                    is IrExpr.Binary -> { count(expr.left); count(expr.right) }
+                    is IrExpr.Unary -> count(expr.operand)
+                    is IrExpr.IfExpr -> { count(expr.condition); count(expr.thenExpr); count(expr.elseExpr) }
+                    is IrExpr.NumCast -> count(expr.value)
+                    is IrExpr.IntLiteral, is IrExpr.DoubleLiteral, is IrExpr.StringLiteral, is IrExpr.BoolLiteral,
+                    is IrExpr.CharLiteral, is IrExpr.EnumLiteral -> {}
+                    else -> uses["\u0000opaque"] = 1
+                }
+            }
+            count(value)
+            // Something this walk cannot see inside (a lambda, say) may name the
+            // local too, and moving it would leave that reading nothing.
+            if ("\u0000opaque" in uses) return value
+            fun movable(argument: IrExpr): IrExpr.Var? {
+                val local = argument as? IrExpr.Var ?: return null
+                if (uses[local.name] != 1 || context.copied(local.type) || !allocates(local.type, context.fields)) return null
+                return origin(local)?.takeIf { it.name == local.name }
+            }
+            fun rewrite(expr: IrExpr): IrExpr = when (expr) {
+                is IrExpr.StructCtor -> expr.copy(args = expr.args.mapIndexed { i, argument ->
+                    val field = expr.fieldNames.getOrNull(i)
+                    val owner = if (field != null && ownsField(expr.type, field)) movable(argument) else null
+                    if (owner != null) IrExpr.Call("__take", listOf(owner), owner.type) else rewrite(argument)
+                })
+                else -> expr
+            }
+            return rewrite(value)
         }
 
         /**

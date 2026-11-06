@@ -78,6 +78,13 @@ data class FunctionSymbol(
      * `using` block or receiver lambda the call sits in. Zero for everything else.
      */
     val contextualParams: Int = 0,
+    /**
+     * Declared by `bridge func`: the backend or a foreign symbol supplies it.
+     *
+     * A compiler builtin such as `println` is recognised by this, not by name
+     * alone, so a program's own function of that name stays an ordinary call.
+     */
+    val isBridge: Boolean = false,
 )
 
 /**

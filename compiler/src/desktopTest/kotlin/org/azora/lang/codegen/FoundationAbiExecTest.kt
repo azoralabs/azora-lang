@@ -13,13 +13,7 @@ import kotlin.test.fail
 
 /** Links generated code to separately compiled C, so LLVM's internal ABI cannot mask mistakes. */
 class FoundationAbiExecTest {
-    private fun clang(): String? {
-        val paths = System.getenv("PATH").orEmpty().split(File.pathSeparator).map { "$it/clang" } +
-            listOf("/usr/bin/clang", "/opt/homebrew/opt/llvm/bin/clang")
-        val result = paths.firstOrNull { File(it).canExecute() }
-        check(result != null || System.getenv("AZORA_REQUIRE_NATIVE_TESTS") != "1") { "Native ABI qualification requires clang" }
-        return result
-    }
+    private fun clang(): String? = SanitizerClang.find("Native ABI qualification")
 
     private fun execute(expected: String, source: String, cSource: String) {
         val tool = clang() ?: return

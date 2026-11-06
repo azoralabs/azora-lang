@@ -17,6 +17,25 @@ class SemanticFactRecorder {
     private val expressions = mutableListOf<Pair<Expr, IrType>>()
     private val references = mutableListOf<Pair<Expr, String>>()
 
+    /**
+     * Expressions compile-time evaluation put in place of a call, each with the
+     * call it replaced.
+     *
+     * `fin result = plus(2, 3)` reaches type resolution as `5`: the call the
+     * author wrote is gone, and with it hover and go-to-definition on `plus`.
+     * Evaluation records the replacement here, and resolution records the
+     * original call when it resolves the replacement. Recorded before
+     * resolution starts, so [reset] keeps them.
+     */
+    private val folds = mutableListOf<Pair<Expr, Expr.Call>>()
+
+    fun folded(replacement: Expr, original: Expr.Call) {
+        if (enabled && original.column > 0) folds += replacement to original
+    }
+
+    /** The call [expr] replaced at compile time, or null. */
+    fun foldedCall(expr: Expr): Expr.Call? = folds.lastOrNull { it.first === expr }?.second
+
     fun reset() {
         owner = null
         variables.clear()

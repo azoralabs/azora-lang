@@ -324,6 +324,7 @@ class SymbolCollector {
                                 exclusiveParams = indicesWith(ParamModifier.EXCLUSIVE),
                                 sharedParams = indicesWith(ParamModifier.SHARED),
                                 returnedParams = sig.params.indices.filterTo(mutableSetOf()) { sig.params[it].returnsOwnership },
+                                isBridge = true,
                             ),
                         )
                     } catch (e: Exception) {

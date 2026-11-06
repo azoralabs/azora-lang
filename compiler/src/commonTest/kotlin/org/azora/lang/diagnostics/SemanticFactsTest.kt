@@ -70,7 +70,10 @@ class SemanticFactsTest {
     }
 
     @Test fun semanticFailureRetainsOnlySuccessfulTypesAndBindings() {
-        val source = unit("partial", "import std.io\nfunc main() { fin value = 41; println(value); missing() }\n")
+        // Azora ends a statement at the end of its line; `;` separates nothing,
+        // so writing these on one line made this a parse failure, not the
+        // semantic failure this test is about.
+        val source = unit("partial", "import std.io\nfunc main() {\n    fin value = 41\n    println(value)\n    missing()\n}\n")
         val snapshot = analyze(source)
         assertEquals(AnalysisCompleteness.PARTIAL, snapshot.completeness)
         assertTrue(snapshot.diagnostics.any { it.severity == DiagnosticSeverity.ERROR })

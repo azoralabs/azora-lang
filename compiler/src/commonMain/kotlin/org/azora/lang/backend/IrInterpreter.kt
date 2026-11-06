@@ -268,8 +268,13 @@ class IrInterpreter {
      * A builtin reaches the interpreter canonicalized, so the scope it was
      * declared in is part of the symbol. [symbolDenotes] answers the question
      * without naming that scope here.
+     *
+     * The compiler stands in for a `bridge` or a library declaration, never for
+     * a function the program defines: a program's own `contains(xs, x)` or
+     * `toString(p)` is called, not replaced by the string builtin of that name.
      */
-    private fun String.isIntrinsic(local: String): Boolean = symbolDenotes(this, local)
+    private fun String.isIntrinsic(local: String): Boolean =
+        symbolDenotes(this, local) && functions[this]?.isLibrary != false
 
     fun interpret(program: IrProgram): String {
         val mainState = resetFor()

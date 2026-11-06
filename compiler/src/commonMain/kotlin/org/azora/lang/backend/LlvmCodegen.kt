@@ -126,6 +126,20 @@ class LlvmCodegen {
     }
     private val nativeExterns = mutableMapOf<String, IrTopLevel.Extern>()
 
+    /**
+     * Functions the program itself defines, as opposed to the library's.
+     *
+     * A call is lowered as a compiler builtin only when it names a bridge or a
+     * library declaration. A program's own `isDigit` or `toString` is its own
+     * function: treating it as the builtin both replaced its body and defined
+     * the builtin's symbol a second time.
+     */
+    private val programFunctions = mutableSetOf<String>()
+
+    /** True when a call to [name] is the compiler's builtin [local]. */
+    private fun callDenotesBuiltin(name: String, local: String): Boolean =
+        name !in programFunctions && symbolDenotes(name, local)
+
     /** LLVM element types for top-level and thread-local variables. */
     private val globalVars = mutableMapOf<String, String>()
 
@@ -323,6 +337,7 @@ class LlvmCodegen {
         funcParamTypes.clear()
         funcReturnTypes.clear()
         nativeExterns.clear()
+        programFunctions.clear()
         failableFunctions.clear()
         errorHandlers.clear()
         usesErrorSlot = false
@@ -361,6 +376,7 @@ class LlvmCodegen {
             when (item) {
                 is IrTopLevel.Func -> {
                     funcParamTypes[item.function.name] = item.function.params.map { it.second }
+                    if (!item.function.isLibrary) programFunctions += item.function.name
                     if (!item.function.isTask && item.function.name !in dispatched && item.function.name != "main") {
                         item.function.exclusiveParams
                             .filter { it < item.function.params.size && passesBySlot(item.function.params[it].second) }
@@ -466,7 +482,7 @@ class LlvmCodegen {
         // Functions (skip runtime intrinsics - their stdlib bodies are dead
         // placeholders; each call is intercepted and lowered to native code).
         for (item in program.items.filterIsInstance<IrTopLevel.Func>()) {
-            if (item.function.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) continue
+            if (item.function.isLibrary && item.function.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) continue
             out.clear()
             if (item.function.isTask && item.function.name != "main") {
                 emitTaskFunction(item.function)
@@ -5662,9 +5678,9 @@ end:
         // Compiler string/array intrinsics are defined as runtime helpers.
         // Keyed by the bare name, remembering the mangled symbol the call used,
         // so the definition is emitted under the name the caller asks for.
-        stringIntrinsicOf(expr.name)?.let { neededIntrinsics[it] = expr.name }
+        if (expr.name !in programFunctions) stringIntrinsicOf(expr.name)?.let { neededIntrinsics[it] = expr.name }
         val atomic = listOf("_atomicLoad", "_atomicStore", "_atomicAdd", "_atomicCas")
-            .firstOrNull { symbolDenotes(expr.name, it) }
+            .firstOrNull { callDenotesBuiltin(expr.name, it) }
         if (atomic != null) {
             val raw = emitExpr(expr.args[0])
             val word = nextTmp()
@@ -5694,7 +5710,7 @@ end:
         // `Array::fill<T>(count)` allocates `[ i64 length, T×count ]` (the array
         // layout used by `emitArrayLiteral`); handled inline since element size
         // varies per instantiation.
-        if (symbolDenotes(expr.name, "Array_fill")) {
+        if (callDenotesBuiltin(expr.name, "Array_fill")) {
             val elemType = (expr.type as? IrType.Array)?.element ?: IrType.Any
             val elemSize = sizeOfScalar(elemType)
             val count = emitExpr(expr.args[0])
@@ -5706,8 +5722,8 @@ end:
             emit("  store i64 $count64, i64* $lenPtr")
             return raw
         }
-        if (symbolDenotes(expr.name, "println")) return emitPrintln(expr)
-        if (symbolDenotes(expr.name, "print")) return emitPrintln(expr, newline = false)
+        if (callDenotesBuiltin(expr.name, "println")) return emitPrintln(expr)
+        if (callDenotesBuiltin(expr.name, "print")) return emitPrintln(expr, newline = false)
         if (expr.name == "async") {
             val lambda = expr.args.singleOrNull() as? IrExpr.Lambda
                 ?: error("LLVM async lowering requires a task block")
@@ -5763,7 +5779,7 @@ end:
             return "void"
         }
         val owningFactory = listOf("sharedOf", "syncSharedOf", "uniqueOf")
-            .firstOrNull { symbolDenotes(expr.name, it) }
+            .firstOrNull { callDenotesBuiltin(expr.name, it) }
         if (owningFactory != null && expr.args.size == 1 && expr.type is IrType.Named) {
             // These library factories retain T only at their call site. Allocate
             // there so the drop descriptor survives their otherwise erased ABI.
@@ -5791,7 +5807,7 @@ end:
             emit("  call void @__azora_free(i8* $raw)")
             return "void"
         }
-        if (symbolDenotes(expr.name, "concurrency_cancel")) {
+        if (callDenotesBuiltin(expr.name, "concurrency_cancel")) {
             // pthread cancellation bypasses Azora destructors and can return a
             // PTHREAD_CANCELED sentinel where the runtime expects an allocation.
             error("LLVM task cancellation is not supported until cancellation-safe ownership cleanup is implemented")
@@ -5803,7 +5819,7 @@ end:
         // `toString(x)` is `"${'$'}{x}"`: the rendering interpolation uses. An
         // aggregate was rendered in IR already; an erased value carries no type
         // to render it by, and printing its bits as a number would be wrong.
-        if (symbolDenotes(expr.name, "toString") && expr.args.size == 1) {
+        if (callDenotesBuiltin(expr.name, "toString") && expr.args.size == 1) {
             val value = expr.args.single()
             if (value.type == IrType.Any) error("LLVM cannot convert an erased value to a String yet")
             return stringify(value)

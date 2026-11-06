@@ -623,8 +623,12 @@ class IrGenerator(private val table: SymbolTable) {
                     // Legacy runtime intrinsics with ordinary stdlib declarations
                     // have dead placeholder bodies and stay out of IR. Proper
                     // compiler intrinsics are represented by `bridge func` instead.
-                    if (item.decl.isInline || item.decl.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) emptyList()
-                    else listOf(IrTopLevel.Func(lowerFunction(item.decl).ownedBy(item.decl.name in program.injectedNames)))
+                    // Only the library's placeholder is dropped: a program's own
+                    // `toString` is a function like any other.
+                    val library = item.decl.name in program.injectedNames
+                    val placeholder = library && item.decl.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS
+                    if (item.decl.isInline || placeholder) emptyList()
+                    else listOf(IrTopLevel.Func(lowerFunction(item.decl).ownedBy(library)))
                 }
                 is TopLevel.FinDecl -> {
                     val init = lowerExpr(item.initializer)
@@ -3595,7 +3599,7 @@ class IrGenerator(private val table: SymbolTable) {
                         }
                         else -> func.returnType
                     }
-                    val displayArgs = if (symbolDenotes(func.name, Intrinsics.PRINTLN) || symbolDenotes(func.name, Intrinsics.PRINT)) {
+                    val displayArgs = if (func.isBridge && (symbolDenotes(func.name, Intrinsics.PRINTLN) || symbolDenotes(func.name, Intrinsics.PRINT))) {
                         // What is printed is what `"${value}"` would read.
                         effectiveArgs.map(::rendered)
                     } else {

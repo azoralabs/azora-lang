@@ -3,7 +3,17 @@
 Plan: [150-step delivery plan](ECOSYSTEM_DELIVERY_PLAN.md).
 Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 
-## Current status — 2026-10-04
+## Current status — 2026-11-06
+
+The ordered short- and long-term plan for the language, Engine and Studio
+(every OS and graphics backend, written in Azora; packages; editor plugins;
+self-hosting; a flagship game as the qualification) is
+[the 2026-11 roadmap](ECOSYSTEM_ROADMAP_2026_11.md).
+Last full run, native tools required: **2,878 tests, 0 failures, 0 skipped**;
+AZLS 91 tests, 0 failures (roadmap step A1, closed 2026-11-06; see the entries
+at the end).
+
+## Status — 2026-10-04
 
 See [the foundation repair inventory](FOUNDATION_REPAIR_2026_10_04.md) for the
 current measured results, repaired defects and remaining native qualification
@@ -3274,3 +3284,112 @@ verified by running it; IR comparisons print only the file's own items.
 ./gradlew :compiler:desktopTest --offline --console=plain --continue
 ```
 
+## 2026-11-06 — Builtins never replace a program's own functions; a returned construction owns its locals
+
+Baseline (state of 2026-10-07, before any change): **2,871 tests, 6 failures**
+(`FoundationAbiExecTest` ×2, `GpuStdlibTest`, `LiteralFactoryExecTest` WebAssembly
+clone, `SemanticFactsTest` ×2). The offline build first failed: Gradle had
+evicted its dependency cache after 30 idle days, so the baseline ran online.
+
+### 1. A compiler builtin is matched by declaration, not by name alone
+
+Every layer recognised builtins by spelling, so a program function named like
+one was replaced, dropped or defined twice:
+
+- *Interpreter:* `func contains(xs: Array<Int>, x: Int)` was intercepted as the
+  string builtin and crashed casting the array to `String`. The same held for
+  `isDigit`, `trim`, `split`, `toString` and the rest.
+- *LLVM and WebAssembly:* a program's `isDigit` was emitted, then the runtime's
+  `isDigit` under the same symbol (`invalid redefinition of function`,
+  duplicate `$isDigit`).
+- *IR generation and both native backends* dropped any function named exactly
+  `toString` (meant for a library placeholder), so `@toString` was undefined.
+- *Type checker:* `toString(x)` was typed `String` before the program's own
+  `toString` was looked up.
+- *Type checker and IR:* any function named `println`/`print` had its arguments
+  rendered to text first, so `println(n: Int)` received a `String`.
+
+Now a builtin stands in only for a `bridge` or a library declaration
+(`IrFunction.isLibrary`; `FunctionSymbol.isBridge` for the print bridges).
+`BuiltinNameShadowExecTest` (5) runs the program on the interpreter in debug and
+release, LLVM optimized and not, and WebAssembly.
+
+Found, not fixed: a program that defines `isDigit` *and* calls a library
+function that uses std's `isDigit` bridge (`std.char::charIsDigit`) fails with
+`line 485: Function 'isDigit' already defined`. Library bridges keep their
+foreign name in the program's flat namespace (`StdlibInjector.isCompilerKnown`),
+so they need an Azora identity separate from their link symbol
+(`IrTopLevel.Extern` gains a `symbol`). The message also names no file.
+
+### 2. `return Pack(local)` moves the local into the result
+
+Automatic scope cleanup (2026-10-05) kept every owned local registered even
+when a `return` stored it in a constructed value: the checker does not ask for
+`take` on arrays, so `std.gpu.rowMajor`'s `return GpuLayout(shape, strides, …)`
+freed `strides` as the function left and the caller read an empty array
+(`GpuStdlibTest`, failing since that change). `OwnershipCleanup` now moves an
+owned local that a returned construction stores in an owning field, nested
+constructions included; a local named twice, or a returned expression the
+pass cannot see into, keeps its cleanup. Two cases in
+`FoundationArgumentOwnershipExecTest` run under ASan/UBSan.
+
+Still open (F09): the same store outside a `return`
+(`fin h = Holder(xs)` keeps `xs` registered), which the ownership DIP says must
+be written `take xs`; the checker exempts arrays (`conformanceName`) and needs
+the construction-position rule.
+
+### Evidence
+
+```sh
+./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --console=plain --continue
+```
+
+Compiler: **2,878 tests, 5 failures**, all present in the baseline:
+`FoundationAbiExecTest` ×2 (Homebrew clang ASan probe timeout),
+`LiteralFactoryExecTest.factoryLiteralsRunOnWasm` (no deep clone on
+WebAssembly), `SemanticFactsTest` ×2. AZLS: **91 tests, 0 failures**. CLI
+distribution built.
+
+
+## 2026-11-06 (continued) — A1: the suite has no failures
+
+Roadmap step A1 ([ecosystem roadmap](ECOSYSTEM_ROADMAP_2026_11.md)). Each of the
+five failures above was classified and repaired at its cause.
+
+- **`FoundationAbiExecTest` ×2: environment.** The probes took the first `clang`
+  on `PATH`, a Homebrew clang 21.1.4 whose AddressSanitizer runtime hangs before
+  `main` on this macOS (a one-line C program built with `-fsanitize=address`
+  never starts; Apple clang's runs). `SanitizerClang` now picks `AZORA_CLANG`
+  when set (the Engine build's variable), then the platform `/usr/bin/clang`,
+  then `PATH`; both sanitizer suites use it. The probes still compile and link
+  every program with `-fsanitize=address,undefined`.
+- **`LiteralFactoryExecTest.factoryLiteralsRunOnWasm`: defect.** WebAssembly's
+  `__isolated` read the pack-layout cache directly; layouts are computed lazily,
+  so a pack copied before any of its fields was read (`Holder(items[0])` in a
+  literal factory) was reported as uncopyable. It now asks `layoutOf`. Copying a
+  pack whose owning fields are packs, arrays, functions or pointers is still an
+  explicit "cannot recursively copy … yet" diagnostic on WebAssembly.
+- **`SemanticFactsTest.semanticFailureRetainsOnlySuccessfulTypesAndBindings`:
+  stale fixture.** It wrote `fin value = 41; println(value); missing()` on one
+  line. Azora ends a statement at the end of its line and no DIP defines `;` as a
+  separator, so the parser stopped at the first `;` and the test exercised a
+  parse failure, not the semantic failure it names. The statements are now on
+  separate lines; every assertion is unchanged, and the snapshot is `PARTIAL`
+  with `value`'s type and definition retained.
+- **`SemanticFactsTest.importedCallDefinitionPointsAtItsActualModule`: defect.**
+  Compile-time evaluation folded `plus(2, 3)` to `5` before type resolution, so
+  tooling had no occurrence for the call and hover/definition returned nothing.
+  Evaluation now records each replacement with the call it replaced
+  (`SemanticFactRecorder.folded`, for evaluated calls and inline expansion), and
+  resolution records the written call with its callee and resolved type when it
+  resolves the replacement. Generated code is unchanged.
+
+Evidence (native tools required, so nothing is skipped for a missing tool):
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist \
+  --offline --console=plain --continue --rerun-tasks
+```
+
+Compiler: **2,878 tests, 0 failures, 0 skipped**. AZLS: **91 tests, 0 failures**.
+CLI distribution built. A1 is closed.

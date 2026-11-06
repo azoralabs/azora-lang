@@ -1440,13 +1440,19 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 // way its const type parameters ever get values: `axis<0>()` binds
                 // `I` to 0, and nothing downstream could do it - by runtime `I` is a
                 // name with no binding at all.
-                inlineCallAsExpression(expr, newArgs, program)?.let { return Pair(it, true) }
+                inlineCallAsExpression(expr, newArgs, program)?.let {
+                    table.semanticFacts.folded(it, expr)
+                    return Pair(it, true)
+                }
 
                 // Try to evaluate the call at compile time if all args are constants
                 val allConst = newArgs.all { isConstant(it) }
                 if (allConst) {
                     val result = tryEvalCall(expr.callee, newArgs, program, expr.line, expr.typeArgs)
-                    if (result != null) return Pair(result, true)
+                    if (result != null) {
+                        table.semanticFacts.folded(result, expr)
+                        return Pair(result, true)
+                    }
                 }
 
                 Pair(expr.copy(args = newArgs), anyChanged)

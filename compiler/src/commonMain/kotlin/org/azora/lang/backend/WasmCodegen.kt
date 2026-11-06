@@ -154,6 +154,17 @@ class WasmCodegen {
     /** True while deferred bodies are rendered, so an exit inside one cannot render them again. */
     private var renderingDefers = false
     private val closureFunctions = mutableListOf<ClosureFunction>()
+    /**
+     * Functions the program itself defines. A call is lowered as a compiler
+     * builtin only when it names a bridge or a library declaration: a program's
+     * own `isDigit` is its own function, not a second `$isDigit` function.
+     */
+    private val programFunctions = HashSet<String>()
+
+    /** True when a call to [name] is the compiler's builtin [local]. */
+    private fun callDenotesBuiltin(name: String, local: String): Boolean =
+        name !in programFunctions && symbolDenotes(name, local)
+
     private val stringIntrinsics = setOf(
         "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
         "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
@@ -266,6 +277,10 @@ class WasmCodegen {
             if (item.isUnion) unions.add(item.name)
         }
         for (item in program.items) if (item is IrTopLevel.Extern) externs[item.name] = item
+        programFunctions.clear()
+        for (item in program.items) {
+            if (item is IrTopLevel.Func && !item.function.isLibrary) programFunctions += item.function.name
+        }
         for (stmt in program.globals) {
             when (stmt) {
                 is IrStmt.VarDecl -> globalTypes[stmt.name] = stmt.type
@@ -276,7 +291,7 @@ class WasmCodegen {
         }
 
         val funcs = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }
-            .filter { it.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS }
+            .filter { !it.isLibrary || it.name !in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS }
         functionParams.clear(); functionResults.clear()
         specTables.clear(); specTypeIds.clear(); neededDispatchers.clear()
         for (table in program.specTables) specTables[table.specName] = table
@@ -1354,7 +1369,7 @@ class WasmCodegen {
     private fun emitAs(expr: IrExpr, type: IrType): String = coerceWasm(emitExpr(expr), expr.type, type)
 
     private fun emitCall(expr: IrExpr.Call): String {
-        check(listOf("_atomicLoad", "_atomicStore", "_atomicAdd", "_atomicCas").none { symbolDenotes(expr.name, it) }) {
+        check(listOf("_atomicLoad", "_atomicStore", "_atomicAdd", "_atomicCas").none { callDenotesBuiltin(expr.name, it) }) {
             "WebAssembly synchronization requires shared memory and atomic instructions, which this target does not support yet"
         }
         if (expr.name == Intrinsics.NULL_COALESCE) return emitNullCoalesce(expr)
@@ -1374,7 +1389,9 @@ class WasmCodegen {
         // than a call to nothing that the assembler then refuses.
         if (expr.name == "__isolated") {
             val value = expr.args.single()
-            val layout = (value.type as? IrType.Named)?.let { layouts[it.name] }
+            // `layoutOf`, not the cache: a pack copied before any of its fields
+            // is read has no cached layout yet, and was reported as uncopyable.
+            val layout = (value.type as? IrType.Named)?.name?.takeIf { it in structs }?.let(::layoutOf)
             if (layout != null) {
                 val def = structDefinitions.getValue((value.type as IrType.Named).name)
                 if (def.fields.any { it.ownsValue && (it.type is IrType.Named || it.type is IrType.Array || it.type is IrType.Function || it.type is IrType.Pointer) })
@@ -1436,9 +1453,9 @@ class WasmCodegen {
                 "(call_indirect (type \$$typeName) $operands))"
             return wrapCallResult(expr.type, callResult(call, callable.ret, expr.type))
         }
-        if ((symbolDenotes(expr.name, "println") || symbolDenotes(expr.name, "print")) && expr.args.size == 1) {
+        if ((callDenotesBuiltin(expr.name, "println") || callDenotesBuiltin(expr.name, "print")) && expr.args.size == 1) {
             val arg = expr.args.single()
-            val operation = if (symbolDenotes(expr.name, "print")) "write" else "print"
+            val operation = if (callDenotesBuiltin(expr.name, "print")) "write" else "print"
             // A float is rendered by the compiler, not the host: printing one
             // directly and interpolating it must produce the same digits, and only
             // `__double_to_str` implements the language's convention.
@@ -1458,7 +1475,7 @@ class WasmCodegen {
         }
         if (expr.name == "__isCheck") usesIsCheck = true
         // `Array::fill<T>(count)` → `[ len, T×count ]` (all cells i32 in Wasm).
-        if (symbolDenotes(expr.name, "Array_fill")) {
+        if (callDenotesBuiltin(expr.name, "Array_fill")) {
             usesAlloc = true
             val t = newTemp("i32")
             val count = emitExpr(expr.args[0])
@@ -1467,7 +1484,7 @@ class WasmCodegen {
                 "  (i32.store (local.get $t) $count)\n" +
                 "  (local.get $t))"
         }
-        if (expr.name in stringIntrinsics) neededIntrinsics.add(expr.name)
+        if (expr.name in stringIntrinsics && expr.name !in programFunctions) neededIntrinsics.add(expr.name)
         if (expr.name in externs && expr.name !in stringIntrinsics) neededExterns.add(expr.name)
         // Arguments take the callee's declared parameter types and the result
         // leaves its physical return type: a generic callee's are erased.

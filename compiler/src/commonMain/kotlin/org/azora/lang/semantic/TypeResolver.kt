@@ -2474,7 +2474,15 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun resolveExpr(expr: Expr): IrType? {
         val type = resolveExprInner(expr)
-        if (table.semanticFacts.enabled) table.semanticFacts.expression(expr, type, table.visibleVariables())
+        if (table.semanticFacts.enabled) {
+            val visible = table.visibleVariables()
+            // A call evaluated at compile time is still the call that was written.
+            table.semanticFacts.foldedCall(expr)?.let { call ->
+                table.lookupFunction(call.callee)?.let { table.semanticFacts.callable(call, it) }
+                table.semanticFacts.expression(call, type, visible)
+            }
+            table.semanticFacts.expression(expr, type, visible)
+        }
         return type
     }
 
@@ -3029,13 +3037,14 @@ class TypeResolver(private val table: SymbolTable) {
                         if (null in args) emptyList() else args.map { IrType.resolve(it!!) },
                     )
                 }
+                val func = table.lookupFunction(expr.callee)
                 // `convert::toString(x)` is a compiler builtin (special-cased in
-                // CTCE and every backend); it stringifies any value.
-                if (symbolDenotes(expr.callee, Intrinsics.TO_STRING)) {
+                // CTCE and every backend); it stringifies any value. A program's
+                // own `toString` is an ordinary function with its own signature.
+                if (func == null && symbolDenotes(expr.callee, Intrinsics.TO_STRING)) {
                     expr.args.forEach { resolveExpr(it) ?: return null }
                     return IrType.String
                 }
-                val func = table.lookupFunction(expr.callee)
                 if (func != null) table.semanticFacts.callable(expr, func)
                 if (func == null) {
                     // Maybe a lambda stored in a variable. Calling it reads it, so
@@ -3093,8 +3102,10 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${expr.line}: call to unsafe '${expr.callee}' requires an unsafe block or unsafe function")
                     return null
                 }
-                val printCall = symbolDenotes(expr.callee, Intrinsics.PRINTLN) ||
-                    symbolDenotes(expr.callee, Intrinsics.PRINT)
+                val printCall = func.isBridge && (
+                    symbolDenotes(expr.callee, Intrinsics.PRINTLN) ||
+                        symbolDenotes(expr.callee, Intrinsics.PRINT)
+                    )
                 if (!requireReactiveCaller(func, expr.line)) return null
                 if (!requireTestCaller(func.name, expr.line)) return null
                 // Handle named arguments - reorder to param order

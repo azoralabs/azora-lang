@@ -186,6 +186,57 @@ class FoundationArgumentOwnershipExecTest {
         }
     """, "3 40 39 8 1 after")
 
+    /**
+     * `return Pack(local)` moves the local into the result. The array was left
+     * registered for its scope's cleanup, so the caller received a pack whose
+     * field had already been freed (std.gpu's `rowMajor` read zero strides).
+     */
+    @Test fun aReturnedConstructionOwnsTheLocalItStores() = sanitized("""
+        import std.io
+        pack Layout {
+            var shape: Array<Int>
+            var strides: Array<Int>
+        }
+        pack Wrapper {
+            var layout: Layout
+            var tag: Array<Int>
+        }
+        func rowMajor(shape: Array<Int>): Layout {
+            var strides: Array<Int> = .() * shape.size
+            var remaining = 24
+            for i in 0..<shape.size {
+                remaining = remaining / shape[i]
+                strides[i] = remaining
+            }
+            return Layout(shape, strides)
+        }
+        func wrapped(): Wrapper {
+            fin strides: Array<Int> = [5, 6]
+            fin tag: Array<Int> = [7]
+            return Wrapper(Layout([1, 2], strides), tag)
+        }
+        func main() {
+            fin layout = rowMajor([2, 3, 4])
+            fin w = wrapped()
+            println("${'$'}{layout.strides[0]} ${'$'}{layout.strides[2]} ${'$'}{w.layout.strides[1]} ${'$'}{w.tag[0]}")
+        }
+    """, "12 1 6 7")
+
+    /** A local the result names twice cannot move to both; it is still freed once. */
+    @Test fun aLocalStoredTwiceIsNotMovedTwice() = sanitized("""
+        import std.io
+        pack Pair {
+            var left: Array<Int>
+            var right: Array<Int>
+        }
+        func both(): Int {
+            fin xs: Array<Int> = [3, 4]
+            fin pair = Pair(xs.clone(), xs.clone())
+            return pair.left[0] + pair.right[1] + xs[0]
+        }
+        func main() { println(both()) }
+    """, "10")
+
     private fun sanitized(source: String, expected: String) {
         val program = source.trimIndent()
         for (release in listOf(false, true)) {
@@ -203,12 +254,7 @@ class FoundationArgumentOwnershipExecTest {
         }
     }
 
-    private fun clang(): String? {
-        val paths = listOf("/usr/bin/clang") + System.getenv("PATH").orEmpty().split(File.pathSeparator).map { "$it/clang" }
-        val result = paths.firstOrNull { File(it).canExecute() }
-        check(result != null || System.getenv("AZORA_REQUIRE_NATIVE_TESTS") != "1") { "Native ownership qualification requires clang" }
-        return result
-    }
+    private fun clang(): String? = SanitizerClang.find("Native ownership qualification")
 
     private fun run(directory: File, vararg arguments: String): String {
         val output = directory.resolve("stdout")

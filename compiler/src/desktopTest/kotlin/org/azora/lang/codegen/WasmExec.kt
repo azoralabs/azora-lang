@@ -85,6 +85,7 @@ object WasmExec {
           write_f32: x => process.stdout.write(Number.isInteger(x) ? x.toFixed(1) : String(x)),
           write_bool: x => process.stdout.write(x ? "true" : "false"),
           write_str: ptr => process.stdout.write(readStr(ptr)),
+          /*HOST_IMPORTS*/
         }};
         WebAssembly.instantiate(bytes, imports).then(({instance}) => {
           mem = instance.exports.memory;
@@ -105,8 +106,12 @@ object WasmExec {
     /** Compiles and runs a program that must trap; returns what it printed first. */
     fun runExpectingTrap(source: String, trap: String = "unreachable"): String = runWatExpectingTrap(compile(source), trap)
 
-    /** Execute emitted WAT independently of standard-library loading. */
-    fun runWat(wat: String): String = execute(wat) { exit, stdout, stderr ->
+    /**
+     * Execute emitted WAT independently of standard-library loading.
+     * [hostImports] adds entries to the host's `env` object, as JavaScript
+     * (`name: (args) => …,`); they may use `mem` and `readStr`.
+     */
+    fun runWat(wat: String, hostImports: String = ""): String = execute(wat, hostImports) { exit, stdout, stderr ->
         if (exit != 0) fail("node exited non-zero\n--- stderr ---\n$stderr\n--- WAT ---\n$wat")
         stdout
     }
@@ -115,13 +120,13 @@ object WasmExec {
      * Execute WAT that must stop with the WebAssembly [trap] (for example
      * `unreachable`); returns what it printed before trapping.
      */
-    fun runWatExpectingTrap(wat: String, trap: String = "unreachable"): String = execute(wat) { exit, stdout, stderr ->
+    fun runWatExpectingTrap(wat: String, trap: String = "unreachable", hostImports: String = ""): String = execute(wat, hostImports) { exit, stdout, stderr ->
         if (exit == 0) fail("expected a '$trap' trap, but the program finished\n--- stdout ---\n$stdout\n--- WAT ---\n$wat")
         if ("RuntimeError: $trap" !in stderr) fail("expected a '$trap' trap\n--- stderr ---\n$stderr\n--- WAT ---\n$wat")
         stdout
     }
 
-    private fun execute(wat: String, outcome: (exit: Int, stdout: String, stderr: String) -> String): String {
+    private fun execute(wat: String, hostImports: String = "", outcome: (exit: Int, stdout: String, stderr: String) -> String): String {
         val nodeTool = node ?: error("node not available")
         val assemblerTool = assembler ?: error("wat2wasm not available")
         val dir = File.createTempFile("azora_wat_", "").let { it.delete(); it.mkdirs(); it }
@@ -130,7 +135,7 @@ object WasmExec {
             watFile.writeText(wat)
             val wasmFile = File(dir, "program.wasm")
             val driverFile = File(dir, "driver.js")
-            driverFile.writeText(driverJs)
+            driverFile.writeText(driverJs.replace("/*HOST_IMPORTS*/", hostImports))
 
             val asmProc = ProcessBuilder(assemblerTool + listOf(watFile.absolutePath, "-o", wasmFile.absolutePath))
                 .redirectErrorStream(true).start()

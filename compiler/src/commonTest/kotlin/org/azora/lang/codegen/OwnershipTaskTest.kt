@@ -175,7 +175,7 @@ class OwnershipTaskTest {
             func main() {
                 var owned: Buffer = Buffer(1)
                 fin borrowed: Buffer& = owned
-                var exclusive: Buffer! = owned
+                let exclusive: Buffer! = owned
                 println(borrowed.value + exclusive.value)
             }
         """.trimIndent())
@@ -185,6 +185,7 @@ class OwnershipTaskTest {
             val annotation = when (stmt) {
                 is org.azora.lang.frontend.Stmt.VarDecl -> stmt.type
                 is org.azora.lang.frontend.Stmt.FinDecl -> stmt.type
+                is org.azora.lang.frontend.Stmt.LetDecl -> stmt.type
                 else -> null
             }
             (annotation as? org.azora.lang.frontend.TypeAnnotation.Explicit)?.ref as? TypeRef.Reference

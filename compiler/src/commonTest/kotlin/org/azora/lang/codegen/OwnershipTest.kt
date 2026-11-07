@@ -677,6 +677,39 @@ class OwnershipTest {
         func main() {}
     """, "cannot take 'h' - 'h' is borrowed, so this function does not own it")
 
+    // A borrow binding is never rebound: `let` holds a mutable borrow - its
+    // name is fixed and the value changes through it - and `fin` or `let` a
+    // shared one (§12, the owner's decision of 2026-11-07).
+    @Test fun aLetHoldsAMutableBorrow() = assertEquals("2", run("""
+        import std.io
+        import std.traits
+        pack Tally { var counts: Array<Int> }
+        func main() {
+            var t = Tally([1])
+            if true {
+                let m: Tally! = t.!
+                m.counts.add(2)
+            }
+            println(t.counts.size)
+        }
+    """))
+
+    @Test fun aVarCannotHoldAMutableBorrow() = rejects("""
+        $nonCopyable
+        func main() {
+            var h = Handle(listOf<String>())
+            var m: Handle! = h.!
+        }
+    """, "line 6: a mutable borrow binding ('Handle!') must use 'let': a borrow is not rebound")
+
+    @Test fun aFinCannotHoldAMutableBorrow() = rejects("""
+        $nonCopyable
+        func main() {
+            var h = Handle(listOf<String>())
+            fin m: Handle! = h.!
+        }
+    """, "line 6: a mutable borrow binding ('Handle!') must use 'let': 'fin' would forbid changing what it borrows")
+
     @Test fun aBoundBorrowNamesTheOwnerItCannotGiveAway() = rejects("""
         $nonCopyable
         func sink(h: Handle): Int { return 1 }

@@ -113,12 +113,12 @@ class AllocDropAnalyzer {
         when (stmt) {
             is Stmt.Import -> Unit
             is Stmt.VarDecl -> {
-                validateReferenceBinding(stmt.type, stmt.initializer, mutable = true, stmt.line, errors)
+                validateReferenceBinding(stmt.type, stmt.initializer, if (stmt.valueMutable) "var" else "val", stmt.line, errors)
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
             }
             is Stmt.FinDecl -> {
-                validateReferenceBinding(stmt.type, stmt.initializer, mutable = false, stmt.line, errors)
+                validateReferenceBinding(stmt.type, stmt.initializer, "fin", stmt.line, errors)
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
             }
@@ -170,7 +170,7 @@ class AllocDropAnalyzer {
                 collectUsedVars(stmt.value, used)
             }
             is Stmt.LetDecl -> {
-                validateReferenceBinding(stmt.type, stmt.initializer, mutable = false, stmt.line, errors)
+                validateReferenceBinding(stmt.type, stmt.initializer, "let", stmt.line, errors)
                 collectUsedVars(stmt.initializer, used)
                 defined.add(stmt.name)
             }
@@ -258,7 +258,8 @@ class AllocDropAnalyzer {
     private fun validateReferenceBinding(
         annotation: TypeAnnotation,
         initializer: Expr,
-        mutable: Boolean,
+        /** `var`, `val`, `fin` or `let`. */
+        keyword: String,
         line: Int,
         errors: MutableList<String>
     ) {
@@ -278,11 +279,20 @@ class AllocDropAnalyzer {
         if (!isPlace(initializer)) {
             errors.add("line $line: ${reference.kind.spelling} must borrow a stable variable, field, index, or dereference")
         }
-        if (reference.kind == TypeRef.RefKind.MUTABLE && !mutable) {
-            errors.add("line $line: mut ref requires a 'var' binding")
-        }
-        if (reference.kind != TypeRef.RefKind.MUTABLE && mutable) {
-            errors.add("line $line: ${reference.kind.spelling} binding must use 'fin' or 'let'")
+        // A borrow binding is never rebound, so not `var` or `val`. A mutable
+        // borrow is held by `let` - a fixed name through which the value
+        // changes; `fin` fixes the value as well, which is a shared borrow's
+        // job (OWNERSHIP_BORROWING_DIP §12; decided 2026-11-07).
+        if (reference.kind == TypeRef.RefKind.MUTABLE) {
+            when (keyword) {
+                "let" -> {}
+                "fin" -> errors.add(
+                    "line $line: a mutable borrow binding ('$reference') must use 'let': 'fin' would forbid changing what it borrows",
+                )
+                else -> errors.add("line $line: a mutable borrow binding ('$reference') must use 'let': a borrow is not rebound")
+            }
+        } else if (keyword != "fin" && keyword != "let") {
+            errors.add("line $line: a borrow binding ('$reference') must use 'fin' or 'let': a borrow is not rebound")
         }
     }
 

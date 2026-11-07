@@ -3749,16 +3749,20 @@ end:
 
         return when {
             // getenv, with "" for unset - `envVar` documents that shape, and
-            // `hasEnvVar` is what tells unset from empty.
+            // `hasEnvVar` is what tells unset from empty. The value is copied
+            // (D-5): getenv's points into the environment, which `setEnvVar`
+            // may replace.
             local == "envVar" && item.params.size == 1 -> {
                 usesGetenv = true
+                usesStrCopy = true
                 define(
                     "i8* @$symbol(i8* %a0)",
                     "%v = call i8* @getenv(i8* %a0)",
                     "%missing = icmp eq i8* %v, null",
                     constant("%e", ""),
                     "%r = select i1 %missing, i8* %e, i8* %v",
-                    "ret i8* %r",
+                    "%c = call i8* @__azora_str_copy(i8* %r)",
+                    "ret i8* %c",
                 )
             }
 
@@ -5497,6 +5501,22 @@ end:
     }
 
     /** Lowers `&&` / `||` with short-circuit evaluation via phi. */
+    /**
+     * A `String` a C function returned, as Azora's own (decision D-5,
+     * BRIDGE_DIP §6): the bytes are copied where the call returns, so the
+     * value outlives the foreign memory it was read from. An Azora `String` is
+     * never null, so a NULL result stops the program and names the bridge.
+     */
+    private fun ownForeignString(returned: String, bridge: String): String {
+        val isNull = nextTmp()
+        emit("  $isNull = icmp eq i8* $returned, null")
+        emitArithmeticFailure(isNull, "panic: the bridge '$bridge' returned a null String")
+        usesStrCopy = true
+        val copy = nextTmp()
+        emit("  $copy = call i8* @__azora_str_copy(i8* $returned)")
+        return copy
+    }
+
     private fun emitArithmeticFailure(invalid: String, message: String) {
         usesPuts = true
         usesAbort = true
@@ -5873,6 +5893,7 @@ end:
             emit("  $tmp = call $retType @${expr.name}($args)")
             writeBacks.asReversed().forEach { it() }
             if (expr.type is IrType.Task) emitTaskScopeAttach(tmp)
+            if (native != null && physicalReturn == IrType.String) return ownForeignString(tmp, expr.name)
             val result = coerceNumeric(tmp, physicalReturn, expr.type)
             if (native == null) qualifyConcreteOwnership(result, expr.type)
             result

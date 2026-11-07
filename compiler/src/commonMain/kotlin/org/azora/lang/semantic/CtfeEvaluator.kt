@@ -1314,6 +1314,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
             e is Expr.Unary -> e.copy(operand = fold(e.operand))
             e is Expr.IncDec -> e.copy(target = fold(e.target))
             e is Expr.Grouping -> e.copy(expr = fold(e.expr))
+            // `(if c then a else b)` - the one way a single returned expression
+            // can choose; each branch may name `T` as much as the condition.
+            e is Expr.IfExpr -> e.copy(condition = fold(e.condition), thenExpr = fold(e.thenExpr), elseExpr = fold(e.elseExpr))
+            e is Expr.Index -> e.copy(target = fold(e.target), index = fold(e.index))
+            e is Expr.Isolated -> e.copy(value = fold(e.value))
             e is Expr.Cast -> e.copy(expr = fold(e.expr), targetType = substitute(e.targetType))
             e is Expr.StringTemplate -> e.copy(parts = e.parts.map { part ->
                 if (part is Expr.StringTemplatePart.Expr) Expr.StringTemplatePart.Expr(fold(part.expr)) else part

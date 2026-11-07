@@ -9,13 +9,13 @@ The ordered short- and long-term plan for the language, Engine and Studio
 (every OS and graphics backend, written in Azora; packages; editor plugins;
 self-hosting; a flagship game as the qualification) is
 [the 2026-11 roadmap](ECOSYSTEM_ROADMAP_2026_11.md).
-Last full run, native tools required: **2,963 tests, 0 failures, 0 skipped**;
+Last full run, native tools required: **2,979 tests, 0 failures, 0 skipped**;
 AZLS 93 tests, 0 failures. Roadmap steps A1 and A2 closed 2026-11-06 (with
 decision D-6), A3 to A6 on 2026-11-07 (`Char` is a code point on every
 backend; the package manager, PACKAGES_DIP.MD; decisions D-1 to D-5 and D-7,
-all by the owner; D-7 implemented the same day); see the entries at the end.
-Next: implement D-5, then 0.1's remaining §11 tooling; Track B can start (D-1
-to D-4 settled).
+all by the owner; D-7 and D-5 implemented the same day); see the entries at
+the end. Next: 0.1's remaining §11 tooling; Track B can start (D-1 to D-4
+settled).
 
 ## Status — 2026-10-04
 
@@ -4047,8 +4047,8 @@ Also written:
   `String` result still borrows foreign memory. Implementing D-7 is the larger
   one: code in std, the Engine and Studio that relies on aliasing becomes
   checker errors to fix, as D-6's did.
-- `World.resources` (`Array<Any>` of owned values) is still not destroyed on
-  LLVM (open from A2).
+- ~~`World.resources` (`Array<Any>` of owned values) is still not destroyed on
+  LLVM (open from A2)~~ - done the same day (entry below).
 
 ## 2026-11-07 (continued) — D-7: a binding from a place owns what it holds
 
@@ -4098,8 +4098,8 @@ or create an independent value with 'a.clone()', or borrow it with 'a.&'
 - Pattern bindings (`when`, `if let`) are not checked, and a `when` payload of
   a borrowed scrutinee is not known to be a borrow, so the diagnostic can
   offer `take` there.
-- The ownership DIP writes `let m: User! = user.!`; the checker requires `var`
-  for a binding holding a mutable borrow. Not decided which is meant.
+- ~~The ownership DIP writes `let m: User! = user.!`; the checker requires
+  `var`~~ - decided for `let` and done the same day (entry below).
 
 ### Tests
 
@@ -4128,3 +4128,143 @@ AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:ins
 - Studio under ASan/UBSan: the 30-step scripted drag takes Ground to
   X = 1.929 and exits with no reports; Studio and the launcher rebuild without
   sanitizers.
+
+## 2026-11-07 (continued) — D-5: a bridge's `String` result is copied
+
+Decision D-5 implemented. A `String` a foreign function returns is copied into
+memory Azora owns where the call returns, so it outlives the foreign memory it
+was read from:
+
+```azora
+fin t = bufferText(buffer)   // a C function returning a pointer into the buffer
+closeBuffer(buffer)          // the C side frees it
+println(t)                   // "azora text" - before, a heap use-after-free
+```
+
+- **LLVM**: every call to an externally linked bridge whose result is `String`
+  copies it (`__azora_str_copy`). An Azora `String` is never null, so a NULL
+  result stops the program by name: `panic: the bridge 'noText' returned a
+  null String`. The compiler's own `envVar` copies too: it returned `getenv`'s
+  pointer into the environment, which `setEnvVar` may replace.
+- **WebAssembly**: every host import whose result is `String` is copied into a
+  fresh length-prefixed string (`__str_own_foreign`); a host that answers 0
+  traps. The test driver (`WasmExec`) can now be given extra host imports.
+- **Interpreter**: no change; it has no foreign calls, and its strings are
+  values.
+
+### Open
+
+- A `String` a C *callback* receives is still the caller's memory: an Azora
+  callback that keeps it holds a pointer the C side may free.
+- Native `String` values are still never freed (open from A4), so each copy is
+  one more such allocation; the copy is what makes freeing them possible later.
+
+### Tests
+
+New: `FoundationAbiExecTest.aForeignStringResultIsCopiedAtTheCall` and
+`aNullForeignStringStopsTheProgram` (C linked separately, debug and release,
+ASan/UBSan; the first reported the use-after-free before the change),
+`ForeignStringWasmExecTest` (2: a host that overwrites its text after
+returning it, and a host that returns 0).
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue
+```
+
+- Compiler: **2,975 tests, 0 failures, 0 skipped** (native tools required).
+  AZLS: **93 tests, 0 failures**. CLI distribution built.
+- std: all 50 modules check; `azora test std` 16 passed.
+- Engine: `qualify-native.sh headless` and `foundation` pass (6/6), and each
+  probe relinked with Apple clang `-fsanitize=address,undefined` reports
+  nothing.
+- Studio under ASan/UBSan: the 30-step scripted drag takes Ground to
+  X = 1.929 and exits with no reports; Studio and the launcher rebuild without
+  sanitizers.
+
+## 2026-11-07 (continued) — a borrow binding is never rebound
+
+Owner's decision: a binding holding a mutable borrow is written `let`, as the
+ownership DIP's own examples write it (`let m: User! = user.!`). The checker
+(`AllocDropAnalyzer`) had required `var` ("mut ref requires a 'var' binding").
+
+- `let m: T! = x.!` holds a mutable borrow; the value changes through it.
+- `fin` or `let` holds a shared borrow, as before.
+- `var` and `val` are rejected for both: `a mutable borrow binding ('Handle!')
+  must use 'let': a borrow is not rebound`. `fin` is rejected for a mutable
+  borrow, since `fin` fixes the value too.
+
+Migrated, every one a binding that was never re-pointed: `std/reactive.az`
+(1), the Engine's `azora-gpu` (3), `azora-ecs` (1) and `azora-platform` (2);
+two test fixtures. Studio had none.
+
+Tests: `OwnershipTest` (+3: a `let` changes through its borrow, `var` and
+`fin` are refused); `OwnershipTaskTest` and `BindingOwnershipExecTest` use
+`let`.
+
+Evidence: compiler **2,978 tests, 0 failures, 0 skipped** (native tools
+required), AZLS 93, 0 failures; std 50 modules check and 16 tests pass; Engine
+`qualify-native.sh headless` and `foundation` 6/6 and clean under
+ASan/UBSan; Studio's scripted drag under ASan/UBSan takes Ground to X = 1.929
+with no reports, and Studio and the launcher rebuild without sanitizers.
+
+## 2026-11-07 (continued) — the World owns its resources (open from A2)
+
+`World.resources` was an `Array<Any>`, which cannot free what it holds (an
+erased slot may hold a plain value). Measured on a project depending on
+`azora-ecs`:
+
+- inserting a resource twice and dropping the world leaked both values
+  (`leaks`: 4 leaks, 160 bytes);
+- worse, `resource<T>` returned the world's own value by value, so the
+  reader's binding owned an alias: reading a resource twice freed it twice
+  (natively, a jump through a garbage drop pointer; under ASan a BUS at
+  `0x47`), and reading it once left the world holding freed memory.
+
+### The change (Engine, `azora-ecs/src/ecs.az`)
+
+The resources follow the discipline component storages already follow (A2):
+
+- Each resource lives in a `ResourceSlot<T>`, built by `insertResource` /
+  `insertResourceNamed`. Both are `inline`, so they expand where `T` is
+  concrete and the slot is built knowing how to destroy its value. The world
+  holds `Array<ResourceSlot<Any>>`: replacing a resource destroys the old one,
+  and a dropped world destroys every resource.
+- `resource`, `resourceNamed`, `resourceOr` and `resourceNamedOr` are `inline`
+  and return a copy (`.clone()` where `T` is concrete) of the value they borrow
+  through `resourceSlot<T>(world, name): ResourceSlot<T>&|world|` - the copy
+  the API's documentation (`Res<T>`) already promised.
+- `resourceStamp` is a per-resource write counter (`resourceStamps`,
+  `resourceWrites`) instead of the position of the newest entry, since
+  entries are now replaced rather than appended; `hasResourceNamed` is new.
+
+After: the same program reports 0 leaks, and a program that inserts,
+replaces, reads twice, reads with a fallback and drops runs clean under
+ASan/UBSan with 0 leaks.
+
+### Compiler: `T` inside an inline body's `(if … then … else …)`
+
+An inline generic expands where `T` is known only when its body is one
+returned expression (`CtfeEvaluator.inlineCallAsExpression`), and the
+substitution of `T` (`T.typeName`, type arguments) did not descend into an
+if-expression, an index or a `take`/borrow; `resourceOr` stopped with
+`undefined value 'T'`. It does now (`ErasedTypeNameTest`, +1). Two limits are
+recorded, not changed: `return if c then a else b` is the statement form, so an
+inline body writes `return (if …)`, and an inline body of more than one
+statement does not expand at all.
+
+### Tests and evidence
+
+- Engine `tests/owned-ecs` checks resources now: an insert transfers the value,
+  a replace destroys the old one once, a read is a copy of the reader's own,
+  and a dropped world destroys its resources. Against the old `ecs.az` it
+  stops at "replacing a resource must destroy the previous one once".
+- Engine `qualify-native.sh headless` and `foundation` 6/6, each probe clean
+  under ASan/UBSan; the templates `app`, `game`, `game-ecs`, `game-runner`,
+  `game-shapes`, `game-sidescroller-2d` and `game-tetris` build.
+- Studio under ASan/UBSan: the 30-step scripted drag takes Ground to
+  X = 1.929 with no reports; Studio and the launcher rebuild without
+  sanitizers.
+- Compiler: **2,979 tests, 0 failures, 0 skipped** (native tools required);
+  AZLS 93, 0 failures; std 50 modules check and 16 tests pass.

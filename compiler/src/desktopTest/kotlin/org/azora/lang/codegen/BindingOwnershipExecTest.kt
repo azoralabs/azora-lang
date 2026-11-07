@@ -53,7 +53,7 @@ class BindingOwnershipExecTest {
             fin copy = h.boxes[0].clone()
             println(total(copy))
             if true {
-                var m: Box! = c.!
+                let m: Box! = c.!
                 m.items.add(10)
             }
             println(total(c))

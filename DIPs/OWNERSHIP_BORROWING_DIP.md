@@ -55,7 +55,7 @@ Three places where the implementation deliberately differs from the text below:
   2026-11-07). `var b = a`, `fin v = h.items` and `fin e = xs[i]` with a
   non-`Copy` value are rejected, as passing it by value is (§8, D-6): write
   `take a` to move it, `a.clone()` for an independent value, or a borrow -
-  `let r: T& = a.&`, `var m: T! = a.!` - to read or change it in place. A
+  `let r: T& = a.&`, `let m: T! = a.!` - to read or change it in place. A
   binding never silently aliases. A temporary (a call, a construction, a
   literal) and a computed property (a member the pack does not store, any
   member of a spec) are not places, so they bind as before. Bindings the
@@ -64,10 +64,12 @@ Three places where the implementation deliberately differs from the text below:
   `BindingOwnershipExecTest`). Not yet covered: a nullable non-`Copy` value
   (`fin o = h.maybe` where `maybe: Handle?`), which §8's by-value check does
   not cover either, and pattern bindings (`when`, `if let`).
-- **A mutable borrow is held by a `var`.** The checker requires
-  `var m: T! = a.!`; the `let m: User! = user.!` written in this document's
-  introduction is rejected ("mut ref requires a 'var' binding"). Which one is
-  meant is not decided.
+- **A borrow binding is never rebound** (decided 2026-11-07). A mutable borrow
+  is held by `let` - a fixed name through which the value changes:
+  `let m: User! = user.!`. A shared borrow is held by `fin` or `let`. `var` and
+  `val` are rejected for both ("a borrow is not rebound"), and so is `fin` for
+  a mutable borrow, since `fin` fixes the value too. (The checker had required
+  `var` for a mutable borrow, against this document's own examples.)
 
 An `impl` of a spec member may omit its return type and take the one the spec
 declared. That is what makes `func &.clone()` in §21 legal without

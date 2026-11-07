@@ -184,7 +184,7 @@ impl Write<T> for State<T> {
         self.revision += 1
         fin count = self.observers.size
         for i in 0..<count {
-            var item: ReactiveObserver<T>! = self.observers[i]
+            let item: ReactiveObserver<T>! = self.observers[i]
             if item.active.get {
                 item.callback(value)
             }

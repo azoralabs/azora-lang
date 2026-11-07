@@ -112,6 +112,9 @@ class WasmCodegen {
 
     private var usesAlloc = false
     private var usesConcat = false
+
+    /** A host import returns a `String`, which [RT_OWN_FOREIGN] copies (D-5). */
+    private var usesOwnForeign = false
     private var usesStrEq = false
     private var usesStrHash = false
     private var usesRepeat = false
@@ -278,7 +281,7 @@ class WasmCodegen {
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
         structs.clear(); structDefinitions.clear(); ownershipDrops.clear(); isolatedCopies.clear(); layouts.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
-        usesAlloc = false; usesConcat = false; usesStrEq = false; usesStrHash = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesUtf8 = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
+        usesAlloc = false; usesConcat = false; usesOwnForeign = false; usesStrEq = false; usesStrHash = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesUtf8 = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         reactiveStorage.clear(); reactiveAliases.clear()
         closureTypes.clear(); closureFunctions.clear()
@@ -442,6 +445,7 @@ class WasmCodegen {
         }
         if (usesAlloc) sb.append(ALLOCATOR_RUNTIME)
         if (usesConcat) sb.append(RT_CONCAT)
+        if (usesOwnForeign) sb.append(RT_OWN_FOREIGN)
         if (usesIsCheck) usesStrEq = true
         if (usesStrEq) sb.append(RT_STR_EQ)
         if (usesStrHash) sb.append(RT_STR_HASH)
@@ -1554,7 +1558,14 @@ class WasmCodegen {
             val emitted = emitExpr(arg)
             declared?.getOrNull(i)?.let { param -> asArgument(expr.name, i) { coerceWasm(emitted, arg.type, param) } } ?: emitted
         }
-        val call = "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})"
+        val called = "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})"
+        // A host import's `String` is copied into Azora's memory where the call
+        // returns (D-5): the host wrote it wherever it chose, and Azora owns it
+        // from here. A compiler-supplied float or math bridge is not an import.
+        val hostString = expr.name in neededExterns && functionResults[expr.name] == IrType.String &&
+            externs[expr.name]?.let { wasmFloatOpFor(it) == null && wasmSoftwareMathFor(it) == null } == true
+        if (hostString) { usesAlloc = true; usesOwnForeign = true }
+        val call = if (hostString) "(call \$__str_own_foreign $called)" else called
         val value = wrapCallResult(expr.type, callResult(call, functionResults[expr.name] ?: expr.type, expr.type))
         return if (expr.name in failableFunctions) checkedCall(value, expr.type) else value
     }
@@ -2785,6 +2796,21 @@ class WasmCodegen {
     }
 
     // ── Linear-memory runtime (folded WAT) ────────────────────────────────
+
+    /**
+     * A host's `String` as one Azora owns: a fresh length-prefixed copy. A
+     * `String` is never null, so a host that answers 0 traps.
+     */
+    private val RT_OWN_FOREIGN = """
+  (func ${'$'}__str_own_foreign (param ${'$'}s i32) (result i32)
+    (local ${'$'}len i32) (local ${'$'}p i32)
+    (if (i32.eqz (local.get ${'$'}s)) (then unreachable))
+    (local.set ${'$'}len (i32.load (local.get ${'$'}s)))
+    (local.set ${'$'}p (call ${'$'}__alloc (i32.add (i32.const 4) (local.get ${'$'}len))))
+    (i32.store (local.get ${'$'}p) (local.get ${'$'}len))
+    (memory.copy (i32.add (local.get ${'$'}p) (i32.const 4)) (i32.add (local.get ${'$'}s) (i32.const 4)) (local.get ${'$'}len))
+    (local.get ${'$'}p))
+"""
 
     private val RT_CONCAT = """
   (func ${'$'}__str_concat (param ${'$'}a i32) (param ${'$'}b i32) (result i32)

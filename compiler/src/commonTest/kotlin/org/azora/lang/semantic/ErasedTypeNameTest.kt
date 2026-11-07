@@ -59,6 +59,30 @@ class ErasedTypeNameTest {
         assertEquals("Alpha Beta", IrInterpreter().interpret(result.ir).trim())
     }
 
+    /**
+     * A single returned `(if c then a else b)` is still one expression: `T` is
+     * the call's type in its condition, in both branches and in an index.
+     */
+    @Test fun anIfExpressionBodyFoldsTInEveryBranch() {
+        val result = Compiler().compile(nameOf + "\n" + """
+            inline func<T> pick(first: Bool): String {
+                return (if first then T.typeName + "!" else T.typeName + "?")
+            }
+
+            inline func<T> nth(names: Array<String>): String {
+                return names[T.typeName.length - 4]
+            }
+
+            func main() {
+                println(pick<Alpha>(true))
+                println(pick<Beta>(false))
+                println(nth<Beta>(["a", "b"]))
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Success>(result, "${(result as? CompilationResult.Failure)?.errors}")
+        assertEquals("Alpha!\nBeta?\na", IrInterpreter().interpret(result.ir).trim())
+    }
+
     @Test fun anErasedGenericCannotFoldItsParametersName() {
         val result = Compiler().compile(nameOf + "\n" + """
             func<T> describe(): String {

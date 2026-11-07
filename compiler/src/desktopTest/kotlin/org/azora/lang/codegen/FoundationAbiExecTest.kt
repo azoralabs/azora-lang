@@ -136,6 +136,86 @@ class FoundationAbiExecTest {
         """.trimIndent(),
     )
 
+    private val foreignBuffer = """
+        #include <stdint.h>
+        #include <stdlib.h>
+        #include <string.h>
+        int64_t openBuffer(void) {
+            char *text = malloc(16);
+            strcpy(text, "azora text");
+            return (int64_t)(intptr_t)text;
+        }
+        const char *bufferText(int64_t buffer) { return (const char *)(intptr_t)buffer; }
+        void closeBuffer(int64_t buffer) {
+            char *text = (char *)(intptr_t)buffer;
+            memset(text, 'x', 15);
+            free(text);
+        }
+        const char *noText(void) { return NULL; }
+    """.trimIndent()
+
+    /**
+     * Decision D-5: a `String` a bridge returns is copied into Azora memory at
+     * the call, so it outlives the foreign memory it was read from. Before,
+     * `t` pointed into the buffer and AddressSanitizer reported a heap
+     * use-after-free at `println(t)`.
+     */
+    @Test fun aForeignStringResultIsCopiedAtTheCall() = execute(
+        "azora text\nazora text 10",
+        """
+        import std.io
+        bridge .C {
+            func openBuffer(): Long
+            func bufferText(buffer: Long): String
+            func closeBuffer(buffer: Long)
+        }
+        func main() {
+            fin buffer = openBuffer()
+            fin t = bufferText(buffer)
+            fin again = bufferText(buffer)
+            closeBuffer(buffer)
+            println(t)
+            println("${'$'}{again} ${'$'}{again.length}")
+        }
+        """.trimIndent(),
+        foreignBuffer,
+    )
+
+    /** An Azora `String` is never null: a bridge that returns NULL for one stops the program, by name. */
+    @Test fun aNullForeignStringStopsTheProgram() {
+        val tool = clang() ?: return
+        val directory = Files.createTempDirectory("azora-c-abi-").toFile()
+        try {
+            val c = directory.resolve("adapter.c").apply { writeText(foreignBuffer) }
+            val source = """
+                import std.io
+                bridge .C {
+                    func noText(): String
+                }
+                func main() {
+                    println("before")
+                    fin t = noText()
+                    println(t)
+                }
+            """.trimIndent()
+            for (release in listOf(false, true)) {
+                val compiled = Compiler().compile(source, release = release)
+                val result = assertIs<CompilationResult.Success>(compiled, (compiled as? CompilationResult.Failure)?.errors.toString())
+                val ir = directory.resolve("main.ll").apply { writeText(result.llvm) }
+                val binary = directory.resolve("probe")
+                run(directory, tool, ir.path, c.path, "-fsanitize=address,undefined", "-o", binary.path)
+                val output = directory.resolve("stdout")
+                val process = ProcessBuilder(binary.path).redirectOutput(output).redirectErrorStream(false).start()
+                if (!process.waitFor(30, TimeUnit.SECONDS)) {
+                    process.destroyForcibly().waitFor()
+                    fail("native ABI probe timed out")
+                }
+                assertTrue(process.exitValue() != 0, "a null String must stop the program; release=$release")
+                assertEquals("before\npanic: the bridge 'noText' returned a null String", output.readText().trim(), "release=$release")
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun statelessCallbacksHaveTheCSignatureAndStaticLifetime() = execute(
         "42\n42.5\ntrue\n-5\ncallback\n47",
         """

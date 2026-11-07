@@ -298,8 +298,13 @@ without saying what it means.
   the call, the foreign bytes are copied into a `String` Azora owns; the
   foreign memory stays the foreign side's to free. So
   `fin t = bufferText(b); closeBuffer(b); println(t)` prints what the buffer
-  held. *Implementation pending: today the result still borrows the foreign
-  memory; see the progress log.*
+  held. An Azora `String` is never null: a NULL result stops the program
+  natively (`panic: the bridge 'name' returned a null String`) and traps on
+  WebAssembly. Implemented on LLVM (every externally linked call, and the
+  compiler's own `envVar`, which read `getenv`'s memory) and on WebAssembly
+  (every host import); the interpreter has no foreign calls
+  (`FoundationAbiExecTest`, `ForeignStringWasmExecTest`). A `String` a C
+  callback *receives* is still the caller's memory.
 - ⬜ **Ownership across the boundary is otherwise undefined.** Who frees a
   pointer the callee returns, whether a borrow may be handed out, and what
   happens to a value taken by a foreign function

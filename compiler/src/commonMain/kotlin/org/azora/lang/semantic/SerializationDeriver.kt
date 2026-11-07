@@ -624,13 +624,13 @@ object SerializationDeriver {
         else -> error("unsupported source operator $type")
     }
 
-    private fun escapeChar(value: Char): String = when (value) {
-        '\\' -> "\\\\"
-        '\'' -> "\\'"
-        '\n' -> "\\n"
-        '\r' -> "\\r"
-        '\t' -> "\\t"
-        else -> value.toString()
+    private fun escapeChar(value: Int): String = when (value) {
+        '\\'.code -> "\\\\"
+        '\''.code -> "\\'"
+        '\n'.code -> "\\n"
+        '\r'.code -> "\\r"
+        '\t'.code -> "\\t"
+        else -> org.azora.lang.frontend.CodePoints.toText(value)
     }
 
     private val primitiveTypes = integerTypes + floatingTypes + setOf("String", "Bool", "Char")

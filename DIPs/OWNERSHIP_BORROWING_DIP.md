@@ -51,11 +51,13 @@ Three places where the implementation deliberately differs from the text below:
   duplication needs saying - that one then wins.
 - **The capabilities are named `Clone` and `Copy`.** There is no third one for
   moving: every value can be given away with `take`.
-- **A binding initialised from a place is an alias.** `var b = a`, `fin v = h.items`
-  and `fin e = xs[i]` do not move or copy a non-`Copy` value: the new name reads
-  the same value and owns nothing, so nothing is destroyed twice. §10's
-  `var destination = take source` is the way to move. Making these an error
-  without `take` is not decided.
+- **A binding initialised from a place owns what it holds** (decision D-7,
+  2026-11-07). `var b = a`, `fin v = h.items` and `fin e = xs[i]` with a
+  non-`Copy` value are rejected, as passing it by value is (§8, D-6): write
+  `take a` to move it, `a.clone()` for an independent value, or a borrow -
+  `let r: T& = a.&`, `let m: T! = a.!` - to read or change it in place. A
+  binding never silently aliases. *Implementation pending: today the checker
+  still accepts these as non-owning aliases; see the progress log.*
 
 An `impl` of a spec member may omit its return type and take the one the spec
 declared. That is what makes `func &.clone()` in §21 legal without

@@ -4814,7 +4814,7 @@ class IrGenerator(private val table: SymbolTable) {
         is IrType.Float -> IrExpr.DoubleLiteral(0.0, type)
         is IrType.String -> IrExpr.StringLiteral("")
         is IrType.Bool -> IrExpr.BoolLiteral(false)
-        is IrType.Char -> IrExpr.CharLiteral('\u0000')
+        is IrType.Char -> IrExpr.CharLiteral(0)
         else -> IrExpr.Var("__null", IrType.Any)
     }
 }

@@ -294,9 +294,15 @@ without saying what it means.
 - ⬜ **The C ABI mapping is unwritten.** Which Azora type corresponds to which C
   type, what `String` is across the boundary, whether a `pack` may be passed by
   value, and what the alignment and padding rules are
-- ⬜ **Ownership across the boundary is undefined.** Who frees a pointer the
-  callee returns, whether a borrow may be handed out, and what happens to a
-  value taken by a foreign function
+- ✅ **A `String` a bridge returns is copied** (decision D-5, 2026-11-07). At
+  the call, the foreign bytes are copied into a `String` Azora owns; the
+  foreign memory stays the foreign side's to free. So
+  `fin t = bufferText(b); closeBuffer(b); println(t)` prints what the buffer
+  held. *Implementation pending: today the result still borrows the foreign
+  memory; see the progress log.*
+- ⬜ **Ownership across the boundary is otherwise undefined.** Who frees a
+  pointer the callee returns, whether a borrow may be handed out, and what
+  happens to a value taken by a foreign function
 - ⬜ **Callbacks are not addressed.** Passing an Azora function to C requires a
   calling convention and a lifetime for the closure environment
 - ⬜ **No safety story.** A `bridge` call is not `unsafe`, so a program can enter

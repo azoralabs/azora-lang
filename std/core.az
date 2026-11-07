@@ -25,6 +25,8 @@
 @Supress(.Unused)
 exposed module std.core
 
+import std.unicodedata::*
+
 /**
  * The successful result of a computation that has no meaningful payload.
  *
@@ -460,15 +462,15 @@ bridge annot @Supress {
     fin kind: SupressKind
 }
 
-/** Number of characters in `value`. */
+/** Number of characters (code points) in `value`; it reads the whole string. */
 @Experimental(since: "0.1")
 bridge func stringLength(value: String): Int
 
-/** Character at zero-based `index`. */
+/** Code point at zero-based code point `index`; an index outside `value` panics. */
 @Experimental(since: "0.1")
 bridge func charAt(value: String, index: Int): Char
 
-/** Text from `start` inclusive to `end` exclusive. */
+/** Code points `start` inclusive to `end` exclusive; a range outside `value` panics. */
 @Experimental(since: "0.1")
 bridge func substring(value: String, start: Int, end: Int): String
 
@@ -496,31 +498,253 @@ bridge func endsWith(value: String, suffix: String): Bool
 @Experimental(since: "0.1")
 bridge func contains(value: String, sub: String): Bool
 
-/** First index of `sub` in `value`, or `-1` when absent. */
+/** First code point index of `sub` in `value`, or `-1` when absent. */
 @Experimental(since: "0.1")
 bridge func indexOf(value: String, sub: String): Int
 
-/** `value` with leading and trailing whitespace removed. */
+/**
+ * `value` without the White_Space it starts and ends with: U+0009..U+000D,
+ * U+0085 and every space, line and paragraph separator (Unicode's White_Space
+ * property, read from `std.unicodedata`).
+ */
 @Experimental(since: "0.1")
-bridge func trim(value: String): String
+func trim(value: String): String {
+    fin chars = toChars(value)
+    var start = 0
+    var end = chars.size
+    while start < end && _inRanges(whiteSpaceRanges, ord(chars[start])) { start += 1 }
+    while end > start && _inRanges(whiteSpaceRanges, ord(chars[end - 1])) { end -= 1 }
+    return substring(value, start, end)
+}
 
-/** `value` with every character upper-cased. */
+/**
+ * `value` in uppercase, by Unicode's full default case mapping: a character
+ * may become several (`ß` becomes `SS`). No locale is consulted.
+ */
 @Experimental(since: "0.1")
-bridge func toUpper(value: String): String
+func toUpper(value: String): String {
+    fin chars = toChars(value)
+    return _caseMapped(chars, upperRuns, upperFullKeys, upperFullStarts, upperFullValues, false)
+}
 
-/** `value` with every character lower-cased. */
+/**
+ * `value` in lowercase, by Unicode's full default case mapping, with the
+ * Final_Sigma rule: a `Σ` that ends a word becomes `ς`. No locale is consulted.
+ */
 @Experimental(since: "0.1")
-bridge func toLower(value: String): String
+func toLower(value: String): String {
+    fin chars = toChars(value)
+    return _caseMapped(chars, lowerRuns, lowerFullKeys, lowerFullStarts, lowerFullValues, true)
+}
 
-/** `value` with each occurrence of `old` replaced by `new`. */
+/**
+ * `value` with each occurrence of `old` replaced by `new`, left to right and
+ * without overlapping. An empty `old` matches before every character and at
+ * the end.
+ */
 @Experimental(since: "0.1")
-bridge func replace(value: String, old: String, new: String): String
+func replace(value: String, old: String, new: String): String {
+    fin text = toChars(value)
+    fin from = toChars(old)
+    fin to = toChars(new)
+    var matches = 0
+    if from.size == 0 {
+        matches = text.size + 1
+    } else {
+        var i = 0
+        while i < text.size {
+            if _matchesAt(text, from, i) {
+                matches += 1
+                i += from.size
+            } else {
+                i += 1
+            }
+        }
+    }
+    var result: Array<Char> = .() * (text.size + matches * (to.size - from.size))
+    var at = 0
+    if from.size == 0 {
+        for i in 0..<text.size {
+            at = _copyChars(to, result, at)
+            result[at] = text[i]
+            at += 1
+        }
+        at = _copyChars(to, result, at)
+    } else {
+        var i = 0
+        while i < text.size {
+            if _matchesAt(text, from, i) {
+                at = _copyChars(to, result, at)
+                i += from.size
+            } else {
+                result[at] = text[i]
+                at += 1
+                i += 1
+            }
+        }
+    }
+    return fromChars(result)
+}
 
-/** `value` split on each occurrence of `delim`. */
+/**
+ * `value` split on each occurrence of `delim`, left to right. Adjacent
+ * delimiters leave an empty part between them. An empty `delim` splits
+ * between every two characters, with an empty part at each end.
+ */
 @Experimental(since: "0.1")
-bridge func split(value: String, delim: String): Array<String>
+func split(value: String, delim: String): Array<String> {
+    fin text = toChars(value)
+    fin sep = toChars(delim)
+    if sep.size == 0 {
+        var each: Array<String> = .() * (text.size + 2)
+        each[0] = ""
+        for i in 0..<text.size {
+            each[i + 1] = _charsText(text, i, i + 1)
+        }
+        each[text.size + 1] = ""
+        return each
+    }
+    var count = 1
+    var i = 0
+    while i < text.size {
+        if _matchesAt(text, sep, i) {
+            count += 1
+            i += sep.size
+        } else {
+            i += 1
+        }
+    }
+    var parts: Array<String> = .() * count
+    var start = 0
+    var n = 0
+    i = 0
+    while i < text.size {
+        if _matchesAt(text, sep, i) {
+            parts[n] = _charsText(text, start, i)
+            n += 1
+            i += sep.size
+            start = i
+        } else {
+            i += 1
+        }
+    }
+    parts[n] = _charsText(text, start, text.size)
+    return parts
+}
 
-/** The characters of `value` as an array. */
+/** Whether [pattern] occurs in [text] starting at code point [at]. */
+func _matchesAt(text: Array<Char>&, pattern: Array<Char>&, at: Int): Bool {
+    if at + pattern.size > text.size { return false }
+    for k in 0..<pattern.size {
+        if text[at + k] != pattern[k] { return false }
+    }
+    return true
+}
+
+/** Copies [source] into [target] from [at]; answers where the copy ends. */
+func _copyChars(source: Array<Char>&, target: Array<Char>!, at: Int): Int {
+    for k in 0..<source.size {
+        target[at + k] = source[k]
+    }
+    return at + source.size
+}
+
+/** Code points [start] to [end] (exclusive) of [chars] as a string. */
+func _charsText(chars: Array<Char>&, start: Int, end: Int): String {
+    var part: Array<Char> = .() * (end - start)
+    for k in start..<end {
+        part[k - start] = chars[k]
+    }
+    return fromChars(part)
+}
+
+/**
+ * The last record of [table] - records [width] Ints long, sorted by their
+ * first Int - whose first Int is at most [cp]; -1 when there is none.
+ */
+func _lastAtMost(table: Array<Int>&, width: Int, cp: Int): Int {
+    var low = 0
+    var high = table.size / width - 1
+    var found = -1
+    while low <= high {
+        fin mid = (low + high) / 2
+        if table[mid * width] <= cp {
+            found = mid
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
+    return found
+}
+
+/** Whether [cp] lies in one of the inclusive `[start, end]` ranges of [table]. */
+func _inRanges(table: Array<Int>&, cp: Int): Bool {
+    fin at = _lastAtMost(table, 2, cp)
+    return at >= 0 && cp <= table[at * 2 + 1]
+}
+
+/** [cp] through the one-to-one mapping [runs] (`[start, end, stride, delta]`); itself when none covers it. */
+func _mapRun(runs: Array<Int>&, cp: Int): Int {
+    fin at = _lastAtMost(runs, 4, cp)
+    if at < 0 { return cp }
+    fin base = at * 4
+    if cp > runs[base + 1] { return cp }
+    if (cp - runs[base]) % runs[base + 2] != 0 { return cp }
+    return cp + runs[base + 3]
+}
+
+/**
+ * [chars] case-mapped: a code point in [keys] becomes its several code points
+ * from [values], any other goes through [runs]. With [finalSigma], a `Σ` that
+ * ends a word becomes `ς` (Unicode §3.13, Final_Sigma).
+ */
+func _caseMapped(chars: Array<Char>&, runs: Array<Int>&, keys: Array<Int>&, starts: Array<Int>&, values: Array<Int>&, finalSigma: Bool): String {
+    var size = 0
+    for i in 0..<chars.size {
+        fin key = _lastAtMost(keys, 1, ord(chars[i]))
+        if key >= 0 && keys[key] == ord(chars[i]) {
+            size += starts[key + 1] - starts[key]
+        } else {
+            size += 1
+        }
+    }
+    var result: Array<Char> = .() * size
+    var at = 0
+    for i in 0..<chars.size {
+        fin cp = ord(chars[i])
+        fin key = _lastAtMost(keys, 1, cp)
+        if key >= 0 && keys[key] == cp {
+            for v in starts[key]..<starts[key + 1] {
+                result[at] = chr(values[v])
+                at += 1
+            }
+        } else if finalSigma && cp == 931 && _endsWord(chars, i) {
+            result[at] = chr(962)
+            at += 1
+        } else {
+            result[at] = chr(_mapRun(runs, cp))
+            at += 1
+        }
+    }
+    return fromChars(result)
+}
+
+/**
+ * Final_Sigma: the character at [at] follows a cased letter (past any
+ * case-ignorable characters) and no cased letter follows it (past any
+ * case-ignorable characters).
+ */
+func _endsWord(chars: Array<Char>&, at: Int): Bool {
+    var before = at - 1
+    while before >= 0 && _inRanges(caseIgnorableRanges, ord(chars[before])) { before -= 1 }
+    if before < 0 || !_inRanges(casedRanges, ord(chars[before])) { return false }
+    var after = at + 1
+    while after < chars.size && _inRanges(caseIgnorableRanges, ord(chars[after])) { after += 1 }
+    return after >= chars.size || !_inRanges(casedRanges, ord(chars[after]))
+}
+
+/** The code points of `value` as an array: decode once, then index freely. */
 @Experimental(since: "0.1")
 bridge func toChars(value: String): Array<Char>
 

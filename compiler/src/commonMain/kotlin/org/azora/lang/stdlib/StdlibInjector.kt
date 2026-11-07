@@ -671,9 +671,7 @@ class StdlibInjector private constructor(
      */
     private fun reachableImportPaths(program: Program): Set<String> {
         val seeds = ArrayDeque<ImportRequest>()
-        for (item in program.writtenImports()) {
-            if (!item.exported) seeds.addAll(importRequests(item))
-        }
+        for (item in program.writtenImports()) seeds.addAll(importRequests(item))
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
         }
@@ -1422,10 +1420,12 @@ class StdlibInjector private constructor(
     private fun importedItems(program: Program): Map<String, TopLevel> {
         // Seed with the program's own imports, plus the re-exports of any
         // `exposed module` library that is auto-injected into every unit - its
-        // `exposed import …` declarations apply to importers transitively.
+        // `exposed import …` declarations apply to importers transitively. The
+        // program's own `exposed import`s are its imports too: an entry names
+        // what it re-exports, as the same module does when it is a library.
         val seeds = ArrayDeque<ImportRequest>()
         for (item in program.items) {
-            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
+            if (item is TopLevel.UseImport) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
@@ -1474,9 +1474,7 @@ class StdlibInjector private constructor(
         val seeds = ArrayDeque<ImportRequest>()
         // A block's import reaches its module for the whole program: what the
         // module implements holds wherever the implementing type goes.
-        for (item in program.writtenImports()) {
-            if (!item.exported) seeds.addAll(importRequests(item))
-        }
+        for (item in program.writtenImports()) seeds.addAll(importRequests(item))
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())
         }
@@ -1511,7 +1509,7 @@ class StdlibInjector private constructor(
         // library-defined grammar without copying or compiler-registering it.
         val seeds = mutableListOf<ImportRequest>()
         for (item in program.items) {
-            if (item is TopLevel.UseImport && !item.exported) seeds.addAll(importRequests(item))
+            if (item is TopLevel.UseImport) seeds.addAll(importRequests(item))
         }
         for (module in index.alwaysOnModules) {
             seeds.addAll(index.exportedImportsByModule[module].orEmpty())

@@ -235,10 +235,11 @@ class LlvmCodegen {
     /** Referenced compiler string/array bridge intrinsics; defined as runtime helpers. */
     /** Bare intrinsic name -> the mangled symbol the program called it by. */
     private val neededIntrinsics = linkedMapOf<String, String>()
+    // `trim`, `split`, `replace`, `toUpper` and `toLower` are written in Azora
+    // (std.core over std.unicodedata), so every target runs the same code.
     private val stringIntrinsics = setOf(
         "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
-        "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
-        "replace", "split", "toChars", "fromChars",
+        "startsWith", "endsWith", "contains", "indexOf", "toChars", "fromChars",
     )
 
     /**
@@ -264,7 +265,8 @@ class LlvmCodegen {
     private var usesUintToStr = false
     private var usesDoubleToStr = false
     private var usesTrunc = false
-    private var usesCharToStr = false
+    /** The UTF-8 runtime ([LlvmUtf8Runtime.CORE]): code-point strings and characters. */
+    private var usesUtf8 = false
     private var usesFree = false
     private var usesCalloc = false
     /** `alloc .() * n` reached codegen: emit the zeroing buffer allocator. */
@@ -326,7 +328,7 @@ class LlvmCodegen {
         usesUintToStr = false
         usesDoubleToStr = false
         usesTrunc = false
-        usesCharToStr = false
+        usesUtf8 = false
         usesFree = false
         usesAllocatorRuntime = false
         usesCalloc = false
@@ -673,7 +675,7 @@ class LlvmCodegen {
             // with it and are what LLVM is given: `i128` holds them.
             is IrExpr.IntLiteral -> initializer.text ?: "${initializer.value}"
             is IrExpr.DoubleLiteral -> floatConst(initializer.value, type, initializer.text)
-            is IrExpr.CharLiteral -> "${initializer.value.code}"
+            is IrExpr.CharLiteral -> "${initializer.value}"
             is IrExpr.BoolLiteral -> if (initializer.value) "1" else "0"
             is IrExpr.StringLiteral -> {
                 val ref = addStringConstant(initializer.value)
@@ -1967,16 +1969,11 @@ class LlvmCodegen {
     }
 
     /**
-     * Native definitions for the referenced compiler string bridge intrinsics.
-     * The simple ones map to libc; a few text transforms and array-returning ones
-     * fail code generation with a target diagnostic rather than producing programs
-     * that only compare or slice strings work while richer text ops mature.
+     * Native definitions for the referenced compiler string bridge intrinsics:
+     * byte-level comparisons map to libc, and everything that counts, indexes
+     * or decodes characters runs on the UTF-8 runtime ([LlvmUtf8Runtime]).
      */
     private fun buildStringIntrinsics(sb: StringBuilder) {
-        val unsupported = neededIntrinsics.keys.intersect(setOf("toUpper", "toLower", "trim", "replace", "split", "toChars"))
-        check(unsupported.isEmpty()) {
-            "LLVM text operation(s) ${unsupported.joinToString()} are not implemented; use the interpreter until native text support is available"
-        }
         fun def(name: String, body: String) {
             val symbol = neededIntrinsics[name] ?: return
             // The bodies are written against the bare name; the program calls the
@@ -1984,67 +1981,13 @@ class LlvmCodegen {
             sb.appendLine(body.trimIndent().replace("@$name(", "@$symbol("))
             sb.appendLine()
         }
-        if ("stringLength" in neededIntrinsics || "startsWith" in neededIntrinsics ||
-            "endsWith" in neededIntrinsics || "substring" in neededIntrinsics
-        ) usesStrlen = true
-        if ("startsWith" in neededIntrinsics || "endsWith" in neededIntrinsics) usesStrncmp = true
+        if ("startsWith" in neededIntrinsics || "endsWith" in neededIntrinsics) { usesStrlen = true; usesStrncmp = true }
         if ("contains" in neededIntrinsics || "indexOf" in neededIntrinsics) usesStrstr = true
-        if ("substring" in neededIntrinsics) { usesMemcpy = true; usesAllocatorRuntime = true }
+        if ("substring" in neededIntrinsics) usesMemcpy = true
+        // Every other string bridge counts or decodes code points.
+        if (neededIntrinsics.keys.any { it !in setOf("startsWith", "endsWith", "contains") }) usesUtf8 = true
 
-        def("stringLength", """
-            define i32 @stringLength(i8* %s) {
-              %l = call i64 @strlen(i8* %s)
-              %r = trunc i64 %l to i32
-              ret i32 %r
-            }""")
-        def("charAt", """
-            define i8 @charAt(i8* %s, i32 %i) {
-              %i64 = sext i32 %i to i64
-              %p = getelementptr i8, i8* %s, i64 %i64
-              %c = load i8, i8* %p
-              ret i8 %c
-            }""")
-        def("ord", """
-            define i32 @ord(i8 %c) {
-              %r = zext i8 %c to i32
-              ret i32 %r
-            }""")
-        def("chr", """
-            define i8 @chr(i32 %i) {
-              %r = trunc i32 %i to i8
-              ret i8 %r
-            }""")
-        def("isDigit", """
-            define i1 @isDigit(i8 %c) {
-              %ge = icmp uge i8 %c, 48
-              %le = icmp ule i8 %c, 57
-              %r = and i1 %ge, %le
-              ret i1 %r
-            }""")
-        def("isAlpha", """
-            define i1 @isAlpha(i8 %c) {
-              %g1 = icmp uge i8 %c, 65
-              %l1 = icmp ule i8 %c, 90
-              %up = and i1 %g1, %l1
-              %g2 = icmp uge i8 %c, 97
-              %l2 = icmp ule i8 %c, 122
-              %lo = and i1 %g2, %l2
-              %r = or i1 %up, %lo
-              ret i1 %r
-            }""")
-        def("substring", """
-            define i8* @substring(i8* %s, i32 %start, i32 %end) {
-              %len = sub i32 %end, %start
-              %len64 = sext i32 %len to i64
-              %size = add i64 %len64, 1
-              %buf = call i8* @__azora_alloc(i64 %size)
-              %s64 = sext i32 %start to i64
-              %src = getelementptr i8, i8* %s, i64 %s64
-              %cp = call i8* @memcpy(i8* %buf, i8* %src, i64 %len64)
-              %tp = getelementptr i8, i8* %buf, i64 %len64
-              store i8 0, i8* %tp
-              ret i8* %buf
-            }""")
+        for ((name, body) in LlvmUtf8Runtime.BRIDGES) def(name, body)
         def("startsWith", """
             define i1 @startsWith(i8* %s, i8* %p) {
               %lp = call i64 @strlen(i8* %p)
@@ -2068,41 +2011,12 @@ class LlvmCodegen {
             no:
               ret i1 0
             }""")
+        // A byte search finds a code point boundary: UTF-8 never matches inside one.
         def("contains", """
             define i1 @contains(i8* %s, i8* %sub) {
               %p = call i8* @strstr(i8* %s, i8* %sub)
               %r = icmp ne i8* %p, null
               ret i1 %r
-            }""")
-        def("indexOf", """
-            define i32 @indexOf(i8* %s, i8* %sub) {
-            entry:
-              %p = call i8* @strstr(i8* %s, i8* %sub)
-              %isnull = icmp eq i8* %p, null
-              br i1 %isnull, label %no, label %found
-            found:
-              %pi = ptrtoint i8* %p to i64
-              %si = ptrtoint i8* %s to i64
-              %diff = sub i64 %pi, %si
-              %r = trunc i64 %diff to i32
-              ret i32 %r
-            no:
-              ret i32 -1
-            }""")
-        // `Array<Char>` stores a length followed by bytes. Copy those bytes to
-        // a NUL-terminated allocation for the native string representation.
-        if ("fromChars" in neededIntrinsics) { usesMalloc = true; usesMemcpy = true }
-        def("fromChars", """
-            define i8* @fromChars(i8* %c) {
-              %lenp = bitcast i8* %c to i64*
-              %len = load i64, i64* %lenp
-              %data = getelementptr i8, i8* %c, i64 8
-              %size = add i64 %len, 1
-              %buf = call i8* @malloc(i64 %size)
-              %cp = call i8* @memcpy(i8* %buf, i8* %data, i64 %len)
-              %end = getelementptr i8, i8* %buf, i64 %len
-              store i8 0, i8* %end
-              ret i8* %buf
             }""")
     }
 
@@ -2223,7 +2137,7 @@ class LlvmCodegen {
     private fun emitExpr(expr: IrExpr): String = when (expr) {
         IrExpr.UnitLiteral -> "0"
         is IrExpr.IntLiteral -> expr.text ?: "${expr.value}"
-        is IrExpr.CharLiteral -> "${expr.value.code}"
+        is IrExpr.CharLiteral -> "${expr.value}"
         is IrExpr.DoubleLiteral -> floatConst(expr.value, expr.type, expr.text)
         is IrExpr.BoolLiteral -> if (expr.value) "1" else "0"
         is IrExpr.StringLiteral -> {
@@ -4002,12 +3916,11 @@ end:
             return emitArrayEmptyCheck(expr.target, notEmpty = expr.name == "isNotEmpty")
         }
         if (expr.name in setOf("length", "size") && targetType == IrType.String) {
-            usesStrlen = true
+            // Code points, not bytes.
+            usesUtf8 = true
             val s = emitExpr(expr.target)
-            val len = nextTmp()
-            emit("  $len = call i64 @strlen(i8* $s)")
             val t = nextTmp()
-            emit("  $t = trunc i64 $len to i32")
+            emit("  $t = call i32 @__azora_str_length(i8* $s)")
             return t
         }
         // Struct field read.
@@ -5221,13 +5134,12 @@ end:
         }
         if (tt is IrType.Map) return emitMapIndexRead(expr, tt)
         if (tt == IrType.String) {
+            // Code point `i`, as `charAt` reads it.
+            usesUtf8 = true
             val s = emitExpr(expr.target)
-            val idxRaw = emitExpr(expr.index)
-            val idx = indexToI64(idxRaw, expr.index.type)
-            val cp = nextTmp()
-            emit("  $cp = getelementptr i8, i8* $s, i64 $idx")
+            val index = coerceNumeric(emitExpr(expr.index), expr.index.type, IrType.Int)
             val tmp = nextTmp()
-            emit("  $tmp = load i8, i8* $cp")
+            emit("  $tmp = call i32 @__azora_char_at(i8* $s, i32 $index)")
             return tmp
         }
         error("LLVM cannot index ${expr.target.type.shown()} yet")
@@ -5449,7 +5361,7 @@ end:
             }
             IrType.isInteger(opType) || opType == IrType.Char -> {
                 val u = isUnsigned(opType)
-                val width = (opType as? IrType.Integer)?.bits ?: if (opType == IrType.Char) 8 else 64
+                val width = (opType as? IrType.Integer)?.bits ?: if (opType == IrType.Char) 32 else 64
                 var divisor = right
                 var overflow: String? = null
                 if (expr.op == IrBinaryOp.DIV || expr.op == IrBinaryOp.MOD) {
@@ -6235,10 +6147,7 @@ end:
                     printfFmt("%s", listOf("i8* $v"))
                 }
             }
-            IrType.Char -> {
-                val v = coerceToI32(emitExpr(arg), arg.type)
-                printfFmt("%c$nl", listOf("i32 $v"))
-            }
+            IrType.Char -> printChar(emitExpr(arg), nl)
             IrType.Int, IrType.Byte, IrType.Short -> {
                 val v = coerceToI32(emitExpr(arg), arg.type)
                 printfFmt("%d$nl", listOf("i32 $v"))
@@ -6335,6 +6244,16 @@ end:
         return "void"
     }
 
+    /** Prints the code point [value] as its UTF-8 text, then [nl]. */
+    private fun printChar(value: String, nl: String) {
+        usesUtf8 = true
+        val text = nextTmp()
+        emit("  $text = call i8* @__azora_char_to_str(i32 $value)")
+        printfFmt("%s$nl", listOf("i8* $text"))
+        usesAllocatorRuntime = true
+        emit("  call void @__azora_free(i8* $text)")
+    }
+
     /** Emits a `printf` call with the given format and already-typed arguments. */
 
 
@@ -6390,20 +6309,11 @@ end:
                 val value = coerceNumeric(pointer, inner, IrType.Double)
                 printDouble(value, nl)
             }
-            IrType.isInteger(inner) || inner == IrType.Char -> {
+            inner == IrType.Char -> printChar(pointer, nl)
+            IrType.isInteger(inner) -> {
                 val value = widenToI64(pointer, inner)
-                val format = when {
-                    inner == IrType.Char -> "%c$nl"
-                    isUnsigned(inner) -> "%llu$nl"
-                    else -> "%lld$nl"
-                }
-                if (inner == IrType.Char) {
-                    val narrow = nextTmp()
-                    emit("  $narrow = trunc i64 $value to i32")
-                    printfFmt(format, listOf("i32 $narrow"))
-                } else {
-                    printfFmt(format, listOf("i64 $value"))
-                }
+                val format = if (isUnsigned(inner)) "%llu$nl" else "%lld$nl"
+                printfFmt(format, listOf("i64 $value"))
             }
             else -> {
                 val placeholder = gepString(addStringConstant("<value>"))
@@ -6491,10 +6401,9 @@ end:
             IrType.String -> raw
             IrType.Bool -> boolToStr(raw)
             IrType.Char -> {
-                usesCharToStr = true; usesSnprintf = true; usesMalloc = true
-                val v = coerceToI32(raw, type)
+                usesUtf8 = true
                 val tmp = nextTmp()
-                emit("  $tmp = call i8* @__azora_char_to_str(i32 $v)")
+                emit("  $tmp = call i8* @__azora_char_to_str(i32 $raw)")
                 tmp
             }
             IrType.Double, IrType.Float, IrType.Quad -> {
@@ -6578,11 +6487,13 @@ end:
         val sb = StringBuilder()
 
         buildStringIntrinsics(sb)
+        // The UTF-8 runtime reports an index or slice outside its string.
+        if (usesUtf8) { usesIndexFail = true; usesPrintf = true; usesAbort = true }
 
         // Values created by language helpers follow the active allocation scope.
         // Runtime bookkeeping is handled separately with __azora_alloc_raw.
         if (usesStrConcat || usesStrCopy || usesStrRepeat || usesArrayGrow || usesMapGrow ||
-            usesIntToStr || usesUintToStr || usesDoubleToStr || usesCharToStr
+            usesIntToStr || usesUintToStr || usesDoubleToStr || usesUtf8
         ) {
             usesAllocatorRuntime = true
         }
@@ -7100,17 +7011,8 @@ allocate:
             sb.appendLine()
         }
 
-        if (usesCharToStr) {
-            usesSnprintf = true
-            val fmt = addStringConstant("%c")
-            sb.appendLine("; runtime: char to string")
-            sb.appendLine("define i8* @__azora_char_to_str(i32 %v) {")
-            sb.appendLine("entry:")
-            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 2)")
-            sb.appendLine("  %fmt = getelementptr [${fmt.byteLen} x i8], [${fmt.byteLen} x i8]* ${fmt.name}, i64 0, i64 0")
-            sb.appendLine("  %r = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %buf, i64 2, i8* %fmt, i32 %v)")
-            sb.appendLine("  ret i8* %buf")
-            sb.appendLine("}")
+        if (usesUtf8) {
+            sb.appendLine(LlvmUtf8Runtime.CORE)
             sb.appendLine()
         }
 
@@ -7313,7 +7215,8 @@ allocate:
         // No value has type `Nothing`, so nothing is ever loaded or stored at
         // it; `void` is the only lowering a value-less type can have.
         IrType.Nothing -> "void"
-        IrType.Char -> "i8"
+        // A `Char` is a Unicode code point (user decision, 2026-11-07).
+        IrType.Char -> "i32"
         IrType.Byte -> "i8"
         IrType.UByte -> "i8"
         IrType.Short -> "i16"

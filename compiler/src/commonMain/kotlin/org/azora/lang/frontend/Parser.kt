@@ -11986,7 +11986,7 @@ class Parser(
                 }
                 Expr.StringTemplate(templateParts, tok.line, tok.column, tok.lexeme.length)
             }
-            TokenType.CHAR_LITERAL -> { advance(); Expr.CharLiteral(tok.literal as Char, tok.line, tok.column, tok.lexeme.length) }
+            TokenType.CHAR_LITERAL -> { advance(); Expr.CharLiteral(tok.literal as Int, tok.line, tok.column, tok.lexeme.length) }
             TokenType.TRUE -> { advance(); Expr.BoolLiteral(true, tok.line, tok.column, tok.lexeme.length) }
             TokenType.FALSE -> { advance(); Expr.BoolLiteral(false, tok.line, tok.column, tok.lexeme.length) }
             TokenType.NULL -> { advance(); Expr.NullLiteral }

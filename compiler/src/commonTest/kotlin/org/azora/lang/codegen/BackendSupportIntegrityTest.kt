@@ -9,7 +9,12 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class BackendSupportIntegrityTest {
-    @Test fun unsupportedTextTransformsHaveDiagnosticsInsteadOfWrongExecutables() {
+    /**
+     * The text transforms are Azora code in std since A4 (2026-11-07), so every
+     * target builds them; they had been refused natively. What each target
+     * prints is checked in `TextCodePointExecTest`.
+     */
+    @Test fun textTransformsBuildForEveryTarget() {
         val source = """
             import std.io
             import std.string
@@ -21,11 +26,9 @@ class BackendSupportIntegrityTest {
         """.trimIndent()
         val r = assertIs<CompilationResult.Success>(Compiler().compile(source))
         assertEquals("AZORA\nx\naXc", IrInterpreter().interpret(r.ir).trim())
-        for (target in listOf("llvm", "wasm")) {
-            assertTrue(r.backendErrors[target]?.contains("not implemented") == true, r.backendErrors.toString())
-        }
-        assertEquals("", r.llvm)
-        assertEquals("", r.wasm)
+        assertTrue(r.backendErrors.isEmpty(), r.backendErrors.toString())
+        assertTrue(r.llvm.contains("define"), "LLVM output")
+        assertTrue(r.wasm.contains("(module"), "WebAssembly output")
     }
 
     @Test fun supportedScalarProgramHasExecutableOutputs() {

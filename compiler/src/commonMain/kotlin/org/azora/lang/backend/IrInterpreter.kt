@@ -16,6 +16,7 @@
 
 package org.azora.lang.backend
 
+import org.azora.lang.frontend.CodePoints
 import org.azora.lang.azRunBlocking
 import org.azora.lang.azSync
 import org.azora.lang.putIfAbsentCompat
@@ -1087,7 +1088,7 @@ class IrInterpreter {
         is String -> value.encodeToByteArray().fold(FNV_OFFSET) { h, b -> (h xor (b.toLong() and 0xFF)) * FNV_PRIME }
         is Double -> value.toRawBits()
         is Float -> value.toRawBits().toLong() and 0xFFFFFFFFL
-        is Char -> value.code.toLong()
+        is AzoraChar -> value.code.toLong()
         else -> value.hashCode().toLong()
     }
 
@@ -1104,7 +1105,7 @@ class IrInterpreter {
             is IrExpr.StringLiteral -> expr.value
             is IrExpr.EnumLiteral -> expr.variant
             is IrExpr.BoolLiteral -> expr.value
-            is IrExpr.CharLiteral -> expr.value
+            is IrExpr.CharLiteral -> AzoraChar(expr.value)
             is IrExpr.EnumToString -> formatValue(evalExpr(expr.value))
             is IrExpr.Var -> lookupVar(expr.name)
             is IrExpr.Unary -> {
@@ -1172,7 +1173,8 @@ class IrInterpreter {
                     }
                     is MutableList<*> -> target[slot(key, target.size)]
                     is Pointer -> target.buffer[target.index + (key as Long).toInt()]
-                    is String -> target[slot(key, target.length)]
+                    // Code point `i`, as LLVM and WebAssembly read it.
+                    is String -> CodePoints.of(target).let { codes -> AzoraChar(codes[slot(key, codes.size)]) }
                     else -> error("Cannot index into $target")
                 }
             }
@@ -1198,7 +1200,7 @@ class IrInterpreter {
                         else -> error("no member '${expr.name}' on array")
                     }
                     is String -> when (expr.name) {
-                        "length", "size" -> receiver.length.toLong()
+                        "length", "size" -> CodePoints.count(receiver).toLong()
                         else -> error("no member '${expr.name}' on string")
                     }
                     is Map<*, *> -> {
@@ -1294,7 +1296,7 @@ class IrInterpreter {
                 val v = evalExpr(expr.value)
                 val n: Number? = when (v) {
                     is Number -> v
-                    is Char -> v.code
+                    is AzoraChar -> v.code
                     is Boolean -> if (v) 1 else 0
                     else -> null // pointer-ish FFI cast - no interpreter meaning, pass through
                 }
@@ -1305,7 +1307,7 @@ class IrInterpreter {
                     IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> n.toLong()
                     IrType.Float -> n.toFloat()
                     IrType.Double, IrType.Quad -> n.toDouble()
-                    IrType.Char -> n.toInt().toChar()
+                    IrType.Char -> AzoraChar(n.toInt())
                     else -> v
                 }
             }
@@ -1598,10 +1600,11 @@ class IrInterpreter {
         return when {
             left is Long && right is Long -> left.compareTo(right)
             left is Double && right is Double -> left.compareTo(right)
-            left is Char && right is Char -> left.compareTo(right)
+            left is AzoraChar && right is AzoraChar -> left.code.compareTo(right.code)
             // Lexicographic by code point, which is what `impl Order for String`
-            // promises - an order, not a collation.
-            left is String && right is String -> left.compareTo(right)
+            // promises - an order, not a collation. UTF-16 order differs above
+            // U+FFFF, where a surrogate sorts below U+E000..U+FFFF.
+            left is String && right is String -> compareByCodePoint(left, right)
             // `false < true`, the order `impl Order for Bool` states.
             left is Boolean && right is Boolean -> left.compareTo(right)
             left is Number && right is Number -> toNum(left).compareTo(toNum(right))
@@ -1757,7 +1760,7 @@ class IrInterpreter {
                 "Double", "Float", "Quad" -> value is Double
                 "String" -> value is String
                 "Bool" -> value is Boolean
-                "Char" -> value is Char
+                "Char" -> value is AzoraChar
                 else -> {
                     // Check if it's a struct (Map) or slot (Map with __tag) or enum
                     value is Map<*, *>
@@ -1774,7 +1777,7 @@ class IrInterpreter {
                 "Double", "Float", "Quad" -> value is Double
                 "String" -> value is String
                 "Bool" -> value is Boolean
-                "Char" -> value is Char
+                "Char" -> value is AzoraChar
                 else -> value is Map<*, *> && (value["__type"] == typeName || value["__tag"] == typeName || value["__type"] == null)
             }
             return if (matches) value else null
@@ -1846,7 +1849,7 @@ class IrInterpreter {
                     else -> error("no member '$fieldName' on array")
                 }
                 is String -> when (fieldName) {
-                    "length", "size" -> target.length.toLong()
+                    "length", "size" -> CodePoints.count(target).toLong()
                     "isEmpty" -> target.isEmpty()
                     "isNotEmpty" -> target.isNotEmpty()
                     else -> error("no member '$fieldName' on string")
@@ -1949,30 +1952,43 @@ class IrInterpreter {
             // is the only one that can contain a newline.
             return "${result.exitCode}\n${result.started}\n${result.output}"
         }
-        if (expr.name.isIntrinsic("stringLength")) return (args[0] as String).length.toLong()
-        if (expr.name.isIntrinsic("charAt")) return (args[0] as String)[(args[1] as Number).toInt()]
-        if (expr.name.isIntrinsic("substring")) {
-            return (args[0] as String).substring((args[1] as Number).toInt(), (args[2] as Number).toInt())
+        // A `String` is counted and indexed in code points (user decision,
+        // 2026-11-07), as LLVM and WebAssembly count its UTF-8.
+        if (expr.name.isIntrinsic("stringLength")) return CodePoints.count(args[0] as String).toLong()
+        if (expr.name.isIntrinsic("charAt")) {
+            val text = args[0] as String
+            val index = (args[1] as Number).toInt()
+            val codes = CodePoints.of(text)
+            return AzoraChar(codes[slot(index.toLong(), codes.size)])
         }
-        if (expr.name.isIntrinsic("ord")) return (args[0] as Char).code.toLong()
-        if (expr.name.isIntrinsic("chr")) return (args[0] as Number).toInt().toChar()
-        if (expr.name.isIntrinsic("isDigit")) return (args[0] as Char) in '0'..'9'
+        if (expr.name.isIntrinsic("substring")) {
+            val text = args[0] as String
+            val start = (args[1] as Number).toInt()
+            val end = (args[2] as Number).toInt()
+            val count = CodePoints.count(text)
+            if (start < 0 || end > count || start > end) {
+                throw AzoraPanicException("substring $start..<$end out of bounds for size $count")
+            }
+            return text.substring(CodePoints.offset(text, start), CodePoints.offset(text, end))
+        }
+        if (expr.name.isIntrinsic("ord")) return (args[0] as AzoraChar).code.toLong()
+        if (expr.name.isIntrinsic("chr")) return AzoraChar((args[0] as Number).toInt())
+        if (expr.name.isIntrinsic("isDigit")) return (args[0] as AzoraChar).code in '0'.code..'9'.code
         // Low-level string intrinsics used by std.string's free-function wrappers.
         if (expr.name.isIntrinsic("startsWith")) return (args[0] as String).startsWith(args[1] as String)
         if (expr.name.isIntrinsic("endsWith")) return (args[0] as String).endsWith(args[1] as String)
         if (expr.name.isIntrinsic("contains")) return (args[0] as String).contains(args[1] as String)
-        if (expr.name.isIntrinsic("indexOf")) return (args[0] as String).indexOf(args[1] as String).toLong()
-        if (expr.name.isIntrinsic("trim")) return (args[0] as String).trim()
-        if (expr.name.isIntrinsic("toUpper")) return (args[0] as String).uppercase()
-        if (expr.name.isIntrinsic("toLower")) return (args[0] as String).lowercase()
-        if (expr.name.isIntrinsic("replace")) return (args[0] as String).replace(args[1] as String, args[2] as String)
-        if (expr.name.isIntrinsic("split")) return (args[0] as String).split(args[1] as String).toMutableList()
-        if (expr.name.isIntrinsic("toChars")) return (args[0] as String).toMutableList()
+        if (expr.name.isIntrinsic("indexOf")) {
+            val text = args[0] as String
+            val at = text.indexOf(args[1] as String)
+            return if (at < 0) -1L else CodePoints.index(text, at).toLong()
+        }
+        if (expr.name.isIntrinsic("toChars")) return CodePoints.of(args[0] as String).mapTo(mutableListOf<Any?>()) { AzoraChar(it) }
         if (expr.name.isIntrinsic("fromChars")) {
             @Suppress("UNCHECKED_CAST")
-            return (args[0] as List<Char>).joinToString("")
+            return CodePoints.text((args[0] as List<AzoraChar>).map { it.code })
         }
-        if (expr.name.isIntrinsic("isAlpha")) return (args[0] as Char).isLetter()
+        if (expr.name.isIntrinsic("isAlpha")) return (args[0] as AzoraChar).code.let { it in 'A'.code..'Z'.code || it in 'a'.code..'z'.code }
         // `Array::fill<T>(count)` - allocate `count` slots holding T's zero value,
         // the one a field without a default starts at.
         if (expr.name.isIntrinsic("Array_fill")) {
@@ -1982,7 +1998,7 @@ class IrInterpreter {
                 is IrType.Double, is IrType.Float -> 0.0
                 is IrType.String -> ""
                 is IrType.Bool -> false
-                is IrType.Char -> '\u0000'
+                is IrType.Char -> AzoraChar(0)
                 else -> null
             }
             return MutableList<Any?>(count) { zero }
@@ -2121,7 +2137,7 @@ class IrInterpreter {
         is Long -> value.toString()
         is Double -> value.toString()
         is Boolean -> value.toString()
-        is Char -> value.toString()
+        is AzoraChar -> value.toString()
         is Map<*, *> -> formatMapValue(value)
         else -> value.toString()
     }
@@ -2141,7 +2157,7 @@ class IrInterpreter {
     private fun formatStructuredValue(value: Any?): String = when (value) {
         null -> "null"
         is String -> quoteValue(value)
-        is Char -> quoteValue(value.toString())
+        is AzoraChar -> quoteValue(value.toString())
         is Map<*, *> -> formatMapValue(value)
         else -> value.toString()
     }
@@ -2185,7 +2201,7 @@ class IrInterpreter {
     private fun deepCopy(value: Any?): Any? = when (value) {
         null -> null
         // Immutable scalars are safe to share.
-        is Long, is Double, is Boolean, is Char, is String -> value
+        is Long, is Double, is Boolean, is AzoraChar, is String -> value
         is Closure -> {
             azSync(value.lifetime) { value.lifetime.references++ }
             Closure(value.params, value.body, value.capturedScopes, value.returnType, value.lifetime)
@@ -2287,3 +2303,21 @@ class IrInterpreter {
 
 /** Outcome of running a single `test` block via [IrInterpreter.runTests]. */
 data class TestResult(val name: String, val passed: Boolean, val message: String?)
+
+/**
+ * A `Char` at run time: one Unicode code point. Kotlin's `Char` is a UTF-16
+ * unit and cannot hold a character above U+FFFF.
+ */
+data class AzoraChar(val code: Int) {
+    override fun toString(): String = CodePoints.toText(code)
+}
+
+/** [left] against [right] code point by code point, as UTF-8 bytes compare. */
+private fun compareByCodePoint(left: String, right: String): Int {
+    val a = CodePoints.of(left)
+    val b = CodePoints.of(right)
+    for (i in 0 until minOf(a.size, b.size)) {
+        if (a[i] != b[i]) return a[i].compareTo(b[i])
+    }
+    return a.size.compareTo(b.size)
+}

@@ -223,7 +223,7 @@ Dependencies: Recovered library plus type, memory, concurrency, and backend gate
 - [ ] **065. Complete math, time, randomness, and algorithms.** Acceptance: Numerical/domain edge cases, monotonic clocks, reproducibility, and algorithm contracts are tested.
 - [ ] **066. Complete I/O, filesystem, OS, and networking boundaries.** Acceptance: Partial operations, failures, cancellation, resource cleanup, and target support are verified. Progress 2026-10-01: the interpreter reaches the filesystem and process bridges by their declared names; `FilesystemStdlibTest` and `OsStdlibTest` pass.
 - [ ] **067. Complete serialization, reflection codecs, and AZON.** Acceptance: Versioning, round trips, invalid input, duplicate policy, numeric precision, and limits are tested. Progress 2026-10-01: derived serializers name their helpers through `std.serializer` and compile again.
-- [ ] **068. Consolidate package resolution and build configuration.** Acceptance: Manifests, dependency cycles, versions, lockfiles, source discovery, and target link requirements are validated.
+- [ ] **068. Consolidate package resolution and build configuration.** Acceptance: Manifests, dependency cycles, versions, lockfiles, source discovery, and target link requirements are validated. 2026-11-07 (roadmap A5, PACKAGES_DIP.MD): manifests, cycles, duplicate names, lockfiles, source discovery by module prefix and the native link set are validated by `azora build` (`ManifestTest`, `PackageResolverTest`), and AZLS reads manifests with the same parser. Open: versions are recorded, not compared (ranges wait for a registry).
 - [ ] **069. Complete CLI, project templates, test runner, and formatting.** Acceptance: Create→check→build→run→test works from a clean project; formatting preserves parsed meaning.
 - [ ] **070. Gate distributable compiler, runtime, stdlib, and AZLS bundles.** Acceptance: Clean installs resolve matching versions and run the same conformance projects as source checkouts.
 
@@ -232,7 +232,7 @@ Dependencies: Recovered library plus type, memory, concurrency, and backend gate
 Dependencies: Language safety and basic build/package gates; pure simulation first.
 
 - [ ] **071. Audit actual ECS packages against Engine proposals.** Acceptance: Document entity, storage, query, resource, and lifetime invariants with contradictions resolved.
-- [ ] **072. Migrate Engine source to validated compiler APIs and syntax.** Acceptance: Real package graphs type-check without weakening borrow or capability checks.
+- [ ] **072. Migrate Engine source to validated compiler APIs and syntax.** Acceptance: Real package graphs type-check without weakening borrow or capability checks. Measured 2026-11-07: `azora build` at the Engine root checks every source of every member, and 8 of 31 members check; the other sources hold code no program reaches, which the compiler never checked as a library (stale std calls such as `Array::fill`, `Float`/`Double` mixing, by-value parameters without `take`, `azora-objc` importing `engine.io` without depending on `azora-io`, `std.convert`).
 - [ ] **073. Repair entity allocation, generations, and reuse.** Acceptance: Stale handles never access a new entity; overflow policy and invalid handles are tested.
 - [ ] **074. Repair component storage and destruction.** Acceptance: Insert/replace/remove/despawn preserve ownership and release values exactly once.
 - [ ] **075. Repair world hierarchy and entity relationships.** Acceptance: Cycles, parent destruction/reuse, reparenting, and child counts preserve valid relationships.

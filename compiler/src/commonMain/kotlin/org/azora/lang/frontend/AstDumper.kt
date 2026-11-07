@@ -470,7 +470,7 @@ private fun dumpExpr(sb: StringBuilder, expr: Expr, indent: String) {
         is Expr.DoubleLiteral -> sb.appendLine("${indent}DoubleLiteral(${expr.value})")
         is Expr.StringLiteral -> sb.appendLine("${indent}StringLiteral(\"${expr.value}\")")
         is Expr.BoolLiteral -> sb.appendLine("${indent}BoolLiteral(${expr.value})")
-        is Expr.CharLiteral -> sb.appendLine("${indent}CharLiteral('${expr.value}')")
+        is Expr.CharLiteral -> sb.appendLine("${indent}CharLiteral('${CodePoints.toText(expr.value)}')")
         is Expr.Identifier -> sb.appendLine("${indent}Identifier(${expr.name})")
         is Expr.Binary -> {
             sb.appendLine("${indent}Binary(op=${expr.op})")

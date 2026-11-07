@@ -612,9 +612,9 @@ sealed class IrExpr {
     /**
      * Character literal.
      *
-     * @property value the character value
+     * @property value the Unicode code point it holds (a `Char` is a code point)
      */
-    data class CharLiteral(val value: Char) : IrExpr() {
+    data class CharLiteral(val value: Int) : IrExpr() {
         override val type = IrType.Char
     }
 
@@ -861,7 +861,7 @@ sealed class IrExpr {
         is StringLiteral -> "\"$value\""
         is EnumLiteral -> "$enumName.$variant"
         is BoolLiteral -> "$value"
-        is CharLiteral -> "'$value'"
+        is CharLiteral -> "'${org.azora.lang.frontend.CodePoints.toText(value)}'"
         is Var -> name
         is Unary -> {
             val opStr = when (op) { IrUnaryOp.NEG -> "-"; IrUnaryOp.NOT -> "!"; IrUnaryOp.BIT_NOT -> "~" }
@@ -1772,7 +1772,7 @@ private fun dumpIrExprTree(sb: StringBuilder, expr: IrExpr, indent: String) {
         is IrExpr.StringLiteral -> sb.appendLine("${indent}IrStringLiteral(\"${expr.value}\") : String")
         is IrExpr.EnumLiteral -> sb.appendLine("${indent}IrEnumLiteral(${expr.enumName}.${expr.variant}) : ${expr.enumName}")
         is IrExpr.BoolLiteral -> sb.appendLine("${indent}IrBoolLiteral(${expr.value}) : Bool")
-        is IrExpr.CharLiteral -> sb.appendLine("${indent}IrCharLiteral('${expr.value}') : Char")
+        is IrExpr.CharLiteral -> sb.appendLine("${indent}IrCharLiteral('${org.azora.lang.frontend.CodePoints.toText(expr.value)}') : Char")
         is IrExpr.Var -> sb.appendLine("${indent}IrVar(${expr.name}) : ${expr.type}")
         is IrExpr.NumCast -> {
             sb.appendLine("${indent}IrNumCast : ${expr.type}")

@@ -27,10 +27,23 @@ class LexerEscapeTest {
         assertEquals("\b\u000C\n\r\t\u0000", token.literal)
     }
 
+    /** A `Char` literal is a code point (user decision, 2026-11-07). */
     @Test fun characterControlEscapesAreLossless() {
         val sources = listOf("'\\b'", "'\\f'", "'\\n'", "'\\r'", "'\\t'", "'\\0'")
-        val expected = listOf('\b', '\u000C', '\n', '\r', '\t', '\u0000')
+        val expected = listOf('\b', '\u000C', '\n', '\r', '\t', '\u0000').map { it.code }
         assertEquals(expected, sources.map { Lexer(it).tokenize().first().literal })
+    }
+
+    /** A character above U+FFFF is one code point, written as itself. */
+    @Test fun aCharacterBeyondTheBasicPlaneIsOneCodePoint() {
+        assertEquals(0x1F600, Lexer("'😀'").tokenize().first().literal)
+        assertEquals(0xE9, Lexer("'\\u00E9'").tokenize().first().literal)
+    }
+
+    /** A surrogate is half of a UTF-16 pair, not a code point a `Char` can hold. */
+    @Test fun aSurrogateIsNotACharacter() {
+        val error = assertFailsWith<IllegalStateException> { Lexer("'\\uD800'").tokenize() }
+        assertTrue("not a Unicode scalar value" in error.message.orEmpty(), error.message)
     }
 
     @Test fun escapedQuoteSlashAndBackslashAreAccepted() {

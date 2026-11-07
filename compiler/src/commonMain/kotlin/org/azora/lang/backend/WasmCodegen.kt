@@ -117,6 +117,9 @@ class WasmCodegen {
     private var usesRepeat = false
     private var usesIntToStr = false
     private var usesLongToStr = false
+
+    /** The UTF-8 runtime ([WasmUtf8Runtime.CORE]): code-point strings and characters. */
+    private var usesUtf8 = false
     private var usesDoubleToStr = false
     private var usesTrig = false
     private var usesExpLog = false
@@ -174,10 +177,11 @@ class WasmCodegen {
     private fun callDenotesBuiltin(name: String, local: String): Boolean =
         name !in programFunctions && symbolDenotes(name, local)
 
+    // `trim`, `split`, `replace`, `toUpper` and `toLower` are written in Azora
+    // (std.core over std.unicodedata), so every target runs the same code.
     private val stringIntrinsics = setOf(
         "stringLength", "charAt", "ord", "chr", "isDigit", "isAlpha", "substring",
-        "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim",
-        "replace", "split", "toChars", "fromChars",
+        "startsWith", "endsWith", "contains", "indexOf", "toChars", "fromChars",
     )
 
     companion object {
@@ -274,7 +278,7 @@ class WasmCodegen {
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
         structs.clear(); structDefinitions.clear(); ownershipDrops.clear(); isolatedCopies.clear(); layouts.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
-        usesAlloc = false; usesConcat = false; usesStrEq = false; usesStrHash = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
+        usesAlloc = false; usesConcat = false; usesStrEq = false; usesStrHash = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesUtf8 = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
         reactiveStorage.clear(); reactiveAliases.clear()
         closureTypes.clear(); closureFunctions.clear()
@@ -450,6 +454,7 @@ class WasmCodegen {
         if (usesInvTrig) sb.append(RT_INVTRIG)
         if (usesVhaTrig) sb.append(RT_VHA_TRIG)
         if (usesIsCheck) sb.append(RT_IS_CHECK)
+        if (usesUtf8) sb.append(WasmUtf8Runtime.CORE)
         sb.append(wasmStringIntrinsics())
         sb.append(globalInitText)
         sb.append(funcText)
@@ -1110,7 +1115,7 @@ class WasmCodegen {
             ?: "(${wasmType(expr.type)}.const ${expr.value})"
         is IrExpr.DoubleLiteral -> "(${wasmType(expr.type)}.const ${expr.value})"
         is IrExpr.BoolLiteral -> "(i32.const ${if (expr.value) 1 else 0})"
-        is IrExpr.CharLiteral -> "(i32.const ${expr.value.code})"
+        is IrExpr.CharLiteral -> "(i32.const ${expr.value})"
         is IrExpr.StringLiteral -> "(i32.const ${internString(expr.value)})"
         is IrExpr.EnumLiteral -> "(i32.const ${internString(expr.variant)})"
         is IrExpr.EnumToString -> emitExpr(expr.value)
@@ -1155,7 +1160,11 @@ class WasmCodegen {
         is IrExpr.Call -> emitCall(expr)
         is IrExpr.Await -> emitExpr(expr.value)
         is IrExpr.Spread -> error("WebAssembly cannot expand a spread into fixed call parameters yet")
-        is IrExpr.Index -> {
+        is IrExpr.Index -> if (expr.target.type == IrType.String) {
+            // Code point `i`, as `charAt` reads it.
+            useUtf8()
+            "(call \$__char_at ${emitExpr(expr.target)} ${emitAs(expr.index, IrType.Int)})"
+        } else {
             val element = elementType(expr.target)
             coerceWasm("(${wasmLoad(element)} ${elemAddr(expr.target, expr.index)})", element, expr.type)
         }
@@ -1165,6 +1174,10 @@ class WasmCodegen {
                 coerceWasm("(${wasmLoad(field.type)} ${fieldAddr(expr.target, expr.name)})", field.type, expr.type)
             }
             specMember(expr.target.type, expr.name) != null -> emitDispatch(expr.target, expr.name, emptyList(), expr.type)
+            (expr.name == "length" || expr.name == "size") && expr.target.type == IrType.String -> {
+                useUtf8()
+                "(call \$__str_length ${emitExpr(expr.target)})"
+            }
             expr.name == "length" || expr.name == "size" -> "(i32.load ${emitExpr(expr.target)})"
             expr.name == "data" -> "(i32.add ${emitExpr(expr.target)} (i32.const 4))"
             expr.name == "hash" && expr.target.type !is IrType.Named -> emitBuiltinHash(expr.target)
@@ -1529,7 +1542,10 @@ class WasmCodegen {
                 "  (local.get $t))"
         }
         val intrinsic = stringIntrinsics.firstOrNull { callDenotesBuiltin(expr.name, it) }
-        if (intrinsic != null) neededIntrinsics.getOrPut(intrinsic) { linkedSetOf() }.add(expr.name)
+        if (intrinsic != null) {
+            neededIntrinsics.getOrPut(intrinsic) { linkedSetOf() }.add(expr.name)
+            useUtf8()
+        }
         if (expr.name in externs && intrinsic == null) neededExterns.add(expr.name)
         // Arguments take the callee's declared parameter types and the result
         // leaves its physical return type: a generic callee's are erased.
@@ -1584,8 +1600,9 @@ class WasmCodegen {
             val v = if (wasmType(type) == "f32") "(f64.promote_f32 $value)" else value
             return "(call \$${operation}_str (call \$__double_to_str $v))"
         }
-        // The host prints numbers signed; an unsigned one is rendered here.
-        if (isUnsignedNumber(type)) return "(call \$${operation}_str ${stringifyValue(value, type)})"
+        // The host prints numbers signed; an unsigned one is rendered here, and
+        // a `Char` is the text of its code point.
+        if (isUnsignedNumber(type) || type == IrType.Char) return "(call \$${operation}_str ${stringifyValue(value, type)})"
         val fn = when {
             type == IrType.String -> "${operation}_str"
             type == IrType.Bool -> "${operation}_bool"
@@ -2156,6 +2173,7 @@ class WasmCodegen {
     private fun stringifyValue(value: String, type: IrType): String = when {
         type == IrType.String -> value
         type == IrType.Bool -> "(if (result i32) $value (then (i32.const ${internString("true")})) (else (i32.const ${internString("false")})))"
+        type == IrType.Char -> { useUtf8(); "(call \$__char_to_str $value)" }
         // An unsigned value is its magnitude; a narrow one is first cut to its width.
         isUnsignedNumber(type) -> {
             usesAlloc = true; usesLongToStr = true
@@ -2838,25 +2856,23 @@ class WasmCodegen {
      * string is `[ i32 len, bytes… ]`; chars are i32. Simple ops are exact; the
      * unsupported text transforms fail code generation with a target diagnostic.
      */
+    /** The code-point string runtime, which allocates. */
+    private fun useUtf8() {
+        usesUtf8 = true
+        usesAlloc = true
+    }
+
+    /**
+     * Wasm definitions for the referenced string bridges, over the UTF-8
+     * runtime. The text transforms not written yet fail code generation with
+     * a target diagnostic.
+     */
     private fun wasmStringIntrinsics(): String {
-        val unsupported = neededIntrinsics.keys.intersect(setOf("substring", "startsWith", "endsWith", "contains", "indexOf", "toUpper", "toLower", "trim", "replace", "split", "toChars", "fromChars"))
-        check(unsupported.isEmpty()) {
-            "WebAssembly text operation(s) ${unsupported.joinToString()} are not implemented; use the interpreter until WASM text support is available"
-        }
         val sb = StringBuilder()
-        fun def(name: String, sig: String, body: String) {
-            for (symbol in neededIntrinsics[name].orEmpty()) sb.append("  (func \$$symbol $sig\n    $body)\n")
+        for ((name, definition) in WasmUtf8Runtime.BRIDGES) {
+            val (signature, body) = definition
+            for (symbol in neededIntrinsics[name].orEmpty()) sb.append("  (func \$$symbol $signature\n    $body)\n")
         }
-        def("stringLength", "(param \$s i32) (result i32)", "(i32.load (local.get \$s))")
-        def("charAt", "(param \$s i32) (param \$i i32) (result i32)",
-            "(i32.load8_u (i32.add (i32.add (local.get \$s) (i32.const 4)) (local.get \$i)))")
-        def("ord", "(param \$c i32) (result i32)", "(local.get \$c)")
-        def("chr", "(param \$i i32) (result i32)", "(local.get \$i)")
-        def("isDigit", "(param \$c i32) (result i32)",
-            "(i32.and (i32.ge_s (local.get \$c) (i32.const 48)) (i32.le_s (local.get \$c) (i32.const 57)))")
-        def("isAlpha", "(param \$c i32) (result i32)",
-            "(i32.or (i32.and (i32.ge_s (local.get \$c) (i32.const 65)) (i32.le_s (local.get \$c) (i32.const 90)))" +
-                " (i32.and (i32.ge_s (local.get \$c) (i32.const 97)) (i32.le_s (local.get \$c) (i32.const 122))))")
         return sb.toString()
     }
 

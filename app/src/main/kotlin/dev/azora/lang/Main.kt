@@ -63,10 +63,15 @@ fun main(args: Array<String>) {
     }
 
     when (args[0]) {
-        "run"     -> handleRun(args.drop(1))
+        "new"     -> ProjectCommands.new(args.drop(1))
+        "build"   -> ProjectCommands.build(args.drop(1))
+        "add"     -> ProjectCommands.add(args.drop(1))
+        "remove"  -> ProjectCommands.remove(args.drop(1))
+        // With no file named, `run` and `test` act on the project here.
+        "run"     -> if (projectCommand(args.drop(1))) ProjectCommands.run(args.drop(1)) else handleRun(args.drop(1))
         "check"   -> handleCheck(args.drop(1))
         "compile" -> handleCompile(args.drop(1))
-        "test"    -> handleTest(args.drop(1))
+        "test"    -> if (projectCommand(args.drop(1))) ProjectCommands.test(args.drop(1)) else handleTest(args.drop(1))
         "repl"    -> repl()
         "version" -> println("Azora ${BuildConfig.VERSION}")
         "help", "--help", "-h" -> printUsage()
@@ -80,6 +85,17 @@ fun main(args: Array<String>) {
             }
         }
     }
+}
+
+/**
+ * Whether `run` / `test` with [args] means the project rather than a file: no
+ * `.az` file or directory is named (or `--project` is), and there is a manifest.
+ */
+private fun projectCommand(args: List<String>): Boolean {
+    if ("--project" in args) return true
+    val named = args.takeWhile { it != "--" }.firstOrNull { !it.startsWith("-") }
+    if (named != null && (named.endsWith(".az") || File(named).isDirectory)) return false
+    return ProjectCommands.isProject(File("."))
 }
 
 // ── azora run <file.az> ─────────────────────────────────────────
@@ -574,6 +590,19 @@ private fun printUsage() {
           repl                          Interactive REPL
           version                       Show version
           help                          Show this help
+
+        Projects, packages and workspaces (a directory with azora.azon,
+        package.azon or workspace.azon; --project <dir> names another):
+          new <name>                    Create a project
+          build [--update] [--debug]    Resolve dependencies; link a project into build/,
+                                        check every source of a package; at a workspace
+                                        root, every member
+          run [-- <args>]               Build the project and run it
+          test [--llvm]                 Run the `test` blocks (every member's at a root)
+          add <name> --path <dir>       Depend on a local package
+          add <name> --git <url> [--rev <commit> | --tag <tag> | --branch <branch>]
+                                        Depend on a package in a git repository
+          remove <name>                 Drop a dependency
 
         Compile targets:
           wasm, wat       WebAssembly text (WAT)

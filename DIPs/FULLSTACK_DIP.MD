@@ -101,12 +101,12 @@ are one interface.
 | `mysql` | Optional SQL driver and dialect |
 | `http-tls-*` | Target-specific TLS providers where the runtime does not supply one |
 
-Package names are resolved by the future package manager. Neither the parser
+Package names are resolved by the package manager. Neither the parser
 nor the compiler contains a list of these names. A package satisfies ordinary
 specs declared in `std.http` or `std.db.core`.
 
-The future manifest itself should be AZON, for example `azora.azon`. Its exact
-schema belongs in a package-management DIP.
+The manifest is AZON, `azora.azon`; its schema, resolution and lockfile are
+PACKAGES_DIP.MD.
 
 ---
 

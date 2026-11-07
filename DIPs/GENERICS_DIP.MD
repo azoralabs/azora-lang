@@ -1495,6 +1495,15 @@ obligation chain.
 
 ## 21. Lowering and code generation
 
+> **Decision (A6, 2026-11-07): erasure plus monomorphization where it pays.**
+> Generic code is compiled once over erased eight-byte slots (§21.3, the
+> uniform tuple and nullable layout of delivery-plan item 021.2). A call is
+> specialized where erasure cannot represent it - §21.2's required cases,
+> starting with arrays narrower than a slot (item 021.3, rejected with a
+> diagnostic until then) - and where a measurement shows erasure costs the
+> frame budget (the ECS hot paths first). No program observes which it got
+> (§21.1).
+
 ### 21.1 Semantic rule versus implementation strategy
 
 Programs cannot observe whether the compiler monomorphizes, shares code, or uses

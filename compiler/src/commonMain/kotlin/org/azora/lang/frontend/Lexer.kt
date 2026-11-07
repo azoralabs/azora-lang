@@ -350,39 +350,50 @@ class Lexer(private val source: String) {
         }
     }
 
+    /**
+     * `'x'` - one Unicode code point. A character above U+FFFF is written as
+     * itself (two UTF-16 units in the source text); a surrogate, written as
+     * `'\uD800'`, is not a code point a `Char` can hold.
+     */
     private fun scanCharLiteral() {
         if (isAtEnd()) error("Unterminated character literal at line $line")
-        val ch: Char
+        val cp: Int
         if (peek() == '\\') {
             advance() // consume '\'
             if (isAtEnd()) error("Unterminated character literal at line $line")
-            ch = when (val esc = advance()) {
-                'b' -> '\b'
-                'f' -> '\u000C'
-                'n' -> '\n'
-                't' -> '\t'
-                'r' -> '\r'
-                '\\' -> '\\'
-                '\'' -> '\''
-                '"' -> '"'
-                '/' -> '/'
-                '0' -> '\u0000'
+            cp = when (val esc = advance()) {
+                'b' -> 0x08
+                'f' -> 0x0C
+                'n' -> 0x0A
+                't' -> 0x09
+                'r' -> 0x0D
+                '\\' -> '\\'.code
+                '\'' -> '\''.code
+                '"' -> '"'.code
+                '/' -> '/'.code
+                '0' -> 0
                 'u' -> {
                     val hex = StringBuilder()
                     repeat(4) {
                         if (isAtEnd()) error("Incomplete \\u escape in character literal at line $line")
                         hex.append(advance())
                     }
-                    hex.toString().toInt(16).toChar()
+                    hex.toString().toInt(16)
                 }
                 else -> error("Unknown escape sequence '\\$esc' in character literal at line $line")
             }
         } else {
-            ch = advance()
+            val first = advance()
+            cp = if (first.isHighSurrogate() && !isAtEnd() && peek().isLowSurrogate()) {
+                0x10000 + ((first.code - 0xD800) shl 10) + (advance().code - 0xDC00)
+            } else first.code
+        }
+        if (!CodePoints.isScalar(cp)) {
+            error("character literal U+${cp.toString(16).uppercase().padStart(4, '0')} at line $line is not a Unicode scalar value")
         }
         if (isAtEnd() || peek() != '\'') error("Unterminated character literal at line $line")
         advance() // closing '
-        tokens.add(Token(TokenType.CHAR_LITERAL, source.substring(start, current), line, startColumn, ch))
+        tokens.add(Token(TokenType.CHAR_LITERAL, source.substring(start, current), line, startColumn, cp))
     }
 
     private fun scanNumber() {

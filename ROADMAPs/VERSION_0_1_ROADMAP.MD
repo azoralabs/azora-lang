@@ -38,9 +38,11 @@ Hard blockers. `0.1` does not ship with any of these open.
 - ⬜ **Backend parity** - every construct behaves identically on every backend,
   or is a compile error on the ones that cannot express it (§6)
 - ✅ **Every shipped feature has a written DIP**
-- ⬜ **A published stability policy** (§11)
-- ⬜ **A package manager**, with `new` → `build` → `test` working (§7.4)
-- ⬜ **Self-hosting decided** - executed or explicitly deferred (§12.1)
+- ✅ **A published stability policy** (§11; STABILITY_DIP.MD, 2026-11-07)
+- ✅ **A package manager**, with `new` → `build` → `test` working (§7.4;
+  PACKAGES_DIP.MD, 2026-11-07)
+- ✅ **Self-hosting decided** - executed or explicitly deferred (§12.1:
+  accepted and staged after 0.1, 2026-11-07)
 
 ### Where the project stands
 
@@ -843,17 +845,19 @@ Several constructs degrade silently; each is a potential miscompile.
   `azora.toml`, which is the one place in the project that uses a foreign
   configuration format - JSON came out of the serializer for the same reason,
   and a language that ships AZON should not ask its users to learn TOML to
-  configure it. The example projects are converted (`azora.azon`); the build
-  tool still has to be
-- ⬜ Manifest format specified
-- ⬜ Dependency resolution with a lockfile
+  configure it. The example projects are converted (`azora.azon`), and the
+  `azora` CLI's package commands read only AZON (2026-11-07). The separate
+  `build-tool` (`azora-build`, whose commands `azora` now has) still reads
+  `azora.toml`: convert it or retire it.
+- ✅ Manifest format specified (PACKAGES_DIP.MD §1-§2)
+- ✅ Dependency resolution with a lockfile (PACKAGES_DIP §3-§4)
 - ⬜ Semantic versioning policy
 - ⬜ Registry: hosting, publishing, authentication, yanking
-- ⬜ Path and git dependencies
+- ✅ Path and git dependencies
 - ⬜ Build profiles and feature flags
 - ⬜ Reproducible builds
 - ⬜ Vendoring / offline mode
-- ⬜ Workspaces
+- ✅ Workspaces (one lockfile at the root; `azora build` checks every member)
 - ⬜ Interaction between package sources and stdlib injection
 
 ### 7.5 Editors
@@ -996,12 +1000,16 @@ Every one fixed, or deleted with a stated reason.
 
 ## 11. Stability
 
-- ⬜ Stability policy published - what `0.1` guarantees and for how long
-- ⬜ Deprecation process defined (warn → error → remove)
-- ⬜ `@Since` / `@Experimental` semantics documented and enforced
-- ⬜ The public surface of `0.1` explicitly enumerated; the rest is internal
+- ✅ Stability policy published - what `0.1` guarantees (STABILITY_DIP §1-§2,
+  2026-11-07)
+- ✅ Deprecation process defined (warn → error → remove; STABILITY_DIP §4)
+- ⬜ `@Since` / `@Experimental` semantics documented and enforced - documented
+  (STABILITY_DIP §3) and validated where written; a use is not reported yet
+- ⬜ The public surface of `0.1` explicitly enumerated; the rest is internal -
+  defined (STABILITY_DIP §2); the generated listing is not built
 - ⬜ Feature-gating for experimental features
-- ⬜ A compatibility suite `0.1.x` must keep passing
+- ⬜ A compatibility suite `0.1.x` must keep passing - its contents are
+  defined (STABILITY_DIP §5); no release job runs it yet
 - ⬜ Release process: versioning, changelog, signed artefacts, announcement
 
 ---
@@ -1010,14 +1018,18 @@ Every one fixed, or deleted with a stated reason.
 
 Settle these early; each reshapes the schedule.
 
-- ⬜ **12.1 Self-hosting.** `experimental_self_hosted/` exists. Is the `0.1`
-  compiler Kotlin or Azora? Multi-month either way; deferring is legitimate but
-  must be a decision
-- ⬜ **12.2 Generics: erasure or monomorphisation** - affects performance, FFI,
-  reflection, ABI
+- ✅ **12.1 Self-hosting.** Decided 2026-11-07 (A6): the `0.1` compiler is the
+  Kotlin one; the Azora compiler is accepted and staged after 0.1 as roadmap
+  Track E (E1 parser, E2 semantics and IR, E3 code generation and the bootstrap
+  fixpoint, E4 switch-over), each stage differential against the Kotlin one
+- ✅ **12.2 Generics: erasure or monomorphisation** - decided 2026-11-07:
+  erasure, plus monomorphization where erasure cannot represent a call or a
+  measurement shows it costs (GENERICS_DIP §21)
 - ✅ **12.3 Primary backend** - LLVM for native, Wasm for web
 - ⬜ **12.4 ABI stability** - needed to distribute binaries; in or out
-- ⬜ **12.5 Target platforms** - which OS/arch triples are supported and tested
+- ✅ **12.5 Target platforms** - decided 2026-11-07 (TARGETS_DIP.MD): macOS
+  arm64/x64, iOS arm64, Android arm64-v8a, Windows x64/arm64, Linux x64/arm64,
+  wasm32; supported once CI runs on each, `arm64-apple-macosx` today
 - ✅ **12.6 Inheritance** - `dyn` spec dispatch is the whole story: composition
   plus capabilities, dispatched through a spec-typed value. There is no
   implementation inheritance and none is planned

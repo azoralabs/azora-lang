@@ -18,6 +18,7 @@ package org.azora.lang.semantic
 
 import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.AstMapper
+import org.azora.lang.frontend.CodePoints
 import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
@@ -1662,7 +1663,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         is Expr.IntLiteral -> expr.value.toString()
         is Expr.DoubleLiteral -> expr.value.toString()
         is Expr.BoolLiteral -> expr.value.toString()
-        is Expr.CharLiteral -> expr.value.toString()
+        is Expr.CharLiteral -> CodePoints.toText(expr.value)
         is Expr.Member -> enumQualifiedName(expr)
         is Expr.Call -> if (expr.callee == "__defaultLogLevel" && expr.args.isEmpty()) {
             val first = table.lookupEnum("LogLevel")?.firstOrNull() ?: return null

@@ -5,14 +5,12 @@
 
 package org.azora.azls
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.azora.lang.diagnostics.SourceId
 import org.azora.lang.diagnostics.SourceKind
 import org.azora.lang.diagnostics.SourceUnit
+import org.azora.lang.packages.AzonValue
+import org.azora.lang.packages.Manifest
+import org.azora.lang.packages.PackageError
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
@@ -80,7 +78,6 @@ internal class WorkspaceCatalog private constructor(
         indexSources(target).any { it.path == candidate.toAbsolutePath().normalize() }
 
     companion object {
-        private val json = Json { ignoreUnknownKeys = true }
         private val manifestNames = setOf("package.azon", "workspace.azon", "azora.azon", "azora.toml")
         private val ignoredDirectories = setOf(
             ".git", ".gradle", ".idea", ".kotlin", ".azora", "build", "out", "target",
@@ -153,7 +150,7 @@ internal class WorkspaceCatalog private constructor(
             val values = if (manifest.fileName.toString() == "azora.toml") {
                 parseToml(text)
             } else {
-                parseAzon(text)
+                parseAzon(manifest, text, log)
             }
             val name = values.name
             val module = values.module.ifBlank { name.replace('-', '.') }
@@ -171,36 +168,38 @@ internal class WorkspaceCatalog private constructor(
             return WorkspacePackage(manifest, root, name, values.version, module, sourceRoots.toList(), dependencyRoots)
         }
 
-        private fun parseAzon(text: String): ManifestValues {
-            runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull()?.let { document ->
-                val body = (document["package"] ?: document["project"] ?: document["workspace"]) as? JsonObject
-                    ?: document
-                val name = body.string("name")
-                val version = body.string("version")
-                val module = body.string("module")
-                val sourceDirs = buildList {
-                    body.string("src").takeIf(String::isNotBlank)?.let(::add)
-                    (document["test"] as? JsonObject)?.string("src")?.takeIf(String::isNotBlank)?.let(::add)
-                }
-                val dependencyPaths = (document["dependencies"] as? JsonObject).orEmpty().values.mapNotNull { value ->
-                    when (value) {
-                        is kotlinx.serialization.json.JsonPrimitive -> value.contentOrNull
-                        is JsonObject -> value.string("path").takeIf(String::isNotBlank)
-                        else -> null
-                    }
-                }
-                return ManifestValues(name, version, module, sourceDirs, dependencyPaths)
+        /**
+         * An AZON manifest, read by the parser `azora build` uses (PACKAGES_DIP
+         * §2), so the editor and the build agree on every package's sources
+         * and dependencies. A manifest that does not parse still marks a
+         * package boundary; what is wrong with it is logged.
+         */
+        private fun parseAzon(manifest: Path, text: String, log: (String) -> Unit): ManifestValues {
+            val parsed = try {
+                Manifest.parse(manifest.parent.toString(), manifest.toString(), text)
+            } catch (e: PackageError) {
+                log(e.message ?: "cannot read $manifest")
+                return ManifestValues("", "", "", emptyList(), emptyList())
             }
-            val packageBody = objectBody(text, "package") ?: objectBody(text, "project") ?: text
-            val name = stringValue(packageBody, "name")
-            val version = stringValue(packageBody, "version")
-            val module = stringValue(packageBody, "module")
-            val sourceDirs = listOfNotNull(stringValue(packageBody, "src").takeIf(String::isNotBlank))
-            val dependencyPaths = Regex("""(?m)\bpath\s*:\s*"([^"]+)"""")
-                .findAll(objectBody(text, "dependencies").orEmpty())
-                .map { it.groupValues[1] }
-                .toList()
-            return ManifestValues(name, version, module, sourceDirs, dependencyPaths)
+            val unitKey = when {
+                parsed.pkg != null -> "package"
+                parsed.project != null -> "project"
+                else -> "workspace"
+            }
+            val body = parsed.document[unitKey] as? AzonValue.Obj
+            val sourceDirs = buildList {
+                // Only a written `src`: without one, the package's own folder
+                // or `src/` is found on disk (readPackage).
+                body?.get("src")?.text?.takeIf(String::isNotBlank)?.let(::add)
+                ((parsed.document["test"] as? AzonValue.Obj)?.get("src"))?.text?.takeIf(String::isNotBlank)?.let(::add)
+            }
+            return ManifestValues(
+                name = parsed.unit?.name ?: body?.get("name")?.text.orEmpty(),
+                version = parsed.unit?.version ?: body?.get("version")?.text.orEmpty(),
+                module = parsed.unit?.module.orEmpty(),
+                sourceDirs = sourceDirs,
+                dependencyPaths = parsed.dependencies.mapNotNull { it.path },
+            )
         }
 
         private fun parseToml(text: String): ManifestValues {
@@ -227,14 +226,6 @@ internal class WorkspaceCatalog private constructor(
             return ManifestValues(name, version, module, listOfNotNull(src.takeIf(String::isNotBlank)), emptyList())
         }
 
-        private fun objectBody(text: String, key: String): String? =
-            Regex("(?s)\\b${Regex.escape(key)}\\s*:\\s*\\{(.*?)\\}").find(text)?.groupValues?.get(1)
-
-        private fun stringValue(text: String, key: String): String =
-            Regex("""(?m)\b${Regex.escape(key)}\s*:\s*"([^"]*)"""").find(text)?.groupValues?.get(1).orEmpty()
-
-        private fun JsonObject.string(key: String): String = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
-        private fun JsonObject?.orEmpty(): JsonObject = this ?: JsonObject(emptyMap())
     }
 }
 

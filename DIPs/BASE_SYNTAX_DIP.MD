@@ -103,10 +103,23 @@ text ~= suffix           // ~= appends a stringified value
 | `Cent` / `UCent` | 128-bit |
 | `Float` / `Double` / `Quad` | 32-bit / 64-bit / 128-bit floating point |
 | `Bool` | `true` / `false` |
-| `Char` | a character |
-| `String` | UTF-8 text |
+| `Char` | one Unicode code point (a scalar value: U+0000..U+10FFFF, never a surrogate) |
+| `String` | UTF-8 text, counted and indexed in code points |
 | `Unit` | no meaningful value (void) |
 | `Any` | dynamic / erased |
+
+**Characters and text** (decided 2026-11-07). A `Char` is a Unicode code
+point, on every target: `'😀'` is one `Char`, and `ord('😀')` is 128512. A
+`String` holds UTF-8, and everything that counts or positions characters counts
+code points: `stringLength`, `.length`, `charAt`, `s[i]`, `substring` and
+`indexOf` agree on every backend (`"aé😀".length` is 3). Indexing a string is
+therefore linear in the index; code that walks a long string reads it once
+with `toChars` and indexes the `Array<Char>`. Comparison and ordering of
+strings are by code point. A byte that is not well-formed UTF-8 reads as
+U+FFFD, and a code point that is not a scalar value is written as U+FFFD.
+`toUpper` and `toLower` apply Unicode's full default case mapping (`ß` →
+`SS`; a word-final `Σ` lowercases to `ς`) with no locale; `trim` removes the
+White_Space property; the data is generated into `std/unicodedata.az`.
 
 ## 3. Literals
 
@@ -117,7 +130,7 @@ text ~= suffix           // ~= appends a stringified value
 1500.0f        // Float (suffix)
 100L           // Long (suffix)
 true / false   // Bool
-'a'            // Char
+'a'            // Char: one code point, '😀' included
 "hello"        // String
 null           // null literal (for nullable types)
 ```

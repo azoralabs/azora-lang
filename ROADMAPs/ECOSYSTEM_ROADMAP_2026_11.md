@@ -64,13 +64,13 @@ that depends on them starts.
 
 | # | Question | Options |
 |---|---|---|
-| D-1 | Does the "no third-party code" rule cover the **toolchain**? Today the compiler emits LLVM IR and uses LLVM/clang and the system linker (§12.3); platform packaging uses vendor tools (Apple code signing, Android packaging). | Keep them as build tools (nothing of them ships inside programs); or replace them over time (own code generator, linker and packagers). |
-| D-2 | **TLS and cryptography.** | TLS 1.3 and its primitives in Azora, with published test vectors, constant-time review and fuzzing; or the OS's TLS where the OS has one (Apple, Windows), with Azora's own only on Linux and Android. |
-| D-3 | **DX12 shader bytecode.** | Emit DXIL directly from the Azora shader compiler; or compile generated HLSL with the D3D compiler that ships with Windows (an OS component, Shader Model 5.1 only). |
-| D-4 | **Store purchases and ad networks.** Apple's store API is an OS framework; Google Play billing and ad networks are reachable only through their vendors' client libraries. | Keep them out of the Engine (a project-level choice); or allow platform-vendor client libraries as a named exception. |
-| D-5 | **A `String` returned by a `bridge`.** No DIP says whether Azora borrows the foreign memory or owns a copy. Today it borrows: `fin t = bufferText(b); closeBuffer(b); println(t)` reads freed memory. (A template such as `"${t}"` now always builds its own string.) | Copy every foreign `String` result into Azora memory at the call; or keep borrowing and make the result a borrow the checker ties to its source. |
+| D-1 | ✅ *Decided 2026-11-07: keep them as build tools.* Does the "no third-party code" rule cover the **toolchain**? Today the compiler emits LLVM IR and uses LLVM/clang and the system linker (§12.3); platform packaging uses vendor tools (Apple code signing, Android packaging). Nothing of LLVM, clang, the system linker or the vendor packagers ships inside a program; they stay build-time tools (TARGETS_DIP.MD §2). | — |
+| D-2 | ✅ *Decided 2026-11-07: the OS's TLS where the OS has one.* **TLS and cryptography.** Apple and Windows programs use the OS TLS through its own API; Azora's TLS 1.3 is written for Linux and Android only, with test vectors, constant-time review and fuzzing (B11). | — |
+| D-3 | ✅ *Decided 2026-11-07: emit DXIL directly.* **DX12 shader bytecode.** The Azora shader compiler writes DXIL as it writes SPIR-V and MSL; no Windows shader compiler is used, and Shader Model 6 is available (B7). | — |
+| D-4 | ✅ *Decided 2026-11-07: keep them out of the Engine.* **Store purchases and ad networks.** Apple's store API is an OS framework; Google Play billing and ad networks are reachable only through their vendors' client libraries. No vendor client library enters an Engine package; a project that needs Google Play billing or an ad network adds it itself. StoreKit, an OS framework, may be bridged like any other. | — |
+| D-5 | ✅ *Decided 2026-11-07: copy at the call.* **A `String` returned by a `bridge`.** No DIP says whether Azora borrows the foreign memory or owns a copy. Today it borrows: `fin t = bufferText(b); closeBuffer(b); println(t)` reads freed memory. (A template such as `"${t}"` now always builds its own string.) A `String` a bridge returns is copied into Azora memory where the call returns (BRIDGE_DIP §6). Implementation pending. | — |
 | D-6 | ✅ *Decided 2026-11-06: follow the DIP.* **By-value parameters of non-`Copy` types** transfer ownership: callers write `take` or `.clone()`, the callee destroys what it was given unless it moves it on, and read-only parameters are declared `T&`. Done and qualified the same day (progress log). | — |
-| D-7 | **A binding initialised from a place** (`var b = a`, `fin v = h.items`) is a non-owning alias today, not the move or copy §10 describes. | Require `take`/`.clone()` (or a borrow type) for non-`Copy` values; or keep aliases and amend the DIP. |
+| D-7 | ✅ *Decided 2026-11-07: require `take` or `.clone()`.* **A binding initialised from a place** (`var b = a`, `fin v = h.items`) is a non-owning alias today, not the move or copy §10 describes. A binding initialised from a place owns what it holds: a non-`Copy` value needs `take`, `.clone()` or a borrow (`a.&`, `a.!`), as D-6 did for parameters (OWNERSHIP_BORROWING_DIP). Implementation pending. | — |
 
 ## Where things stand (measured 2026-11-06)
 
@@ -130,9 +130,9 @@ reaches mobile; D runs alongside from week 3.
 | A1 | ✅ *Closed 2026-11-06.* **Zero failing tests.** Fix `SemanticFactsTest` ×2 (tooling facts lost after a type error, and for imported calls), WebAssembly `clone` of a pack (`LiteralFactoryExecTest`), and `FoundationAbiExecTest`'s choice of a sanitizer toolchain that hangs. | `AZORA_REQUIRE_NATIVE_TESTS=1` full run: 0 failures. |
 | A2 | ✅ *Closed 2026-11-06, D-6 included.* **Ownership is complete (F09/F11).** Recursive field destruction (the `owned-ecs` World), storing a non-`Copy` local without `take` (a checker error per the ownership DIP, `return` included), `"${x}"` copying its single value, and a derived `clone` sharing array fields. By-value parameters follow the DIP (D-6); owned `World` resources in `Array<Any>` remain (see the progress log). | `owned-ecs` passes; ASan/UBSan clean on the Engine probes and on Studio's scripted drag benchmark. |
 | A3 | ✅ *Closed 2026-11-07; every item fixed or, where a capability is missing, a named diagnostic (progress log). Open from it: specializing generic calls over arrays whose elements are narrower than an erased slot (rejected today, GENERICS_DIP §21.2; part of A6's generics decision), `?.` on LLVM and WebAssembly, an owned pointer or spec value in a WebAssembly `clone`.* **No known miscompiles (§1.1).** Checking derivations against field capabilities, `hash` parity across backends, the `Out` conflict rule, spec return types adopted by impls, an explicit-type-argument `Clone` generic folding `T.typeName`, library bridges that collide with a program's own names, and recursive `clone` on WebAssembly (packs owning packs, arrays, functions or pointers are an explicit diagnostic today). Erased generics on LLVM (found 2026-11-06): a tuple built at a concrete layout and read through an erased `(K, V)` - `Int` is 32-bit, so `(Int, Int)` packs its components at 0/4 where `(Any, Any)` reads 0/8 (a tuple written in place at the call is now built at the callee's layout; one held in a variable or an array is not, plan items 021/053); an erased `V?` holding `0` reads as `null` (`LinkedHashMap<String, Int>` with value `0`); and `"${map.get(k)}"` rendering an erased `V?`. | Each one has a regression test on every backend. |
-| A4 | **Text on LLVM.** `contains`, `trim`, `replace`, `split`, `toUpper`, `toLower` and `toChars` are native: UTF-8 aware and leak-free. | They run under ASan with the interpreter's output. |
-| A5 | **Package manager v1 (`azpm` in the CLI).** `azora new`, `build`, `run`, `test`, `add`, `remove`; an `azora.azon` manifest; path and git dependencies; `azora.lock`; workspaces (the Engine already is one). | A clean machine creates a project, adds the Engine by git, builds and tests it. |
-| A6 | **Decisions written down.** Stability policy (§11); target triples (macOS arm64/x64, iOS arm64, Android arm64-v8a, Windows x64/arm64, Linux x64/arm64, wasm32); the web path (the in-house WebAssembly backend brought to parity with LLVM, with browser host glue generated by Azora); the generics strategy (erasure plus monomorphization where it pays); self-hosting accepted and staged as Track E; and D-1 to D-7 above. | Merged in the DIPs and this roadmap. |
+| A4 | ✅ *Closed 2026-11-07 (progress log). `Char` is a code point and strings count code points on every backend (user decision); the five transforms are Azora code over generated Unicode data. Open: a native `String` is never destroyed, and a bridge's borrowed argument is not freed after the call (language-wide, not text-specific).* **Text on LLVM.** `contains`, `trim`, `replace`, `split`, `toUpper`, `toLower` and `toChars` are native: UTF-8 aware and leak-free. | They run under ASan with the interpreter's output. |
+| A5 | ✅ *Closed 2026-11-07 (PACKAGES_DIP.MD; progress log). Open from it: the native CLI's package host, git dependencies in AZLS, and the Engine's packages checked in full (8 of 31 compile - item 072).* **Package manager v1 (`azpm` in the CLI).** `azora new`, `build`, `run`, `test`, `add`, `remove`; an `azora.azon` manifest; path and git dependencies; `azora.lock`; workspaces (the Engine already is one). | A clean machine creates a project, adds the Engine by git, builds and tests it. |
+| A6 | ✅ *Closed 2026-11-07: D-1 to D-5 and D-7 decided by the owner (table above); stability in STABILITY_DIP.MD, targets, toolchain and the web path in TARGETS_DIP.MD, generics in GENERICS_DIP §21, self-hosting below (Track E) and in the 0.1 roadmap §12.1. D-5 and D-7 still need implementing.* **Decisions written down.** Stability policy (§11); target triples (macOS arm64/x64, iOS arm64, Android arm64-v8a, Windows x64/arm64, Linux x64/arm64, wasm32); the web path (the in-house WebAssembly backend brought to parity with LLVM, with browser host glue generated by Azora); the generics strategy (erasure plus monomorphization where it pays); self-hosting accepted and staged as Track E; and D-1 to D-7 above. | Merged in the DIPs and this roadmap. |
 
 **0.1 stable ships when A1–A6 are done.** Estimate: **8 weeks of focused work
 (range 6–12).** The range comes from A2 (ownership) and A5 (packages).
@@ -160,7 +160,7 @@ thin translation:
 **The Azora shader language.** Shaders are written once, in Azora's own shader
 language, and compiled by a shader compiler written in Azora to SPIR-V
 (Vulkan), MSL (Metal), GLSL ES 3.0 (GLES and WebGL 2), WGSL (WebGPU) and
-HLSL or DXIL (DX12, see D-3). The same compiler reflects bind-group layouts, so
+DXIL (DX12, emitted directly: D-3). The same compiler reflects bind-group layouts, so
 pipelines and Azora code agree.
 
 | # | Milestone | Done when |
@@ -217,8 +217,10 @@ physics, localization, saves, online features and store builds.
 
 ### Track E — Self-hosting (months 3–9)
 
-Start when 0.1 is stable; a moving language makes a second compiler twice the
-work. Every stage is useful on its own:
+Accepted (A6, 2026-11-07): the 0.1 compiler is the Kotlin one, and the Azora
+compiler is built in these stages after it. Start when 0.1 is stable; a moving
+language makes a second compiler twice the work. Every stage is useful on its
+own:
 
 1. **E1 Lexer and parser in Azora** (from `experimental_self_hosted/token.az`).
    Differential test: on every `.az` file in std, the Engine, Studio and the test
@@ -276,7 +278,7 @@ E self-host                         (starts after 0.1) [E1 parser][E2 ...
 | Risk | Effect | Mitigation |
 |---|---|---|
 | The from-scratch scope (platform layers, five backends, shader compiler, codecs, TLS) | Track B takes longer than the estimate | Order strictly by what the flagship game needs; every component has a conformance suite from day one, so progress is measured, not guessed |
-| Cryptography written in-house (if D-2 chooses it) | Security defects | Published test vectors, constant-time review, fuzzing, an external review before 1.0 |
+| Cryptography written in-house (Linux and Android, D-2) | Security defects | Published test vectors, constant-time review, fuzzing, an external review before 1.0 |
 | Ownership edge cases keep surfacing (F09) | Crashes or leaks on device | A sanitizer gate on every Engine probe and on the game's tests from week 1 |
 | Five backends drift apart | A scene looks right on one backend and wrong on another | One interface shaped like WebGPU, one shader source, golden-image CI on every cell (B8); no backend-specific code above `azora-gpu` |
 | DX12 and Windows need a Windows machine | B7 cannot be verified on a Mac | A Windows CI runner from month 3; Vulkan on Windows first |
@@ -286,8 +288,8 @@ E self-host                         (starts after 0.1) [E1 parser][E2 ...
 ## First steps
 
 1. ~~Close A1~~ — done 2026-11-06.
-2. ~~A2~~ — done 2026-11-06, D-6 included. ~~A3~~ — done 2026-11-07.
-3. Settle D-1 to D-5 and D-7.
+2. ~~A2~~ — done 2026-11-06, D-6 included. ~~A3~~, ~~A4~~ and ~~A5~~ — done 2026-11-07.
+3. ~~Settle D-1 to D-5 and D-7~~ — decided 2026-11-07; implement D-5 and D-7.
 4. Write three DIPs before code: the `azora-gpu` interface, the platform layer,
    and the shader language.
 5. B1 spike: an empty Azora program on the iOS simulator and the Android

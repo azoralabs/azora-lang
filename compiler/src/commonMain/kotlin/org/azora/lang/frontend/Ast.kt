@@ -136,7 +136,7 @@ sealed class Expr {
      * @property column 1-based source column
      * @property length source text length
      */
-    data class CharLiteral(val value: Char, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    data class CharLiteral(val value: Int, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
     /**
      * String literal expression (e.g. `"hello"`).

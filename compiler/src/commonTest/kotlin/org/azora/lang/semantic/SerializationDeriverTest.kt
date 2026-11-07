@@ -264,7 +264,7 @@ class SerializationDeriverTest {
                 when tree {
                     SerialValue.Object(fields) -> {
                         println(fields.size)
-                        fin first = fields[0]
+                        let first: SerialField& = fields[0].&
                         println(first.name)
                         when first.value {
                             SerialValue.Text(text) -> { println(text) }

@@ -83,6 +83,9 @@ class Lexer(private val source: String) {
     private fun shouldEmitNewline(): Boolean {
         if (tokens.isEmpty()) return false
         val last = tokens.last().type
+        // `x.&` is a complete shared borrow, never a bitwise-and waiting for its
+        // right side: `let r: T& = x.&` ends its line like any other statement.
+        if (last == TokenType.AMP && tokens.getOrNull(tokens.size - 2)?.type == TokenType.DOT) return true
         return last != TokenType.NEWLINE && last !in continuationTypes
     }
 

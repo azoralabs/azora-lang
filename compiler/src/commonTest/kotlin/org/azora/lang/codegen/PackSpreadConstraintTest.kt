@@ -48,7 +48,7 @@ class PackSpreadConstraintTest {
             case("resizedSource", "3", "Types.size == 3",
                 "var values = [1, 2]\nvalues.add(3)\nprintln(count(...values))"),
             case("frozenResizedSource", "3", "Types.size == 3",
-                "var values = [1, 2]\nvalues.add(3)\nfin frozen = values\nprintln(count(...frozen))"),
+                "var values = [1, 2]\nvalues.add(3)\nfin frozen = take values\nprintln(count(...frozen))"),
             case("unprovenProducer", "3", "Types.size == 3", "println(count(...make()))",
                 "func make(): Array<Int, 2> { var values = [1, 2]\nvalues.add(3)\nreturn values }"),
             case("emptyDirect", "0", "Types.size == 0 && Types is Hash", "println(count())"),
@@ -63,8 +63,8 @@ class PackSpreadConstraintTest {
             """.trimIndent()),
             case("globalSource", "2", "Types.size == 2", "println(count(...values))",
                 "fin values: Array<Int, 2> = [1, 2]"),
-            case("immutableAlias", "2", "Types.size == 2",
-                "fin values = [1, 2]\nfin alias = values\nprintln(count(...alias))"),
+            case("immutableMove", "2", "Types.size == 2",
+                "fin values = [1, 2]\nfin moved = take values\nprintln(count(...moved))"),
         )
     }
 
@@ -106,7 +106,7 @@ class PackSpreadConstraintTest {
     @Test fun emptyDirect() = run("emptyDirect")
     @Test fun fixedHeadWitness() = run("fixedHeadWitness")
     @Test fun globalSource() = run("globalSource")
-    @Test fun immutableAlias() = run("immutableAlias")
+    @Test fun immutableMove() = run("immutableMove")
 
     @Test fun aKnownShortSpreadIsRejected() = rejects("Types.size == 2", "count(...[1])", "1 vs 2")
     @Test fun aKnownLongSpreadIsRejected() = rejects("Types.size == 2", "count(...[1, 2, 3])", "3 vs 2")

@@ -6516,7 +6516,7 @@ class Parser(
         val resultRef = Expr.Identifier(resultName, stmt.line, stmt.column, resultName.length)
         return Stmt.Scope(
             listOf(
-                Stmt.FinDecl(resultName, TypeAnnotation.Inferred, value, stmt.line, stmt.column),
+                Stmt.FinDecl(resultName, TypeAnnotation.Inferred, value, stmt.line, stmt.column, synthesized = true),
             ) + contracts.postconditions + Stmt.Return(resultRef, stmt.line, stmt.column),
             stmt.line,
             stmt.column,
@@ -6528,7 +6528,7 @@ class Parser(
         val resultRef = Expr.Identifier(resultName, stmt.line, stmt.column, resultName.length)
         return Stmt.Scope(
             listOf(
-                Stmt.FinDecl(resultName, TypeAnnotation.Inferred, stmt.value, stmt.line, stmt.column),
+                Stmt.FinDecl(resultName, TypeAnnotation.Inferred, stmt.value, stmt.line, stmt.column, synthesized = true),
             ) + contracts.postconditions + Stmt.Yield(resultRef, stmt.line, stmt.column),
             stmt.line,
             stmt.column,
@@ -7880,11 +7880,11 @@ class Parser(
             )
             when (part) {
                 is LoopPattern.Name -> listOf(
-                    Stmt.FinDecl(part.name, TypeAnnotation.Inferred, element, start.line, start.column),
+                    Stmt.FinDecl(part.name, TypeAnnotation.Inferred, element, start.line, start.column, synthesized = true),
                 )
                 is LoopPattern.Group -> {
                     val inner = "${row}_$index"
-                    listOf(Stmt.FinDecl(inner, TypeAnnotation.Inferred, element, start.line, start.column)) +
+                    listOf(Stmt.FinDecl(inner, TypeAnnotation.Inferred, element, start.line, start.column, synthesized = true)) +
                         destructuredPrologue(part, inner, start)
                 }
             }

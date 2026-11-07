@@ -107,7 +107,7 @@ class GenericSoundnessTest {
             """
             func main() {
                 fin p = Pair(1, ["s"])
-                fin q: Pair<Int, String> = p
+                fin q: Pair<Int, String> = take p
                 println(q.a)
                 println(q.b[0])
             }

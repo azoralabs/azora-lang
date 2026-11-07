@@ -100,7 +100,7 @@ class ThirdPartyFormatTest {
                         SerialValue.Object(fields) -> {
                             var text = ""
                             for i in 0..<fields.size {
-                                fin field = fields[i]
+                                let field: SerialField& = fields[i].&
                                 text = text + field.name + "=" + try self.scalar(field.value) + "\n"
                             }
                             return text
@@ -201,7 +201,7 @@ class ThirdPartyFormatTest {
                         SerialValue.Object(fields) -> {
                             var text = ""
                             for i in 0..<fields.size {
-                                fin field = fields[i]
+                                let field: SerialField& = fields[i].&
                                 when field.value {
                                     SerialValue.Text(t) -> { text = text + field.name + "=" + t + ";" }
                                     SerialValue.Number(n) -> { text = text + field.name + "=" + n + ";" }

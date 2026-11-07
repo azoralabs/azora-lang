@@ -13,8 +13,9 @@ Last full run, native tools required: **2,963 tests, 0 failures, 0 skipped**;
 AZLS 93 tests, 0 failures. Roadmap steps A1 and A2 closed 2026-11-06 (with
 decision D-6), A3 to A6 on 2026-11-07 (`Char` is a code point on every
 backend; the package manager, PACKAGES_DIP.MD; decisions D-1 to D-5 and D-7,
-all by the owner); see the entries at the end. Next: implement D-7 and D-5,
-then 0.1's remaining §11 tooling; Track B can start (D-1 to D-4 settled).
+all by the owner; D-7 implemented the same day); see the entries at the end.
+Next: implement D-5, then 0.1's remaining §11 tooling; Track B can start (D-1
+to D-4 settled).
 
 ## Status — 2026-10-04
 
@@ -4048,3 +4049,82 @@ Also written:
   checker errors to fix, as D-6's did.
 - `World.resources` (`Array<Any>` of owned values) is still not destroyed on
   LLVM (open from A2).
+
+## 2026-11-07 (continued) — D-7: a binding from a place owns what it holds
+
+Decision D-7 implemented. `var b = a`, `fin v = h.items` and `fin e = xs[i]`
+with a non-`Copy` value are rejected as passing it by value is (D-6):
+
+```text
+line 11: cannot initialise 'b' from 'a' - 'Handle' is not Copy; transfer ownership with 'take a',
+or create an independent value with 'a.clone()', or borrow it with 'a.&'
+```
+
+- The check is §8's by-value check (`checkByValueTransfer`) applied where a
+  written `var`/`val`/`fin`/`let` is initialised; a binding declared with a
+  borrow type (`let r: T& = a.&`) is the borrow and is not checked. A borrowed
+  root (`h: Holder&`) is offered `.clone()` and a borrow, never `take`.
+- **Not places**: temporaries, as before, and now **computed properties** - a
+  member the target's pack does not store, or any member of a spec. Without
+  that, `fin rev = list.reversed` was reported; it also sharpens D-6's check,
+  which shares the definition.
+- **Bindings the parser makes** - a contract's result (`out { it … }`) and a
+  destructured loop row's parts - are marked `synthesized` on `Stmt.FinDecl`
+  and keep their lowering.
+- **Lexer**: `x.&` at the end of a line swallowed the newline (a trailing `&`
+  meant "the line continues", for `a &\n b`), so `let r: T& = c.&` followed by
+  `println(…)` parsed as one statement. `.&` now ends its line.
+
+### What changed in programs
+
+- std: one site, a real aliasing bug - `std.ai.ask` bound the global
+  `conversation` (a top-level `prop` is a global `fin`) and then added messages
+  to it, so every call changed the global. It now clones it.
+- Test fixtures: `take` where a binding moves (the pack-spread size cases, whose
+  `immutableAlias` case is now `immutableMove`), borrows where a `when` payload
+  is read (`let field: SerialField& = fields[i].&`), and `.clone()` for the AI
+  fixture's conversation.
+- Engine: the `game-ecs` template builds again (2 D-7 sites, plus the D-6
+  by-value parameters it already failed on: queries and systems now borrow
+  their stores); `proposals/robotics.az` borrows its trajectory points.
+- Studio and the launcher: nothing to change.
+- Measured on the Engine's full package check (A5): D-7 adds 15 diagnostics,
+  all in files that already failed (990 in all; still 8 of 31 members check).
+
+### Open
+
+- A nullable non-`Copy` value (`fin o = h.maybe`, `maybe: Handle?`) is not
+  covered, by D-7 or by §8's by-value check.
+- Pattern bindings (`when`, `if let`) are not checked, and a `when` payload of
+  a borrowed scrutinee is not known to be a borrow, so the diagnostic can
+  offer `take` there.
+- The ownership DIP writes `let m: User! = user.!`; the checker requires `var`
+  for a binding holding a mutable borrow. Not decided which is meant.
+
+### Tests
+
+New: `BindingFromPlaceTest` (7: a local, a field, an element, a borrowed
+root, the accepted `take`/`.clone()`/borrow forms, `Copy` values and
+temporaries, a type parameter), `BindingOwnershipExecTest` (moved, cloned and
+borrowed bindings, a field moved out, an element borrowed and cloned, a
+mutable borrow; interpreter, LLVM debug and release under ASan/UBSan).
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue
+```
+
+- Compiler: **2,971 tests, 0 failures, 0 skipped** (native tools required).
+  AZLS: **93 tests, 0 failures**. CLI distribution built.
+- std: all 50 modules check; `azora test std` 16 passed.
+- Engine: `qualify-native.sh headless` and `foundation` pass (6/6), and each
+  probe relinked with Apple clang `-fsanitize=address,undefined` reports
+  nothing. Templates built through the package manager: `app`, `game`,
+  `game-ecs`, `game-runner`, `game-shapes`, `game-sidescroller-2d`,
+  `game-tetris`. `game-racing` and `game-sidescroller-3d` stop on an older
+  `scope "frame"` form and `ui-compose` on the removed
+  `[receivers; captures]` lambda form - both earlier syntax changes, not D-7.
+- Studio under ASan/UBSan: the 30-step scripted drag takes Ground to
+  X = 1.929 and exits with no reports; Studio and the launcher rebuild without
+  sanitizers.

@@ -713,6 +713,13 @@ sealed class Stmt {
         override val length: Int = 0,
         /** `lazy` delays initialization until the binding's first read. */
         val lazy: Boolean = false,
+        /**
+         * Made by the parser rather than written: a contract's result binding
+         * or a destructured row's part. It reads the value it names the way
+         * the construct it came from does, so D-7's rule for written bindings
+         * does not apply to it.
+         */
+        val synthesized: Boolean = false,
     ) : Stmt()
 
     /**

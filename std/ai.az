@@ -141,7 +141,7 @@ func ask(
     question: String,
     options: GenerationOptions&,
 ): Message {
-    var chat = conversation
+    var chat = conversation.clone()
     chat.system(system)
     chat.user(question)
     return complete(model, chat, options)

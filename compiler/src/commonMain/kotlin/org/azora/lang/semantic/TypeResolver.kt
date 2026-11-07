@@ -1805,7 +1805,10 @@ class TypeResolver(private val table: SymbolTable) {
                 contextualValues.removeLast()
             }
             is Stmt.FinDecl ->
-                resolveBinding(stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = false, hasStorageEffects = stmt.lazy)
+                resolveBinding(
+                    stmt.name, stmt.type, stmt.initializer, stmt.line, mutable = false, valueMutable = false,
+                    hasStorageEffects = stmt.lazy, synthesized = stmt.synthesized,
+                )
             is Stmt.Assignment -> {
                 checkCapture(stmt.name, stmt.line)
                 val varSym = table.lookupVariable(stmt.name)
@@ -6100,10 +6103,49 @@ class TypeResolver(private val table: SymbolTable) {
      */
     private fun ownedPlaceSpelling(value: Expr): String? = when (value) {
         is Expr.Identifier -> value.name.takeIf { table.lookupVariable(it) != null }
-        is Expr.Member -> ownedPlaceSpelling(value.target)?.let { "$it.${value.name}" }
+        // A member the target's pack does not store is a computed property:
+        // each read makes a new value, which is a temporary, not a place.
+        is Expr.Member -> if (isComputedMember(value)) null else ownedPlaceSpelling(value.target)?.let { "$it.${value.name}" }
         is Expr.Index -> ownedPlaceSpelling(value.target)?.let { "$it[…]" }
         is Expr.Grouping -> ownedPlaceSpelling(value.expr)
         else -> null
+    }
+
+    /**
+     * The declared type of the place [value] names, read from bindings and
+     * pack fields only; null where that takes more than a lookup.
+     */
+    private fun storedPlaceType(value: Expr): IrType? = when (value) {
+        is Expr.Identifier -> table.lookupVariable(value.name)?.type
+        is Expr.Member -> (storedPlaceType(value.target) as? IrType.Named)
+            ?.let { table.lookupStruct(it.name) }
+            ?.fields?.firstOrNull { it.name == value.name }?.type
+        is Expr.Index -> (storedPlaceType(value.target) as? IrType.Array)?.element
+        is Expr.Grouping -> storedPlaceType(value.expr)
+        else -> null
+    }
+
+    /**
+     * True when [member] reads a computed property: its target is a known pack
+     * that stores no field of that name, or a spec, which stores nothing.
+     */
+    private fun isComputedMember(member: Expr.Member): Boolean {
+        val target = storedPlaceType(member.target) as? IrType.Named ?: return false
+        val pack = table.lookupStruct(target.name) ?: return table.lookupSpec(target.name) != null
+        return pack.fields.none { it.name == member.name }
+    }
+
+    /**
+     * [value] as it is borrowed: the place as written, an index included -
+     * `h.items[i].&` rather than [ownedPlaceSpelling]'s `h.items[…]`, which
+     * names the place but is no expression.
+     */
+    private fun borrowSpelling(value: Expr): String = when (value) {
+        is Expr.Identifier -> value.name
+        is Expr.Member -> "${borrowSpelling(value.target)}.${value.name}"
+        is Expr.Index -> "${borrowSpelling(value.target)}[${(value.index as? Expr.Identifier)?.name ?: (value.index as? Expr.IntLiteral)?.value?.toString() ?: "…"}]"
+        is Expr.Grouping -> borrowSpelling(value.expr)
+        else -> "…"
     }
 
     /** Locals declared with a borrow type (`var x: T& = …`), by identity: assigning one re-points it. */
@@ -6138,14 +6180,17 @@ class TypeResolver(private val table: SymbolTable) {
         construction: Boolean = false,
         /** The storage an assignment writes, for `h.items = xs`; null for an argument. */
         storeInto: String? = null,
+        /** The binding a declaration initialises, for `fin v = h.items` (D-7); null otherwise. */
+        bindTo: String? = null,
     ) {
         val aggregate = argType is IrType.Array || argType is IrType.Set || argType is IrType.Map
         val pack = (argType as? IrType.Named)?.let { table.lookupStruct(it.name) }
+        val stores = construction || storeInto != null || bindTo != null
         // Only meaningful once the capability lattice is actually in scope. A
         // program that declares its own bare `Copy` - or never imports
         // `std.traits` - has no conformances to judge against, and rejecting
         // every by-value argument on that basis would be nonsense.
-        if (!aggregate && !table.conformsTo("Int", "Copy") && !((construction || storeInto != null) && pack != null && !pack.isBridge)) return
+        if (!aggregate && !table.conformsTo("Int", "Copy") && !(stores && pack != null && !pack.isBridge)) return
         val value = when (arg) {
             is Expr.NamedArg -> arg.value
             is Expr.Grouping -> arg.expr
@@ -6170,9 +6215,11 @@ class TypeResolver(private val table: SymbolTable) {
         val fixes = buildList {
             if (!rootIsBorrowed(spelling)) add("transfer ownership with 'take $spelling'")
             if (clonable) add("create an independent value with '$spelling.clone()'")
-            if (!construction && storeInto == null) add("declare the parameter '$shown&' to borrow it")
+            if (bindTo != null) add("borrow it with '${borrowSpelling(value)}.&'")
+            else if (!construction && storeInto == null) add("declare the parameter '$shown&' to borrow it")
         }
         val action = when {
+            bindTo != null -> "cannot initialise '$bindTo' from '$spelling'"
             storeInto != null -> "cannot store '$spelling' in '$storeInto'"
             construction && aggregate -> "cannot store '$spelling' in a constructed value"
             else -> "cannot pass '$spelling' by ownership"
@@ -6414,6 +6461,8 @@ class TypeResolver(private val table: SymbolTable) {
         mutable: Boolean,
         valueMutable: Boolean = true,
         hasStorageEffects: Boolean = false,
+        /** Made by the parser (a contract's result, a destructured row), not written. */
+        synthesized: Boolean = false,
     ) {
         // A fresh binding owns a value, whatever happened to an earlier one of
         // the same name. Cleared after the initializer, so `var x = take x`
@@ -6440,6 +6489,12 @@ class TypeResolver(private val table: SymbolTable) {
         seedExpectedValue(initializer, declaredType)
         val initType = resolveExpr(initializer) ?: return
         checkIntegerLiteral(initializer, declaredType ?: initType)
+        // D-7: a binding owns what it is initialised with. From a place someone
+        // else owns, that takes `take`, `.clone()` or a borrow; a binding
+        // declared with a borrow type (`let r: T& = x.&`) is the borrow.
+        if (!synthesized && (typeAnn as? TypeAnnotation.Explicit)?.ref !is TypeRef.Reference) {
+            checkByValueTransfer(initializer, initType, line, bindTo = name)
+        }
         expectedLambdaParamTypes = savedParams
         expectedLambdaReceiverTypes = savedReceivers
         expectedLambdaCallable = savedCallable

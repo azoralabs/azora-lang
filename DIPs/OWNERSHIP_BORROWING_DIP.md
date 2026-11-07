@@ -9,7 +9,7 @@
 | §1 capability specs (`Clone`, `Copy requires Clone`) | **done** - specs in `std/traits/traits.az`, with implementations generated in `std/traits/core.az`. There is no third capability for moving: every value can be given away, so `take` asks nothing of its operand |
 | §2–§6, §24 the four binding modes | **done** |
 | §7 binding mutability vs ownership capability | **done** |
-| §8 implicit copying | **done** - a non-`Copy` value that a binding, field or element owns is rejected without `take` or `.clone()` when it is passed by value (to a function, a method, a constructor, a collection's `add`/`insert`/`put`) or stored by assignment in a field, an element or an owning local; arrays are never `Copy`. A pack that writes a `dtor`, or holds an exclusive borrow (`T!`), is never `Copy` (2026-11-06, decision D-6) |
+| §8 implicit copying | **done** - a non-`Copy` value that a binding, field or element owns is rejected without `take` or `.clone()` when it is passed by value (to a function, a method, a constructor, a collection's `add`/`insert`/`put`), stored by assignment in a field, an element or an owning local, or used to initialise a new binding (D-7, 2026-11-07; a borrow `x.&` is the third answer there); arrays are never `Copy`. A pack that writes a `dtor`, or holds an exclusive borrow (`T!`), is never `Copy` (2026-11-06, decision D-6) |
 | §9 `.clone()` | **done** - a `bridge spec Clone` member; the compiler supplies a field-wise clone, and a written `impl` overrides it |
 | §10 `take` | **done** - move recorded, use-after-take reported, including across control flow: a move inside a loop is rejected (the next iteration would use it), and a move every branch makes outlives the branch |
 | §11 moving a field out | **done** - a field is spent on its own (`take a.db` leaves the rest of `a` usable and only `a.db` unreadable), and moving one out asks the same access a write does, so a shared borrow of the owner is rejected |
@@ -55,9 +55,19 @@ Three places where the implementation deliberately differs from the text below:
   2026-11-07). `var b = a`, `fin v = h.items` and `fin e = xs[i]` with a
   non-`Copy` value are rejected, as passing it by value is (§8, D-6): write
   `take a` to move it, `a.clone()` for an independent value, or a borrow -
-  `let r: T& = a.&`, `let m: T! = a.!` - to read or change it in place. A
-  binding never silently aliases. *Implementation pending: today the checker
-  still accepts these as non-owning aliases; see the progress log.*
+  `let r: T& = a.&`, `var m: T! = a.!` - to read or change it in place. A
+  binding never silently aliases. A temporary (a call, a construction, a
+  literal) and a computed property (a member the pack does not store, any
+  member of a spec) are not places, so they bind as before. Bindings the
+  parser makes - a contract's result, a destructured loop row - keep reading
+  the value they name. Implemented 2026-11-07 (`BindingFromPlaceTest`,
+  `BindingOwnershipExecTest`). Not yet covered: a nullable non-`Copy` value
+  (`fin o = h.maybe` where `maybe: Handle?`), which §8's by-value check does
+  not cover either, and pattern bindings (`when`, `if let`).
+- **A mutable borrow is held by a `var`.** The checker requires
+  `var m: T! = a.!`; the `let m: User! = user.!` written in this document's
+  introduction is rejected ("mut ref requires a 'var' binding"). Which one is
+  meant is not decided.
 
 An `impl` of a spec member may omit its return type and take the one the spec
 declared. That is what makes `func &.clone()` in §21 legal without

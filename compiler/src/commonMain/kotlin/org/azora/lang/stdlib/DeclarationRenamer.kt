@@ -179,6 +179,14 @@ internal class DeclarationRenamer(
             )
         }
         is TopLevel.TypeAlias -> item.copy(name = declared(item.name), type = typeRef(item.type, top.withTypes(item.typeParams)))
+        // A compiler-provided bridge has no foreign symbol to keep: every
+        // backend recognises it by its local name (`symbolDenotes`), so it
+        // takes its module identity when the program declares the same name,
+        // and the program's `isDigit` and std's `isDigit` stop colliding. A
+        // foreign bridge's name is its link symbol and stays as written.
+        is TopLevel.Bridge -> if (item.target != COMPILER_BRIDGE_TARGET) item else item.copy(
+            funcs = item.funcs.map { sig -> if (sig.localName == null) sig.copy(name = declared(sig.name)) else sig },
+        )
         is TopLevel.InlineAssert -> item.copy(condition = expr(item.condition, top), message = expr(item.message, top))
         is TopLevel.InlineTrace -> item.copy(message = expr(item.message, top), level = item.level?.let { expr(it, top) })
         else -> item
@@ -429,3 +437,6 @@ internal class DeclarationRenamer(
      */
     private fun localNames(body: List<Stmt>): Set<String> = localNamesDeclaredIn(body)
 }
+
+/** The target a bare `bridge func` has: the compiler provides it (see `Parser.parseBridgeFunc`). */
+private const val COMPILER_BRIDGE_TARGET = "Compiler"

@@ -3,15 +3,12 @@ package org.azora.lang.codegen
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertTrue
 
 /**
  * `clone` on an array, natively. LLVM's copy of a value passed an array's
  * pointer through unchanged, so a clone shared its original's slots. It now
- * copies the buffer, and the arrays and packs in it. WebAssembly has no copy
- * of a pack or an array yet and says so, rather than emitting a call to
- * nothing that the assembler refuses.
+ * copies the buffer, and the arrays and packs in it. WebAssembly does the
+ * same since 2026-11-07 (a deep copy generated per type).
  */
 class ArrayCloneExecTest {
     private val program = """
@@ -44,8 +41,9 @@ class ArrayCloneExecTest {
         }
     }
 
-    @Test fun webAssemblySaysItCannotCopyYet() {
-        val error = assertFailsWith<Throwable> { WasmExec.run(program) }
-        assertTrue("cannot copy" in error.toString(), error.toString())
+    /** WebAssembly copies an array and what its slots own, as LLVM does. */
+    @Test fun webAssemblyCopiesTheSlotsAndWhatTheyOwn() {
+        if (!WasmExec.available) return
+        assertEquals("1\n99\n1\n7\n2\n8", WasmExec.run(program).trim())
     }
 }

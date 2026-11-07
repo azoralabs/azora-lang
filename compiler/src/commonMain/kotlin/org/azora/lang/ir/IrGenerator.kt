@@ -1243,8 +1243,18 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.StringLiteral("took a value out of a null optional"),
             ),
         )
-        pendingAfter.add(IrStmt.Assignment(resolveName(owner), IrExpr.Var("__null", IrType.Any)))
+        pendingAfter.add(IrStmt.Assignment(resolveName(owner), intoNullable(IrExpr.Var("__null", IrType.Any), value.type)))
     }
+
+    /**
+     * [value] stored into a place declared [declared]: a nullable place gets
+     * an explicit conversion when the value is of another type (`x = 0`,
+     * `x = null` for `x: Int?`). An assignment names only its target, so a
+     * backend that represents `Int?` apart from `Int` learns the place's type
+     * here.
+     */
+    private fun intoNullable(value: IrExpr, declared: IrType): IrExpr =
+        if (declared is IrType.Nullable && value.type != declared) IrExpr.NumCast(value, declared) else value
 
     /**
      * Lowers a list of statements, handling friend scope blocks by sharing
@@ -1625,10 +1635,8 @@ class IrGenerator(private val table: SymbolTable) {
                 // declared operator would never run.
                 inPlaceCompound(stmt.compoundOp, stmt.value, table.lookupVariable(stmt.name)?.type)
                     ?.let { return it }
-                val value = coerceToFloat(
-                    lowerExpr(stmt.value),
-                    table.lookupVariable(stmt.name)?.type ?: IrType.Any,
-                )
+                val declared = table.lookupVariable(stmt.name)?.type ?: IrType.Any
+                val value = intoNullable(coerceToFloat(lowerExpr(stmt.value), declared), declared)
                 knownEnumValues.remove(name)
                 IrStmt.Assignment(name, value)
             }
@@ -4162,12 +4170,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val condition = lowerExpr(expr.condition)
                 val thenExpr = lowerExpr(expr.thenExpr)
                 val elseExpr = lowerExpr(expr.elseExpr)
-                val type = when {
-                    thenExpr.type == IrType.Nothing -> elseExpr.type
-                    elseExpr.type == IrType.Nothing -> thenExpr.type
-                    else -> thenExpr.type
-                }
-                IrExpr.IfExpr(condition, thenExpr, elseExpr, type)
+                IrExpr.IfExpr(condition, thenExpr, elseExpr, branchJoin(thenExpr, elseExpr))
             }
             is Expr.CatchExpr -> {
                 val e = lowerExpr(expr.expr)
@@ -4523,10 +4526,35 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     /**
-     * A tuple written in place, built at the layout of the [slot] it is passed
-     * to: a generic callee reads `(K, V)` as erased components, which a
-     * backend may lay out wider than `(Int, Int)`. A bracket literal builds its
-     * entries the same way.
+     * The type an `if` expression's two branches meet at. A branch that cannot
+     * finish leaves the other's type; a `null` literal against a value makes
+     * the value's type nullable (`if b then v else null` is an `Int?` when `v`
+     * is an `Int`), as a nullable against its own plain type does. A backend
+     * that represents `Int?` apart from `Int` would otherwise convert the null
+     * into an `Int`.
+     */
+    private fun branchJoin(thenExpr: IrExpr, elseExpr: IrExpr): IrType {
+        fun isNull(e: IrExpr) = e is IrExpr.Var && e.name == "__null"
+        fun nullable(type: IrType) = type as? IrType.Nullable ?: IrType.Nullable(type)
+        val a = thenExpr.type
+        val b = elseExpr.type
+        return when {
+            a == IrType.Nothing -> b
+            b == IrType.Nothing -> a
+            isNull(thenExpr) && !isNull(elseExpr) -> nullable(b)
+            isNull(elseExpr) && !isNull(thenExpr) -> nullable(a)
+            a !is IrType.Nullable && b is IrType.Nullable && b.inner == a -> b
+            else -> a
+        }
+    }
+
+    /**
+     * A tuple written in place, built at the type of the [slot] it is passed
+     * to, so each component is converted to the type the callee reads. Every
+     * backend lays a tuple out in erased slots, so `(Int, Int)` and `(K, V)`
+     * already share their layout; what this keeps is a literal's own width
+     * (`1` filling a `Long` component). A bracket literal builds its entries
+     * the same way.
      */
     private fun tupleAtSlot(value: IrExpr, slot: IrType): IrExpr =
         if (value is IrExpr.TupleLit && slot is IrType.Tuple && value.type != slot && value.elements.size == slot.elements.size)

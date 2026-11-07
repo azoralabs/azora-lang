@@ -100,7 +100,52 @@ object SpecDefaults {
         )
     }
 
-    fun apply(program: Program): Program {
+    fun apply(program: Program): Program = provideMembers(adoptReturnTypes(program))
+
+    /**
+     * An implementation's member that writes no return type takes the one its
+     * spec member declares. `spec Order` declares `oper<=> …: Compare`; an
+     * `impl Order` whose `oper<=>` omits it had been read as returning `Unit`
+     * (an omitted return type is `Unit` on any other function), and `<` then
+     * called `isLess` on whatever the body returned. The spec's type is read
+     * as this implementation sees it: `Self` is the implementing type, a spec
+     * type parameter is the argument the impl wrote or its default, and an
+     * associated type is the impl's binding.
+     */
+    private fun adoptReturnTypes(program: Program): Program {
+        val specs = mutableMapOf<String, TopLevel.Spec>()
+        for (spec in program.items.filterIsInstance<TopLevel.Spec>()) {
+            if (spec.methods.none { it.returnType is TypeAnnotation.Explicit }) continue
+            specs[spec.name] = spec
+            specs[spec.name.substringAfterLast("__")] = spec
+        }
+        if (specs.isEmpty()) return program
+        var changed = false
+        val items = program.items.map { item ->
+            val impl = item as? TopLevel.Impl ?: return@map item
+            val spec = impl.traitName?.let { specs[it] ?: specs[it.substringAfterLast("__")] } ?: return@map item
+            val self = TypeRef.Named(impl.typeName)
+            val arguments = spec.typeParams.mapIndexedNotNull { index, param ->
+                (impl.traitArgs.getOrNull(index) ?: spec.typeDefaults[param])?.let { param to it }
+            }.toMap().mapValues { (_, ref) -> if (ref is TypeRef.Named && ref.name == "Self") self else ref }
+            val bindings = arguments + impl.assocBindings + ("Self" to self)
+            val methods = impl.methods.map { method ->
+                if (method.returnType !is TypeAnnotation.Inferred) return@map method
+                // An operator's name carries its operand (`oper<=>@Version`);
+                // the spec's member is the operator itself.
+                val requirement = spec.methods.firstOrNull {
+                    it.name.substringBefore('@') == method.name.substringBefore('@') &&
+                        it.params.size == method.params.size && it.returnType is TypeAnnotation.Explicit
+                } ?: return@map method
+                changed = true
+                method.copy(returnType = bindAssoc(requirement.copy(params = emptyList(), body = emptyList()), bindings).returnType)
+            }
+            if (methods == impl.methods) item else impl.copy(methods = methods)
+        }
+        return if (changed) program.copy(items = items) else program
+    }
+
+    private fun provideMembers(program: Program): Program {
         val declared = program.items.filterIsInstance<TopLevel.Spec>()
             .filter { spec -> spec.methods.any { it.body.isNotEmpty() } }
         if (declared.isEmpty()) return program

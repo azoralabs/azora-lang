@@ -91,10 +91,21 @@ object ComparisonDeriver {
         }
 
         val errors = mutableListOf<String>()
+        val enums = program.items.filterIsInstance<TopLevel.Enum>().map { it.name }.toSet()
+        val requestLines = program.items.filterIsInstance<TopLevel.Impl>()
+            .filter { it.isDerived && it.typeName in packs }
+            .associate { (it.typeName to it.traitName) to it.line }
         val generated = mutableListOf<TopLevel>()
         for ((typeName, caps) in requested) {
             val pack = packs.getValue(typeName)
             if (pack.fields.isEmpty()) continue
+            val refused = refusal(pack, caps - written[typeName].orEmpty(), requested, stated, packs.keys, enums) { cap ->
+                requestLines[typeName to cap] ?: requestLines[typeName to ORDER] ?: requestLines[typeName to EQUAL] ?: pack.line
+            }
+            if (refused != null) {
+                errors += refused
+                continue
+            }
             val alreadyWritten = written[typeName].orEmpty()
             for (capability in caps.sorted()) {
                 if (capability in alreadyWritten) continue
@@ -136,6 +147,66 @@ object ComparisonDeriver {
         }
         if (generated.isEmpty()) return Result(program, errors)
         return Result(program.copy(items = program.items + generated), errors)
+    }
+
+    /**
+     * §7.2: a field-wise `Equal`, `Order` or `Hash` holds only when every
+     * field's type has it. A `Double` is `PartialOrder` - NaN relates to
+     * nothing - so a pack of doubles that derived `Order` would hand `sort` an
+     * order that is not one. Returns the first refusal, naming the field.
+     *
+     * A field's type has a capability when its declaration states it (the
+     * primitives state theirs in `std`), when it is a payload-free enum, or when
+     * it is another pack of this program that derives or writes it. A pack's own
+     * type parameter cannot be judged here; its uses are checked where a type
+     * is chosen for it.
+     */
+    private fun refusal(
+        pack: TopLevel.Pack,
+        caps: Set<String>,
+        requested: Map<String, Set<String>>,
+        stated: Map<String, Set<String>>,
+        programPacks: Set<String>,
+        enums: Set<String>,
+        lineOf: (String) -> Int,
+    ): String? {
+        fun has(name: String, cap: String): Boolean? {
+            if (name in pack.typeParams) return null
+            // §7.2: a payload-free enum derives `Equal` and `Order` by
+            // declaration position; whether it hashes is not decided here.
+            if (name in enums) return if (cap == HASH) null else true
+            val own = stated[name].orEmpty() + requested[name].orEmpty()
+            // A total order is an equivalence too: `Order` requires `Equal`.
+            if (cap in own || (cap == EQUAL && ORDER in own)) return true
+            return if (own.isNotEmpty() || name in programPacks) false else null
+        }
+        fun provides(ref: TypeRef, cap: String): Boolean? = when (ref) {
+            is TypeRef.Named -> has(ref.name, cap)
+            is TypeRef.Nullable -> provides(ref.inner, cap)
+            is TypeRef.Array -> provides(ref.element, cap)
+            is TypeRef.Tuple -> ref.elements.map { provides(it, cap) }.let { all ->
+                if (false in all) false else if (null in all) null else true
+            }
+            is TypeRef.Function -> false
+            else -> null
+        }
+        for (cap in listOf(ORDER, EQUAL, HASH)) {
+            if (cap !in caps) continue
+            for (f in pack.fields) {
+                if (provides(f.type, cap) != false) continue
+                val why = when ((f.type as? TypeRef.Named)?.name) {
+                    "Double", "Float", "Quad", "Half" -> when (cap) {
+                        ORDER -> " - ${f.type} is PartialOrder: NaN does not relate to anything"
+                        EQUAL -> " - ${f.type} is PartialEqual: NaN is not equal to itself"
+                        else -> " - ${f.type} is not Hash: equal values must hash equally, and NaN is not equal to itself"
+                    }
+                    else -> ""
+                }
+                return "line ${lineOf(cap)}: cannot derive '$cap' for '${pack.name}': " +
+                    "field '${f.name}: ${f.type}' is not $cap$why; write 'impl $cap for ${pack.name}' to define it yourself"
+            }
+        }
+        return null
     }
 
     private fun self(line: Int) = Expr.Identifier("self", line, 0, 4)

@@ -116,6 +116,34 @@ class BuiltinNameShadowExecTest {
         assertEquals(expected, WasmExec.run(program).trimEnd())
     }
 
+    /**
+     * The program's `isDigit` and the library's own `isDigit` bridge, which
+     * `std.char::charIsDigit` calls, are two declarations: the bridge takes its
+     * module identity, and each call reaches its own. Both had kept the name
+     * `isDigit`, and compilation stopped at "Function 'isDigit' already defined".
+     */
+    @Test fun aLibraryBridgeAndTheProgramsFunctionOfOneNameAreTwo() {
+        val source = """
+            import std.io
+            import std.char::{charIsDigit}
+            func isDigit(n: Int): Bool = n >= 0 && n < 10
+            func main() {
+                println(isDigit(5))
+                println(isDigit(12))
+                println(charIsDigit('7'))
+                println(charIsDigit('x'))
+            }
+        """.trimIndent()
+        val expected = "true\nfalse\ntrue\nfalse"
+        val result = Compiler().compile(source, release = false)
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals(expected, IrInterpreter().interpret(result.ir).trim(), "interpreter")
+        if (LlvmExec.available) {
+            for (optimized in listOf(false, true)) assertEquals(expected, LlvmExec.run(source, optimized).trim(), "LLVM optimized=$optimized")
+        }
+        if (WasmExec.available) assertEquals(expected, WasmExec.run(source).trimEnd(), "WebAssembly")
+    }
+
     @Test fun aProgramsPrintlnIsAnOrdinaryFunction() {
         val result = Compiler().compile(ownPrintln, release = false)
         assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())

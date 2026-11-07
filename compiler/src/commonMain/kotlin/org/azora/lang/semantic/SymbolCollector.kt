@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.ir.ctorCount
+import org.azora.lang.putIfAbsentCompat
 import org.azora.lang.ir.ctorFactorySymbol
 import org.azora.lang.ir.ctorSymbol
 import org.azora.lang.frontend.Expr
@@ -60,6 +61,36 @@ class SymbolCollector {
 
     private fun resolveType(ref: TypeRef, typeParams: Set<String> = emptySet()): IrType =
         IrType.resolve(TypeFunctionEvaluator.resolve(ref, typeFunctions, unresolvedParams = typeParams), typeParams)
+
+    /**
+     * OPERATOR_OVERLOADING_DIP §12: an operator family's result is fixed per
+     * `Rhs`. `Out` is a type parameter with a default rather than an associated
+     * type, so two impls of one family for one type that differ only in `Out`
+     * would both match `a + b` and one would silently win; the second is the
+     * error. An omitted argument is the spec's default, and `Self` is the
+     * implementing type, so `impl Arithmetic for V` is `Arithmetic<V, V>`.
+     */
+    private fun outConflict(
+        item: TopLevel.Impl,
+        spec: TopLevel.Spec,
+        seen: MutableMap<Triple<String, String, List<String>>, String>,
+    ): String? {
+        val outIndex = spec.typeParams.indexOf("Out").takeIf { it >= 0 } ?: return null
+        val self = Regex("\\bSelf\\b")
+        val args = spec.typeParams.mapIndexed { index, param ->
+            val written = item.traitArgs.getOrNull(index) ?: spec.typeDefaults[param] ?: return null
+            self.replace(written.toString(), item.typeName)
+        }
+        val operands = args.filterIndexed { index, _ -> index != outIndex }
+        val key = Triple(item.typeName, item.traitName ?: return null, operands)
+        val out = args[outIndex]
+        val earlier = seen.putIfAbsentCompat(key, out) ?: return null
+        if (earlier == out) return null
+        val shown = { result: String -> "'${spec.name}<${args.mapIndexed { i, a -> if (i == outIndex) result else a }.joinToString(", ")}>'" }
+        return "line ${item.line}: two impls of '${spec.name}' for '${item.typeName}' differ only in Out - " +
+            "${shown(earlier)} and ${shown(out)} both match the same operands; " +
+            "a family's result type is fixed per Rhs - merge them or change the Rhs"
+    }
 
     /**
      * Why [written] cannot implement [requirement] of [impl]'s spec by the way
@@ -527,10 +558,16 @@ class SymbolCollector {
                         // (`impl oper== by List<T> for ArrayList { ref self, rhs -> }`),
                         // so the operand param(s) - written without a type in the body
                         // header - take that spec type rather than erasing to Any.
+                        // An operand whose type is written keeps it: `impl Order for
+                        // Version { oper<=> &.(rhs: Version&) }` takes a `Version`,
+                        // and typing it `Order` left its fields unreadable natively.
                         val operandType = if (method.name.startsWith("oper") && item.traitName != null) {
                             resolveType(TypeRef.Named(item.traitName!!), tpSet)
                         } else null
-                        for (p in method.params) params.add(p.name to (operandType ?: resolveType(p.type, tpSet)))
+                        for (p in method.params) {
+                            val written = resolveType(p.type, tpSet)
+                            params.add(p.name to (if (operandType != null && written == IrType.Any) operandType else written))
+                        }
                         val returnType = when (val rt = method.returnType) {
                             is TypeAnnotation.Explicit -> resolveType(rt.ref, tpSet)
                             // `oper#` (hash) is ULong by contract; its body typically
@@ -755,6 +792,7 @@ class SymbolCollector {
         // and therefore carries a body; only compiler-generated derive nodes are
         // bodyless. Specs require their declared methods, while decorators use an
         // explicitly empty body.
+        val familyResults = mutableMapOf<Triple<String, String, List<String>>, String>()
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
                 if (!item.hasBody && !item.isDerived) {
@@ -852,6 +890,12 @@ class SymbolCollector {
                     // `impl Equal for Loose { oper== … }` is a derive plus the one
                     // operator written by hand, and the written one wins. Two
                     // duplicate derive requests for one spec are still an error.
+                    if (specDeclaration != null) {
+                        outConflict(item, specDeclaration, familyResults)?.let {
+                            complete = false
+                            errors.add(it)
+                        }
+                    }
                     val refinesExisting = isOperOverload && table.conformsTo(item.typeName, item.traitName)
                     if (complete && !refinesExisting && !table.defineConformance(
                             TraitConformance(
@@ -945,7 +989,8 @@ class SymbolCollector {
         // yet at this point.
         val declared = program.items.filterIsInstance<TopLevel.Spec>()
             .firstOrNull { it.name == spec }
-            ?.methods?.firstOrNull { it.name == method.name }
+            // An operator's name carries its operand (`oper<=>@Version`).
+            ?.methods?.firstOrNull { it.name.substringBefore('@') == method.name.substringBefore('@') }
             ?.returnType as? TypeAnnotation.Explicit ?: return null
         val ref = declared.ref
         // `Self` on the contract is the implementing type here.

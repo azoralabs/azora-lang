@@ -17,6 +17,7 @@
 package org.azora.lang.backend
 
 import org.azora.lang.putIfAbsentCompat
+import org.azora.lang.ir.ElementReads
 import org.azora.lang.ir.IrBinaryOp
 import org.azora.lang.ir.symbolDenotes
 import org.azora.lang.ir.IrExpr
@@ -375,6 +376,7 @@ class LlvmCodegen {
         // Spec implementations are also called through dispatch tables, which
         // forward plain values, so they keep the value convention.
         val dispatched = specDispatch.values.flatMap { table -> table.impls.flatMap { it.methodFuncs.values } }.toSet()
+        elementReads = ElementReads(program.items.filterIsInstance<IrTopLevel.Func>().map { it.function })
         for (item in program.items) {
             when (item) {
                 is IrTopLevel.Func -> {
@@ -1332,9 +1334,16 @@ class LlvmCodegen {
         val (left, right) = expr.args
         val held = emitExpr(left)
         val slot = mapType(left.type)
-        if (!slot.endsWith("*")) return coerceNumeric(held, left.type, expr.type)
+        val flagged = left.type as? IrType.Nullable
+        if (flagged == null || !isFlagged(flagged)) {
+            if (!slot.endsWith("*")) return coerceNumeric(held, left.type, expr.type)
+        }
         val isNull = nextTmp()
-        emit("  $isNull = icmp eq $slot $held, null")
+        if (flagged != null && isFlagged(flagged)) {
+            emit("  $isNull = xor i1 ${presentFlag(held, flagged)}, true")
+        } else {
+            emit("  $isNull = icmp eq $slot $held, null")
+        }
         val present = nextLabel("coalesce.value")
         val absent = nextLabel("coalesce.fallback")
         val done = nextLabel("coalesce.done")
@@ -3385,7 +3394,10 @@ end:
     // -----------------------------------------------------------------------
 
     /** The byte size of a scalar/pointer LLVM value of IR type [type]. */
-    private fun sizeOfScalar(type: IrType): Int = when (mapType(type)) {
+    private fun sizeOfScalar(type: IrType): Int = if (type is IrType.Nullable && isFlagged(type)) {
+        // `{ bits, i1 }`: the flag pads out to the bits' own alignment.
+        2 * sizeOfScalar(nullableInner(type))
+    } else when (mapType(type)) {
         "i1", "i8" -> 1
         "i16" -> 2
         "i32", "float" -> 4
@@ -3419,6 +3431,8 @@ end:
 
     private fun coerceNumeric(value: String, from: IrType, to: IrType): String {
         if (from == to) return value
+        coerceNullable(value, from, to)?.let { return it }
+        checkSharedElements(from, to)
         // Upcast a concrete `pack` to a spec it implements: box into a fat pointer
         // `{ i32 typeId, i8* data }` so the value carries its runtime type for
         // dynamic dispatch. (A spec→spec pass-through keeps the existing box.)
@@ -5337,7 +5351,62 @@ end:
         return if (expr.prefix) updated else old
     }
 
+    /**
+     * `==` or `!=` with a flagged nullable on a side. Against `null` it asks
+     * for the flag. Two nullables are equal when neither holds a value, or both
+     * hold equal values; a nullable equals a plain value it holds.
+     */
+    private fun emitFlaggedEquality(expr: IrExpr.Binary): String {
+        val equal = if (isNullLiteral(expr.left) || isNullLiteral(expr.right)) {
+            val side = if (isNullLiteral(expr.right)) expr.left else expr.right
+            val present = presentFlag(emitExpr(side), side.type as IrType.Nullable)
+            nextTmp().also { emit("  $it = xor i1 $present, true") }
+        } else {
+            fun parts(side: IrExpr): Triple<String, String, IrType> {
+                val value = emitExpr(side)
+                val type = side.type
+                return if (type is IrType.Nullable && isFlagged(type)) {
+                    Triple(presentFlag(value, type), heldValue(value, type), nullableInner(type))
+                } else Triple("true", value, type)
+            }
+            val (leftPresent, leftValue, leftType) = parts(expr.left)
+            val (rightPresent, rightValue, rightType) = parts(expr.right)
+            val same = nextTmp()
+            when {
+                isNumericLike(leftType) && isNumericLike(rightType) -> {
+                    val common = commonNumeric(leftType, rightType)
+                    val a = coerceNumeric(leftValue, leftType, common)
+                    val b = coerceNumeric(rightValue, rightType, common)
+                    val compare = if (common in IrType.floatTypes) "fcmp oeq" else "icmp eq"
+                    emit("  $same = $compare ${mapType(common)} $a, $b")
+                }
+                leftType == IrType.Bool && rightType == IrType.Bool -> emit("  $same = icmp eq i1 $leftValue, $rightValue")
+                // An erased value compares by its bits, as erased `==` does.
+                else -> emit("  $same = icmp eq i8* ${erasedBits(leftValue, leftType)}, ${erasedBits(rightValue, rightType)}")
+            }
+            val both = nextTmp(); emit("  $both = and i1 $leftPresent, $rightPresent")
+            val held = nextTmp(); emit("  $held = and i1 $both, $same")
+            val either = nextTmp(); emit("  $either = or i1 $leftPresent, $rightPresent")
+            val neither = nextTmp(); emit("  $neither = xor i1 $either, true")
+            nextTmp().also { emit("  $it = or i1 $held, $neither") }
+        }
+        if (expr.op == IrBinaryOp.EQ) return equal
+        return nextTmp().also { emit("  $it = xor i1 $equal, true") }
+    }
+
     private fun emitBinary(expr: IrExpr.Binary): String {
+        if (isFlagged(expr.left.type) || isFlagged(expr.right.type)) {
+            if (expr.op == IrBinaryOp.EQ || expr.op == IrBinaryOp.NEQ) return emitFlaggedEquality(expr)
+            // Anywhere else the checker has narrowed the operand to a value it
+            // holds (`if x != null { x + 1 }`): the operation applies to that.
+            fun held(side: IrExpr) = if (side.type is IrType.Nullable && isFlagged(side.type)) {
+                IrExpr.NumCast(side, nullableInner(side.type as IrType.Nullable))
+            } else side
+            val resultType = expr.type
+            val computed = if (resultType is IrType.Nullable && isFlagged(resultType)) nullableInner(resultType) else resultType
+            val narrowed = expr.copy(left = held(expr.left), right = held(expr.right), type = computed)
+            return coerceNumeric(emitBinary(narrowed), computed, resultType)
+        }
         // String-typed operations are routed to runtime helpers.
         if (expr.left.type == IrType.String || expr.right.type == IrType.String) {
             return emitStringBinary(expr)
@@ -5636,6 +5705,9 @@ end:
 
     private fun emitCall(expr: IrExpr.Call): String {
         if (expr.name == Intrinsics.NULL_COALESCE) return emitNullCoalesce(expr)
+        // `a?.b` reaches only the interpreter so far; a call to a symbol that
+        // does not exist would fail later, in the assembler, without a name.
+        check(expr.name != "__safeMember") { "LLVM cannot lower '?.' (safe member access) yet" }
         if (expr.name == "__temporary") {
             val value = emitExpr(expr.args.single())
             pendingTemporaries += value to expr.type
@@ -5871,11 +5943,11 @@ end:
             }
             if (i in bySlot) {
                 val type = mapType(paramType)
-                return@mapIndexed "$type* ${emitArgumentSlot(arg, paramType, writeBacks)}"
+                return@mapIndexed "$type* ${asArgument(expr.name, i) { emitArgumentSlot(arg, paramType, writeBacks) }}"
             }
             val emitted = emitExpr(arg)
             if (native == null) qualifyConcreteOwnership(emitted, arg.type)
-            val value = coerceNumeric(emitted, arg.type, paramType)
+            val value = asArgument(expr.name, i) { coerceNumeric(emitted, arg.type, paramType) }
             "${if (native == null) mapType(paramType) else nativeParameterType(paramType)} $value"
         }.joinToString(", ")
         val physicalReturn = funcReturnTypes[expr.name] ?: expr.type
@@ -5903,6 +5975,8 @@ end:
      * writes still reach the place the caller named.
      */
     private fun emitArgumentSlot(arg: IrExpr, paramType: IrType, writeBacks: MutableList<() -> Unit>): String {
+        // The callee writes through the caller's own array, so it must agree on its layout.
+        checkSharedElements(arg.type, paramType)
         val type = mapType(paramType)
         val direct: Pair<String, String>? = when (arg) {
             is IrExpr.Var -> if (arg.name in lazyLocals || (currentFunctionName to arg.name) in reactiveStorage) null
@@ -5987,33 +6061,60 @@ end:
     }
 
     /**
-     * A tuple is a heap aggregate, as a pack is: each component at an offset
-     * aligned to its own width. The tuple's type decides the layout, so an
-     * erased `(K, V)` holds eight-byte slots whatever the components were.
+     * A tuple is a heap aggregate of erased slots: each component takes eight
+     * bytes and holds the bits an erased `Any` holds for it. Concrete and
+     * erased code therefore share one layout - the `(Int, Int)` built here is
+     * the `(K, V)` a generic function reads, whether the tuple was written at
+     * the call, kept in a variable or stored in an array. A component no erased
+     * slot can hold (`Cent`, `Quad`) is stored as itself, in a slot of its own
+     * width; erased code cannot hold such a value in the first place.
      */
     private fun tupleOffsets(types: List<IrType>): Pair<List<Int>, Int> {
         var end = 0
-        val offsets = types.map { type ->
-            val width = sizeOfScalar(type)
-            val at = (end + width - 1) / width * width
-            end = at + width
-            at
-        }
+        val offsets = types.map { type -> end.also { end += tupleSlotWidth(type) } }
         return offsets to end
+    }
+
+    private fun tupleSlotWidth(type: IrType): Int =
+        if (fitsErasedSlot(type)) ERASED_SLOT_BYTES else (sizeOfScalar(type) + ERASED_SLOT_BYTES - 1) / ERASED_SLOT_BYTES * ERASED_SLOT_BYTES
+
+    /** True when a value of [type] travels through an erased `Any` slot as its bits. */
+    private fun fitsErasedSlot(type: IrType): Boolean = sizeOfScalar(type) <= ERASED_SLOT_BYTES
+
+    /** [value] of [type] as the bits an erased `Any` slot holds for it. */
+    private fun erasedBits(value: String, type: IrType): String {
+        val llvm = mapType(type)
+        if (llvm == "i8*") return value
+        // Every integer-shaped value - `Unit`'s byte included - is its bits,
+        // zero-extended, which is what `inttoptr` makes of it.
+        if (LLVM_INTEGER.matches(llvm)) return nextTmp().also { emit("  $it = inttoptr $llvm $value to i8*") }
+        return coerceNumeric(value, type, IrType.Any)
+    }
+
+    /** The erased slot [bits] read back as a value of [type]; the inverse of [erasedBits]. */
+    private fun fromErasedBits(bits: String, type: IrType): String {
+        val llvm = mapType(type)
+        if (llvm == "i8*") return bits
+        if (LLVM_INTEGER.matches(llvm)) return nextTmp().also { emit("  $it = ptrtoint i8* $bits to $llvm") }
+        return coerceNumeric(bits, IrType.Any, type)
     }
 
     private fun emitTupleLit(expr: IrExpr.TupleLit): String {
         val types = (expr.type as? IrType.Tuple)?.elements ?: expr.elements.map { it.type }
         val (offsets, size) = tupleOffsets(types)
         // Components are evaluated left to right before the storage exists.
-        val values = expr.elements.mapIndexed { i, element -> coerceNumeric(emitExpr(element), element.type, types[i]) }
+        val values = expr.elements.mapIndexed { i, element ->
+            val value = coerceNumeric(emitExpr(element), element.type, types[i])
+            if (fitsErasedSlot(types[i])) erasedBits(value, types[i]) else value
+        }
         val raw = emitHeapAlloc("${maxOf(size, 1)}")
         for ((i, value) in values.withIndex()) {
+            val stored = if (fitsErasedSlot(types[i])) "i8*" else mapType(types[i])
             val slot = nextTmp()
             emit("  $slot = getelementptr i8, i8* $raw, i64 ${offsets[i]}")
             val typed = nextTmp()
-            emit("  $typed = bitcast i8* $slot to ${mapType(types[i])}*")
-            emit("  store ${mapType(types[i])} $value, ${mapType(types[i])}* $typed, align 1")
+            emit("  $typed = bitcast i8* $slot to $stored*")
+            emit("  store $stored $value, $stored* $typed, align 1")
         }
         return raw
     }
@@ -6021,15 +6122,18 @@ end:
     private fun emitTupleAccess(expr: IrExpr.TupleAccess): String {
         val types = (expr.target.type as? IrType.Tuple)?.elements
             ?: error("tuple component .${expr.index} of ${expr.target.type} has no tuple layout")
-        val stored = types[expr.index]
+        val component = types[expr.index]
+        val erased = fitsErasedSlot(component)
+        val stored = if (erased) "i8*" else mapType(component)
         val raw = emitExpr(expr.target)
         val slot = nextTmp()
         emit("  $slot = getelementptr i8, i8* $raw, i64 ${tupleOffsets(types).first[expr.index]}")
         val typed = nextTmp()
-        emit("  $typed = bitcast i8* $slot to ${mapType(stored)}*")
+        emit("  $typed = bitcast i8* $slot to $stored*")
         val loaded = nextTmp()
-        emit("  $loaded = load ${mapType(stored)}, ${mapType(stored)}* $typed, align 1")
-        return coerceNumeric(loaded, stored, expr.type)
+        emit("  $loaded = load $stored, $stored* $typed, align 1")
+        val value = if (erased) fromErasedBits(loaded, component) else loaded
+        return coerceNumeric(value, component, expr.type)
     }
 
     private fun emitPointerAlloc(valueExpr: IrExpr, pointerType: IrType): String {
@@ -6188,10 +6292,15 @@ end:
             // A nullable prints what it holds, or `null`: a map's `get` answers
             // one, and its value is the answer the program asked for.
             is IrType.Nullable -> {
-                val inner = (arg.type as IrType.Nullable).inner
-                val pointer = emitExpr(arg)
+                val nullable = arg.type as IrType.Nullable
+                val inner = nullableInner(nullable)
+                val value = emitExpr(arg)
                 val isNull = nextTmp()
-                emit("  $isNull = icmp eq i8* $pointer, null")
+                if (isFlagged(nullable)) {
+                    emit("  $isNull = xor i1 ${presentFlag(value, nullable)}, true")
+                } else {
+                    emit("  $isNull = icmp eq i8* $value, null")
+                }
                 val absent = "print.null.${labelCounter++}"
                 val present = "print.value.${labelCounter++}"
                 val printed = "print.done.${labelCounter++}"
@@ -6207,7 +6316,7 @@ end:
                 }
                 emit("  br label %$printed")
                 emit("$present:")
-                emitPrintHeld(pointer, inner, nl, newline)
+                emitPrintHeld(if (isFlagged(nullable)) heldValue(value, nullable) else value, inner, nl, newline)
                 emit("  br label %$printed")
                 emit("$printed:")
             }
@@ -6251,7 +6360,11 @@ end:
         emit("  $unused = call i32 (i8*, ...) @printf(i8* $fmt, double $value)")
     }
 
-    /** What a non-null nullable holds, printed as its own type would be. */
+    /**
+     * What a non-null nullable holds, printed as its own type would be:
+     * [pointer] is the held value itself for a flagged nullable, and the
+     * reference for one whose null is the address 0.
+     */
     private fun emitPrintHeld(pointer: String, inner: IrType, nl: String, newline: Boolean) {
         when {
             inner == IrType.String || inner is IrType.Named -> {
@@ -6264,10 +6377,7 @@ end:
                 }
             }
             inner == IrType.Bool -> {
-                val bits = coerceNumeric(pointer, IrType.Nullable(inner), IrType.Int)
-                val flag = nextTmp()
-                emit("  $flag = icmp ne i32 $bits, 0")
-                val text = boolToStr(flag)
+                val text = boolToStr(pointer)
                 if (newline) {
                     usesPuts = true
                     val unused = nextTmp()
@@ -6277,11 +6387,11 @@ end:
                 }
             }
             inner in IrType.floatTypes -> {
-                val value = coerceNumeric(pointer, IrType.Nullable(inner), IrType.Double)
+                val value = coerceNumeric(pointer, inner, IrType.Double)
                 printDouble(value, nl)
             }
             IrType.isInteger(inner) || inner == IrType.Char -> {
-                val value = coerceNumeric(pointer, IrType.Nullable(inner), IrType.Long)
+                val value = widenToI64(pointer, inner)
                 val format = when {
                     inner == IrType.Char -> "%c$nl"
                     isUnsigned(inner) -> "%llu$nl"
@@ -6346,20 +6456,50 @@ end:
 
     /** Produces an `i8*` C string for any scalar value (used by interpolation). */
     private fun stringify(expr: IrExpr): String {
-        return when (expr.type) {
-            IrType.String -> emitExpr(expr)
-            IrType.Bool -> boolToStr(emitExpr(expr))
+        val nullable = expr.type as? IrType.Nullable ?: return stringifyValue(emitExpr(expr), expr.type)
+        // A nullable renders as what it holds, or as `null`, as it prints.
+        val inner = nullableInner(nullable)
+        val value = emitExpr(expr)
+        val isNull = nextTmp()
+        if (isFlagged(nullable)) {
+            emit("  $isNull = xor i1 ${presentFlag(value, nullable)}, true")
+        } else {
+            emit("  $isNull = icmp eq i8* $value, null")
+        }
+        val present = nextLabel("template.value")
+        val absent = nextLabel("template.null")
+        val done = nextLabel("template.done")
+        emitTerminator("  br i1 $isNull, label %$absent, label %$present")
+        startBlock(present)
+        val held = if (isFlagged(nullable)) heldValue(value, nullable) else coerceNumeric(value, IrType.Any, inner)
+        val text = stringifyValue(held, inner)
+        val textBlock = currentBlock
+        emitTerminator("  br label %$done")
+        startBlock(absent)
+        val nullText = gepString(addStringConstant("null"))
+        val nullBlock = currentBlock
+        emitTerminator("  br label %$done")
+        startBlock(done)
+        val result = nextTmp()
+        emit("  $result = phi i8* [ $text, %$textBlock ], [ $nullText, %$nullBlock ]")
+        return result
+    }
+
+    /** [raw], a value of [type], rendered as a string. */
+    private fun stringifyValue(raw: String, type: IrType): String {
+        return when (type) {
+            IrType.String -> raw
+            IrType.Bool -> boolToStr(raw)
             IrType.Char -> {
                 usesCharToStr = true; usesSnprintf = true; usesMalloc = true
-                val v = coerceToI32(emitExpr(expr), expr.type)
+                val v = coerceToI32(raw, type)
                 val tmp = nextTmp()
                 emit("  $tmp = call i8* @__azora_char_to_str(i32 $v)")
                 tmp
             }
             IrType.Double, IrType.Float, IrType.Quad -> {
                 usesDoubleToStr = true; usesSnprintf = true; usesMalloc = true; usesTrunc = true
-                val raw = emitExpr(expr)
-                val d = when (expr.type) {
+                val d = when (type) {
                     IrType.Double -> raw
                     IrType.Float -> { val t = nextTmp(); emit("  $t = fpext float $raw to double"); t }
                     else -> { val t = nextTmp(); emit("  $t = fptrunc fp128 $raw to double"); t }
@@ -6372,9 +6512,8 @@ end:
             // that says how it prints is routed through its `Display` before it
             // reaches here, so what is left is one that says nothing - and its
             // type name is the most it can honestly be rendered as.
-            is IrType.Named if structDefs.containsKey((expr.type as IrType.Named).name) -> {
-                emitExpr(expr)
-                val ref = addStringConstant((expr.type as IrType.Named).name)
+            is IrType.Named if structDefs.containsKey(type.name) -> {
+                val ref = addStringConstant(type.name)
                 val tmp = nextTmp()
                 emit("  $tmp = getelementptr [${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0")
                 tmp
@@ -6382,10 +6521,9 @@ end:
             else -> {
                 // Integer types → 64-bit then format (unsigned types use %llu).
                 usesSnprintf = true; usesMalloc = true
-                val raw = emitExpr(expr)
-                val v = widenToI64(raw, expr.type)
+                val v = widenToI64(raw, type)
                 val tmp = nextTmp()
-                if (isUnsigned(expr.type)) {
+                if (isUnsigned(type)) {
                     usesUintToStr = true
                     emit("  $tmp = call i8* @__azora_uint_to_str(i64 $v)")
                 } else {
@@ -7006,6 +7144,159 @@ allocate:
     private fun abiReturnType(type: IrType): String =
         if (type == IrType.Unit || type == IrType.Nothing) "void" else mapType(type)
 
+    // -----------------------------------------------------------------------
+    // Nullable values
+    //
+    // A `T?` whose `T` is a reference - a string, pack, array, tuple, closure,
+    // enum, task, pointer - is that pointer, and null is the address 0: no
+    // present value is ever that address. Every other `T?` - a number, a
+    // `Bool`, a `Char`, an erased `V?` - has no bit pattern to spare, since
+    // `0`, `false` and `0.0` are values. It is a pair `{ bits, i1 present }`
+    // whose bits are those an erased slot holds for the value, so a concrete
+    // `Int?` and an erased `V?` share one representation, as tuples do.
+    // -----------------------------------------------------------------------
+
+    /** What a nullable holds when it holds something; `T??` is `T?`. */
+    private fun nullableInner(type: IrType.Nullable): IrType {
+        var inner = type.inner
+        while (inner is IrType.Nullable) inner = inner.inner
+        return inner
+    }
+
+    /** True for a nullable that carries a presence flag beside its value's bits. */
+    private fun isFlagged(type: IrType): Boolean = type is IrType.Nullable && !hasNullNiche(nullableInner(type))
+
+    /** True when no present value of [type] is the null address. */
+    private fun hasNullNiche(type: IrType): Boolean = when (type) {
+        IrType.String, is IrType.Array, is IrType.Map, is IrType.Set, is IrType.Tuple, is IrType.Function,
+        is IrType.Task, is IrType.Variant, is IrType.Pointer, is IrType.Named -> true
+        else -> false
+    }
+
+    /** The LLVM type of a flagged nullable's bits: an erased slot, unless the value is wider. */
+    private fun nullableBits(type: IrType.Nullable): String {
+        val inner = nullableInner(type)
+        return if (fitsErasedSlot(inner)) "i8*" else mapType(inner)
+    }
+
+    /** A flagged nullable holding [value], a value of the nullable's own inner type. */
+    private fun wrapPresent(value: String, type: IrType.Nullable): String {
+        val inner = nullableInner(type)
+        val bits = if (fitsErasedSlot(inner)) erasedBits(value, inner) else value
+        val pair = mapType(type)
+        val first = nextTmp()
+        emit("  $first = insertvalue $pair undef, ${nullableBits(type)} $bits, 0")
+        val second = nextTmp()
+        emit("  $second = insertvalue $pair $first, i1 true, 1")
+        return second
+    }
+
+    /** Whether the flagged nullable [value] holds something. */
+    private fun presentFlag(value: String, type: IrType.Nullable): String {
+        if (value == "zeroinitializer") return "false"
+        return nextTmp().also { emit("  $it = extractvalue ${mapType(type)} $value, 1") }
+    }
+
+    /** What the flagged nullable [value] holds, as its inner type; meaningful only when present. */
+    private fun heldValue(value: String, type: IrType.Nullable): String {
+        val inner = nullableInner(type)
+        val bits = nextTmp()
+        emit("  $bits = extractvalue ${mapType(type)} $value, 0")
+        return if (fitsErasedSlot(inner)) fromErasedBits(bits, inner) else bits
+    }
+
+    /** True for the `null` literal, which IR spells as the erased name `__null`. */
+    private fun isNullLiteral(expr: IrExpr): Boolean = expr is IrExpr.Var && expr.name == "__null"
+
+    /** What each function does with the arrays it is given (see [checkSharedElements]). */
+    private var elementReads = ElementReads(emptyList())
+
+    /** Set while an argument is converted for a parameter whose callee reads only its length. */
+    private var lengthOnlyArgument = false
+
+    /** Runs [convert] for argument [index] of a call to [callee]. */
+    private fun <T> asArgument(callee: String, index: Int, convert: () -> T): T {
+        val saved = lengthOnlyArgument
+        lengthOnlyArgument = !elementReads.readsElements(callee, index)
+        try {
+            return convert()
+        } finally {
+            lengthOnlyArgument = saved
+        }
+    }
+
+    /**
+     * An array or a buffer is shared in place, so whoever reads it must agree
+     * on how far apart its elements are. Erased code reads `Array<T>` in
+     * eight-byte slots: an `Array<Int>` (four bytes apart) or an `Array<Bool>`
+     * (one) handed to it, or returned from it as one, would be read at the
+     * wrong offsets. GENERICS_DIP §21.2 requires such a call to be
+     * specialized; until the compiler specializes it, the program is rejected
+     * here rather than miscompiled.
+     */
+    private fun checkSharedElements(from: IrType, to: IrType) {
+        if (from !is IrType.Array || to !is IrType.Array || lengthOnlyArgument) return
+        val held = from.element
+        val heldWidth = sizeOfScalar(held)
+        val readWidth = sizeOfScalar(to.element)
+        check(heldWidth == readWidth) {
+            "LLVM cannot share ${from.shown()} as ${to.shown()} yet: its elements are $heldWidth bytes apart where " +
+                "this code reads $readWidth; generic code is not specialized for ${held.shown()} (GENERICS_DIP §21.2)"
+        }
+    }
+
+    /**
+     * Converts at a nullable's boundary: wrapping a value, unwrapping one the
+     * checker has proven present, and passing between the flagged and the
+     * pointer forms (an erased `V?` returned as a concrete `String?`). Null
+     * crosses as null in every direction.
+     */
+    private fun coerceNullable(value: String, from: IrType, to: IrType): String? {
+        val fromFlagged = isFlagged(from)
+        val toFlagged = isFlagged(to)
+        if (!fromFlagged && !toFlagged) return null
+        if (toFlagged) {
+            to as IrType.Nullable
+            if (fromFlagged) {
+                from as IrType.Nullable
+                val a = nullableInner(from)
+                val b = nullableInner(to)
+                // Erased and concrete code agree on the bits; only a change of
+                // number (`Int?` to `Long?`) converts what is held.
+                if (mapType(from) == mapType(to) && (a == b || a == IrType.Any || b == IrType.Any)) return value
+                val present = presentFlag(value, from)
+                val converted = wrapPresent(coerceNumeric(heldValue(value, from), a, b), to)
+                return nextTmp().also { emit("  $it = select i1 $present, ${mapType(to)} $converted, ${mapType(to)} zeroinitializer") }
+            }
+            if (from is IrType.Nullable) {
+                // A pointer-form nullable (`String?`) entering an erased `V?`.
+                val pointer = coerceNumeric(value, from, IrType.Any)
+                val present = nextTmp()
+                emit("  $present = icmp ne i8* $pointer, null")
+                val wrapped = wrapPresent(coerceNumeric(pointer, IrType.Any, nullableInner(to)), to)
+                return nextTmp().also { emit("  $it = select i1 $present, ${mapType(to)} $wrapped, ${mapType(to)} zeroinitializer") }
+            }
+            // The null literal, and the null an erased slot is given for "no value".
+            if (from == IrType.Any && value == "null") return "zeroinitializer"
+            return wrapPresent(coerceNumeric(value, from, nullableInner(to)), to)
+        }
+        from as IrType.Nullable
+        val held = heldValue(value, from)
+        if (to is IrType.Nullable) {
+            // A flagged nullable leaving as a pointer-form one: its bits, or null.
+            val pointer = coerceNumeric(held, nullableInner(from), IrType.Any)
+            val present = presentFlag(value, from)
+            val chosen = nextTmp()
+            emit("  $chosen = select i1 $present, i8* $pointer, i8* null")
+            return coerceNumeric(chosen, IrType.Any, to)
+        }
+        check(to != IrType.Any) {
+            "LLVM cannot pass $from through an erased slot yet: its null needs a flag the eight-byte slot has no room for"
+        }
+        // Proven present by the checker (a narrowed `x`): what it holds.
+        return coerceNumeric(held, nullableInner(from), to)
+    }
+
     private fun mapType(type: IrType): String = when (type) {
         // An integer's width *is* its LLVM type: `Int<7>` is `i7` and `Byte` is
         // `i8`, because `Byte` is `Int<8>`. Signedness is not part of the type
@@ -7050,7 +7341,7 @@ allocate:
         }
         is IrType.Tuple -> "i8*"
         is IrType.Variant -> "i8*"
-        is IrType.Nullable -> "i8*"
+        is IrType.Nullable -> if (isFlagged(type)) "{ ${nullableBits(type)}, i1 }" else "i8*"
         is IrType.Pointer -> "i8*"
         is IrType.Named -> if (type.name in structDefs) "%struct.${sanitizeName(type.name)}*" else "i8*"
     }
@@ -7060,6 +7351,7 @@ allocate:
 
     /** A type-appropriate default/zero value, used for unreachable returns. */
     private fun defaultValue(type: IrType): String = when (type) {
+        is IrType.Nullable if isFlagged(type) -> "zeroinitializer"
         in IrType.floatTypes -> floatConst(0.0, type)
         IrType.Bool -> "false"
         IrType.String -> "null"
@@ -7230,3 +7522,9 @@ private val LIBM_INTRINSICS = mapOf(
     "floor" to 1, "ceil" to 1, "trunc" to 1, "round" to 1,
     "fabs" to 1, "fmod" to 2, "fmin" to 2, "fmax" to 2,
 )
+
+/** The width of an erased `Any` slot: a pointer, which any scalar's bits fit in. */
+private const val ERASED_SLOT_BYTES = 8
+
+/** An LLVM integer type (`i1`, `i8`, `i32`, `i64`, `i7` …). */
+private val LLVM_INTEGER = Regex("i[0-9]+")

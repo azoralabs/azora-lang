@@ -3,17 +3,16 @@
 Plan: [150-step delivery plan](ECOSYSTEM_DELIVERY_PLAN.md).
 Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 
-## Current status — 2026-11-06
+## Current status — 2026-11-07
 
 The ordered short- and long-term plan for the language, Engine and Studio
 (every OS and graphics backend, written in Azora; packages; editor plugins;
 self-hosting; a flagship game as the qualification) is
 [the 2026-11 roadmap](ECOSYSTEM_ROADMAP_2026_11.md).
-Last full run, native tools required: **2,898 tests, 0 failures, 0 skipped**;
-AZLS 91 tests, 0 failures. Roadmap steps A1 and A2 closed 2026-11-06, with
-decision D-6 (by-value parameters transfer ownership) implemented, and the
-`literal` keyword replaced by variadic constructors (user decision); see the
-entries at the end.
+Last full run, native tools required: **2,923 tests, 0 failures, 0 skipped**;
+AZLS 91 tests, 0 failures. Roadmap steps A1 and A2 closed 2026-11-06 (with
+decision D-6) and A3 on 2026-11-07; see the entries at the end. Next: A4 (text
+on LLVM), which first needs `Char` to be a code point on every backend.
 
 ## Status — 2026-10-04
 
@@ -3628,3 +3627,174 @@ debug and optimized, WebAssembly).
   pass (6/6) and each probe relinked with `-fsanitize=address,undefined` reports
   nothing. Studio under ASan/UBSan runs the 30-step scripted gizmo drag and
   exits with no reports; Studio and the launcher rebuild without sanitizers.
+
+## 2026-11-07 — A3: no known miscompiles
+
+Roadmap step A3. Each item was reproduced on the interpreter, LLVM and
+WebAssembly before it was changed, and each fix has a regression test that runs
+the program on all three (LLVM debug and optimized).
+
+### 1. One tuple layout for concrete and erased code
+
+`func<K, V> second(p: (K, V)): V = p.1` with `fin q = (2, 20)` printed `0` on
+LLVM and WebAssembly: `Int` is 32-bit, so `(Int, Int)` put its components at 0
+and 4 where an erased `(Any, Any)` reads 0 and 8. Only a tuple written at the
+call had been built at the callee's layout (`tupleAtSlot`). A tuple's components
+now sit in erased eight-byte slots holding the bits an `Any` holds for them
+(`tupleOffsets`, `erasedBits`/`fromErasedBits` in `LlvmCodegen`; `erase`/`unerase`
+in `WasmCodegen`), so `(Int, Int)` and `(K, V)` are one layout wherever the
+tuple is kept: a variable, an array, a generic function's result. A component
+wider than a slot (`Cent`, `Quad`) takes its own width. `tupleAtSlot` remains
+for a literal's own width (`1` filling a `Long` component).
+
+### 2. A nullable whose value can be zero carries a presence flag
+
+On LLVM a nullable was its value's bits in a pointer, and on WebAssembly the
+value itself, so `0`, `false` and `0.0` were null: `LinkedHashMap<String, Int>`
+answered `null` for a key holding `0`, and a concrete `Int? = 0`, `Bool? = false`
+or `Double? = 0.0` printed `null` and compared equal to it. Now a `T?` whose
+`T` is a reference (string, pack, array, tuple, closure, enum, pointer) keeps
+address 0 as null; every other `T?` (a number, `Bool`, `Char`, an erased `V?`)
+is a pair - `{ bits, i1 present }` on LLVM, a `v128` with the bits in lane 0
+and the flag in lane 1 on WebAssembly - whose bits are those an erased slot
+holds, so a concrete `Int?` and an erased `V?` share one form. Wrapping,
+unwrapping a narrowed value, crossing between the flagged and address forms
+(an erased `V?` returned as a `String?`), `== null`, `==` between nullables,
+`??`, printing and templates read the flag.
+
+Fixed on the way, each needed for a correct `Int?`:
+- `if b then v else null` was typed by its then-branch (`Int`), so the null was
+  converted to an `Int`; the IR now joins the branches (`branchJoin`).
+- `x = 0` or `x = null` for an `x: Int?` carried no conversion (an IR
+  assignment names only its target); the IR adds one (`intoNullable`).
+- Arithmetic on a narrowed nullable (`if x != null { x + 1 }`) was "LLVM cannot
+  apply ADD to Int? yet"; it now operates on the held value on both targets.
+
+A flagged nullable cannot travel through an erased eight-byte slot (`T = Int?`
+as a type argument): both native targets say so by name.
+
+### 3. A template renders a nullable as its value or `null`
+
+`"${map.get(k)}"` rendered the bits as a number on LLVM (null as `0`, a
+`String?` as its address); WebAssembly had no rendering for a nullable and
+printed a `String?` as an address. Both now render the held value, or `null`.
+
+### 4. Erased arrays: a named diagnostic until calls are specialized
+
+Found while reproducing item 1: an `Array<Int>` handed to erased
+`func<T> at(xs: Array<T>&, i: Int): T` was read at eight-byte strides from
+four-byte elements on LLVM and WebAssembly, and an array built by erased code
+(`map`, `filter`) was read at four-byte strides by concrete code. 56 std
+functions are generic over `Array<T>`. GENERICS_DIP §21.2 requires such calls
+to be specialized; until the compiler does, a call or return that would share
+an array whose element width differs from the erased slot is rejected
+("cannot share Array<Int> as Array<Any> yet … (GENERICS_DIP §21.2)"). A callee
+that only reads the length is accepted (`Array_isEmpty`): `ir/ElementReads`
+proves which parameters' elements a function may read, conservatively. Neither
+the Engine nor Studio reaches the diagnostic.
+
+### 5. Derived `Equal`, `Order` and `Hash` check their fields
+
+`pack Sample { var value: Double }` with `derive Order for Sample` was accepted,
+so `sort` ordered NaN as if it were ordered. `ComparisonDeriver` refuses a
+derivation whose field type does not state the capability (OPERATOR_OVERLOADING_DIP
+§7.2): "cannot derive 'Order' for 'Sample': field 'value: Double' is not Order -
+Double is PartialOrder: NaN does not relate to anything". Capabilities are read
+from declarations (std's primitives state theirs), payload-free enums are
+`Equal` and `Order`, and a pack's own type parameter is judged where a type is
+chosen for it.
+
+### 6. `hash` parity
+
+The hash bits already agreed (strings hash their content on every backend);
+the text did not. `hash` is a `ULong`, and the interpreter and WebAssembly
+printed every unsigned value as signed (`ULong` 0 − 1 printed `-1`). The
+interpreter now formats integers by their static type, and WebAssembly renders
+unsigned values through `__ulong_to_str` (one digit loop shared with
+`__long_to_str`).
+
+### 7. The `Out` conflict rule
+
+Two impls of one operator family for one type that differ only in `Out` both
+matched `a + b` and one silently won. The second is now the error the DIP
+gives ("two impls of 'Arithmetic' for 'V' differ only in Out …"); an omitted
+argument is the spec's default and `Self` the implementing type.
+
+### 8. Spec return types are adopted; written operand types are kept
+
+`impl Order for Version { oper<=> &.(other: Version&) { … } }` failed at run
+time ("no method 'isLess' on String") and LLVM refused it. Two causes: the
+existing adoption (`specMemberReturnType`) compared `oper<=>` with the mangled
+`oper<=>@Version` and never matched; and every operand of an operator in a spec
+impl was typed as the spec (`Order`) even when written, so LLVM could not read
+`other.major` - which also broke the documented `: Compare` workaround.
+`SpecDefaults` now gives such a member its spec's declared return type in the
+AST (with `Self`, the spec's type arguments or defaults, and associated types
+bound), the lookup ignores the operand suffix, and a written operand keeps its
+type (an untyped `by` operand still takes the spec's).
+
+### 9. `T.typeName` behind an explicit type argument
+
+Verified: every explicit-type-argument call shape Studio used (an inline
+lookup as the argument of a `Clone`-bounded generic, two inline levels) names
+the written type on all backends, and a generic body that forwards its erased
+`T` to a name lookup is refused (since 2026-10-07). Neither was tested; both
+are now.
+
+### 10. Library bridges and a program's own names
+
+A program that defines `isDigit` and calls `std.char::charIsDigit` (which uses
+std's `isDigit` bridge) failed with "Function 'isDigit' already defined". A
+compiler-provided bridge - every `bridge func` in std - now takes its module
+identity when the program declares its name; every layer recognises compiler
+builtins by local name, and WebAssembly now emits a string intrinsic under the
+symbol each call used, as LLVM did. A foreign `bridge .C` symbol keeps its name;
+no library bridge is foreign today (the Engine's are program modules).
+
+### 11. Recursive `clone` on WebAssembly
+
+WebAssembly copied a pack only when it owned nothing but plain fields, and
+could not copy an array. It now generates one deep copy per type, as LLVM's
+`isolatedCopy` does: a pack's bytes with each owned pack, array and closure
+copied (a field moved out stays null), an array's slots with each owned element
+copied, and a closure sharing its counted environment. A pack that owns a
+pointer or a spec value is still an explicit diagnostic on WebAssembly.
+`ArrayCloneExecTest`'s WebAssembly case now asserts the copy instead of the
+diagnostic.
+
+### Also
+
+- `a?.b` is lowered only by the interpreter. LLVM and WebAssembly emitted a
+  call to a symbol that does not exist, which failed in the assembler; they now
+  name it. No std, Engine or Studio code uses `?.`.
+- Open: specializing generic calls over arrays (item 4; part of A6's generics
+  decision); std `sum`/`product` build invalid LLVM (an `Int` accumulator in an
+  erased body), now stopped earlier by item 4 for narrow elements.
+
+### Tests
+
+New: `ErasedLayoutExecTest` (8), `UnsignedDisplayExecTest` (2),
+`DerivationCapabilityTest` (5), `SpecReturnAdoptionExecTest` (2),
+`GenericTypeNameExecTest` (2), `DeepCloneExecTest` (2). Added to:
+`OperatorFamilyTest` (+3), `BuiltinNameShadowExecTest` (+1). Changed:
+`ArrayCloneExecTest` (WebAssembly copies).
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue
+azora-engine/tests/qualify-native.sh headless && azora-engine/tests/qualify-native.sh foundation
+```
+
+- Compiler: **2,923 tests, 0 failures, 0 skipped** (native tools required).
+  AZLS: **91 tests, 0 failures**. CLI distribution built.
+- std: all 49 modules check; `azora test std` 16 passed.
+- Engine: `qualify-native.sh headless` and `foundation` pass (6/6) with the
+  CLI from this run, and each probe relinked with Apple clang
+  `-fsanitize=address,undefined` passes with no reports. No Engine source
+  reaches the erased-array diagnostic (item 4).
+- Studio under ASan/UBSan: a 30-step scripted drag of the move gizmo's X
+  handle (from content point 798,471, 4 pt right and 1 pt down per step) takes
+  Ground to X = 1.929 and exits with no reports. (The 2026-11-06 script was not
+  recorded, so its X = 2.217 is not comparable.) Studio and the launcher rebuild
+  without sanitizers.

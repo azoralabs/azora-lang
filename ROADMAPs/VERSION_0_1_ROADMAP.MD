@@ -59,18 +59,18 @@ Hard blockers. `0.1` does not ship with any of these open.
 
 Each lets a program be silently wrong. This list must be empty to ship.
 
-- ⬜ **Derivation is not checked against field capabilities.**
+- ✅ *(2026-11-07: refused with the field named, OPERATOR_OVERLOADING_DIP §7.2)* **Derivation is not checked against field capabilities.**
   `pack Sample { var value: Double }` with `derive Order for Sample` is
   *accepted*, claiming a total order over a field that has only a partial one.
   `sort` then takes it and NaN sorts as if ordered.
-- ⬜ **`hash` disagrees between backends.** LLVM hashes anything behind a
+- ✅ *(2026-11-07: strings hash their content everywhere; unsigned values now print unsigned on the interpreter and WebAssembly)* **`hash` disagrees between backends.** LLVM hashes anything behind a
   pointer - including `String` - by address; the interpreter hashes by content.
   A `String`-keyed `HashMap` behaves differently per target.
-- ⬜ **`Out` conflict rule unimplemented.** Two impls of one operator family
+- ✅ *(2026-11-07)* **`Out` conflict rule unimplemented.** Two impls of one operator family
   differing only in `Out` both match; one silently wins.
 - ⬜ **`<T: Spec>` in a type-parameter list is parsed and discarded.** A bound
   written there is a lie.
-- ⬜ **A spec member's declared return type is not adopted by its impl.**
+- ✅ *(2026-11-07: adopted; a written operand type is also kept)* **A spec member's declared return type is not adopted by its impl.**
   `spec Order` declares `oper<=> …: Compare`, but an implementation that omits
   `: Compare` compiles and then fails at run time with
   `no method 'isLess' on String` - the inferred type stays the enum's runtime

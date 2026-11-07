@@ -147,4 +147,73 @@ class OperatorFamilyTest {
             }
         """.trimIndent()))
     }
+
+    private val vectors = """
+        import std.io
+        import std.traits
+        pack V {
+            var x: Int
+        }
+        pack W {
+            var x: Long
+        }
+    """.trimIndent()
+
+    /**
+     * §12 and the associated-type note: a family's result is fixed per `Rhs`.
+     * Two impls that differ only in `Out` both match `a + b`, and one of them
+     * had silently won; the second is now the error.
+     */
+    @Test fun twoImplsDifferingOnlyInOutConflict() {
+        val result = compile("""
+            $vectors
+            impl Arithmetic<V, V> for V {
+                oper+ &.(rhs: V&): V { return V(self.x + rhs.x) }
+            }
+            impl Arithmetic<V, W> for V {
+                oper+ &.(rhs: V&): W { return W((self.x + rhs.x) as Long) }
+            }
+            func main() {
+                println((V(1) + V(2)).x)
+            }
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result, "two impls differing only in Out must be rejected")
+        assertTrue(
+            result.errors.any { "differ only in Out" in it && "'Arithmetic'" in it && "'V'" in it },
+            "the error should name the family and the type, got: ${result.errors}",
+        )
+    }
+
+    /** An omitted argument is its default: `impl Arithmetic for V` is `Arithmetic<V, V>`. */
+    @Test fun aDefaultedOutConflictsWithAWrittenOne() {
+        val result = compile("""
+            $vectors
+            impl Arithmetic for V {
+                oper+ &.(rhs: Self&): V { return V(self.x + rhs.x) }
+            }
+            impl Arithmetic<V, W> for V {
+                oper* &.(rhs: V&): W { return W((self.x * rhs.x) as Long) }
+            }
+            func main() {}
+        """.trimIndent())
+        assertIs<CompilationResult.Failure>(result, "a defaulted Out against a written one must be rejected")
+        assertTrue(result.errors.any { "differ only in Out" in it }, "got: ${result.errors}")
+    }
+
+    /** Impls with different `Rhs` are separate operators, and both stand. */
+    @Test fun implsWithDifferentRhsDoNotConflict() {
+        assertEquals("3\n6", run("""
+            $vectors
+            impl Arithmetic<V, V> for V {
+                oper+ &.(rhs: V&): V { return V(self.x + rhs.x) }
+            }
+            impl Arithmetic<Int, V> for V {
+                oper* &.(rhs: Int): V { return V(self.x * rhs) }
+            }
+            func main() {
+                println((V(1) + V(2)).x)
+                println((V(3) * 2).x)
+            }
+        """.trimIndent()))
+    }
 }

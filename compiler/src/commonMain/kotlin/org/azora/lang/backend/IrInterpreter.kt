@@ -1358,7 +1358,7 @@ class IrInterpreter {
                 for (part in expr.parts) {
                     when (part) {
                         is IrExpr.IrTemplatePart.Literal -> sb.append(part.text)
-                        is IrExpr.IrTemplatePart.Expr -> sb.append(formatValue(evalExpr(part.expr)))
+                        is IrExpr.IrTemplatePart.Expr -> sb.append(formatTyped(evalExpr(part.expr), part.expr.type))
                     }
                 }
                 sb.toString()
@@ -1865,7 +1865,7 @@ class IrInterpreter {
         }
         if (expr.name.isIntrinsic("print") || expr.name.isIntrinsic("println")) {
             val value = args.firstOrNull()
-            val text = formatValue(value)
+            val text = expr.args.firstOrNull()?.let { formatTyped(value, it.type) } ?: formatValue(value)
             write(if (expr.name.isIntrinsic("println")) text + "\n" else text)
             outputListener?.invoke(text)
             return null
@@ -1875,7 +1875,7 @@ class IrInterpreter {
             throw AzoraPanicException(formatValue(args.firstOrNull()))
         }
         if (expr.name.isIntrinsic("toString")) {
-            return formatValue(args.firstOrNull())
+            return expr.args.firstOrNull()?.let { formatTyped(args.firstOrNull(), it.type) } ?: formatValue(args.firstOrNull())
         }
 
         // std.os - the process and its surroundings. Implemented here rather
@@ -2095,6 +2095,24 @@ class IrInterpreter {
         return try {
             executeFunction(IrFunction("__closure", closure.params, closure.returnType, closure.body), args)
         } finally { st.scopes = saved }
+    }
+
+    /**
+     * [value] rendered as a value of [type]. Every integer is held as a
+     * `Long`, so an unsigned one is read back at its own width: `ULong.MAX`
+     * prints as 18446744073709551615, as the compiled targets print it.
+     */
+    private fun formatTyped(value: Any?, type: IrType): String {
+        val declared = (type as? IrType.Nullable)?.inner ?: type
+        if (value !is Long) return formatValue(value)
+        val bits = when {
+            declared is IrType.Integer && !declared.signed -> declared.bits
+            declared == IrType.USize -> 64
+            else -> return formatValue(value)
+        }
+        if (bits > 64) return formatValue(value)
+        val unsigned = if (bits == 64) value.toULong() else value.toULong() and ((1UL shl bits) - 1UL)
+        return unsigned.toString()
     }
 
     private fun formatValue(value: Any?): String = when (value) {

@@ -20,6 +20,7 @@ import std.traits::Clone
 @Since("0.1")
 pack Unique<T> {
     var _raw: T^
+    @Experimental(since: "0.1")
     var active: Bool = true
 }
 

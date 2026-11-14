@@ -93,6 +93,31 @@ class StabilityDecoratorTest {
         """.trimIndent())
     }
 
+    @Test fun eachDeclarationAnswersForItsOwnStabilityDecorators() {
+        // A pack's `@Since` and its field's `@Experimental` describe two
+        // declarations; only one declaration carrying both is redundant.
+        compiles("""
+            import std.io
+            @Since("0.1")
+            pack Buffer {
+                @Experimental(since: "0.1")
+                var storage: Int = 0
+                var size: Int = 0
+            }
+            func main() {}
+        """.trimIndent())
+        val e = errors("""
+            import std.io
+            pack Buffer {
+                @Since("0.1")
+                @Experimental(since: "0.1")
+                var storage: Int = 0
+            }
+            func main() {}
+        """.trimIndent())
+        assertTrue(e.any { it.contains("@since is redundant") }, e.toString())
+    }
+
     @Test fun unknownDecoratorIsRejected() {
         // A decorator is capitalised (a lowercase `@name` is a macro), so the
         // misspelling worth catching is of the capitalised name.

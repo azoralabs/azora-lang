@@ -65,23 +65,27 @@ class AstValidator(private val libraryDecorators: Map<String, LibraryDecorator>?
                 else -> {}
             }
             // Stability decorators (@experimental / @stable) are mutually exclusive;
-            // their `since` argument, if present, must be a string literal.
-            val anns = when (item) {
-                is TopLevel.Pack -> item.annotations + item.fields.flatMap { it.annotations }
-                is TopLevel.Deco -> item.annotations + item.fields.flatMap { it.annotations }
-                is TopLevel.Solo -> item.annotations + item.fields.flatMap { it.annotations }
-                is TopLevel.Slot -> item.annotations
-                is TopLevel.Test -> item.annotations
-                is TopLevel.Bridge -> item.annotations
-                is TopLevel.TypeAlias -> item.annotations
-                is TopLevel.VarDecl -> item.annotations
-                is TopLevel.FinDecl -> item.annotations
-                is TopLevel.LetDecl -> item.annotations
-                is TopLevel.Enum -> item.annotations + item.variantAnnotations.flatten()
-                is TopLevel.Fail -> item.annotations + item.variantAnnotations.flatten()
+            // their `since` argument, if present, must be a string literal. Each
+            // declaration answers for its own: a `@Since` pack may have an
+            // `@Experimental` field, and an enum a `@Deprecated` case.
+            val declarations: List<List<Annotation>> = when (item) {
+                is TopLevel.Pack -> listOf(item.annotations) + item.fields.map { it.annotations }
+                is TopLevel.Deco -> listOf(item.annotations) + item.fields.map { it.annotations }
+                is TopLevel.Solo -> listOf(item.annotations) + item.fields.map { it.annotations }
+                is TopLevel.Slot -> listOf(item.annotations)
+                is TopLevel.Test -> listOf(item.annotations)
+                is TopLevel.Bridge -> listOf(item.annotations)
+                is TopLevel.TypeAlias -> listOf(item.annotations)
+                is TopLevel.VarDecl -> listOf(item.annotations)
+                is TopLevel.FinDecl -> listOf(item.annotations)
+                is TopLevel.LetDecl -> listOf(item.annotations)
+                is TopLevel.Enum -> listOf(item.annotations) + item.variantAnnotations
+                is TopLevel.Fail -> listOf(item.annotations) + item.variantAnnotations
+                is TopLevel.Spec -> listOf(item.annotations) + item.methods.map { it.annotations }
+                is TopLevel.Impl -> listOf(item.annotations)
                 else -> emptyList()
             }
-            validateStability(anns, errors)
+            declarations.forEach { validateStability(it, errors) }
         }
 
         // Validate test declarations

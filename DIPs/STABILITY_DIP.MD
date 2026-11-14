@@ -1,10 +1,11 @@
 # Azora Stability - DIP Implementation Profile
 
-> Status: **policy decided** (roadmap A6, 2026-11-07); its tooling is not built.
-> The decorators of §3 parse and are validated (`AstValidator`), but a use of a
-> deprecated or experimental declaration is not yet reported, the public
-> surface is not yet enumerated (§2), and there is no compatibility suite job
-> (§5). Each is a 0.1 roadmap §11 item.
+> Status: **policy decided** (roadmap A6, 2026-11-07). **Implemented**
+> (2026-11-14): the decorators of §3 are validated where written and each use
+> of a deprecated declaration is reported (§3.1); experimental uses are
+> reported when asked for (§3.2, owner's decision); std's stable surface is
+> generated and checked in (§2.1). **Not built:** the compatibility suite's
+> release job (§5) and the release process (§6), 0.1 roadmap §11 items.
 
 What a program written for Azora 0.1 can rely on, how that changes, and what
 "stable" means for a declaration. The point is that upgrading the compiler is
@@ -57,7 +58,42 @@ interpreter's internals, the layout of a type in memory (until the ABI decision,
 
 The surface is enumerated by the compiler: a listing of every stable `std`
 declaration with its signature, checked into the repository, so a change to it
-is visible in review. *Not built yet.*
+is visible in review (§2.1).
+
+### 2.1 The listing
+
+`std/STABLE_SURFACE.txt` is generated from std's sources as parsed
+(`StdSurface`), module by module in path order. It lists every declaration
+visible outside its module - not `_private`, not `__internal`, not narrowed by
+a visibility modifier, not in a `confined` module or a test scope - and not
+`@Experimental`:
+
+- functions and bridge functions with their type parameters, parameters
+  (borrows, defaults, variadics), result, errors and `where` clause;
+- packs with their visible fields, enums and error sets with their cases,
+  variant types with their payloads, type aliases, decorators;
+- specs with their members, and `impl` blocks with their visible members - a
+  conformance (`impl Hash for Int`) is listed even with no member of its own,
+  since it is what lets a value be used where the spec is asked for;
+- each declaration's `@Since`, `@Stable` and `@Deprecated`, as written.
+
+A member is left out with its type: an `impl` of an experimental type or spec,
+and a member lifted from one, is experimental too. A default value is written
+when it is a literal or a simple expression, and as `…` otherwise - that a
+default exists is part of the surface even where its value is not shown.
+
+A stable declaration may not name an experimental type in its signature - a
+stable `sharedOf` handing out an experimental `Shared<T>` promises only until
+`Shared` changes. `StdSurfaceTest` fails on each such contradiction, so the
+type is made stable too or the declaration experimental.
+
+`StdSurfaceTest` also regenerates the listing and fails, with the lines added
+and removed, when it differs from the checked-in file. An intended change is
+committed with the regenerated file:
+
+```sh
+AZORA_REGENERATE_SURFACE=1 ./gradlew :compiler:desktopTest --tests '*StdSurfaceTest*'
+```
 
 ## 3. Marking declarations
 
@@ -71,7 +107,70 @@ Compiler-provided decorators (ANNOTATIONS_DIP §7):
 | `@Since("0.1")` | The version a declaration appeared in, for one that is neither of the first two. |
 
 A declaration cannot be both `@Stable` and `@Experimental`, and `@Since` is not
-repeated next to a `since:` argument; both are compile errors today.
+repeated next to a `since:` argument; both are compile errors.
+
+A decorator written on an `impl` block applies to each member of the block that
+does not say otherwise: a member's own `@Stable` or `@Since` makes it not
+experimental, and nothing makes a member of a deprecated block not deprecated.
+A member's own decorator does not extend to the type it is a member of, nor the
+type's to its members: a use of the type is reported where the type is named.
+
+### 3.1 Reporting a use
+
+Each use of a `@Deprecated` declaration in the compiled unit's own code is a
+warning naming it, the version it was deprecated in and its replacement:
+
+```text
+warning: line 6: 'stale' is deprecated since 0.1 - use 'fresh' instead
+```
+
+A use is any of:
+
+| Written as | Declaration |
+|---|---|
+| `f(x)`, `f` as a value, `Type::make()` | a function, a bridge function, a member lifted to its type |
+| `T(…)` | the type, and the `ctor` the construction calls |
+| `.(…)` where a `T` is expected | the `ctor` the construction calls (the type is reported where it is named) |
+| `x: T`, `as T`, `is T`, a type argument, `?! E`, `impl S for T` | a type, spec, alias or error set |
+| `Color.Red`, `.Red` where a `Color` is expected | a case |
+| `value.member(…)`, `value.prop`, `value.field` | an `impl` member, a property, a stored field |
+| `shape.area()` where `shape` is spec-typed | the member the spec declares |
+| `limit`, `limit = …` | a top-level value |
+| `@Name` | a decorator |
+
+A call that compile-time evaluation folds into its value is still reported: a
+use written by name is read from the program as written, before evaluation; a
+use through a value is reported by type resolution, the only stage that knows
+the value's type. A local binding that shadows a declaration is not a use of it.
+
+Not reported:
+
+- a use inside a declaration that is itself deprecated (or, for §3.2,
+  experimental), or inside its `impl` block or the type that block implements;
+- a use inside a declaration marked `@Supress(kind: .Deprecated)` (or
+  `.Experimental`), or anywhere in a unit whose `module` header carries it;
+- code the compiler generated - a derivation's members, a spec's provided
+  member copied into an implementation, a macro's expansion - and code of
+  another module: each is reported when that module is the one compiled.
+- uses the language makes implicitly rather than by name: an operator
+  (`a + b` calling a deprecated `oper+`), indexing, iteration, string
+  templates calling `Display`, and conversions with `as`. *Open.*
+
+A compilation with `warningsAsErrors` refuses a deprecated use like any other
+warning. `azora check` prints warnings to stderr.
+
+### 3.2 Experimental uses are reported when asked for
+
+Decided by the owner (2026-11-14): most of std is `@Experimental` in 0.1
+(741 declarations, among them `ArrayList`, `List`, `listOf` and the maps), so a
+warning on every use would put warnings on nearly every program. An
+experimental use is reported only when asked for - `azora check --experimental`,
+`Compiler.compile(reportExperimental = true)`, or `DiagnosticPolicy.reportExperimental`
+for tooling - and never inside std itself:
+
+```text
+warning: line 9: 'ArrayList' is experimental (since 0.1) and may change or be removed in any release
+```
 
 ## 4. Deprecation
 

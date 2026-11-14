@@ -107,6 +107,9 @@ class WasmCodegen {
     /** Names of the `union` types: every member of one sits at offset 0. */
     private val unions = HashSet<String>()
     private val globalTypes = LinkedHashMap<String, IrType>()
+
+    /** The globals holding `inject`ed singletons, one per type, and their types. */
+    private val injectedSingletons = LinkedHashMap<String, IrType>()
     private val stringConsts = LinkedHashMap<String, Int>() // literal -> offset
     private var constCursor = STRING_BASE
 
@@ -282,7 +285,7 @@ class WasmCodegen {
         out.clear(); indent = 0
         structs.clear(); structDefinitions.clear(); ownershipDrops.clear(); isolatedCopies.clear(); layouts.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
         usesAlloc = false; usesConcat = false; usesOwnForeign = false; usesStrEq = false; usesStrHash = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesUtf8 = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
-        neededIntrinsics.clear(); externs.clear(); neededExterns.clear()
+        neededIntrinsics.clear(); externs.clear(); neededExterns.clear(); injectedSingletons.clear()
         reactiveStorage.clear(); reactiveAliases.clear()
         closureTypes.clear(); closureFunctions.clear()
         failableFunctions.clear(); errorHandlers.clear(); usesErrorSlot = false
@@ -442,6 +445,9 @@ class WasmCodegen {
             // zero included, can be mistaken for the absence of one.
             sb.appendLine("  (global \$__azora_failed (mut i32) (i32.const 0))")
             sb.appendLine("  (global \$__azora_err (mut i64) (i64.const 0))")
+        }
+        for ((name, type) in injectedSingletons) {
+            sb.appendLine("  (global \$${name} (mut ${wasmType(type)}) ${wasmZero(type)})")
         }
         if (usesAlloc) sb.append(ALLOCATOR_RUNTIME)
         if (usesConcat) sb.append(RT_CONCAT)
@@ -1536,6 +1542,7 @@ class WasmCodegen {
         }
         if (expr.name == "__isCheck") usesIsCheck = true
         // `Array::fill<T>(count)` → `[ len, T×count ]` (all cells i32 in Wasm).
+        if (expr.name == "__inject") return emitInject(expr)
         if (callDenotesBuiltin(expr.name, "Array_fill")) {
             usesAlloc = true
             val t = newTemp("i32")
@@ -1568,6 +1575,24 @@ class WasmCodegen {
         val call = if (hostString) "(call \$__str_own_foreign $called)" else called
         val value = wrapCallResult(expr.type, callResult(call, functionResults[expr.name] ?: expr.type, expr.type))
         return if (expr.name in failableFunctions) checkedCall(value, expr.type) else value
+    }
+
+    /**
+     * `inject T`: the program's one `T`, built by `__singleton_T` the first time
+     * it is asked for and kept in a global for the rest of the program, as the
+     * interpreter keeps it in its singleton table.
+     */
+    private fun emitInject(expr: IrExpr.Call): String {
+        val typeName = (expr.args.singleOrNull() as? IrExpr.StringLiteral)?.value
+            ?: error("WebAssembly inject lowering requires a type name")
+        val factory = "__singleton_${typeName.removePrefix("__")}"
+        val factoryType = functionResults[factory] ?: error("no singleton factory for '$typeName' - is it declared as `solo`?")
+        val global = "__azora_singleton_" + typeName.map { if (it.isLetterOrDigit() || it == '_') it else '_' }.joinToString("")
+        injectedSingletons[global] = factoryType
+        val scalar = wasmType(factoryType)
+        val read = "(global.get \$$global)"
+        return "(block (result $scalar) (if ($scalar.eqz $read) (then (global.set \$$global (call \$$factory)))) " +
+            "${coerceWasm(read, factoryType, expr.type)})"
     }
 
     /**

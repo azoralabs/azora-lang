@@ -242,11 +242,13 @@ func serialField(value: SerialValue&, name: String): SerialValue& ?! Serializati
 }
 
 /** Returns one typed object field by positional index. */
+@Experimental(since: "0.1")
 func serialFieldAt(fields: List<SerialField>&, index: Int): SerialField& {
     return fields[index]
 }
 
 /** Returns one typed serialized array element by positional index. */
+@Experimental(since: "0.1")
 func serialValueAt(values: List<SerialValue>&, index: Int): SerialValue& {
     return values[index]
 }
@@ -326,6 +328,7 @@ func serialAsLong(value: SerialValue&): Long ?! SerializationError {
 }
 
 /** Extracts a range-checked signed byte. */
+@Experimental(since: "0.1")
 func serialAsByte(value: SerialValue&): Byte ?! SerializationError {
     fin parsed = try serialAsLong(value)
     if parsed < -128 || parsed > 127 {
@@ -335,6 +338,7 @@ func serialAsByte(value: SerialValue&): Byte ?! SerializationError {
 }
 
 /** Extracts a range-checked unsigned byte. */
+@Experimental(since: "0.1")
 func serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
     fin parsed = try serialAsLong(value)
     if parsed < 0 || parsed > 255 {
@@ -344,6 +348,7 @@ func serialAsUByte(value: SerialValue&): UByte ?! SerializationError {
 }
 
 /** Extracts a range-checked signed short. */
+@Experimental(since: "0.1")
 func serialAsShort(value: SerialValue&): Short ?! SerializationError {
     fin parsed = try serialAsLong(value)
     if parsed < -32768 || parsed > 32767 {
@@ -353,6 +358,7 @@ func serialAsShort(value: SerialValue&): Short ?! SerializationError {
 }
 
 /** Extracts a range-checked unsigned short. */
+@Experimental(since: "0.1")
 func serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
     fin parsed = try serialAsLong(value)
     if parsed < 0 || parsed > 65535 {
@@ -362,6 +368,7 @@ func serialAsUShort(value: SerialValue&): UShort ?! SerializationError {
 }
 
 /** Extracts a range-checked signed integer. */
+@Experimental(since: "0.1")
 func serialAsInt(value: SerialValue&): Int ?! SerializationError {
     fin parsed = try serialAsLong(value)
     if (parsed < 0 && parsed + 2147483648 < 0) || parsed > 2147483647 {
@@ -371,6 +378,7 @@ func serialAsInt(value: SerialValue&): Int ?! SerializationError {
 }
 
 /** Extracts a range-checked unsigned integer. */
+@Experimental(since: "0.1")
 func serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
     fin parsed = try serialAsLong(value)
     if parsed < 0 || parsed > 4294967295 {
@@ -380,6 +388,7 @@ func serialAsUInt(value: SerialValue&): UInt ?! SerializationError {
 }
 
 /** Extracts a non-negative value representable by the current ULong runtime. */
+@Experimental(since: "0.1")
 func serialAsULong(value: SerialValue&): ULong ?! SerializationError {
     fin parsed = try serialAsLong(value)
     if parsed < 0 {
@@ -389,11 +398,13 @@ func serialAsULong(value: SerialValue&): ULong ?! SerializationError {
 }
 
 /** Extracts a signed 128-bit value from the supported integer token range. */
+@Experimental(since: "0.1")
 func serialAsCent(value: SerialValue&): Cent ?! SerializationError {
     return try serialAsLong(value) as Cent
 }
 
 /** Extracts an unsigned 128-bit value from the supported integer token range. */
+@Experimental(since: "0.1")
 func serialAsUCent(value: SerialValue&): UCent ?! SerializationError {
     fin parsed = try serialAsLong(value)
     if parsed < 0 {

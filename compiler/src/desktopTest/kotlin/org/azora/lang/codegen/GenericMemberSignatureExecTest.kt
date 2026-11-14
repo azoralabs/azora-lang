@@ -23,7 +23,7 @@ class GenericMemberSignatureExecTest {
     }
 
     @Test fun inheritedMembersAndIndexingKeepTheirTypesOnWasm() {
-        assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+        assumeTrue("Node.js is required", WasmExec.available)
         for (optimized in listOf(false, true)) {
             val ir = GenericMemberSignatureTest.compileInherited(optimized)
             assertEquals(GenericMemberSignatureTest.inheritedOutput, WasmExec.runWat(WasmCodegen().generate(ir)), "optimized=$optimized")

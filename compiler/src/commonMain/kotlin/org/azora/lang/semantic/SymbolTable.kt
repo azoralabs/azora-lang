@@ -262,6 +262,13 @@ class SymbolTable {
     /** Resolution observations retained before function-local scopes are popped. */
     val semanticFacts = SemanticFactRecorder()
 
+    /**
+     * What members the unit's own code resolved to, for reporting uses of
+     * deprecated and experimental declarations (see [StabilityRecorder]). Records
+     * nothing unless the pipeline was told which code is the unit's own.
+     */
+    var stability = StabilityRecorder(null)
+
     private val functions = mutableMapOf<String, FunctionSymbol>()
     private val scopes = ArrayDeque<MutableMap<String, VariableSymbol>>()
     private val structs = mutableMapOf<String, StructType>()

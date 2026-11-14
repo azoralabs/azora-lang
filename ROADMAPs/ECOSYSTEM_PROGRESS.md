@@ -3,19 +3,23 @@
 Plan: [150-step delivery plan](ECOSYSTEM_DELIVERY_PLAN.md).
 Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 
-## Current status — 2026-11-07
+## Current status — 2026-11-14
 
 The ordered short- and long-term plan for the language, Engine and Studio
 (every OS and graphics backend, written in Azora; packages; editor plugins;
 self-hosting; a flagship game as the qualification) is
 [the 2026-11 roadmap](ECOSYSTEM_ROADMAP_2026_11.md).
-Last full run, native tools required: **2,979 tests, 0 failures, 0 skipped**;
+Last full run, native tools required: **3,018 tests, 0 failures, 0 skipped**;
 AZLS 93 tests, 0 failures. Roadmap steps A1 and A2 closed 2026-11-06 (with
 decision D-6), A3 to A6 on 2026-11-07 (`Char` is a code point on every
 backend; the package manager, PACKAGES_DIP.MD; decisions D-1 to D-5 and D-7,
-all by the owner; D-7 and D-5 implemented the same day); see the entries at
-the end. Next: 0.1's remaining §11 tooling; Track B can start (D-1 to D-4
-settled).
+all by the owner; D-7 and D-5 implemented the same day). On 2026-11-14 two of
+0.1's §11 items closed: uses of deprecated declarations are reported
+(experimental ones on request, owner's decision) and std's stable surface is
+generated and checked in, and std's exposed internals were marked; see the
+entries at the end. Next in §11: feature gating (undecided), the compatibility
+suite's job, the release process; the owner's review of the 455-line stable
+listing; Track B can start (D-1 to D-4 settled).
 
 ## Status — 2026-10-04
 
@@ -4268,3 +4272,153 @@ statement does not expand at all.
   sanitizers.
 - Compiler: **2,979 tests, 0 failures, 0 skipped** (native tools required);
   AZLS 93, 0 failures; std 50 modules check and 16 tests pass.
+
+## 2026-11-14 — §11: deprecated uses reported; std's stable surface listed
+
+0.1 roadmap §11, STABILITY_DIP §2-§3. Before this, `@Deprecated` and
+`@Experimental` were validated where written and then ignored.
+
+### Reporting a use (`semantic/Stability.kt`)
+
+Each use of a `@Deprecated` declaration in the compiled unit's own code is a
+warning naming the version and the replacement:
+`warning: line 6: 'stale' is deprecated since 0.1 - use 'fresh' instead`.
+
+- **Uses written by name** - calls, constructions, types in every position,
+  qualified cases, globals, decorators, `impl` heads - are read by
+  `WrittenUses` from the program right after the first library injection,
+  before macro expansion, variadic specialization and compile-time evaluation.
+  A pure call CTCE folds into its value is still reported. The walk keeps
+  lexical scopes, so a local that shadows a deprecated global is not a use.
+- **Uses through a value** - `x.method()`, `x.prop`, `x.field`, a spec member
+  on a spec-typed value, `.Case` where the position states the type, the `ctor`
+  a construction calls - are recorded by `TypeResolver` as it resolves them
+  (`table.stability`, a `StabilityRecorder`), only inside the unit's own
+  declarations.
+- **The unit's own code** is decided from the source as parsed (`UserCode`),
+  so library code, a spec's provided members copied into an implementation,
+  derived members and macro expansions are not reported.
+- Not reported: a use inside something itself deprecated (or experimental), or
+  its `impl` block, or the type that block implements; a use under
+  `@Supress(kind: .Deprecated)` / `.Experimental` - new `SupressKind` cases -
+  on the declaration or the `module` header.
+- A decorator on an `impl` block applies to its members.
+
+**Experimental uses are opt-in** (owner's decision, asked this session): std
+carries 741 `@Experimental` markers (`ArrayList`, `List`, `listOf`, the maps)
+and none `@Deprecated`, so warning on every experimental use would put
+warnings on nearly every program. They are reported with
+`azora check --experimental`, `Compiler.compile(reportExperimental = true)` or
+`DiagnosticPolicy.reportExperimental`, and never inside std.
+
+Found on the way:
+
+- **The parser dropped decorators on `spec` declarations and on spec members**
+  ("accepted and dropped"), so `@Experimental spec List<T>` was not
+  experimental. `TopLevel.Spec` now has `annotations`, every `parseSpec` site
+  passes them, spec members keep theirs, and `AstValidator` validates the
+  stability decorators on specs and `impl` blocks.
+- **`azora check` printed no warnings at all**; it now prints them to stderr
+  (the native CLI's `check` too, and both take `--experimental`). `run`,
+  `test` and `compile` still print none.
+
+Open: uses the language makes implicitly rather than by name - operators,
+indexing, iteration, string templates (`Display`), `as` conversions; a
+variadic generic of the unit's own, which specialization renames, is not
+checked for member uses.
+
+### The stable surface (`stdlib/StdSurface.kt`, `std/STABLE_SURFACE.txt`)
+
+A listing of every std declaration visible outside its module and not
+`@Experimental`, with its signature, read from std's sources as parsed (536
+lines today). `StdSurfaceTest` fails, showing the lines added and removed,
+when the checked-in file differs from std; an intended change is committed
+with the file regenerated (`AZORA_REGENERATE_SURFACE=1`).
+
+The listing shows what nothing marks yet, some of which reads as internal
+(recorded under the 0.1 roadmap's §4.2 marker audit, not changed here):
+`std.testme`'s `main`, the `std.unicodedata` tables, `std.time`'s
+`azoraTime…Nanoseconds` bridges, `std.serializer`'s `serialAs…` helpers and its
+`WildcardDecoratorFixture` impl, `std.parallelism.sync`'s `atomicLoadWord`,
+`atomicAddWord`, `Atomic` and `Mutex`.
+
+### Tests
+
+New: `StabilityUseTest` (19: a call with its replacement, nothing when nothing
+is used, a folded call, uses inside deprecated declarations, `@Supress` on a
+function and on the module header, a type in a parameter, binding and
+construction, a method, property and field through a value, a mark on an
+`impl` block, qualified and inferred cases, a global and a shadowing local, a
+spec member through a spec-typed value, a decorator kept on a spec, a `ctor`,
+`warningsAsErrors`, experimental only on request, experimental inside
+experimental, std's `ArrayList` on request, std's own code never),
+`StdSurfaceRenderTest` (4), `StdSurfaceTest` (the checked-in listing).
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue
+```
+
+- Compiler: **3,017 tests, 0 failures, 0 skipped** (native tools required);
+  AZLS 93, 0 failures; `StdlibSelfTest` (every std module checks and passes
+  its own tests) included. CLI distribution built; `azora check` on a probe
+  prints the deprecated use, and with `--experimental` also `ArrayList` and the
+  experimental `@Deprecated` decorator itself.
+- The native CLI's `check` change is read-checked only: its Kotlin/Native
+  toolchain (`kotlin-native-prebuilt` 2.3.20) is not in the offline cache.
+- The Engine and Studio declare no stability decorator on a spec or `impl`
+  and no `@Deprecated`, so neither is affected.
+
+## 2026-11-14 (continued) — std's marker audit: internals out of the stable surface
+
+0.1 roadmap §4.2, asked for by the owner after the listing above showed std
+internals counted as stable. Each was marked `@Experimental(since: "0.1")`
+rather than renamed `_private`: every one is reached from another module or by
+the compiler (`core.az` reads the unicode tables, the interpreter binds the
+clock bridges by name, derived codecs and the Engine call `serialAsInt`,
+`syncshared.az` uses the atomic words), and a mark breaks no caller. Promising
+less is the reversible direction; a declaration can be made `@Stable` later.
+
+- **Plumbing:** the 11 `std.unicodedata` tables (`UnicodeDataTest`'s generator
+  emits the mark; the file was edited to match rather than regenerated, which
+  could have pulled another JDK's Unicode data), `std.time`'s host clock
+  bridge block, `serialFieldAt`, `serialValueAt` and the nine `serialAs…`
+  helpers that lacked a mark, `atomicLoadWord` / `atomicAddWord`.
+- **Storage fields:** `Deque.data/head/tail`, `Queue.data`, `Pool.freeStack`,
+  `Unique.active`, `StringBuilder.parts/count`, `Formatter.buffer`.
+- **Undecided in §3.3:** `Atomic`, `Mutex` (unmarked, so stable by default),
+  `Guard`, `CountDownLatch`, `SpinLock`, `Channel`, `channel()`.
+- **Consistency:** `sharedOf` / `syncSharedOf` return experimental types;
+  `Alloc`'s every member was already experimental; `std.testme`'s `main`
+  (the module itself was then deleted, below).
+
+Two compiler fixes the audit needed:
+
+- **`AstValidator` pooled a pack's decorators with its fields'** (and an
+  enum's with its cases'), so a `@Since` pack with one `@Experimental` field
+  was "redundant". Each declaration is now validated on its own, spec members
+  included (`StabilityDecoratorTest.eachDeclarationAnswersForItsOwnStabilityDecorators`).
+- **The listing showed `impl SerialIgnore for WildcardDecoratorFixture.*`**, a
+  `test scope` fixture: a `derive … for Pack::*` target escaped the test-scope
+  check. An impl's member or wildcard target is now judged by its pack.
+
+New rule, checked: **a stable declaration may not name an experimental type**
+(STABILITY_DIP §2.1). `StdSurfaceTest.noStableDeclarationNamesAnExperimentalType`
+found 25 such before the marks above (the serializer helpers, the unicode
+tables and `StringBuilder.parts` name the experimental `Array`, `List`,
+`SerialValue` and `SerializationError`) and none after.
+
+The listing went from 536 to 455 lines. Open, for the owner: the review of
+those 455 lines; public `var` fields a caller can corrupt (`Deque.size` and
+`capacity`, `Queue`'s, the allocators' counters, `Slice.count`) - stable to
+read, but writable. `std/testme.az`, a scratch module nothing referenced (a
+`main` adding two numbers), is deleted at the owner's request. The Engine's `azora-navigation` and `azora-ui` call
+`serialAsInt`, now experimental: they build as before and would see it only
+under `--experimental`.
+
+Evidence: compiler **3,019 tests, 0 failures, 0 skipped** (native tools
+required), AZLS 93, 0 failures; `StdlibSelfTest`, `UnicodeDataTest`,
+`ContainerStdlibTest` and the serializer tests among them. After deleting
+`std/testme.az`: **3,018 tests, 0 failures, 0 skipped** (one module fewer for
+`StdlibSelfTest`), AZLS 93, 0 failures.

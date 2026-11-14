@@ -21,14 +21,15 @@ import kotlin.test.assertEquals
 
 /**
  * End-to-end tests for the [org.azora.lang.backend.WasmCodegen] backend: each
- * compiles a small Azora program to WAT, assembles it with `wat2wasm`, and runs
+ * compiles a small Azora program to WAT, assembles it with the compiler's own
+ * [org.azora.lang.backend.WasmAssembler], and runs
  * it under Node.js, asserting on stdout.
  *
  * The suite covers what the MVP WASM target supports - scalar arithmetic,
  * control flow, functions/recursion, strings (concat/interpolation/repeat/
  * equality), packs and arrays. Higher-level features (lambdas, tasks,
  * exceptions, sets/maps/tuples) are out of scope for this backend. Skips itself
- * when Node.js / the `wat2wasm` assembler are unavailable.
+ * when Node.js is unavailable.
  */
 class WasmCodegenExecTest {
 

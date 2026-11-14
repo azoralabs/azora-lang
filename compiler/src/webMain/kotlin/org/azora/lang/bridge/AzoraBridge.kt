@@ -53,8 +53,47 @@ private suspend fun runTests(interpreter: IrInterpreter, result: CompilationResu
         else "FAIL ${test.name}: ${test.message ?: "test failed"}"
     }
 
-private fun json(success: Boolean, output: String, errors: String): String =
-    "{\"success\":${success},\"output\":${jsonStr(output)},\"errors\":${jsonStr(errors)}}"
+private fun json(success: Boolean, output: String, errors: String, extra: Map<String, String> = emptyMap()): String =
+    "{\"success\":${success},\"output\":${jsonStr(output)},\"errors\":${jsonStr(errors)}" +
+        extra.entries.joinToString("") { (key, value) -> ",${jsonStr(key)}:${jsonStr(value)}" } + "}"
+
+/** Thrown inside a success callback to answer a failure instead: the program compiled, but this target cannot build it. */
+private class TargetFailure(message: String) : RuntimeException(message)
+
+/** [backend]'s output, or a [TargetFailure] naming why that target cannot build the program. */
+private fun CompilationResult.Success.target(backend: String, output: String): String {
+    backendErrors[backend]?.let { throw TargetFailure("the $backend target cannot build this program: $it") }
+    return output
+}
+
+/**
+ * The WebAssembly module, assembled, with the host the compiler generated for
+ * it: `output` is the text, `binary` the module in base64, `host` the
+ * JavaScript that supplies its imports (TARGETS_DIP §4).
+ */
+@OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
+private fun compiledWasm(result: CompilationResult.Success): String {
+    val wat = result.target("wasm", result.wasm)
+    val binary = try {
+        org.azora.lang.backend.WasmAssembler.assemble(wat)
+    } catch (e: org.azora.lang.backend.WasmAssemblyError) {
+        throw TargetFailure("the WebAssembly text did not assemble: ${e.message}")
+    }
+    return json(
+        true, wat, "",
+        mapOf(
+            "binary" to kotlin.io.encoding.Base64.Default.encode(binary),
+            "host" to org.azora.lang.backend.WasmHost.glueFor(wat),
+        ),
+    )
+}
+
+/** Answers [build]'s JSON, or the failure a [TargetFailure] names. */
+private fun answer(build: () -> String): String = try {
+    build()
+} catch (e: TargetFailure) {
+    json(false, "", e.message ?: "")
+}
 
 private fun jsonStr(s: String): String {
     val sb = StringBuilder("\"")
@@ -204,12 +243,12 @@ fun azRunTests(source: String): Promise<JsString> =
 /** Generates LLVM IR text. */
 @JsExport
 fun azGenerateLlvmIr(source: String): String =
-    withCompiled(source) { it.llvm }
+    answer { withCompiled(source) { it.target("llvm", it.llvm) } }
 
 /** Generates WebAssembly text (WAT). */
 @JsExport
 fun azGenerateWasm(source: String): String =
-    withCompiled(source) { it.wasm }
+    answer { withCompiled(source) { it.target("wasm", it.wasm) } }
 
 /** Compiles Azora IR with one external library module available for imports. */
 @JsExport
@@ -233,12 +272,12 @@ fun azRunTestsWithLibrary(source: String, libraryPath: String, librarySource: St
 /** Generates LLVM IR with one external library module available for imports. */
 @JsExport
 fun azGenerateLlvmIrWithLibrary(source: String, libraryPath: String, librarySource: String): String =
-    withCompiledLibrary(source, libraryPath, librarySource) { it.llvm }
+    answer { withCompiledLibrary(source, libraryPath, librarySource) { it.target("llvm", it.llvm) } }
 
 /** Generates WebAssembly text with one external library module available for imports. */
 @JsExport
 fun azGenerateWasmWithLibrary(source: String, libraryPath: String, librarySource: String): String =
-    withCompiledLibrary(source, libraryPath, librarySource) { it.wasm }
+    answer { withCompiledLibrary(source, libraryPath, librarySource) { it.target("wasm", it.wasm) } }
 
 /** Compiles Azora IR with an arbitrary encoded set of external library modules. */
 @JsExport
@@ -262,9 +301,46 @@ fun azRunTestsWithLibraries(source: String, libraryBundle: String): Promise<JsSt
 /** Generates LLVM IR with an arbitrary encoded set of external library modules. */
 @JsExport
 fun azGenerateLlvmIrWithLibraries(source: String, libraryBundle: String): String =
-    withCompiledLibraries(source, libraryBundle) { it.llvm }
+    answer { withCompiledLibraries(source, libraryBundle) { it.target("llvm", it.llvm) } }
 
 /** Generates WebAssembly with an arbitrary encoded set of external library modules. */
 @JsExport
 fun azGenerateWasmWithLibraries(source: String, libraryBundle: String): String =
-    withCompiledLibraries(source, libraryBundle) { it.wasm }
+    answer { withCompiledLibraries(source, libraryBundle) { it.target("wasm", it.wasm) } }
+
+/**
+ * Compiles to a WebAssembly module the browser can run: the JSON carries the
+ * text (`output`), the binary (`binary`, base64) and its host (`host`).
+ */
+@JsExport
+fun azCompileWasm(source: String): String = answer {
+    val result = Compiler().compile(source, release = false)
+    when (result) {
+        is CompilationResult.Success -> compiledWasm(result)
+        is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
+    }
+}
+
+/** [azCompileWasm] with one external library module available for imports. */
+@JsExport
+fun azCompileWasmWithLibrary(source: String, libraryPath: String, librarySource: String): String = answer {
+    val result = Compiler(listOf(LibrarySource(libraryPath, librarySource))).compile(source, release = false)
+    when (result) {
+        is CompilationResult.Success -> compiledWasm(result)
+        is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
+    }
+}
+
+/** [azCompileWasm] with an encoded set of external library modules. */
+@JsExport
+fun azCompileWasmWithLibraries(source: String, libraryBundle: String): String = answer {
+    val libraries = try {
+        decodeLibraries(libraryBundle)
+    } catch (error: IllegalArgumentException) {
+        return@answer json(false, "", error.message ?: "invalid library bundle")
+    }
+    when (val result = Compiler(libraries).compile(source, release = false)) {
+        is CompilationResult.Success -> compiledWasm(result)
+        is CompilationResult.Failure -> json(false, "", result.errors.joinToString("\n"))
+    }
+}

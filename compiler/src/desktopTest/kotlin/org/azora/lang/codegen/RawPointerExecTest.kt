@@ -154,7 +154,7 @@ class RawPointerExecTest {
     }
 
     @Test fun wasmMemoryGrowsForALargeBuffer() {
-        assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+        assumeTrue("Node.js is required", WasmExec.available)
         for (optimized in listOf(false, true)) {
             assertEquals("8\n9", WasmExec.runWat(WasmCodegen().generate(compile(growth, optimized))))
         }

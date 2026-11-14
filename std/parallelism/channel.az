@@ -32,6 +32,7 @@ import std.container.queue::Queue
 import std.parallelism.sync::Mutex
 
 /** Creates an owned, synchronized FIFO. Transfer ownership to move it between tasks. */
+@Experimental(since: "0.1")
 func<T> channel(): Channel<T> { return .() }
 
 /**
@@ -41,7 +42,7 @@ func<T> channel(): Channel<T> { return .() }
  *
  * @generic T The type of messages in this channel.
  */
-@Since("0.1")
+@Experimental(since: "0.1")
 pack Channel<T> {
     var _queue: Queue<T> = .()
     var _mutex: Mutex = .()

@@ -1028,14 +1028,14 @@ class Parser(
                 advance(); parseDeco(annotations, isBridge = true)
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.SPEC -> {
-                advance(); parseSpec(isBridge = true)
+                advance(); parseSpec(isBridge = true).copy(annotations = annotations)
             }
             // `direct spec Number { prop rank: Int }` - a spec whose members
             // belong to the type rather than to its values. This is how a
             // type-side implementation is declared, in place of the `impl Spec
             // for Type::` that used to say it at the implementing end.
             check(TokenType.DIRECT) && peekNext()?.type == TokenType.SPEC -> {
-                advance(); parseSpec(isDirect = true)
+                advance(); parseSpec(isDirect = true).copy(annotations = annotations)
             }
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.TYPEALIAS -> {
                 advance(); parseTypeAlias(annotations)
@@ -1071,7 +1071,7 @@ class Parser(
             check(TokenType.SOLO) -> parseSolo(visibility, annotations)
             check(TokenType.GRAPH) -> parseGraph()
             check(TokenType.THREADLOCAL) -> parseThreadLocal(visibility)
-            check(TokenType.SPEC) -> parseSpec()
+            check(TokenType.SPEC) -> parseSpec().copy(annotations = annotations)
             isUnionDeclAhead() -> parsePack(annotations, visibility, isUnion = true)
             check(TokenType.VARIANT) -> parseSlot(annotations)
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
@@ -1114,7 +1114,7 @@ class Parser(
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
             check(TokenType.PACK) -> parsePack(annotations, visibility)
             check(TokenType.ENUM) -> parseEnumDecl(annotations)
-            check(TokenType.SPEC) -> parseSpec()
+            check(TokenType.SPEC) -> parseSpec().copy(annotations = annotations)
             check(TokenType.IMPL) -> parseImpl(annotations = annotations)
             else -> error(
                 "Expected 'func', 'fin', 'var', 'let', 'test', 'typealias', 'pack', 'enum', " +
@@ -1879,7 +1879,7 @@ class Parser(
             check(TokenType.ERROR) -> parseFailDecl(annotations)
             check(TokenType.TYPEALIAS) -> parseTypeAlias(annotations)
             check(TokenType.VARIANT) -> parseSlot(annotations)
-            check(TokenType.SPEC) -> parseSpec()
+            check(TokenType.SPEC) -> parseSpec().copy(annotations = annotations)
             check(TokenType.INLINE) -> parseTopLevelInline(annotations)
             check(TokenType.DEEPINLINE) -> parseTopLevelDeepInline()
             check(TokenType.ASSERT) -> {
@@ -5510,7 +5510,9 @@ class Parser(
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
-            parseAnnotations() // trailing metadata on a requirement is accepted and dropped
+            // A requirement's decorators are its own: `@Deprecated` on one is
+            // reported where a spec-typed value reaches it.
+            val memberAnnotations = parseAnnotations()
             // `ctor .(...elements: T): Self { … }` - not a requirement but the
             // spec's own constructor, written in Azora, designating the concrete
             // value a `[…]` builds where the spec is expected. `Self` here is the
@@ -5569,6 +5571,7 @@ class Parser(
                         operatorMemberName(opName), ooperands, oret, emptyList(), false,
                         operTypeParams.names, operStart.line, operStart.column,
                         receiverModifier = orecv.modifier, receiverName = orecv.name,
+                        annotations = memberAnnotations,
                     ),
                 )
                 continue
@@ -5631,6 +5634,7 @@ class Parser(
                     memberCallStyle =
                         if (preceiver.type == null) MemberCallStyle.STATIC_PROPERTY else MemberCallStyle.PROPERTY,
                     useAsTemplate = propUseAs,
+                    annotations = memberAnnotations,
                 ))
                 continue
             }
@@ -5687,6 +5691,7 @@ class Parser(
                     if (mreceiver == null) MemberCallStyle.STATIC_METHOD else MemberCallStyle.METHOD,
                 useAsTemplate = memberUseAs,
                 contextualParams = mScopeReceivers.size,
+                annotations = memberAnnotations,
             ))
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")

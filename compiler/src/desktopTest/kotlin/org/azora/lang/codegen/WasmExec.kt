@@ -18,32 +18,30 @@ package org.azora.lang.codegen
 
 import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
+import org.azora.lang.backend.WasmAssembler
+import org.azora.lang.backend.WasmAssemblyError
 import org.azora.lang.backend.WasmCodegen
+import org.azora.lang.backend.WasmHost
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.test.fail
 
 /**
  * Test harness that lowers Azora source to WebAssembly text (WAT), assembles it
- * to a `.wasm` binary with `wat2wasm` (from the `wabt` npm package, fetched via
- * `npx`), and runs it under Node.js - providing the `print_*` host imports and a
- * linear-memory string reader - returning the program's standard output.
+ * to a `.wasm` binary with the compiler's own [WasmAssembler], and runs it under
+ * Node.js - providing the `print_*` host imports and a linear-memory string
+ * reader - returning the program's standard output.
  *
- * Skips itself when Node.js or the `wat2wasm` assembler are unavailable.
+ * Skips itself when Node.js is unavailable.
  */
 object WasmExec {
 
     private val node: String? by lazy { findTool("node") }
-    private val npx: String? by lazy { findTool("npx") }
 
-    /** `true` when Node.js is present and the `wat2wasm` assembler can be invoked. */
-    private val assembler: List<String>? by lazy {
-        findTool("wat2wasm")?.let { listOf(it) }
-            ?: npx?.let { listOf(it, "--yes", "-p", "wabt", "wat2wasm") }
-    }
+    /** `true` when Node.js is present to run the assembled module. */
     val available: Boolean by lazy {
-        val found = node != null && assembler != null && wat2wasmWorks()
-        check(found || System.getenv("AZORA_REQUIRE_NATIVE_TESTS") != "1") { "Native qualification requires node and wat2wasm" }
+        val found = node != null
+        check(found || System.getenv("AZORA_REQUIRE_NATIVE_TESTS") != "1") { "Native qualification requires node" }
         found
     }
 
@@ -56,39 +54,23 @@ object WasmExec {
         return candidates.firstOrNull { runCatching { File(it).canExecute() }.getOrDefault(false) }
     }
 
-    private fun wat2wasmWorks(): Boolean = runCatching {
-        val proc = ProcessBuilder(assembler.orEmpty() + "--version")
-            .redirectErrorStream(true).start()
-        if (!proc.waitFor(30, TimeUnit.SECONDS)) { proc.destroyForcibly(); false } else proc.exitValue() == 0
-    }.getOrDefault(false)
 
+    /**
+     * Runs the module under Node with the host the compiler generated for it
+     * ([WasmHost]), so every test also exercises that glue. Tests may provide
+     * further imports, which can read `mem`, the module's memory.
+     */
     private val driverJs = """
         const fs = require('fs');
         const bytes = fs.readFileSync(process.argv[2]);
         let mem;
-        const dec = new TextDecoder();
-        function readStr(ptr) {
-          const dv = new DataView(mem.buffer);
-          const len = dv.getInt32(ptr, true);
-          return dec.decode(new Uint8Array(mem.buffer, ptr + 4, len));
-        }
-        const imports = { env: {
-          print_i32: x => console.log(String(x)),
-          print_i64: x => console.log(x.toString()),
-          print_f64: x => console.log(Number.isInteger(x) ? x.toFixed(1) : String(x)),
-          print_f32: x => console.log(Number.isInteger(x) ? x.toFixed(1) : String(x)),
-          print_bool: x => console.log(x ? "true" : "false"),
-          print_str: ptr => console.log(readStr(ptr)),
-          write_i32: x => process.stdout.write(String(x)),
-          write_i64: x => process.stdout.write(x.toString()),
-          write_f64: x => process.stdout.write(Number.isInteger(x) ? x.toFixed(1) : String(x)),
-          write_f32: x => process.stdout.write(Number.isInteger(x) ? x.toFixed(1) : String(x)),
-          write_bool: x => process.stdout.write(x ? "true" : "false"),
-          write_str: ptr => process.stdout.write(readStr(ptr)),
+        const createHost = /*GLUE*/;
+        const host = createHost((text) => process.stdout.write(text), {
           /*HOST_IMPORTS*/
-        }};
-        WebAssembly.instantiate(bytes, imports).then(({instance}) => {
+        });
+        WebAssembly.instantiate(bytes, host.imports).then(({instance}) => {
           mem = instance.exports.memory;
+          host.attach(instance);
           instance.exports.main();
         }).catch(e => { console.error(e); process.exit(1); });
     """.trimIndent()
@@ -126,21 +108,28 @@ object WasmExec {
         stdout
     }
 
+    /** Execute WAT that must fail with an error whose text contains [message]; returns what it printed first. */
+    fun runWatExpectingError(wat: String, message: String, hostImports: String = ""): String = execute(wat, hostImports) { exit, stdout, stderr ->
+        if (exit == 0) fail("expected the program to fail, but it finished\n--- stdout ---\n$stdout")
+        if (message !in stderr) fail("expected an error containing '$message'\n--- stderr ---\n$stderr")
+        stdout
+    }
+
     private fun execute(wat: String, hostImports: String = "", outcome: (exit: Int, stdout: String, stderr: String) -> String): String {
         val nodeTool = node ?: error("node not available")
-        val assemblerTool = assembler ?: error("wat2wasm not available")
         val dir = File.createTempFile("azora_wat_", "").let { it.delete(); it.mkdirs(); it }
         try {
             val watFile = File(dir, "program.wat")
             watFile.writeText(wat)
             val wasmFile = File(dir, "program.wasm")
             val driverFile = File(dir, "driver.js")
-            driverFile.writeText(driverJs.replace("/*HOST_IMPORTS*/", hostImports))
+            driverFile.writeText(driverJs.replace("/*GLUE*/", WasmHost.glueFor(wat)).replace("/*HOST_IMPORTS*/", hostImports))
 
-            val asmProc = ProcessBuilder(assemblerTool + listOf(watFile.absolutePath, "-o", wasmFile.absolutePath))
-                .redirectErrorStream(true).start()
-            val asmOut = asmProc.inputStream.bufferedReader().readText()
-            if (asmProc.waitFor() != 0) fail("wat2wasm failed:\n$asmOut\n--- WAT ---\n$wat")
+            try {
+                wasmFile.writeBytes(WasmAssembler.assemble(wat))
+            } catch (e: WasmAssemblyError) {
+                fail("assembling the WAT failed: ${e.message}\n--- WAT ---\n$wat")
+            }
 
             // `console.log(number)` *inspects* its argument, and node colours an
             // inspected number when it believes stdout is a terminal - which turns

@@ -97,6 +97,7 @@ impl Shared<T> {
     }
 }
 
+@Experimental(since: "0.1")
 func<T> sharedOf(value: T): Shared<T> {
     return Shared(alloc^ value, alloc^ 1, 1)
 }

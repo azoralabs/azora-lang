@@ -258,9 +258,18 @@ private fun handleCheck(args: List<String>) {
     if (!file.exists()) exitWith(ExitStatus.USAGE, "File not found: $filePath")
 
     val unit = resolveCompilation(file)
-    val result = Compiler(unit.libraries).compile(unit.source, defines = parseDefines(args))
+    // `--experimental` also reports each use of an `@Experimental` declaration;
+    // a `@Deprecated` one is always reported (STABILITY_DIP §3).
+    val result = Compiler(unit.libraries).compile(
+        unit.source,
+        defines = parseDefines(args),
+        reportExperimental = "--experimental" in args,
+    )
     when (result) {
-        is CompilationResult.Success -> println("No errors found.")
+        is CompilationResult.Success -> {
+            result.warnings.forEach { System.err.println(it) }
+            println("No errors found.")
+        }
         is CompilationResult.Failure -> {
             result.errors.forEach { System.err.println(it) }
             exitProcess(ExitStatus.COMPILE_ERROR)
@@ -272,7 +281,7 @@ private fun handleCheck(args: List<String>) {
 
 private fun handleCompile(args: List<String>) {
     if (args.size < 2) {
-        exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] <file.az>")
+        exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [-o <file>] <file.az>")
     }
 
     val target = args[0]
@@ -281,8 +290,13 @@ private fun handleCompile(args: List<String>) {
     // question an editor asks. Everything else in the dump is the standard
     // library the file reached, injected because it was referenced.
     val fileOnly = args.any { it == "--file-only" }
-    val filePath = args.drop(1).firstOrNull { !it.startsWith("-") }
-        ?: exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] <file.az>")
+    // `-o <file>` writes the output there; for WebAssembly a `.wasm` file is
+    // the binary module, with its generated host beside it as `<name>.host.js`.
+    val outIndex = args.indexOf("-o")
+    val outPath = if (outIndex >= 0) args.getOrNull(outIndex + 1) ?: exitWith(ExitStatus.USAGE, "-o needs a file") else null
+    val filePath = args.withIndex().drop(1)
+        .firstOrNull { (i, arg) -> !arg.startsWith("-") && (outIndex < 0 || i != outIndex + 1) }?.value
+        ?: exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [-o <file>] <file.az>")
     val file = File(filePath)
     if (!file.exists()) exitWith(ExitStatus.USAGE, "File not found: $filePath")
 
@@ -308,7 +322,19 @@ private fun handleCompile(args: List<String>) {
                 "ast" -> result.ast.dumpTree()
                 else -> exitWith(ExitStatus.USAGE, "Unknown target: $target (use wasm, llvm, ir, or ast)")
             }
-            println(output)
+            when {
+                outPath == null -> println(output)
+                backend == "wasm" && outPath.endsWith(".wasm") -> {
+                    val binary = try {
+                        org.azora.lang.backend.WasmAssembler.assemble(output)
+                    } catch (e: org.azora.lang.backend.WasmAssemblyError) {
+                        exitWith(ExitStatus.COMPILE_ERROR, "the WebAssembly text did not assemble: ${e.message}")
+                    }
+                    File(outPath).writeBytes(binary)
+                    File(outPath.removeSuffix(".wasm") + ".host.js").writeText(org.azora.lang.backend.WasmHost.glueFor(output) + "\n")
+                }
+                else -> File(outPath).writeText(output + "\n")
+            }
         }
         is CompilationResult.Failure -> {
             result.errors.forEach { System.err.println(it) }
@@ -584,8 +610,12 @@ private fun printUsage() {
 
         Commands:
           run <file.az>                 Compile and run a program
-          check <file.az>               Type-check without running
-          compile <target> <file.az>    Output generated code
+          check [--experimental] <file.az>
+                                        Type-check without running; warnings go to
+                                        stderr (--experimental also reports uses of
+                                        @Experimental declarations)
+          compile <target> <file.az>    Output generated code (-o <file>; for wasm,
+                                        a .wasm file is the binary, with <name>.host.js)
           test <file.az | dir>          Run `test` blocks (file or directory)
           repl                          Interactive REPL
           version                       Show version

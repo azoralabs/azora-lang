@@ -18,7 +18,7 @@ class GlobalInitializerExecTest {
     }
 
     @Test fun globalInitializersRunOnWasm() {
-        assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+        assumeTrue("Node.js is required", WasmExec.available)
         for ((source, expected) in GlobalInitializerTest.programs) for (optimized in listOf(false, true)) {
             val ir = GlobalInitializerTest.compile(source, optimized)
             assertEquals(expected, WasmExec.runWat(WasmCodegen().generate(ir)), "optimized=$optimized\n$source")

@@ -279,10 +279,12 @@ runs under the interpreter. An extern with no entry is an error at the call.
 - A math function it lacks gets a software implementation the compiler writes.
 - Everything else becomes `(import "env" "name" …)`, which the host must supply.
 
-That last line is the contract the browser embedder has to meet, and it is
-currently discovered by reading the generated WAT.
+That last line is the contract the browser embedder has to meet.
 
-- ⬜ Document the required host imports, or emit a manifest of them
+- ✅ The compiler emits it (2026-11-08): `WasmHost` generates, with each
+  module, the JavaScript host that supplies its imports - printing
+  implemented, every other import taken from the embedder by name, a missing
+  one failing with its name (TARGETS_DIP §4).
 
 ---
 

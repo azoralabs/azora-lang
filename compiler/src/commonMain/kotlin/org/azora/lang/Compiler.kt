@@ -44,6 +44,10 @@ import org.azora.lang.semantic.SemanticUnresolvedSymbol
 import org.azora.lang.semantic.ReflectDecoExpander
 import org.azora.lang.semantic.ReturnedVariants
 import org.azora.lang.semantic.SpecDefaults
+import org.azora.lang.semantic.StabilityIndex
+import org.azora.lang.semantic.StabilityReport
+import org.azora.lang.semantic.UserCode
+import org.azora.lang.semantic.WrittenUses
 import org.azora.lang.semantic.CastDeriver
 import org.azora.lang.semantic.ComparisonDeriver
 import org.azora.lang.semantic.DisplayDeriver
@@ -346,6 +350,8 @@ class Compiler(
      * @param source the Azora source code to compile
      * @param warningsAsErrors if `true`, warnings are treated as errors and
      *   cause compilation to fail
+     * @param reportExperimental also warn where the program uses an
+     *   `@Experimental` declaration (a `@Deprecated` one always warns)
      * @return a [CompilationResult.Success] with all generated outputs, or a
      *   [CompilationResult.Failure] with error messages
      */
@@ -355,6 +361,7 @@ class Compiler(
         release: Boolean = true,
         debug: Boolean = false,
         defines: Map<String, String> = emptyMap(),
+        reportExperimental: Boolean = false,
     ): CompilationResult = compileSource(
         SourceUnit(
             id = SourceId("memory-main"),
@@ -369,6 +376,7 @@ class Compiler(
         debug,
         defines,
         generateBackends = true,
+        reportExperimental = reportExperimental,
     )
 
     /** Analyze immutable source snapshots without running either backend. */
@@ -395,6 +403,7 @@ class Compiler(
                 defines = request.defines,
                 generateBackends = false,
                 reportUnreachableLibraryWarnings = request.mode != AnalysisMode.IDE,
+                reportExperimental = request.policy.reportExperimental,
             )
             diagnostics += result.diagnostics
             facts += result.semanticFacts
@@ -427,6 +436,7 @@ class Compiler(
         defines: Map<String, String>,
         generateBackends: Boolean,
         reportUnreachableLibraryWarnings: Boolean = true,
+        reportExperimental: Boolean = false,
     ): CompilationResult {
         val result = compileLegacy(
             source,
@@ -436,6 +446,7 @@ class Compiler(
             defines,
             generateBackends,
             reportUnreachableLibraryWarnings,
+            reportExperimental,
         )
         return when (result) {
             is CompilationResult.Success -> result.copy(
@@ -464,6 +475,7 @@ class Compiler(
         defines: Map<String, String>,
         generateBackends: Boolean,
         reportUnreachableLibraryWarnings: Boolean,
+        reportExperimental: Boolean,
     ): CompilationResult {
 
         val source = sourceUnit.text
@@ -512,6 +524,9 @@ class Compiler(
         // 2a. Debug builds: instrument statements with `__dbg(line)` markers so a
         // debugger can pause at breakpoints (stdlib, injected below, stays clean).
         val parsed = if (debug) DebugInstrumenter.instrument(rawAst) else rawAst
+        // What this unit wrote itself, before libraries and generated members
+        // join it: only its own uses of deprecated declarations are reported.
+        val userCode = UserCode.of(rawAst)
 
         // 2a-0. A library source that does not parse is reported to the units
         // that import it. One unreadable file elsewhere in the tree is not a
@@ -572,6 +587,11 @@ class Compiler(
         val initiallyInjected = ScopeQualifiedImplTargets.resolve(
             SpecDefaults.apply(CallbackImplNormalizer.normalize(libraries.inject(parsed))),
         )
+        // Uses written by name are read now, while every call is still the call
+        // that was written: later passes expand macros, specialize variadic
+        // calls, and fold what compile-time evaluation can.
+        val writtenIndex = StabilityIndex.of(initiallyInjected)
+        val writtenUses = WrittenUses.collect(initiallyInjected, userCode, writtenIndex)
 
         // Decorator derives produce ordinary checked AST methods. Run injection
         // once more afterwards so helper functions referenced by generated
@@ -685,6 +705,7 @@ class Compiler(
             InferredTypeArgs.apply(Witnesses.addDescriptorFields(ast)),
             defines = defines,
             retainSemanticFacts = !generateBackends,
+            userCode = userCode,
         )
         // A tuple's behaviour is specialized for the shapes the program uses it
         // on, which only type resolution can say - so it says, and analysis runs
@@ -704,6 +725,7 @@ class Compiler(
                 InferredTypeArgs.apply(Witnesses.addDescriptorFields(specialized.program)),
                 defines = defines,
                 retainSemanticFacts = !generateBackends,
+                userCode = userCode,
             )
         }
         val shorthandDiagnostics = semantic.redundantVariantQualifiers.map {
@@ -727,7 +749,16 @@ class Compiler(
         // A library source nothing here imports was skipped rather than fatal;
         // it is still worth saying so, because the next file to import it will
         // not compile.
-        val warnings = semantic.errors.filter { it.startsWith("warning:") } +
+        // A use of a deprecated declaration (and, when asked, an experimental
+        // one): by name from the program as written, through a value from what
+        // type resolution resolved each member to.
+        val stabilityWarnings = StabilityReport.warnings(
+            writtenUses + semantic.symbolTable.stability.uses,
+            writtenIndex + StabilityIndex.of(semantic.program),
+            userCode,
+            reportExperimental,
+        )
+        val warnings = semantic.errors.filter { it.startsWith("warning:") } + stabilityWarnings +
             if (reportUnreachableLibraryWarnings) {
                 libraries.skippedLibraryNotices().map { "warning: $it" }
             } else {

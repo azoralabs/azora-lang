@@ -19,7 +19,7 @@ class IncrementExecTest {
     }
 
     @Test fun incrementValuesAndMutationsAgreeInWasm() {
-        assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+        assumeTrue("Node.js is required", WasmExec.available)
         for (source in listOf(IncrementSemanticsTest.program, IncrementSemanticsTest.globalProgram)) {
             for (optimized in listOf(false, true)) {
                 val ir = AssertionSemanticsTest.lower(source, optimized)

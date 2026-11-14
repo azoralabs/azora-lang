@@ -119,6 +119,8 @@ internal object UnicodeData {
 
     private fun StringBuilder.array(name: String, doc: String, values: List<Int>) {
         appendLine("/** $doc */")
+        // Data for std's own text functions, not an API (STABILITY_DIP §2).
+        appendLine("@Experimental(since: \"0.1\")")
         appendLine("fin $name: Array<Int> = [")
         for (line in values.chunked(12)) appendLine("    " + line.joinToString(", ") + ",")
         appendLine("]")

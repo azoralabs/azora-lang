@@ -771,6 +771,8 @@ func _parseLong(value: String): Long ?! SerializationError {
     return result * sign
 }
 
+// The host's clock hooks behind `SystemClock`, not an API (STABILITY_DIP §2).
+@Experimental(since: "0.1")
 bridge [.C, .WebAssembly] {
     /** Host runtime hook returning Unix time as signed nanoseconds. */
     func azoraTimeUnixNanoseconds(): Long

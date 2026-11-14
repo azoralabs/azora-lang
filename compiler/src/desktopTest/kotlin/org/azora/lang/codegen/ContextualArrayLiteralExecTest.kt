@@ -15,7 +15,7 @@ class ContextualArrayLiteralExecTest {
     }
 
     @Test fun arraysRunOnWasm() {
-        assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+        assumeTrue("Node.js is required", WasmExec.available)
         for (optimized in listOf(false, true)) {
             assertEquals("", WasmExec.runWat(WasmCodegen().generate(ContextualArrayLiteralTest.compile(optimized = optimized))))
         }

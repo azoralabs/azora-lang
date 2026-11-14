@@ -247,6 +247,7 @@ class TypeResolver(private val table: SymbolTable) {
         stableArraySizes.clear()
         closureBorrows.clear()
         this.program = program
+        table.stability.attach(program)
         scopeMembers = collectScopeMembers(program)
         tupleTemplateMembers = program.tupleTemplates.flatMapTo(mutableSetOf()) { impl -> impl.methods.map { it.name } }
         typePropertyNames = program.typeFunctions.mapTo(mutableSetOf()) { it.name }
@@ -264,6 +265,12 @@ class TypeResolver(private val table: SymbolTable) {
                 else -> continue
             }
             val (annotation, initializer, line) = declaration
+            val stabilityOwner = when (item) {
+                is TopLevel.FinDecl -> table.stability.enterValue(item.name, item.annotations)
+                is TopLevel.VarDecl -> table.stability.enterValue(item.name, item.annotations)
+                is TopLevel.LetDecl -> table.stability.enterValue(item.name, item.annotations)
+                else -> null
+            }
             val declared = annotation?.let { tryResolveType(it, line) }
             seedExpectedValue(initializer, declared)
             val savedParams = expectedLambdaParamTypes
@@ -293,6 +300,7 @@ class TypeResolver(private val table: SymbolTable) {
             if (item is TopLevel.FinDecl && actual is IrType.Array) {
                 table.lookupVariable(item.name)?.let { rememberArraySize(it, initializer, actual) }
             }
+            table.stability.leave(stabilityOwner)
         }
         for (bridge in program.items.filterIsInstance<TopLevel.Bridge>()) {
             for (value in bridge.values) {
@@ -307,22 +315,27 @@ class TypeResolver(private val table: SymbolTable) {
             }
         }
         for (func in program.functions) {
+            val stabilityOwner = table.stability.enterFunction(func)
             resolveFunction(func)
+            table.stability.leave(stabilityOwner)
         }
         // Resolve test bodies
         for (test in program.tests) {
+            val stabilityOwner = table.stability.enterTest(test)
             table.pushScope()
             val savedTestContext = testContext
             testContext = true
             for (stmt in test.body) resolveStmt(stmt, IrType.Unit)
             testContext = savedTestContext
             table.popScope()
+            table.stability.leave(stabilityOwner)
         }
         // Pack defaults are executable expressions too. Callable fields need
         // their declared type as the lambda's inference context.
         for (item in program.items) {
             if (item !is TopLevel.Pack) continue
             val struct = table.lookupStruct(item.name) ?: continue
+            val stabilityOwner = table.stability.enterType(item.name, item.annotations)
             table.pushScope()
             // A default may be written in terms of the fields *before* it -
             // `width = when color { … }` - so each is in scope only once it has
@@ -357,10 +370,12 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             table.popScope()
+            table.stability.leave(stabilityOwner)
         }
         for (item in program.items) {
             if (item !is TopLevel.Deco) continue
             val struct = table.lookupStruct(item.name) ?: continue
+            val stabilityOwner = table.stability.enterType(item.name, item.annotations)
             table.pushScope()
             inDecoratorFieldDefault = true
             for (i in item.fields.indices) {
@@ -375,6 +390,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
             inDecoratorFieldDefault = false
             table.popScope()
+            table.stability.leave(stabilityOwner)
         }
         // Resolve impl method bodies (self + declared params in scope)
         for (item in program.items) {
@@ -385,6 +401,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = "${item.typeName}_${method.name}"
                     val func = table.lookupFunction(mangled) ?: continue
                     val previousFactOwner = table.semanticFacts.enterOwner(func.name, method.line)
+                    val stabilityOwner = table.stability.enterMethod(item, method)
                     table.pushScope()
                     for ((index, param) in func.params.withIndex()) {
                         val (name, type) = param
@@ -471,6 +488,7 @@ class TypeResolver(private val table: SymbolTable) {
                     asyncContext = savedAsync
                     table.popScope()
                     table.semanticFacts.leaveOwner(previousFactOwner)
+                    table.stability.leave(stabilityOwner)
                 }
             }
         }
@@ -1330,6 +1348,7 @@ class TypeResolver(private val table: SymbolTable) {
             return null
         }
         table.defineInferredMember(expr.line, expr.column, owner)
+        if (expr.name.isNotEmpty()) table.stability.inferred(owner, expr.name, expr.line, expr.column)
         expr.ctorArgs?.let { args ->
             // The name a type is registered under, which is not always the one it
             // is written by: a type declared in a scope is keyed by its qualified
@@ -2899,6 +2918,7 @@ class TypeResolver(private val table: SymbolTable) {
                                 }
                             }
                             table.semanticFacts.callable(expr, factory)
+                            table.stability.constructor(factory.name, calleeName, expr.line, expr.column)
                             return factory.returnType
                         }
                     }
@@ -3533,6 +3553,7 @@ class TypeResolver(private val table: SymbolTable) {
                         // the spec's declared prop type and dispatches to the impl.
                         val specProp = table.lookupSpecProp(targetType.name, expr.name)
                         if (specProp != null) {
+                            table.stability.specMember(targetType.name, expr.name, expr.line, expr.column)
                             return table.lookupSpecMethod(targetType.name, expr.name)
                                 ?.let { instantiateSpecMember(table, targetType, it).returnType } ?: specProp
                         }
@@ -3559,6 +3580,7 @@ class TypeResolver(private val table: SymbolTable) {
                             return null
                         }
                         if (field != null) {
+                            table.stability.field(targetType.name, expr.name, expr.line, expr.column)
                             if (!canAccessMember(targetType.name, expr.name, field.visibility)) {
                                 reportInaccessible(expr.line, "field", targetType.name, expr.name, field.visibility)
                                 null
@@ -3569,6 +3591,7 @@ class TypeResolver(private val table: SymbolTable) {
                             // Check for a computed property/callback member.
                             val mangled = table.lookupMethod(targetType.name, expr.name)
                             if (mangled != null) {
+                                table.stability.member(mangled, targetType.name, expr.name, expr.line, expr.column)
                                 val func = table.lookupFunction(mangled)
                                 if (func != null && func.params.size == 1 && func.memberCallStyle != MemberCallStyle.METHOD) {
                                     if (!canAccessMember(targetType.name, expr.name, func.visibility)) {
@@ -3587,8 +3610,12 @@ class TypeResolver(private val table: SymbolTable) {
                                 val derefField = dereferenced?.let { table.lookupStruct(it.name)?.field(expr.name) }
                                 val derefMethod = dereferenced?.let { table.lookupMethod(it.name, expr.name) }
                                 when {
-                                    derefField != null -> derefField.type
+                                    derefField != null -> {
+                                        table.stability.field(dereferenced.name, expr.name, expr.line, expr.column)
+                                        derefField.type
+                                    }
                                     derefMethod != null -> {
+                                        table.stability.member(derefMethod, dereferenced.name, expr.name, expr.line, expr.column)
                                         val func = table.lookupFunction(derefMethod)
                                         if (func != null && func.params.size == 1 &&
                                             func.memberCallStyle != MemberCallStyle.METHOD
@@ -3624,6 +3651,7 @@ class TypeResolver(private val table: SymbolTable) {
                         // way a method call on one does. Without this a property
                         // extension on Int would parse and lower but never resolve.
                         val mangled = table.lookupMethod(targetType.toString(), expr.name)
+                        mangled?.let { table.stability.member(it, targetType.toString(), expr.name, expr.line, expr.column) }
                         val prop = mangled?.let { table.lookupFunction(it) }
                         if (prop != null && prop.params.size == 1 && prop.memberCallStyle != MemberCallStyle.METHOD) {
                             prop.returnType
@@ -3703,6 +3731,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (mangled != null) {
                         val func = instantiateMember(table, targetType, table.lookupFunction(mangled)!!)
                         table.semanticFacts.callable(expr, func, targetType)
+                        table.stability.member(mangled, targetType.name, expr.name, expr.line, expr.column)
                         if (!requireReactiveCaller(func, expr.line)) return null
                 if (!requireTestCaller(func.name, expr.line)) return null
                         if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
@@ -3789,6 +3818,7 @@ class TypeResolver(private val table: SymbolTable) {
                     if (dereferenced != null) {
                         val derefMethod = table.lookupMethod(dereferenced.name, expr.name)
                         if (derefMethod != null) {
+                            table.stability.member(derefMethod, dereferenced.name, expr.name, expr.line, expr.column)
                             val func = table.lookupFunction(derefMethod)!!
                             if (func.memberCallStyle == MemberCallStyle.PROPERTY) {
                                 errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
@@ -3817,6 +3847,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val specMethod = table.lookupSpecMethod(targetType.name, expr.name)
                         ?.let { instantiateSpecMember(table, targetType, it) }
                     if (specMethod != null) {
+                        table.stability.specMember(targetType.name, expr.name, expr.line, expr.column)
                         if (specMethod.isProperty) {
                             errors.add("line ${expr.line}: property '${expr.name}' must be accessed without parentheses")
                             return null
@@ -3853,6 +3884,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = (targetType as? IrType.Tuple)?.let { table.lookupMethod(tupleMemberOwner(it), expr.name) }
                         ?: table.lookupMethod(targetType.toString(), expr.name)
                     if (mangled != null) {
+                        table.stability.member(mangled, targetType.toString(), expr.name, expr.line, expr.column)
                         val func = table.lookupFunction(mangled)!!
                         if (!requireReactiveCaller(func, expr.line)) return null
                 if (!requireTestCaller(func.name, expr.line)) return null

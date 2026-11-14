@@ -30,6 +30,7 @@ import std.serializer::Serializable
 @Since("0.1")
 @Serializable
 pack Queue<T> {
+    @Experimental(since: "0.1")
     var data: T^ = alloc^ .() * 8
     var size: Int = 0
     var capacity: Int = 8

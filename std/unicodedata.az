@@ -18,6 +18,7 @@
 exposed module std.unicodedata
 
 /** One-to-one uppercase mappings as runs. */
+@Experimental(since: "0.1")
 fin upperRuns: Array<Int> = [
     97, 122, 1, -32, 181, 181, 1, 743, 224, 246, 1, -32,
     248, 254, 1, -32, 255, 255, 1, 121, 257, 303, 2, -1,
@@ -85,6 +86,7 @@ fin upperRuns: Array<Int> = [
 ]
 
 /** Code points whose uppercase is more than one code point, ascending. */
+@Experimental(since: "0.1")
 fin upperFullKeys: Array<Int> = [
     223, 329, 496, 912, 944, 1415, 7830, 7831, 7832, 7833, 7834, 8016,
     8018, 8020, 8022, 8064, 8065, 8066, 8067, 8068, 8069, 8070, 8071, 8072,
@@ -98,6 +100,7 @@ fin upperFullKeys: Array<Int> = [
 ]
 
 /** Where each key's code points begin in `upperFullValues`; one more entry ends the last. */
+@Experimental(since: "0.1")
 fin upperFullStarts: Array<Int> = [
     0, 2, 4, 6, 9, 12, 14, 16, 18, 20, 22, 24,
     26, 29, 32, 35, 37, 39, 41, 43, 45, 47, 49, 51,
@@ -111,6 +114,7 @@ fin upperFullStarts: Array<Int> = [
 ]
 
 /** The code points of each uppercase, one after another. */
+@Experimental(since: "0.1")
 fin upperFullValues: Array<Int> = [
     83, 83, 700, 78, 74, 780, 921, 776, 769, 933, 776, 769,
     1333, 1362, 72, 817, 84, 776, 87, 778, 89, 778, 65, 702,
@@ -134,6 +138,7 @@ fin upperFullValues: Array<Int> = [
 ]
 
 /** One-to-one lowercase mappings as runs. */
+@Experimental(since: "0.1")
 fin lowerRuns: Array<Int> = [
     65, 90, 1, 32, 192, 214, 1, 32, 216, 222, 1, 32,
     256, 302, 2, 1, 306, 310, 2, 1, 313, 327, 2, 1,
@@ -197,21 +202,25 @@ fin lowerRuns: Array<Int> = [
 ]
 
 /** Code points whose lowercase is more than one code point, ascending. */
+@Experimental(since: "0.1")
 fin lowerFullKeys: Array<Int> = [
     304,
 ]
 
 /** Where each key's code points begin in `lowerFullValues`; one more entry ends the last. */
+@Experimental(since: "0.1")
 fin lowerFullStarts: Array<Int> = [
     0, 2,
 ]
 
 /** The code points of each lowercase, one after another. */
+@Experimental(since: "0.1")
 fin lowerFullValues: Array<Int> = [
     105, 775,
 ]
 
 /** The Cased property: Lowercase, Uppercase and Lt. */
+@Experimental(since: "0.1")
 fin casedRanges: Array<Int> = [
     65, 90, 97, 122, 170, 170, 181, 181, 186, 186, 192, 214,
     216, 246, 248, 442, 444, 447, 452, 659, 661, 696, 704, 705,
@@ -243,6 +252,7 @@ fin casedRanges: Array<Int> = [
 ]
 
 /** The Case_Ignorable property: Mn, Me, Cf, Lm, Sk and Word_Break MidLetter, MidNumLet, Single_Quote. */
+@Experimental(since: "0.1")
 fin caseIgnorableRanges: Array<Int> = [
     39, 39, 46, 46, 58, 58, 94, 94, 96, 96, 168, 168,
     173, 173, 175, 175, 180, 180, 183, 184, 688, 879, 884, 885,
@@ -320,6 +330,7 @@ fin caseIgnorableRanges: Array<Int> = [
 ]
 
 /** The White_Space property: Zs, Zl, Zp, U+0009..U+000D and U+0085. */
+@Experimental(since: "0.1")
 fin whiteSpaceRanges: Array<Int> = [
     9, 13, 32, 32, 133, 133, 160, 160, 5760, 5760, 8192, 8202,
     8232, 8233, 8239, 8239, 8287, 8287, 12288, 12288,

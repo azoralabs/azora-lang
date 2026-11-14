@@ -895,7 +895,7 @@ class IrGenerator(private val table: SymbolTable) {
         val lowered = IrProgram(
             program.moduleName,
             generatedTraceFunctions.map { IrTopLevel.Func(it) } +
-                generatedRenderFunctions.values.map { IrTopLevel.Func(it) } + items,
+                generatedRenderFunctions.values.map { IrTopLevel.Func(it) } + oneSingletonFactoryEach(items),
             buildSpecTables(),
             ownedSlots = program.items.filterIsInstance<TopLevel.Slot>().filterNot { it.isError }.map { it.name }.toSet(),
         )
@@ -1334,6 +1334,9 @@ class IrGenerator(private val table: SymbolTable) {
             !(lowered is IrExpr.Call && lowered.name == "__isolated")) return false
         if (lowered is IrExpr.Var || lowered is IrExpr.Member || lowered is IrExpr.Index) return false
         if (lowered is IrExpr.Call && lowered.name == "__deref") return false
+        // `inject T` answers the program's one instance, which the container
+        // keeps for the program's lifetime; a binding only names it.
+        if (lowered is IrExpr.Call && lowered.name == "__inject") return false
         // A conditional owns its value only when every branch does: a branch
         // that names a place it did not copy hands back a value that place
         // still owns, and freeing it here would free it twice.
@@ -2662,6 +2665,26 @@ class IrGenerator(private val table: SymbolTable) {
      * applying its own `hash` or `==`, as ordinary code on it would. A
      * descriptor nothing set (`-1`) panics rather than guessing.
      */
+    /**
+     * A `solo pack` gets a `__singleton_Name` factory from its field defaults,
+     * and a `graph` registration of the same type (`solo Counter(…)`) another,
+     * from its arguments. The program has one instance, so it has one factory:
+     * the registration's, which comes later and says how to build it. Two
+     * definitions of one function were a redefinition error on LLVM and
+     * WebAssembly (the interpreter already kept the last).
+     */
+    private fun oneSingletonFactoryEach(items: List<IrTopLevel>): List<IrTopLevel> {
+        val lastIndex = HashMap<String, Int>()
+        items.forEachIndexed { index, item ->
+            val name = (item as? IrTopLevel.Func)?.function?.name ?: return@forEachIndexed
+            if (name.startsWith("__singleton_")) lastIndex[name] = index
+        }
+        return items.filterIndexed { index, item ->
+            val name = (item as? IrTopLevel.Func)?.function?.name
+            name == null || !name.startsWith("__singleton_") || lastIndex[name] == index
+        }
+    }
+
     private fun witnessDispatchFunctions(): List<IrTopLevel> {
         if (witnessDispatchers.isEmpty()) return emptyList()
         fun dispatch(name: String, need: String, operands: Int, result: IrType, apply: (List<Expr>) -> List<IrStmt>): IrTopLevel.Func {

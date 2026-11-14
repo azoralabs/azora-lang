@@ -43,6 +43,7 @@ module std.format
  */
 @Since("0.1")
 pack Formatter {
+    @Experimental(since: "0.1")
     var buffer: String = ""
 }
 

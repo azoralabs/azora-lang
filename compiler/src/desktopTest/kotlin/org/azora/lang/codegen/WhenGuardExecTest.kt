@@ -19,7 +19,7 @@ class WhenGuardExecTest {
     }
 
     @Test fun guardsExecuteInWasm() {
-        assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+        assumeTrue("Node.js is required", WasmExec.available)
         for (source in listOf(WhenGuardSemanticsTest.program, MemberSequenceSemanticsTest.program)) {
             for (optimized in listOf(false, true)) {
                 val ir = AssertionSemanticsTest.lower(source, optimized)

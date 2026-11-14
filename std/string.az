@@ -352,7 +352,9 @@ func strParseReal(s: String): Double ?! ParseError {
  */
 @Since("0.1")
 pack StringBuilder {
+    @Experimental(since: "0.1")
     var parts: Array<String> = .() * 16
+    @Experimental(since: "0.1")
     var count: Int = 0
 }
 

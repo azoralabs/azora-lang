@@ -13,7 +13,7 @@ import kotlin.test.assertEquals
  * block an allocation reuses, what it contains, and which misuse traps.
  */
 class WasmAllocatorExecTest {
-    @Before fun requireWasm() = assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+    @Before fun requireWasm() = assumeTrue("Node.js is required", WasmExec.available)
 
     /**
      * A module running [body] as `main`, with one page of memory unless

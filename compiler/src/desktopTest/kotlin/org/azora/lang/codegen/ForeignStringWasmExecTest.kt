@@ -45,6 +45,27 @@ class ForeignStringWasmExecTest {
         assertEquals("host text", output.trim())
     }
 
+    /** The generated host supplies printing; a `bridge` the host does not provide stops the program, by name. */
+    @Test fun anImportTheHostDoesNotProvideIsNamed() {
+        if (!WasmExec.available) return
+        val output = WasmExec.runWatExpectingError(
+            WasmExec.compile(
+                """
+                import std.io
+                bridge .C {
+                    func hostSecret(): Int
+                }
+                func main() {
+                    println("before")
+                    println(hostSecret())
+                }
+                """.trimIndent(),
+            ),
+            "the host provides no 'hostSecret', which this program imports",
+        )
+        assertEquals("before", output.trim())
+    }
+
     @Test fun aNullHostStringTraps() {
         if (!WasmExec.available) return
         val output = WasmExec.runWatExpectingTrap(

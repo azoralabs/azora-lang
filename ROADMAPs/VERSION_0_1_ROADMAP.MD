@@ -535,7 +535,22 @@ are unstable, coverage is uneven, and §4.4 lists what is missing outright.
 - ⬜ Every module has tests; coverage target agreed and met
 - ⬜ Naming consistency pass across all 47 modules
 - ⬜ `@Since` accurate on every public item
-- ⬜ Stability markers audited - what ships stable is a deliberate list
+- 🟨 Stability markers audited - what ships stable is a deliberate list.
+  *(2026-11-14)* Internals the listing exposed are `@Experimental`: the
+  `std.unicodedata` tables (through their generator), `std.time`'s host clock
+  bridges, `std.serializer`'s `serialFieldAt` / `serialValueAt` / `serialAs…`
+  helpers, `atomicLoadWord` / `atomicAddWord`, and the storage fields
+  `Deque.data/head/tail`, `Queue.data`, `Pool.freeStack`, `Unique.active`,
+  `StringBuilder.parts/count`, `Formatter.buffer`. So is what §3.3 leaves
+  undecided - `Atomic`, `Mutex`, `Guard`, `CountDownLatch`, `SpinLock`,
+  `Channel`, `channel()` - and `sharedOf` / `syncSharedOf` (they return
+  experimental types) and `Alloc` (every member already experimental);
+  `std/testme.az`, a scratch module nothing referenced, is deleted (owner's
+  decision). `StdSurfaceTest` now also refuses a stable
+  declaration that names an experimental type. Open: the owner's review of the
+  remaining 455-line listing; public `var` fields a caller can corrupt
+  (`Deque.size/capacity`, `Queue.size/capacity`, the allocators' counters,
+  `Slice.count`) - stable to read, but writable
 - ⬜ Iteration protocol unified and documented
 - ⬜ Capacity/growth semantics documented
 
@@ -1003,11 +1018,23 @@ Every one fixed, or deleted with a stated reason.
 - ✅ Stability policy published - what `0.1` guarantees (STABILITY_DIP §1-§2,
   2026-11-07)
 - ✅ Deprecation process defined (warn → error → remove; STABILITY_DIP §4)
-- ⬜ `@Since` / `@Experimental` semantics documented and enforced - documented
-  (STABILITY_DIP §3) and validated where written; a use is not reported yet
-- ⬜ The public surface of `0.1` explicitly enumerated; the rest is internal -
-  defined (STABILITY_DIP §2); the generated listing is not built
-- ⬜ Feature-gating for experimental features
+- ✅ *(2026-11-14)* `@Since` / `@Experimental` / `@Deprecated` semantics
+  documented and enforced (STABILITY_DIP §3): each use of a deprecated
+  declaration in the unit's own code is a warning naming the replacement -
+  calls (folded ones included), constructions, types, cases, members, fields,
+  spec members, globals, decorators; experimental uses are reported when asked
+  for (`azora check --experimental`; owner's decision, since most of std is
+  experimental); `@Supress(kind: .Deprecated)` silences. `spec` declarations and
+  their members now keep their decorators (the parser dropped them). Open:
+  uses the language makes implicitly (operators, indexing, iteration,
+  templates, `as`)
+- ✅ *(2026-11-14)* The public surface of `0.1` explicitly enumerated:
+  `std/STABLE_SURFACE.txt`, generated from std (STABILITY_DIP §2.1) and
+  checked by `StdSurfaceTest`. It shows what std has not yet marked - see
+  §4.2's marker audit
+- ⬜ Feature-gating for experimental features - reporting is opt-in (above);
+  whether a program must opt in to *use* experimental declarations is not
+  decided
 - ⬜ A compatibility suite `0.1.x` must keep passing - its contents are
   defined (STABILITY_DIP §5); no release job runs it yet
 - ⬜ Release process: versioning, changelog, signed artefacts, announcement

@@ -29,6 +29,11 @@ fun interface CancellationToken {
 data class DiagnosticPolicy(
     val warningsAsErrors: Boolean = false,
     val maximumDiagnostics: Int = 200,
+    /**
+     * Also warn where the unit's own code uses an `@Experimental` declaration.
+     * Off unless asked for: most of std is experimental in 0.1 (STABILITY_DIP §3).
+     */
+    val reportExperimental: Boolean = false,
 )
 
 data class AnalysisRequest(

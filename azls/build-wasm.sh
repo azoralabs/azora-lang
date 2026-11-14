@@ -32,7 +32,13 @@ if ! grep -q '(export "azlsDefinition"' "$TEMP_DIR/azls.wat"; then
     exit 1
 fi
 
-npx --yes -p wabt wat2wasm "$TEMP_DIR/azls.wat" -o "$OUTPUT_DIR/azls.wasm"
+# The compiler assembles the module itself (and writes its generated host,
+# azls.host.js, beside it); no external assembler is involved.
+(
+    cd "$REPOSITORY_ROOT"
+    ./gradlew -q :app:run \
+        --args="compile wasm ../azls/src/main/azora/AzoraLanguageServer.az --debug -o $OUTPUT_DIR/azls.wasm"
+)
 cp "$TEMP_DIR/azls.wat" "$OUTPUT_DIR/azls.wat"
 cp "$SOURCE_FILE" "$OUTPUT_DIR/AzoraLanguageServer.az"
 

@@ -1,0 +1,455 @@
+# The stable surface of Azora's standard library (STABILITY_DIP §2).
+#
+# Every declaration visible outside its module and not @Experimental, with its
+# signature. Generated from std/ by StdSurfaceTest; do not edit by hand.
+# Regenerate after an intended change:
+#   AZORA_REGENERATE_SURFACE=1 ./gradlew :compiler:desktopTest --tests '*StdSurfaceTest*'
+
+std.algorithm.search  (algorithm/search.az)
+  error SearchError { NotFound, EmptyArray }  @Since("0.1")
+
+std.allocator  (allocator/allocator.az)
+  error AllocError { OutOfMemory, InvalidSize, DoubleFree, UseAfterFree, PoolExhausted, InvalidAlignment }  @Since("0.1")
+  bridge spec Allocator  @Since("0.1")
+  pack Arena  @Since("0.1")
+    var capacity: Int = 0
+    var offset: Int = 0
+    var allocCount: Int = 0
+    var peakUsage: Int = 0
+    var totalAllocated: Int = 0
+  impl Allocator for Arena
+  impl Arena
+    prop &.remaining: Int  @Since("0.1")
+    prop &.used: Int  @Since("0.1")
+    prop &.isEmpty: Bool  @Since("0.1")
+    func &.canAlloc(size: Int): Bool  @Since("0.1")
+    func !.reset()  @Since("0.1")
+    func !.resetAll()  @Since("0.1")
+    prop &.diagnostic: String  @Since("0.1")
+  impl Display for Arena  @Since("0.1")
+    func &.display(formatter: Formatter!)
+  pack Pool  @Since("0.1")
+    var slotSize: Int = 0
+    var slotCount: Int = 0
+    var freeCount: Int = 0
+    var acquiredCount: Int = 0
+    var peakAcquired: Int = 0
+  impl Allocator for Pool
+  impl Pool
+    prop &.isFull: Bool  @Since("0.1")
+    prop &.isEmpty: Bool  @Since("0.1")
+    prop &.canAcquire: Bool  @Since("0.1")
+    prop &.diagnostic: String  @Since("0.1")
+  pack StackAllocator  @Since("0.1")
+    var capacity: Int = 0
+    var offset: Int = 0
+    var allocCount: Int = 0
+    var peakUsage: Int = 0
+  impl Allocator for StackAllocator
+  impl StackAllocator
+    prop &.remaining: Int  @Since("0.1")
+    prop &.isEmpty: Bool  @Since("0.1")
+    func &.canAlloc(size: Int): Bool  @Since("0.1")
+    func !.reset()  @Since("0.1")
+    func !.resetAll()  @Since("0.1")
+    prop &.diagnostic: String  @Since("0.1")
+  impl Display for StackAllocator  @Since("0.1")
+    func &.display(formatter: Formatter!)
+
+std.char  (char.az)
+  bridge pack Char  @Since("0.1")
+  impl PartialEqual for Char
+  impl Equal for Char
+  impl Order for Char
+  impl Hash for Char
+
+std.concurrency.async  (concurrency/async.az)
+  func concurrency::cancel(task: Any): Unit  @Since("0.1")
+
+std.config  (config.az)
+  enum CompilerTarget { Interpret, Native, WebAssembly }  @Since("0.1")
+
+std.container.deque  (container/deque.az)
+  pack Deque<T>  @Since("0.1")
+    var size: Int = 0
+    var capacity: Int = 8
+  impl Deque<T>  @Since("0.1")
+    prop &.isEmpty: Bool  @Since("0.1")
+    prop &.isNotEmpty: Bool  @Since("0.1")
+    func !.clear(): Unit  @Since("0.1")
+
+std.container.queue  (container/queue.az)
+  pack Queue<T>  @Since("0.1")
+    var size: Int = 0
+    var capacity: Int = 8
+  impl Queue<T>
+    dtor .()
+    prop &.isEmpty: Bool  @Since("0.1")
+    prop &.isNotEmpty: Bool  @Since("0.1")
+
+std.core  (core.az)
+  bridge pack Unit  @Since("0.1")
+  bridge pack Nothing  @Since("0.1")
+  bridge pack Any  @Since("0.1")
+  bridge pack Self  @Since("0.1")
+  bridge pack Type  @Since("0.1")
+  impl Type
+    deepinline prop &.typeName: String  @Since("0.1")
+  variant enum Option<T> { Some(T), None }  @Since("0.1")
+  enum Compare { Less, Equal, Greater }  @Since("0.1")
+  enum PartialCompare { Less, Equal, Greater, Unordered }  @Since("0.1")
+  impl Compare  @Since("0.1")
+    prop &.isLess: Bool
+    prop &.isLessOrEqual: Bool
+    prop &.isGreater: Bool
+    prop &.isGreaterOrEqual: Bool
+    prop &.reversed: Compare
+    func &.then(next: Compare): Compare
+  impl PartialCompare  @Since("0.1")
+    prop &.isLess: Bool
+    prop &.isLessOrEqual: Bool
+    prop &.isGreater: Bool
+    prop &.isGreaterOrEqual: Bool
+    prop &.isUnordered: Bool
+    prop &.reversed: PartialCompare
+    func &.then(next: PartialCompare): PartialCompare
+  bridge spec Cast<TO>  @Since("0.1")
+    prop<TO> &.castValue: TO
+  bridge spec CheckedCast<TO>  @Since("0.1")
+    prop<TO> &.castValue: TO?
+  bridge spec BitCast<TO>  @Since("0.1")
+    prop<TO> &.castValue: TO
+  enum SupressKind { Unused, Deprecated, Experimental }  @Since("0.1")
+
+std.error  (error.az)
+  variant error IndexError { OutOfBounds(Int, Int) }
+
+std.format  (format.az)
+  pack Formatter  @Since("0.1")
+  impl Formatter  @Since("0.1")
+    func !.write(text: String)
+    func !.writeLine(text: String)
+    prop &.rendered: String
+  bridge spec Display  @Since("0.1")
+    func &.display(formatter: Formatter!)
+  func<T> format(value: T&): String  @Since("0.1")
+
+std.io  (io/io.az)
+  bridge func print(value: Any&): Unit  @Since("0.1")
+  bridge func println(value: Any&): Unit  @Since("0.1")
+
+std.math  (math.az)
+  fin PI: Double  @Since("0.1")
+  fin E: Double  @Since("0.1")
+  fin TAU: Double  @Since("0.1")
+  fin SQRT2: Double  @Since("0.1")
+  fin PHI: Double  @Since("0.1")
+  fin INF: Double  @Since("0.1")
+  fin EPSILON: Double  @Since("0.1")
+  func radians(degrees: Double): Double
+  func degrees(radians: Double): Double
+  bridge func sin(x: Double): Double
+  bridge func cos(x: Double): Double
+  bridge func tan(x: Double): Double
+  bridge func asin(x: Double): Double
+  bridge func acos(x: Double): Double
+  bridge func atan(x: Double): Double
+  bridge func atan2(y: Double, x: Double): Double
+  bridge func sqrt(x: Double): Double
+  bridge func cbrt(x: Double): Double
+  bridge func log(x: Double): Double
+  bridge func log2(x: Double): Double
+  bridge func log10(x: Double): Double
+  bridge func exp(x: Double): Double
+  bridge func exp2(x: Double): Double
+  bridge func hypot(x: Double, y: Double): Double
+  bridge func vha::sin(x: Double): Double
+  bridge func vha::cos(x: Double): Double
+  bridge func vha::tan(x: Double): Double
+  bridge func vha::asin(x: Double): Double
+  bridge func vha::acos(x: Double): Double
+  bridge func vha::atan(x: Double): Double
+  bridge func vha::atan2(y: Double, x: Double): Double
+  bridge func vha::cbrt(x: Double): Double
+  bridge func vha::log(x: Double): Double
+  bridge func vha::log2(x: Double): Double
+  bridge func vha::log10(x: Double): Double
+  bridge func vha::exp(x: Double): Double
+  bridge func vha::exp2(x: Double): Double
+  bridge func vha::hypot(x: Double, y: Double): Double
+
+std.memory.slice  (memory/slice.az)
+  pack Slice<T>  @Since("0.1")
+    var count: Int
+  impl Slice<T>
+    prop &.isEmpty: Bool  @Since("0.1")
+    prop &.isNotEmpty: Bool  @Since("0.1")
+    prop &.ptr: T^  @Since("0.1")
+
+std.memory.unique  (memory/unique.az)
+  pack Unique<T>  @Since("0.1")
+  impl Clone for Unique<T>  @Since("0.1")
+    func &.clone()
+  impl Unique<T>
+    dtor .()
+
+std.memory.weak  (memory/weak.az)
+  pack Weak<T>  @Since("0.1")
+  impl Clone for Weak<T>  @Since("0.1")
+    func &.clone()
+  impl Weak<T>
+    prop &.ptr: T*  @Since("0.1")
+    prop &.isNull: Bool  @Since("0.1")
+
+std.primitive  (primitive.az)
+  bridge pack Bool  @Since("0.1")
+  impl PartialEqual for Bool
+  impl Equal for Bool
+  impl Order for Bool
+  impl Hash for Bool
+  bridge pack Int<N>  @Since("0.1")
+  impl Integer for Int<N>
+  impl SignedInteger for Int<N>
+  impl SignedNumber for Int<N>
+  impl PartialEqual for Int<N>
+  impl Equal for Int<N>
+  impl Order for Int<N>
+  impl Hash for Int<N>
+  bridge pack UInt<N>  @Since("0.1")
+  impl Integer for UInt<N>
+  impl UnsignedInteger for UInt<N>
+  impl UnsignedNumber for UInt<N>
+  impl PartialEqual for UInt<N>
+  impl Equal for UInt<N>
+  impl Order for UInt<N>
+  impl Hash for UInt<N>
+  spec Integer  @Since("0.1")
+  spec UnsignedInteger  @Since("0.1")
+  spec SignedInteger  @Since("0.1")
+  spec FloatingPoint  @Since("0.1")
+  spec UnsignedNumber  @Since("0.1")
+  spec SignedNumber  @Since("0.1")
+  direct spec Number  @Since("0.1")
+    prop rank: Int
+  typealias Byte = Int<8>  @Since("0.1")
+  typealias UByte = UInt<8>  @Since("0.1")
+  typealias Short = Int<16>  @Since("0.1")
+  typealias UShort = UInt<16>  @Since("0.1")
+  typealias Int = Int<32>  @Since("0.1")
+  typealias UInt = UInt<32>  @Since("0.1")
+  typealias Long = Int<64>  @Since("0.1")
+  typealias ULong = UInt<64>  @Since("0.1")
+  typealias Cent = Int<128>  @Since("0.1")
+  typealias UCent = UInt<128>  @Since("0.1")
+  bridge pack Half  @Since("0.1")
+  impl FloatingPoint for Half
+  impl SignedNumber for Half
+  impl UnsignedNumber for Half
+  impl PartialEqual for Half
+  impl PartialOrder for Half
+  bridge pack Float  @Since("0.1")
+  impl FloatingPoint for Float
+  impl SignedNumber for Float
+  impl UnsignedNumber for Float
+  impl PartialEqual for Float
+  impl PartialOrder for Float
+  bridge pack Double  @Since("0.1")
+  impl FloatingPoint for Double
+  impl SignedNumber for Double
+  impl UnsignedNumber for Double
+  impl PartialEqual for Double
+  impl PartialOrder for Double
+  bridge pack Quad  @Since("0.1")
+  impl FloatingPoint for Quad
+  impl SignedNumber for Quad
+  impl UnsignedNumber for Quad
+  impl PartialEqual for Quad
+  impl PartialOrder for Quad
+  impl Number for UByte  @Since("0.1")
+    prop rank: Int
+  impl Number for UShort  @Since("0.1")
+    prop rank: Int
+  impl Number for UInt  @Since("0.1")
+    prop rank: Int
+  impl Number for ULong  @Since("0.1")
+    prop rank: Int
+  impl Number for UCent  @Since("0.1")
+    prop rank: Int
+  impl Number for Byte  @Since("0.1")
+    prop rank: Int
+  impl Number for Short  @Since("0.1")
+    prop rank: Int
+  impl Number for Int  @Since("0.1")
+    prop rank: Int
+  impl Number for Long  @Since("0.1")
+    prop rank: Int
+  impl Number for Cent  @Since("0.1")
+    prop rank: Int
+  impl Number for Half  @Since("0.1")
+    prop rank: Int
+  impl Number for Float  @Since("0.1")
+    prop rank: Int
+  impl Number for Double  @Since("0.1")
+    prop rank: Int
+  impl Number for Quad  @Since("0.1")
+    prop rank: Int
+
+std.random  (random.az)
+  pack Random  @Since("0.1")
+    var seed: Int = 12345
+
+std.string  (string.az)
+  bridge pack String  @Since("0.1")
+  impl PartialEqual for String
+  impl Equal for String
+  impl Order for String
+  impl Hash for String
+  error StringError { IndexOutOfBounds, EmptyString, InvalidFormat }  @Since("0.1")
+  error ParseError { InvalidFormat, Overflow, EmptyInput }  @Since("0.1")
+  pack StringBuilder  @Since("0.1")
+  impl StringBuilder
+    prop &.length: Int  @Since("0.1")
+    func !.clear(): Unit  @Since("0.1")
+
+std.traits.core  (traits/core.az)
+  impl UByte
+    func &.oper..(rhs: UByte&)
+  impl UByte
+    func &.oper>..(rhs: UByte&)
+  impl Clone for UByte
+  impl Copy for UByte
+  impl UShort
+    func &.oper..(rhs: UShort&)
+  impl UShort
+    func &.oper>..(rhs: UShort&)
+  impl Clone for UShort
+  impl Copy for UShort
+  impl UInt
+    func &.oper..(rhs: UInt&)
+  impl UInt
+    func &.oper>..(rhs: UInt&)
+  impl Clone for UInt
+  impl Copy for UInt
+  impl ULong
+    func &.oper..(rhs: ULong&)
+  impl ULong
+    func &.oper>..(rhs: ULong&)
+  impl Clone for ULong
+  impl Copy for ULong
+  impl UCent
+    func &.oper..(rhs: UCent&)
+  impl UCent
+    func &.oper>..(rhs: UCent&)
+  impl Clone for UCent
+  impl Copy for UCent
+  impl Byte
+    func &.oper..(rhs: Byte&)
+  impl Byte
+    func &.oper>..(rhs: Byte&)
+  impl Clone for Byte
+  impl Copy for Byte
+  impl Short
+    func &.oper..(rhs: Short&)
+  impl Short
+    func &.oper>..(rhs: Short&)
+  impl Clone for Short
+  impl Copy for Short
+  impl Int
+    func &.oper..(rhs: Int&)
+  impl Int
+    func &.oper>..(rhs: Int&)
+  impl Clone for Int
+  impl Copy for Int
+  impl Long
+    func &.oper..(rhs: Long&)
+  impl Long
+    func &.oper>..(rhs: Long&)
+  impl Clone for Long
+  impl Copy for Long
+  impl Cent
+    func &.oper..(rhs: Cent&)
+  impl Cent
+    func &.oper>..(rhs: Cent&)
+  impl Clone for Cent
+  impl Copy for Cent
+  impl Half
+    func &.oper..(rhs: Half&)
+  impl Half
+    func &.oper>..(rhs: Half&)
+  impl Clone for Half
+  impl Copy for Half
+  impl Float
+    func &.oper..(rhs: Float&)
+  impl Float
+    func &.oper>..(rhs: Float&)
+  impl Clone for Float
+  impl Copy for Float
+  impl Double
+    func &.oper..(rhs: Double&)
+  impl Double
+    func &.oper>..(rhs: Double&)
+  impl Clone for Double
+  impl Copy for Double
+  impl Quad
+    func &.oper..(rhs: Quad&)
+  impl Quad
+    func &.oper>..(rhs: Quad&)
+  impl Clone for Quad
+  impl Copy for Quad
+  impl Clone for Bool
+  impl Copy for Bool
+  impl Clone for Char
+  impl Copy for Char
+  impl Clone for String
+  impl Copy for String
+
+std.traits  (traits/traits.az)
+  bridge spec Clone  @Since("0.1")
+    func &.clone(): Self
+  bridge spec Copy : Clone  @Since("0.1")
+  spec PrettyPrint  @Since("0.1")
+    prop &.pretty: String
+  bridge spec PartialEqual<Rhs>  @Since("0.1")
+    func &.oper==(rhs: Rhs&): Bool
+  bridge spec Equal : PartialEqual  @Since("0.1")
+  bridge spec PartialOrder<Rhs> : PartialEqual  @Since("0.1")
+    func &.oper<=>(rhs: Rhs&): PartialCompare
+  bridge spec Order : Equal  @Since("0.1")
+    func &.oper<=>(rhs: Self&): Compare
+  bridge spec Hash : Equal  @Since("0.1")
+    prop &.hash: ULong
+  spec Arithmetic<Rhs, Out>  @Since("0.1")
+    func &.oper+(rhs: Rhs&): Out
+    func &.oper-(rhs: Rhs&): Out
+    func &.oper*(rhs: Rhs&): Out
+    func &.oper/(rhs: Rhs&): Out
+    func &.oper%(rhs: Rhs&): Out
+    func !.oper+=(rhs: Rhs&)
+    func !.oper-=(rhs: Rhs&)
+    func !.oper*=(rhs: Rhs&)
+    func !.oper/=(rhs: Rhs&)
+    func !.oper%=(rhs: Rhs&)
+  spec UnaryNeg<Out>  @Since("0.1")
+    func &.oper-(): Out
+  spec Bitwise<Rhs, Shift, Out>  @Since("0.1")
+    func &.oper&(rhs: Rhs&): Out
+    func &.oper|(rhs: Rhs&): Out
+    func &.oper^(rhs: Rhs&): Out
+    func &.oper<<(rhs: Shift&): Out
+    func &.oper>>(rhs: Shift&): Out
+    func !.oper&=(rhs: Rhs&)
+    func !.oper|=(rhs: Rhs&)
+    func !.oper^=(rhs: Rhs&)
+    func !.oper<<=(rhs: Shift&)
+    func !.oper>>=(rhs: Shift&)
+    func &.oper~(): Out
+  spec LogicNeg<Out>  @Since("0.1")
+    func &.oper!(): Out
+  spec Index<Idx, Out>  @Since("0.1")
+    func &.index(index: Idx&): Out
+    func !.indexSet(index: Idx&, value: Out)
+    func &.slice(from: Idx&, to: Idx&): Self
+  spec Deref<To>  @Since("0.1")
+    func &.operDeref(): To
+  spec DerefMut<To> : Deref  @Since("0.1")
+    func !.operDerefMut(): To

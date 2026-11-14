@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 
 class RangeAndMemberExecTest {
     @Test fun invalidStepsFailInNativeAndWasmExecution() {
-        assumeTrue("LLVM, Node.js and wat2wasm are required", LlvmExec.available && WasmExec.available)
+        assumeTrue("LLVM and Node.js are required", LlvmExec.available && WasmExec.available)
         for (step in listOf(0, -1)) {
             for (optimized in listOf(false, true)) {
                 val ir = AssertionSemanticsTest.lower(RangeBoundaryTest.invalidStepProgram(step), optimized)
@@ -34,7 +34,7 @@ class RangeAndMemberExecTest {
     }
 
     @Test fun rangeBoundariesAndThenMembersExecuteInWasm() {
-        assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+        assumeTrue("Node.js is required", WasmExec.available)
         for (source in listOf(RangeBoundaryTest.program, RangeBoundaryTest.headerProgram, ThenMemberTest.program)) {
             for (optimized in listOf(false, true)) {
                 val ir = AssertionSemanticsTest.lower(source, optimized)

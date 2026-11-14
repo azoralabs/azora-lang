@@ -17,7 +17,7 @@ class PackSizeConstraintExecTest {
     }
 
     @Test fun validSizesRunOnWasm() {
-        assumeTrue("Node.js and wat2wasm are required", WasmExec.available)
+        assumeTrue("Node.js is required", WasmExec.available)
         for (optimized in listOf(false, true)) {
             val ir = PackSizeConstraintTest.compile(PackSizeConstraintTest.valid, optimized)
             assertEquals("42\n7\n2", WasmExec.runWat(WasmCodegen().generate(ir)), "optimized=$optimized")

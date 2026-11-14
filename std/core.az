@@ -454,7 +454,12 @@ bridge annot @Derive for .Annot {
 
 @Since("0.1")
 bridge enum SupressKind {
+    /** "is never used" - for the declaration's own name and its locals. */
     Unused
+    /** A use of a `@Deprecated` declaration written inside it. */
+    Deprecated
+    /** A use of an `@Experimental` declaration written inside it, when those are reported. */
+    Experimental
 }
 
 @Experimental(since: "0.1")

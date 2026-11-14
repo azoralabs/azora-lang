@@ -3055,7 +3055,9 @@ sealed class TopLevel {
          * implementation rather than by whoever names the spec, so `Iterator` is
          * one spec however many kinds of row exist.
          */
-        val assocNames: List<String> = emptyList()
+        val assocNames: List<String> = emptyList(),
+        /** Decorators written above the spec - `@Experimental(since: "0.1") spec List<T>`. */
+        val annotations: List<Annotation> = emptyList(),
     ) : TopLevel()
 
     /** `typealias Name = Type` - a type alias. */

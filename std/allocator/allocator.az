@@ -276,6 +276,7 @@ pack Pool derives Allocator {
     var slotSize: Int = 0
     var slotCount: Int = 0
     var freeCount: Int = 0
+    @Experimental(since: "0.1")
     var freeStack: Int^ = alloc^ .()
     var acquiredCount: Int = 0
     var peakAcquired: Int = 0
@@ -538,6 +539,7 @@ impl Display for StackAllocator {
  *     var pool = Alloc.pool(slotSize: 32, count: 100)
  *     var stack = Alloc.stack(4096)
  */
+@Experimental(since: "0.1")
 solo pack Alloc
 
 impl Alloc {

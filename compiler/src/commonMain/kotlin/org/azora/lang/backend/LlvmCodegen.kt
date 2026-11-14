@@ -161,6 +161,9 @@ class LlvmCodegen {
     /** Outlined async/task helper functions emitted after source functions. */
     private val deferredFunctions = mutableListOf<String>()
 
+    /** The globals holding `inject`ed singletons, one per type. */
+    private val injectedSingletons = mutableSetOf<String>()
+
     /** Function-local structured task scopes; spawned tasks attach to the innermost scope. */
     private val taskScopeStack = ArrayDeque<String>()
 
@@ -353,6 +356,7 @@ class LlvmCodegen {
         reactiveEffectEdges.clear()
         lateTypeDefinitions.clear()
         deferredFunctions.clear()
+        injectedSingletons.clear()
         ownershipDrops.clear()
         ownedSlots = program.ownedSlots
         constructionOwners.clear()
@@ -5517,6 +5521,41 @@ end:
         return copy
     }
 
+    /**
+     * `inject T`: the program's one `T`, built by `__singleton_T` the first time
+     * it is asked for and kept in a global for the rest of the program, as the
+     * interpreter keeps it in its singleton table.
+     */
+    private fun emitInject(expr: IrExpr.Call): String {
+        val typeName = (expr.args.singleOrNull() as? IrExpr.StringLiteral)?.value
+            ?: error("LLVM inject lowering requires a type name")
+        val factory = "__singleton_${typeName.removePrefix("__")}"
+        val factoryType = funcReturnTypes[factory] ?: error("no singleton factory for '$typeName' - is it declared as `solo`?")
+        val type = mapType(factoryType)
+        val global = "@__azora_singleton_${sanitizeName(typeName)}"
+        if (injectedSingletons.add(global)) {
+            deferredFunctions += "$global = internal global $type ${defaultValue(factoryType)}\n\n"
+        }
+        val current = nextTmp()
+        emit("  $current = load $type, $type* $global")
+        val missing = nextTmp()
+        emit("  $missing = icmp eq $type $current, ${defaultValue(factoryType)}")
+        val make = nextLabel("inject.make")
+        val done = nextLabel("inject.done")
+        val from = currentBlock
+        emitTerminator("  br i1 $missing, label %$make, label %$done")
+        startBlock(make)
+        val made = nextTmp()
+        emit("  $made = call $type @$factory()")
+        emit("  store $type $made, $type* $global")
+        val madeFrom = currentBlock
+        emitTerminator("  br label %$done")
+        startBlock(done)
+        val instance = nextTmp()
+        emit("  $instance = phi $type [ $current, %$from ], [ $made, %$madeFrom ]")
+        return coerceNumeric(instance, factoryType, expr.type)
+    }
+
     private fun emitArithmeticFailure(invalid: String, message: String) {
         usesPuts = true
         usesAbort = true
@@ -5784,6 +5823,7 @@ end:
         if (expr.name == "__isolated") {
             return emitIsolatedCopy(expr.args.single())
         }
+        if (expr.name == "__inject") return emitInject(expr)
         if (expr.name == "__panic") {
             // Unrecoverable: report and stop. The message is printed before the
             // abort so the process leaves a reason behind rather than only a

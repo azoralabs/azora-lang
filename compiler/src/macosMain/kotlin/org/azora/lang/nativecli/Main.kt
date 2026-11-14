@@ -76,7 +76,13 @@ private fun defines(args: List<String>): Map<String, String> = buildMap {
 }
 
 private fun compile(unit: UnitSources, args: List<String>): CompilationResult.Success {
-    return when (val result = Compiler(unit.libraries).compile(unit.text, release = "--debug" !in args, defines = defines(args))) {
+    val result = Compiler(unit.libraries).compile(
+        unit.text,
+        release = "--debug" !in args,
+        defines = defines(args),
+        reportExperimental = "--experimental" in args,
+    )
+    return when (result) {
         is CompilationResult.Success -> result
         is CompilationResult.Failure -> {
             for (message in result.errors) fputs("$message\n", stderr)
@@ -198,7 +204,13 @@ fun main(arguments: Array<String>) {
         }
         when (args.firstOrNull()) {
             "version", "--version" -> println("Azora ${BuildConfig.VERSION} native macOS arm64; protocol 1")
-            "check" -> { compile(sources(args.getOrNull(1) ?: error("check requires a file")), args); println("No errors found.") }
+            "check" -> {
+                val path = args.drop(1).firstOrNull { !it.startsWith('-') } ?: error("check requires a file")
+                // Warnings - a deprecated use, and with `--experimental` an
+                // experimental one - go to stderr, as the JVM CLI's do.
+                for (warning in compile(sources(path), args).warnings) fputs("$warning\n", stderr)
+                println("No errors found.")
+            }
             "compile" -> {
                 require(args.getOrNull(1) in setOf("llvm", "ll")) { "native CLI currently accepts the llvm target" }
                 val path = args.drop(2).firstOrNull { !it.startsWith('-') } ?: error("compile requires a file")

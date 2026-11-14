@@ -95,6 +95,7 @@ impl SyncShared<T> {
     }
 }
 
+@Experimental(since: "0.1")
 func<T> syncSharedOf(value: T): SyncShared<T> {
     return SyncShared(alloc^ value, alloc^ 1, 1)
 }

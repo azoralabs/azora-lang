@@ -94,7 +94,9 @@ class WitnessTest {
 
         /**
          * `hash` on a built-in gives the same number on every target: a string
-         * the 64-bit FNV-1a of its bytes, a float its bit pattern.
+         * the 64-bit FNV-1a of its bytes. A float has no `hash` - it is not
+         * `Hash`, since `0.0` and `-0.0` are equal and NaN is not equal to
+         * itself - and `2.5.hash` is refused (`StructuralEqualityTest`).
          */
         val builtins = """
             import std.io
@@ -106,7 +108,6 @@ class WitnessTest {
                 println(5.hash == 5 as ULong)
                 println(true.hash == 1 as ULong)
                 println('a'.hash == 97 as ULong)
-                println(2.5.hash % (1000 as ULong))
                 println((0 - 3).hash % (1000 as ULong))
             }
         """.trimIndent()
@@ -114,7 +115,7 @@ class WitnessTest {
         val programs = listOf(
             bounded to "true\ntrue\ntrue\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue",
             collections to "3\ntrue\ntrue\n2\n5\n40\n1521\n2\nfalse\ntrue\n2\n30\n29",
-            builtins to "true\nfalse\n931\ntrue\ntrue\ntrue\n976\n613",
+            builtins to "true\nfalse\n931\ntrue\ntrue\ntrue\n613",
         )
 
         fun compile(source: String, optimized: Boolean): IrProgram {

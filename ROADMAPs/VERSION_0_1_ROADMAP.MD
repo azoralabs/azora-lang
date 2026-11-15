@@ -70,8 +70,26 @@ Each lets a program be silently wrong. This list must be empty to ship.
   A `String`-keyed `HashMap` behaves differently per target.
 - ✅ *(2026-11-07)* **`Out` conflict rule unimplemented.** Two impls of one operator family
   differing only in `Out` both match; one silently wins.
-- ⬜ **`<T: Spec>` in a type-parameter list is parsed and discarded.** A bound
-  written there is a lie.
+- ✅ *(2026-11-15: kept by every generic declaration and checked wherever it is
+  used, GENERICS_DIP §5.3)* **`<T: Spec>` in a type-parameter list is parsed and
+  discarded.** A bound written there is a lie. Only functions kept it:
+  `pack Box<T: Shape>` accepted `Box<NoShape>`, and a member called through it
+  failed at run time with `no method 'area'`. A method's own bound was never
+  checked at a call, an inline bound on any member but a `func` was dropped, and
+  a `where` clause on a pack was checked only where the type was written with
+  its arguments. Now a written type in any position, an inferred construction,
+  `.(…)`, an `impl Spec<Arg>` head, a member call and an operator's operand are
+  checked; generic code that builds a bounded type or calls a bounded function
+  must declare the bound it passes on; a bound on a lambda's or bridge's type
+  parameter is refused.
+  *(2026-11-16)* The four remainders are closed (DIP §5.3): a tuple, nullable,
+  pointer or function type argument has the capabilities the language gives it
+  (`HashSet<(Int, Int)>` holds; `TreeSet<(Int, Int)>`, `Box<Sq?>` are refused);
+  an `impl` member may not demand more than its spec member; what generic code
+  passes on is traced through every declared value - locals, fields,
+  properties, elements, call results - and a bound no declaration can tell is
+  refused with the way to write it; a property's own type parameter takes no
+  bound.
 - ✅ *(2026-11-07: adopted; a written operand type is also kept)* **A spec member's declared return type is not adopted by its impl.**
   `spec Order` declares `oper<=> …: Compare`, but an implementation that omits
   `: Compare` compiles and then fails at run time with
@@ -79,7 +97,16 @@ Each lets a program be silently wrong. This list must be empty to ship.
   representation and the `<` rewrite calls `isLess` on it. Writing the return
   type is the workaround; adopting the spec's is the fix.
 - ⬜ Audit for the same shape elsewhere - anything parsed and dropped rather
-  than enforced.
+  than enforced. *(2026-11-15, the type-parameter and `where` side: the
+  `where` clause of an `oper` (in an `impl` or at top level) and of a `prop` in
+  an `impl` was parsed and discarded; both are now kept and checked. Still parsed and
+  discarded: a range operator's `by` step, "declarative metadata" by its own
+  comment. The rest of the parser is not audited.)* *(2026-11-16: the same
+  shape in the operations - tuple and array `==` and `.hash` accepted for parts
+  with no equality, a tuple ignoring its parts' declared `oper==`, `2.5.hash`,
+  and a derived `Order` through a tuple field failing at run time - fixed:
+  both compare and hash by their parts' own operations on every backend,
+  GENERICS_DIP §5.3.)*
 
 ### 1.2 Type system
 

@@ -128,6 +128,12 @@ data class VariableSymbol(
     val receiver: Boolean = false,
     /** A non-null T position retains this constraint after erasure to Any. */
     val nonNullGeneric: Boolean = false,
+    /**
+     * The type the binding was declared with, or its initializer's - `U`
+     * where [type] has erased a type parameter to `Any`. What generic code
+     * passes on is decided from this (`BoundChecker`, GENERICS_DIP §5.3).
+     */
+    val declaredRef: org.azora.lang.frontend.TypeRef? = null,
 )
 
 /**
@@ -227,6 +233,10 @@ data class SpecMethodSig(
      * is against its own declaration.
      */
     val receiver: org.azora.lang.frontend.ParamModifier? = null,
+    /** The member's own type parameters (`func<U> fold`), which a call binds. */
+    val typeParams: List<String> = emptyList(),
+    /** The bounds on [typeParams], decided for the types a call binds them to. */
+    val whereClause: org.azora.lang.frontend.Expr? = null,
 )
 
 /** A validated `impl Contract for Type` conformance. */

@@ -886,7 +886,9 @@ class IrGenerator(private val table: SymbolTable) {
             }
         } +
         // Last, once every use has registered the types its descriptors name.
-        witnessDispatchFunctions()
+        witnessDispatchFunctions() +
+        // And after those, whose bodies may compare or hash a tuple too.
+        structuralFunctions()
         // Source order, item for item. The IR is read as much as it is run -
         // a `pack`, the `func` under it and the `enum` between them come back in
         // the order they were written, because a reader comparing the two is
@@ -2355,6 +2357,28 @@ class IrGenerator(private val table: SymbolTable) {
     /** The dispatch functions lowered code calls, emitted even when no type reaches them. */
     private val witnessDispatchers = linkedSetOf<String>()
 
+    /** What a generated structural helper does to its tuple or array. */
+    private enum class StructuralKind { EQUAL, HASH }
+
+    /** A generated `==` or `hash` for one tuple or array type. */
+    private class StructuralHelper(val name: String, val kind: StructuralKind, val type: IrType)
+
+    /** Generated helpers by kind and type, in the order first asked for. */
+    private val structuralHelpers = LinkedHashMap<String, StructuralHelper>()
+
+    private fun isStructural(type: IrType): Boolean = type is IrType.Tuple || type is IrType.Array
+
+    /**
+     * A call to the helper that applies [kind] to a value of [type] part by
+     * part, registering it to be emitted ([structuralFunctions]).
+     */
+    private fun structuralCall(kind: StructuralKind, type: IrType, args: List<IrExpr>, result: IrType): IrExpr {
+        val helper = structuralHelpers.getOrPut("$kind:$type") {
+            StructuralHelper("__structural_${kind.name.lowercase()}_${structuralHelpers.size}", kind, type)
+        }
+        return IrExpr.Call(helper.name, args, result)
+    }
+
     /** A call to dispatch function [name], which is then emitted. */
     private fun witnessCall(name: String, args: List<IrExpr>, type: IrType): IrExpr.Call {
         witnessDispatchers.add(name)
@@ -2382,6 +2406,7 @@ class IrGenerator(private val table: SymbolTable) {
     private fun initWitnesses(program: Program) {
         packWitnessBounds.clear(); packTypeParams.clear(); packFieldRefs.clear()
         functionWitnessBounds.clear(); witnessTypes.clear(); witnessNeeds.clear(); witnessDispatchers.clear()
+        structuralHelpers.clear()
         witnessBounds = emptyMap(); witnessSources = emptyMap(); scopeTypeParams = emptySet()
         declaredRefs = mutableMapOf(); expectedRef = null; currentReturnRef = null
         for (item in program.items) {
@@ -2744,6 +2769,130 @@ class IrGenerator(private val table: SymbolTable) {
                 )
             },
         ).filter { it.function.name in witnessDispatchers }
+    }
+
+    /**
+     * `==` and `hash` for each tuple and array type a program compares or
+     * hashes. A tuple or an array has no member of its own; it compares and
+     * hashes part by part, and each part by its *own* `==` and `hash`, so a
+     * pack with a declared `oper==` is compared by it inside a tuple as
+     * outside one. Built from the same expressions ordinary code would write
+     * and lowered as that code is, so every backend runs the same thing.
+     *
+     * A helper's body may ask for another (a tuple of tuples), so this runs
+     * until none is new.
+     */
+    private fun structuralFunctions(): List<IrTopLevel> {
+        val emitted = mutableListOf<IrTopLevel>()
+        var next = 0
+        while (next < structuralHelpers.size) {
+            val helper = structuralHelpers.values.elementAt(next++)
+            emitted.add(structuralFunction(helper))
+        }
+        return emitted
+    }
+
+    private fun structuralFunction(helper: StructuralHelper): IrTopLevel {
+        table.pushScope()
+        pushNameScope()
+        try {
+            fun local(source: String, type: IrType, mutable: Boolean = false): String {
+                val mangled = registerName(source)
+                table.defineVariable(VariableSymbol(source, type, mutable = mutable))
+                return mangled
+            }
+            fun ref(source: String) = Expr.Identifier(source, 0)
+            fun part(source: String, at: Expr): Expr = when (helper.type) {
+                is IrType.Tuple -> Expr.Member(ref(source), (at as Expr.IntLiteral).value.toString(), 0)
+                else -> Expr.Index(ref(source), at, 0, 0)
+            }
+            val type = helper.type
+            return when (helper.kind) {
+                StructuralKind.EQUAL -> {
+                    val left = local("__left", type)
+                    val right = local("__right", type)
+                    val equal = { at: Expr -> lowerExpr(Expr.Binary(part("__left", at), TokenType.EQUAL_EQUAL, part("__right", at), 0)) }
+                    val body = when (type) {
+                        is IrType.Tuple -> listOf(IrStmt.Return(
+                            type.elements.indices.map { equal(Expr.IntLiteral(it.toLong(), 0)) }
+                                .reduceOrNull { all, next -> IrExpr.Binary(all, IrBinaryOp.AND, next, IrType.Bool) }
+                                ?: IrExpr.BoolLiteral(true),
+                        ))
+                        else -> {
+                            val index = local("__index", IrType.Int, mutable = true)
+                            val size = { name: String -> IrExpr.Member(IrExpr.Var(name, type), "size", IrType.Int) }
+                            listOf(
+                                IrStmt.If(
+                                    IrExpr.Binary(size(left), IrBinaryOp.NEQ, size(right), IrType.Bool),
+                                    listOf(IrStmt.Return(IrExpr.BoolLiteral(false))), null,
+                                ),
+                                IrStmt.VarDecl(index, IrType.Int, IrExpr.IntLiteral(0)),
+                                IrStmt.While(
+                                    IrExpr.Binary(IrExpr.Var(index, IrType.Int), IrBinaryOp.LT, size(left), IrType.Bool),
+                                    listOf(
+                                        IrStmt.If(
+                                            IrExpr.Unary(IrUnaryOp.NOT, equal(ref("__index")), IrType.Bool),
+                                            listOf(IrStmt.Return(IrExpr.BoolLiteral(false))), null,
+                                        ),
+                                        IrStmt.Assignment(
+                                            index,
+                                            IrExpr.Binary(IrExpr.Var(index, IrType.Int), IrBinaryOp.ADD, IrExpr.IntLiteral(1), IrType.Int),
+                                        ),
+                                    ),
+                                ),
+                                IrStmt.Return(IrExpr.BoolLiteral(true)),
+                            )
+                        }
+                    }
+                    // Both are borrowed: comparing reads, it never takes.
+                    IrTopLevel.Func(IrFunction(helper.name, listOf(left to type, right to type), IrType.Bool, body, refParams = setOf(0, 1)))
+                }
+                StructuralKind.HASH -> {
+                    // The mix a derived `hash` uses for a pack's fields: order
+                    // matters, so `(1, 2)` and `(2, 1)` differ.
+                    val value = local("__value", type)
+                    val mixed = { acc: IrExpr, at: Expr ->
+                        val hashed = lowerExpr(Expr.Member(part("__value", at), "hash", 0))
+                        IrExpr.Binary(
+                            IrExpr.Binary(acc, IrBinaryOp.MUL, IrExpr.IntLiteral(31, IrType.ULong), IrType.ULong),
+                            IrBinaryOp.ADD, hashed, IrType.ULong,
+                        )
+                    }
+                    val seed = IrExpr.IntLiteral(17, IrType.ULong)
+                    val body = when (type) {
+                        is IrType.Tuple -> listOf(IrStmt.Return(
+                            type.elements.indices.fold(seed as IrExpr) { acc, i -> mixed(acc, Expr.IntLiteral(i.toLong(), 0)) },
+                        ))
+                        else -> {
+                            val hash = local("__hash", IrType.ULong, mutable = true)
+                            val index = local("__index", IrType.Int, mutable = true)
+                            listOf(
+                                IrStmt.VarDecl(hash, IrType.ULong, seed),
+                                IrStmt.VarDecl(index, IrType.Int, IrExpr.IntLiteral(0)),
+                                IrStmt.While(
+                                    IrExpr.Binary(
+                                        IrExpr.Var(index, IrType.Int), IrBinaryOp.LT,
+                                        IrExpr.Member(IrExpr.Var(value, type), "size", IrType.Int), IrType.Bool,
+                                    ),
+                                    listOf(
+                                        IrStmt.Assignment(hash, mixed(IrExpr.Var(hash, IrType.ULong), ref("__index"))),
+                                        IrStmt.Assignment(
+                                            index,
+                                            IrExpr.Binary(IrExpr.Var(index, IrType.Int), IrBinaryOp.ADD, IrExpr.IntLiteral(1), IrType.Int),
+                                        ),
+                                    ),
+                                ),
+                                IrStmt.Return(IrExpr.Var(hash, IrType.ULong)),
+                            )
+                        }
+                    }
+                    IrTopLevel.Func(IrFunction(helper.name, listOf(value to type), IrType.ULong, body, refParams = setOf(0)))
+                }
+            }
+        } finally {
+            popNameScope()
+            table.popScope()
+        }
     }
 
     /** The factory that runs a declared `ctor` of the given arity. */
@@ -3258,6 +3407,13 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 var left = lowerExpr(expr.left)
                 var right = lowerExpr(expr.right)
+                // A tuple or an array compares part by part, by each part's own `==`.
+                if ((expr.op == TokenType.EQUAL_EQUAL || expr.op == TokenType.BANG_EQUAL) &&
+                    isStructural(left.type) && isStructural(right.type)
+                ) {
+                    val equal = structuralCall(StructuralKind.EQUAL, left.type, listOf(left, right), IrType.Bool)
+                    return if (expr.op == TokenType.EQUAL_EQUAL) equal else IrExpr.Unary(IrUnaryOp.NOT, equal, IrType.Bool)
+                }
                 // Pointer arithmetic: ptr + n, ptr - n, ptr - ptr
                 if (left.type is IrType.Pointer && IrType.isInteger(right.type) &&
                     (expr.op == TokenType.PLUS || expr.op == TokenType.MINUS)) {
@@ -3929,6 +4085,10 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 val target = autoDerefMemberTarget(lowerExpr(expr.target), expr.name, method = false)
                 val tt2 = target.type
+                // ...and hashes part by part, by each part's own `hash`.
+                if (expr.name == "hash" && isStructural(tt2)) {
+                    return structuralCall(StructuralKind.HASH, tt2, listOf(target), IrType.ULong)
+                }
                 val position = expr.name.toIntOrNull()
                 if (tt2 is IrType.Tuple && position != null && position in tt2.elements.indices) {
                     return IrExpr.TupleAccess(target, position, tt2.elements[position])

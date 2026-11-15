@@ -33,7 +33,9 @@ import org.azora.lang.ir.IrType
  *
  * Two rules are fixed by design:
  *  - `T is Spec` is **nominal**: it holds only where an `impl Spec for T` is
- *    declared. Structural satisfaction does not count.
+ *    declared. Structural satisfaction does not count. A type no `impl` can
+ *    name - a tuple, a nullable, a pointer, a function - has the capabilities
+ *    the language gives it, and those only ([structural]).
  *  - Evaluation happens once per monomorphised combination, not per instantiation
  *    site, so [bindings] name concrete arguments and never other parameters.
  */
@@ -68,6 +70,13 @@ internal object ConstraintEvaluator {
         data class Const(val value: Long) : Binding()
 
         /**
+         * A type written with structure rather than a name - `(A, B)`, `T?`,
+         * `T*`, `(A) -> B` - which no `impl` can name. It is decided by
+         * [structural], from what it is built of.
+         */
+        data class Structural(val ref: TypeRef) : Binding()
+
+        /**
          * A variadic pack's cardinality and the types present in it. Repeated
          * elements from one spread need only one entry for universal bounds.
          * A null entry denotes an unresolved element; a null list means none
@@ -85,9 +94,15 @@ internal object ConstraintEvaluator {
         clause: Expr?,
         bindings: Map<String, Binding>,
         table: SymbolTable?,
+        /**
+         * Type parameters of the code doing the asking, which a binding may
+         * mention (`(U, Int)`): each with the specs its declaration implies, or
+         * null when nothing is to be assumed and the question stays open.
+         */
+        assumed: Map<String, Set<String>?> = emptyMap(),
     ): Outcome {
         if (clause == null) return Outcome.Satisfied
-        return eval(clause, bindings, table)
+        return Evaluation(table, assumed).eval(clause, bindings)
     }
 
     /**
@@ -126,9 +141,19 @@ internal object ConstraintEvaluator {
     /** Converts a [TypeRef] argument into the binding it stands for. */
     fun bindingOf(arg: TypeRef): Binding? = when (arg) {
         is TypeRef.Const -> Binding.Const(arg.value)
-        is TypeRef.Named -> Binding.Type(arg.name)
-        else -> null
+        // `Array<T>` is a container of `T`s, decided by what it holds.
+        is TypeRef.Named -> if (arg.name == ARRAY && arg.args.isNotEmpty()) Binding.Structural(TypeRef.Array(arg.args[0]))
+            else Binding.Type(arg.name)
+        // A borrow is of the type it borrows.
+        is TypeRef.Reference -> bindingOf(arg.inner)
+        else -> Binding.Structural(arg)
     }
+
+    private const val ARRAY = "Array"
+    private const val TUPLE = "Tuple"
+
+    /** Equality and hashing: a compound value has them when its parts do. */
+    private val partWise = setOf("Equal", "PartialEqual", "Hash")
 
     /** Bind fixed parameters individually and the variadic tail by its own size. */
     fun bindingsFor(
@@ -146,8 +171,11 @@ internal object ConstraintEvaluator {
         }
     }
 
-    private fun eval(expr: Expr, env: Map<String, Binding>, table: SymbolTable?): Outcome = when (expr) {
-        is Expr.Grouping -> eval(expr.expr, env, table)
+    /** One evaluation: the symbol table and what the asking code's type parameters are known to be. */
+    private class Evaluation(val table: SymbolTable?, val assumed: Map<String, Set<String>?>) {
+
+    fun eval(expr: Expr, env: Map<String, Binding>): Outcome = when (expr) {
+        is Expr.Grouping -> eval(expr.expr, env)
 
         // `T is Number` - nominal conformance: an `impl Number for T` must exist.
         is Expr.IsCheck -> {
@@ -159,13 +187,13 @@ internal object ConstraintEvaluator {
                     val elements = bound.elementTypes
                     if (elements == null) Outcome.Unknown("'$subject is ${expr.typeName}' for an unresolved pack")
                     else {
-                        val outcomes = elements.map { conformance(subject, it, expr.typeName, table) }
+                        val outcomes = elements.map { conformance(subject, it, expr.typeName) }
                         outcomes.firstOrNull { it is Outcome.Violated }
                             ?: outcomes.firstOrNull { it is Outcome.Unknown }
                             ?: Outcome.Satisfied // The empty pack satisfies every element-wise bound.
                     }
                 }
-                else -> conformance(subject, bound, expr.typeName, table)
+                else -> conformance(subject, bound, expr.typeName)
             }
         }
 
@@ -186,7 +214,7 @@ internal object ConstraintEvaluator {
         }
 
         is Expr.Unary -> when (expr.op) {
-            TokenType.BANG -> when (val inner = eval(expr.operand, env, table)) {
+            TokenType.BANG -> when (val inner = eval(expr.operand, env)) {
                 is Outcome.Satisfied -> Outcome.Violated("negated constraint held")
                 is Outcome.Violated -> Outcome.Satisfied
                 is Outcome.Unknown -> inner
@@ -196,8 +224,8 @@ internal object ConstraintEvaluator {
         }
 
         is Expr.Binary -> when (expr.op) {
-            TokenType.AND_AND -> both(expr, env, table, requireAll = true)
-            TokenType.OR_OR -> both(expr, env, table, requireAll = false)
+            TokenType.AND_AND -> both(expr, env, requireAll = true)
+            TokenType.OR_OR -> both(expr, env, requireAll = false)
             else -> compare(expr, env)
         }
 
@@ -206,24 +234,144 @@ internal object ConstraintEvaluator {
         else -> Outcome.Unknown(render(expr))
     }
 
-    private fun conformance(subject: String?, bound: Binding?, spec: String, table: SymbolTable?): Outcome = when {
-        bound !is Binding.Type -> Outcome.Unknown("'$subject is $spec' for an unresolved type binding")
-        table == null -> Outcome.Unknown("'$subject is $spec' without a symbol table")
-        table.conformsTo(bound.name, spec) -> Outcome.Satisfied
-        // `Long` is `Int<64>`: a width answers with its family's conformances.
-        integerFamily(bound.name)?.let { table.conformsTo(it, spec) } == true -> Outcome.Satisfied
-        else -> Outcome.Violated("'$subject is $spec': ${bound.name} does not implement $spec")
+    private fun conformance(subject: String?, bound: Binding?, spec: String): Outcome = when (bound) {
+        is Binding.Structural -> when (val outcome = structural(bound.ref, spec)) {
+            is Outcome.Violated -> Outcome.Violated("'$subject is ${Bounds.shown(spec)}': ${outcome.reason}")
+            else -> outcome
+        }
+        is Binding.Type -> when (val outcome = named(bound.name, spec)) {
+            is Outcome.Violated -> Outcome.Violated("'$subject is ${Bounds.shown(spec)}': ${outcome.reason}")
+            else -> outcome
+        }
+        else -> Outcome.Unknown("'$subject is $spec' for an unresolved type binding")
+    }
+
+    /** Whether the type called [name] is [spec]; the reason names the type when it is not. */
+    private fun named(name: String, spec: String): Outcome {
+        // An erased slot: which type it holds is decided where it was filled.
+        if (name == "Any") return Outcome.Unknown("'$name is $spec' for an erased value")
+        if (name in assumed) {
+            val has = assumed[name] ?: return Outcome.Unknown("'$name is $spec' for a type parameter")
+            return if (Bounds.includes(has, spec)) Outcome.Satisfied
+            else Outcome.Violated("'$name' is not declared to be ${Bounds.shown(spec)}; add 'where $name: ${Bounds.shown(spec)}'")
+        }
+        val table = table ?: return Outcome.Unknown("'$name is $spec' without a symbol table")
+        return when {
+            table.conformsTo(name, spec) -> Outcome.Satisfied
+            // `Long` is `Int<64>`: a width answers with its family's conformances.
+            integerFamily(name)?.let { table.conformsTo(it, spec) } == true -> Outcome.Satisfied
+            else -> Outcome.Violated("$name does not implement ${Bounds.shown(spec)}")
+        }
+    }
+
+    /**
+     * Whether a type built with structure is [spec]. No `impl` can name one, so
+     * its capabilities are the ones the language gives it - the same rule the
+     * compiler derives a pack's `Clone` and `Copy` by:
+     *
+     *  - **equality and hashing** (`Equal`, `PartialEqual`, `Hash`): a tuple
+     *    or an array when every element has them, a nullable when its value
+     *    does, a pointer always (by address);
+     *  - **`Clone`**: what [SymbolTable.isClonable] says - parts that clone;
+     *  - **`Copy`**: a nullable when its value is `Copy`; a tuple, array,
+     *    pointer or function never, as for a pack field of that type;
+     *  - **ordering** (`Order`, `PartialOrder`): none - `<` does not apply to
+     *    a tuple or an array, and a nullable has no place for `null` in an order;
+     *  - anything else: a tuple has what `Tuple` declares (`PrettyPrint`), an
+     *    array what `Array` does; nothing else has any.
+     */
+    private fun structural(ref: TypeRef, spec: String): Outcome {
+        val bare = Bounds.shown(spec)
+        fun not(): Outcome = Outcome.Violated("${shown(ref)} does not implement $bare")
+        fun parts(types: List<TypeRef>): Outcome {
+            val outcomes = types.map { part ->
+                when (val binding = bindingOf(part)) {
+                    is Binding.Structural -> structural(binding.ref, spec)
+                    is Binding.Type -> named(binding.name, spec)
+                    else -> Outcome.Unknown("'$part is $bare'")
+                }
+            }
+            return outcomes.firstOrNull { it is Outcome.Violated }
+                ?.let { Outcome.Violated("${shown(ref)} does not implement $bare: ${(it as Outcome.Violated).reason}") }
+                ?: outcomes.firstOrNull { it is Outcome.Unknown }
+                ?: Outcome.Satisfied
+        }
+        if (bare == "Clone") {
+            val table = table ?: return Outcome.Unknown("'$ref is Clone' without a symbol table")
+            // A part naming a type parameter of the asking code answers for itself.
+            if (mentionsAssumed(ref)) return clonableParts(ref)
+            val type = runCatching { IrType.resolve(ref) }.getOrNull() ?: return Outcome.Unknown("'$ref is Clone'")
+            return if (table.isClonable(type)) Outcome.Satisfied else not()
+        }
+        return when (ref) {
+            is TypeRef.Reference -> conformanceOf(ref.inner, spec)
+            is TypeRef.Named -> conformanceOf(ref, spec)
+            is TypeRef.Array -> when {
+                bare in partWise -> parts(listOf(ref.element))
+                bare == "Copy" || bare == "Order" || bare == "PartialOrder" -> not()
+                else -> if (named(ARRAY, spec) is Outcome.Satisfied) Outcome.Satisfied else not()
+            }
+            is TypeRef.Nullable -> when {
+                bare in partWise || bare == "Copy" -> parts(listOf(ref.inner))
+                else -> not()
+            }
+            is TypeRef.Tuple -> when {
+                bare in partWise -> parts(ref.elements)
+                bare == "Copy" -> not()
+                bare == "Order" || bare == "PartialOrder" -> not()
+                else -> if (named(TUPLE, spec) is Outcome.Satisfied) Outcome.Satisfied else not()
+            }
+            is TypeRef.Pointer -> if (bare in partWise) Outcome.Satisfied else not()
+            is TypeRef.Const -> Outcome.Unknown("'$ref is $bare'")
+            else -> not()
+        }
+    }
+
+    /** [ref] as source writes it: `Array<P>` rather than the internal `[P]`. */
+    private fun shown(ref: TypeRef): String = when (ref) {
+        is TypeRef.Array -> "Array<${shown(ref.element)}>"
+        is TypeRef.Tuple -> ref.elements.joinToString(", ", "(", ")") { shown(it) }
+        is TypeRef.Nullable -> "${shown(ref.inner)}?"
+        is TypeRef.Reference -> shown(ref.inner)
+        else -> ref.toString()
+    }
+
+    private fun conformanceOf(ref: TypeRef, spec: String): Outcome = when (val binding = bindingOf(ref)) {
+        is Binding.Structural -> structural(binding.ref, spec)
+        is Binding.Type -> named(binding.name, spec)
+        else -> Outcome.Unknown("'$ref is $spec'")
+    }
+
+    /** `Clone` part by part, for a compound type that names a type parameter of the asking code. */
+    private fun clonableParts(ref: TypeRef): Outcome = when (ref) {
+        is TypeRef.Named -> if (ref.args.isEmpty() && ref.name in assumed) named(ref.name, "Clone") else conformanceOf(ref, "Clone")
+        is TypeRef.Reference -> clonableParts(ref.inner)
+        is TypeRef.Nullable -> clonableParts(ref.inner)
+        is TypeRef.Array -> clonableParts(ref.element)
+        is TypeRef.Tuple -> ref.elements.map(::clonableParts).let { outcomes ->
+            outcomes.firstOrNull { it is Outcome.Violated } ?: outcomes.firstOrNull { it is Outcome.Unknown } ?: Outcome.Satisfied
+        }
+        else -> Outcome.Satisfied
+    }
+
+    private fun mentionsAssumed(ref: TypeRef): Boolean = when (ref) {
+        is TypeRef.Named -> (ref.args.isEmpty() && ref.name in assumed) || ref.args.any(::mentionsAssumed)
+        is TypeRef.Reference -> mentionsAssumed(ref.inner)
+        is TypeRef.Nullable -> mentionsAssumed(ref.inner)
+        is TypeRef.Array -> mentionsAssumed(ref.element)
+        is TypeRef.Tuple -> ref.elements.any(::mentionsAssumed)
+        is TypeRef.Pointer -> mentionsAssumed(ref.inner)
+        else -> false
     }
 
     /** `&&` needs both sides; `||` needs either. Unknown on one side is not fatal. */
     private fun both(
         expr: Expr.Binary,
         env: Map<String, Binding>,
-        table: SymbolTable?,
         requireAll: Boolean,
     ): Outcome {
-        val left = eval(expr.left, env, table)
-        val right = eval(expr.right, env, table)
+        val left = eval(expr.left, env)
+        val right = eval(expr.right, env)
         val sides = listOf(left, right)
         return if (requireAll) {
             sides.firstOrNull { it is Outcome.Violated }
@@ -238,6 +386,8 @@ internal object ConstraintEvaluator {
                 )
             }
         }
+    }
+
     }
 
     /** A comparison between two integers, e.g. `N == 4` or `(...T).size >= 2`. */

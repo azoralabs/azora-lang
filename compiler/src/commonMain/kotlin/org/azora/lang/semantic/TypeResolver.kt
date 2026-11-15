@@ -412,8 +412,17 @@ class TypeResolver(private val table: SymbolTable) {
                         } else {
                             method.params.getOrNull(index - 1)?.let(::isSharedBorrow) == true
                         }
+                        val declaredRef = if (isReceiver) {
+                            val names = item.typeParams.ifEmpty { table.lookupStruct(item.typeName)?.typeParams.orEmpty() }
+                            TypeRef.Named(item.typeName, names.map { TypeRef.Named(it) })
+                        } else {
+                            method.params.getOrNull(index - 1)?.type
+                        }
                         table.defineVariable(
-                            VariableSymbol(name, type, mutable = mutable, sharedBorrow = shared, receiver = isReceiver),
+                            VariableSymbol(
+                                name, type, mutable = mutable, sharedBorrow = shared, receiver = isReceiver,
+                                declaredRef = declaredRef,
+                            ),
                         )
                         table.lookupVariable(name)?.let { table.semanticFacts.declaration(it, method.line) }
                         if (type is IrType.Function && !type.isEscaping) {
@@ -468,11 +477,17 @@ class TypeResolver(private val table: SymbolTable) {
                     movedBindings.clear()
                     val savedMethodTypeParams = currentFuncTypeParams
                     currentFuncTypeParams = method.typeParams.toSet() + table.lookupStruct(item.typeName)?.typeParams.orEmpty()
+                    val savedMethodBounds = currentTypeParamBounds
+                    currentTypeParamBounds = declaredBounds(
+                        table.lookupStruct(item.typeName)?.typeParams.orEmpty(),
+                        genericDeclarations[item.typeName]?.whereClause,
+                    ) + declaredBounds(method.typeParams, method.whereClause)
                     val savedGenericReturn = nonNullGenericReturn
                     nonNullGenericReturn = (method.returnType as? TypeAnnotation.Explicit)?.ref?.let(::isNonNullGenericPosition) == true
                     resolveBody(method.body, func.returnType)
                     nonNullGenericReturn = savedGenericReturn
                     currentFuncTypeParams = savedMethodTypeParams
+                    currentTypeParamBounds = savedMethodBounds
                     movedBindings.clear()
                     movedBindings.putAll(savedMethodMoves)
                     borrowedNames = savedBorrowed
@@ -623,7 +638,7 @@ class TypeResolver(private val table: SymbolTable) {
             val shared = func.params.getOrNull(i)?.let(::isSharedBorrow) == true
             val ref = func.params.getOrNull(i)?.type as? TypeRef.Named
             table.defineVariable(VariableSymbol(name, type, mutable, sharedBorrow = shared,
-                nonNullGeneric = ref?.name in func.typeParams))
+                nonNullGeneric = ref?.name in func.typeParams, declaredRef = func.params.getOrNull(i)?.type))
             table.lookupVariable(name)?.let { table.semanticFacts.declaration(it, func.line) }
             if (type is IrType.Function && !type.isEscaping) {
                 table.lookupVariable(name)?.let { closureBorrows.add(it to listOf(ClosureBorrow(name, null, func.line))) }
@@ -642,6 +657,8 @@ class TypeResolver(private val table: SymbolTable) {
         unsafeContext = func.isUnsafe
         currentReceiverType = null
         currentFuncTypeParams = func.typeParams.toSet()
+        val savedTypeParamBounds = currentTypeParamBounds
+        currentTypeParamBounds = declaredBounds(func.typeParams, func.whereClause)
         reactiveContext = func.isReactive
         asyncContext = func.isTask
         val savedTestContext = testContext
@@ -672,6 +689,7 @@ class TypeResolver(private val table: SymbolTable) {
         movedBindings.putAll(savedMoves)
         currentReceiverType = savedReceiver
         currentFuncTypeParams = savedFuncTypeParams
+        currentTypeParamBounds = savedTypeParamBounds
         unsafeContext = savedUnsafe
         reactiveContext = savedReactive
         testContext = savedTestContext
@@ -887,6 +905,20 @@ class TypeResolver(private val table: SymbolTable) {
 
     /** Type parameters of the function currently being resolved (erased to `Any` in types). */
     private var currentFuncTypeParams: Set<String> = emptySet()
+
+    /**
+     * The specs each type parameter in scope is declared to conform to, with
+     * what they imply. A parameter in [currentFuncTypeParams] and absent here
+     * (a lambda's) is declared to conform to nothing.
+     */
+    private var currentTypeParamBounds: Map<String, Set<String>> = emptyMap()
+
+    private fun declaredBounds(typeParams: Collection<String>, clause: Expr?): Map<String, Set<String>> =
+        Bounds.declared(typeParams, clause).mapValues { (_, specs) -> Bounds.implied(specs, table) }
+
+    /** The type parameters in scope as the constraint evaluator assumes them. */
+    private fun assumedTypeParams(): Map<String, Set<String>?> =
+        currentFuncTypeParams.associateWith { currentTypeParamBounds[it].orEmpty() }
     private var nonNullGenericReturn = false
 
     private fun isNonNullGenericPosition(ref: TypeRef): Boolean =
@@ -2714,6 +2746,7 @@ class TypeResolver(private val table: SymbolTable) {
                     adoptLiteralType(expr.left, leftType, rightType),
                     adoptLiteralType(expr.right, rightType, leftType),
                     expr.line,
+                    operand = expr.right,
                 )
             }
             is Expr.Call -> {
@@ -2826,12 +2859,8 @@ class TypeResolver(private val table: SymbolTable) {
                 val struct = table.lookupStruct(calleeName)
                 if (struct != null) {
                     // `HashSet<Double>()` is checked against the pack's `where`
-                    // clause as the type `HashSet<Double>` written anywhere is.
-                    if (expr.typeArgs.isNotEmpty()) {
-                        val tpSet = currentFuncTypeParams +
-                            (currentReceiverType?.let { table.lookupStruct(it)?.typeParams?.toSet() } ?: emptySet())
-                        validateGenericInstantiation(TypeRef.Named(calleeName, expr.typeArgs), tpSet, expr.line)
-                    }
+                    // clause as the type `HashSet<Double>` written anywhere is:
+                    // by `BoundChecker`, which reads every written type.
                     // A declared `ctor` answers before the fields do: it takes the
                     // arguments it declared rather than one per field, and yields
                     // whatever it says it yields. One that reads a receiver from
@@ -3070,6 +3099,24 @@ class TypeResolver(private val table: SymbolTable) {
                     // what a generic pack's erased slot actually holds. Left
                     // unstated when one could not be told, rather than guessed.
                     val args = struct.typeParams.map { bindings[it]?.singleOrNull() }
+                    // `Box(value)` is the `Box<T>` its arguments make it, and
+                    // answers to the pack's bounds as the written type does.
+                    if (expr.typeArgs.isEmpty() && null !in args) {
+                        val tpSet = currentFuncTypeParams +
+                            (currentReceiverType?.let { table.lookupStruct(it)?.typeParams?.toSet() } ?: emptySet())
+                        validateGenericInstantiation(TypeRef.Named(struct.name, args.filterNotNull()), tpSet, expr.line)
+                    }
+                    // Generic code building one from its own type parameters'
+                    // values answers for them (a written `Box<U>(x)` is BoundChecker's).
+                    if (expr.typeArgs.isEmpty()) {
+                        checkPassedOn(
+                            struct.name, struct.typeParams, genericDeclarations[struct.name]?.whereClause,
+                            effectiveArgs.indices.filter { it !in defaulted }.mapNotNull { i ->
+                                struct.fields.getOrNull(i)?.typeRef?.let { PassedArgument(it, effectiveArgs[i], argTypes[i]) }
+                            },
+                            decided = concretelyBound(struct.typeParams, bindings), line = expr.line, writable = true,
+                        )
+                    }
                     return IrType.Named(
                         struct.name,
                         if (null in args) emptyList() else args.map { IrType.resolve(it!!) },
@@ -3350,6 +3397,17 @@ class TypeResolver(private val table: SymbolTable) {
                             .takeIf { expr.typeArgs.isEmpty() && funcDecl.variadicParam == null && null !in it }
                             ?.filterNotNull()
                         checkCallConstraints(expr, func, bindings, funcDecl.variadicParam, argTypes, spreadSizes)
+                        // A call that wrote its type arguments is `BoundChecker`'s.
+                        if (expr.typeArgs.isEmpty()) checkPassedOn(
+                            expr.callee, func.typeParams, func.whereClause,
+                            funcDecl.params.withIndex().filterNot { it.value.variadic }.mapNotNull { (i, param) ->
+                                effectiveArgs.getOrNull(i)?.takeUnless { it is Expr.Spread }
+                                    ?.let { PassedArgument(param.type, it, argTypes.getOrNull(i)) }
+                            },
+                            decided = concretelyBound(func.typeParams, bindings),
+                            line = expr.line,
+                            writable = true,
+                        )
                         val retRef = func.returnTypeRef
                         if (retRef != null) {
                             try {
@@ -3416,8 +3474,9 @@ class TypeResolver(private val table: SymbolTable) {
                     val mangled = table.lookupMethod(targetType.name, "index")
                     if (mangled != null) {
                         val operator = table.lookupFunction(mangled)?.let { instantiateMember(table, targetType, it) }
-                        subscriptArgument(expr.index, operator?.params?.lastOrNull()?.second, targetType, expr.line)
+                        val key = subscriptArgument(expr.index, operator?.params?.lastOrNull()?.second, targetType, expr.line)
                             ?: return null
+                        checkOperatorBound("oper[]", mangled, key, expr.line, expr.index)
                         return operator?.returnType ?: IrType.Any
                     }
                     val required = table.lookupSpecMethod(targetType.name, "index")
@@ -3644,7 +3703,17 @@ class TypeResolver(private val table: SymbolTable) {
                     // states the conformance in std; the value comes from the
                     // backend rather than from a written member, so there is
                     // nothing in the method table to find.
-                    expr.name == "hash" && targetType !is IrType.Named -> IrType.ULong
+                    expr.name == "hash" && targetType !is IrType.Named -> {
+                        hashRefusal(targetType)?.let { reason ->
+                            // The reason a floating-point field cannot derive `Hash`, too.
+                            val why = if (IrType.isNumeric(targetType) && !IrType.isInteger(targetType)) {
+                                ": equal values must hash equally, and NaN is not equal to itself"
+                            } else ""
+                            errors.add("line ${expr.line}: cannot hash a '${targetType.shown()}' value - $reason$why")
+                            return null
+                        }
+                        IrType.ULong
+                    }
                     else -> {
                         // A primitive receiver keys the method table by its source
                         // type name (`impl Int { prop seconds[self&] }`), the same
@@ -3765,11 +3834,19 @@ class TypeResolver(private val table: SymbolTable) {
                         // A written argument sits past `self` and past whatever the
                         // member reads from the block the call sits in.
                         val writtenFrom = 1 + func.contextualParams
+                        val memberBindings = mutableMapOf<String, List<TypeRef>>()
+                        val memberArguments = mutableListOf<PassedArgument>()
                         for (i in positioned.indices) {
                             val argument = positioned[i] ?: continue
                             val parameter = i + writtenFrom
                             val paramType = func.params[parameter].second
                             val argType = resolveContextualArgument(argument, paramType) ?: return null
+                            if (methodIsGeneric && func.whereClause != null) {
+                                func.paramTypeRefs.getOrNull(parameter)?.let {
+                                    unifyTypeArguments(it, argType, func.typeParams.toSet(), memberBindings)
+                                    memberArguments.add(PassedArgument(it, argument, argType))
+                                }
+                            }
                             if (!methodIsGeneric && !isCompatible(paramType, adoptLiteralType(argument, argType, paramType))) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected ${paramType.shown()}, got ${argType.shown()}")
                             }
@@ -3798,6 +3875,15 @@ class TypeResolver(private val table: SymbolTable) {
                                 return null
                             }
                         }
+                        // A method's own bounds, decided for the types its
+                        // arguments bind - as a generic function's are.
+                        if (memberBindings.isNotEmpty()) {
+                            checkMemberConstraints(expr.name, func.typeParams, func.whereClause, memberBindings, expr.line)
+                        }
+                        checkPassedOn(
+                            expr.name, func.typeParams, func.whereClause, memberArguments,
+                            decided = concretelyBound(func.typeParams, memberBindings), line = expr.line, writable = false,
+                        )
                         // Every receiver the member reads must actually be in scope.
                         for (i in 0 until func.contextualParams) {
                             val needed = func.params[i + 1].second
@@ -3859,12 +3945,34 @@ class TypeResolver(private val table: SymbolTable) {
                         if (specMethod.receiver == ParamModifier.EXCLUSIVE &&
                             !checkValueMutable(expr.target, expr.line, "call '${expr.name}', which changes its receiver,")
                         ) return null
+                        val specBindings = mutableMapOf<String, List<TypeRef>>()
+                        val specArguments = mutableListOf<PassedArgument>()
+                        // A member's own type parameters are bound by the call, as a
+                        // concrete member's are: its declared type is not compared literally.
+                        val specMemberIsGeneric = specMethod.typeParams.isNotEmpty()
                         for (i in expr.args.indices) {
                             val paramType = specMethod.paramTypes[i]
                             val argType = resolveContextualArgument(expr.args[i], paramType) ?: return null
-                            if (!isCompatible(paramType, adoptLiteralType(expr.args[i], argType, paramType))) {
+                            if (!specMemberIsGeneric && !isCompatible(paramType, adoptLiteralType(expr.args[i], argType, paramType))) {
                                 errors.add("line ${expr.line}: arg ${i + 1} of '${expr.name}': expected ${paramType.shown()}, got ${argType.shown()}")
                             }
+                            if (specMethod.whereClause != null) {
+                                specMethod.paramTypeRefs.getOrNull(i)?.let {
+                                    unifyTypeArguments(it, argType, specMethod.typeParams.toSet(), specBindings)
+                                    specArguments.add(PassedArgument(it, expr.args[i], argType))
+                                }
+                            }
+                        }
+                        checkPassedOn(
+                            expr.name, specMethod.typeParams, specMethod.whereClause, specArguments,
+                            decided = concretelyBound(specMethod.typeParams, specBindings), line = expr.line, writable = false,
+                        )
+                        // The spec's own bound on the member answers for a call
+                        // through a spec-typed value: no one implementation is named.
+                        if (specBindings.isNotEmpty()) {
+                            checkMemberConstraints(
+                                expr.name, specMethod.typeParams, specMethod.whereClause, specBindings, expr.line,
+                            )
                         }
                         return specMethod.returnType
                     }
@@ -4583,6 +4691,62 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * An operator member's own bound, decided for the operand it is applied
+     * to: `oper+ <U: Shape> &.(x: U&)` applied to a `NoShape` is refused, as
+     * the same member written as a method is.
+     */
+    private fun checkOperatorBound(name: String, mangled: String, operand: IrType, line: Int, operandExpr: Expr? = null) {
+        val func = table.lookupFunction(mangled) ?: return
+        val clause = func.whereClause ?: return
+        if (func.typeParams.isEmpty()) return
+        // Parameter 0 is the receiver; the operand is the one after it.
+        val pattern = func.paramTypeRefs.getOrNull(1) ?: return
+        val bindings = mutableMapOf<String, List<TypeRef>>()
+        unifyTypeArguments(pattern, operand, func.typeParams.toSet(), bindings)
+        if (bindings.isNotEmpty()) checkMemberConstraints(name, func.typeParams, clause, bindings, line)
+        if (operandExpr != null) {
+            checkPassedOn(
+                name, func.typeParams, clause, listOf(PassedArgument(pattern, operandExpr, operand)),
+                decided = concretelyBound(func.typeParams, bindings), line = line, writable = false,
+            )
+        }
+    }
+
+    /** The parameters [bindings] binds to a type the evaluator can decide. */
+    private fun concretelyBound(typeParams: List<String>, bindings: Map<String, List<TypeRef>>): Set<String> =
+        typeParams.filterTo(HashSet()) { param ->
+            bindings[param]?.singleOrNull()?.let(::concreteConstraintBinding) != null
+        }
+
+    private val HASHED = "__hashed"
+
+    /**
+     * The first part of a tuple or array (at any depth) that `==` cannot
+     * compare, by the rule `==` applies to the part on its own, or null.
+     */
+    private fun incomparablePart(type: IrType): String? = when (type) {
+        is IrType.Tuple -> type.elements.firstNotNullOfOrNull(::incomparablePart)
+        is IrType.Array -> incomparablePart(type.element)
+        is IrType.Nullable -> incomparablePart(type.inner)
+        is IrType.Named -> type.name.takeUnless { comparesEqual(it) }
+        else -> null
+    }
+
+    /**
+     * Why a value of [type] - not a pack, which answers with its own `hash`
+     * member - cannot be hashed, or null when it can or it cannot be told.
+     * Decided by the rule a `Hash` bound uses, so `x.hash` and `HashSet<T>`
+     * agree: `Double` is not `Hash`, a tuple is when its parts are.
+     */
+    private fun hashRefusal(type: IrType): String? {
+        if (table.lookupSpec("Hash") == null) return null
+        val binding = ConstraintEvaluator.bindingOf(typeRefOf(type)) ?: return null
+        val clause = Expr.IsCheck(Expr.Identifier(HASHED, 0), "Hash", 0)
+        val outcome = ConstraintEvaluator.evaluate(clause, mapOf(HASHED to binding), table, assumedTypeParams())
+        return (outcome as? ConstraintEvaluator.Outcome.Violated)?.reason?.substringAfter(": ")
+    }
+
     /** Maps an operator token to the impl method name used for operator overloading. */
     private fun operatorMethodName(op: TokenType): String? = when (op) {
         TokenType.PLUS -> "plus"
@@ -5010,7 +5174,9 @@ class TypeResolver(private val table: SymbolTable) {
         val binary = desugared as? Expr.Binary ?: return false
         val member = compoundAssignMemberName(op) ?: return false
         val operandType = resolveExpr(binary.right) ?: return false
-        return table.lookupOperator(named.name, member, operandKeyOf(operandType)) != null
+        val mangled = table.lookupOperator(named.name, member, operandKeyOf(operandType)) ?: return false
+        checkOperatorBound(member, mangled, operandType, binary.line, binary.right)
+        return true
     }
 
     /** `PLUS` → `oper+=`, and the rest of the compound-assignment family. */
@@ -5050,7 +5216,7 @@ class TypeResolver(private val table: SymbolTable) {
         return table.lookupStruct(typeName) == null
     }
 
-    private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int): IrType? {
+    private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int, operand: Expr? = null): IrType? {
         // An operator may also be declared with a primitive on the left - `2 * vec`
         // is `impl oper* for Int` taking a Vec. Such an overload must name its
         // operand, so only the operand-keyed member is consulted: nothing here can
@@ -5060,6 +5226,7 @@ class TypeResolver(private val table: SymbolTable) {
                 val key = operandKeyOf(right)
                 if (key != null && key != left.toString()) {
                     table.lookupMethod(left.toString(), "$operName@$key")?.let { mangled ->
+                        checkOperatorBound(operName, mangled, right, line, operand)
                         return table.lookupFunction(mangled)?.returnType
                     }
                 }
@@ -5071,7 +5238,10 @@ class TypeResolver(private val table: SymbolTable) {
             // `<=>` and `!=` from `==` (the comparison DIP, §5.4/§5.5). All the
             // rewrites answer Bool.
             when (val plan = comparisonPlan(op, left.name, operandKeyOf(right), table)) {
-                is ComparisonPlan.Direct -> return table.lookupFunction(plan.mangled)?.returnType
+                is ComparisonPlan.Direct -> {
+                    checkOperatorBound(operOverloadName(op) ?: "operator", plan.mangled, right, line, operand)
+                    return table.lookupFunction(plan.mangled)?.returnType
+                }
                 is ComparisonPlan.Spaceship, is ComparisonPlan.NegatedEquals -> return IrType.Bool
                 null -> Unit
             }
@@ -5147,6 +5317,18 @@ class TypeResolver(private val table: SymbolTable) {
                 // `az build`. It is an error now, and the message says how to fix
                 // it. Everything else the branch accepts is unaffected.
                 val bareNamed = leftBare as? IrType.Named
+                // A tuple or an array compares part by part, each part by its
+                // own `==`: a part that has none makes the whole incomparable.
+                if ((left == right || nullableMatch) && !nullCompare && bareNamed == null) {
+                    incomparablePart(leftBare)?.let { part ->
+                        errors.add(
+                            "line $line: cannot compare two '${leftBare.shown()}' values - its part '$part' does not " +
+                                "implement PartialEqual; add 'derive Equal for $part', or declare " +
+                                "'oper== $part&.(rhs: $part&): Bool'",
+                        )
+                        return null
+                    }
+                }
                 if (left == right && bareNamed != null && !nullCompare && !comparesEqual(bareNamed.name)) {
                     errors.add(
                         "line $line: cannot compare two '${bareNamed.name}' values - " +
@@ -5392,6 +5574,252 @@ class TypeResolver(private val table: SymbolTable) {
         val outcome = ConstraintEvaluator.evaluate(clause, decided, table)
         if (outcome is ConstraintEvaluator.Outcome.Violated) {
             errors.add("line ${expr.line}: '${expr.callee}' does not satisfy its 'where' clause here: ${outcome.reason}")
+        }
+    }
+
+    /**
+     * A generic member's `where` clause for the type arguments a call binds. A
+     * parameter no argument binds, or one bound to a type parameter of the
+     * calling code, is left to that code's own bounds.
+     */
+    private fun checkMemberConstraints(
+        name: String,
+        typeParams: List<String>,
+        whereClause: Expr?,
+        bindings: Map<String, List<TypeRef>>,
+        line: Int,
+    ) {
+        val clause = whereClause ?: return
+        val decided = mutableMapOf<String, ConstraintEvaluator.Binding>()
+        for (param in typeParams) {
+            val ref = bindings[param]?.singleOrNull() ?: continue
+            decided[param] = concreteConstraintBinding(ref) ?: continue
+        }
+        val outcome = ConstraintEvaluator.evaluate(clause, decided, table)
+        if (outcome is ConstraintEvaluator.Outcome.Violated) {
+            errors.add("line $line: '$name' does not satisfy its 'where' clause here: ${outcome.reason}")
+        }
+    }
+
+    /** An argument as a bound sees it: the parameter type it fills, the expression, and its resolved type. */
+    private data class PassedArgument(val parameter: TypeRef, val argument: Expr, val type: IrType?)
+
+    /**
+     * Generic code handing [callee]'s bounded type parameter a value of one of
+     * its own type parameters, or of a type built from them. The resolver
+     * erases a type parameter to `Any`, so which one it is comes from the
+     * arguments' declared types ([declaredRefOf]); the code has to declare the
+     * bound itself, as a written `Box<U>` does (`BoundChecker`).
+     *
+     * A bounded parameter that only an erased value fills, and no declared
+     * type tells, is refused: the bound could not be decided at all. The four
+     * witness specs are left to lowering, which decides them with what it
+     * knows of the lowered arguments and says the same.
+     */
+    private fun checkPassedOn(
+        callee: String,
+        typeParams: List<String>,
+        clause: Expr?,
+        arguments: List<PassedArgument>,
+        decided: Set<String>,
+        line: Int,
+        /** Whether the use can write the type arguments (`twice<U>(x)`); a member call cannot. */
+        writable: Boolean,
+    ) {
+        if (clause == null || typeParams.isEmpty()) return
+        for (param in typeParams) {
+            if (param in decided) continue
+            val required = Bounds.required(clause, param)
+            if (required.isEmpty()) continue
+            val ref = arguments.firstNotNullOfOrNull { passed ->
+                declaredRefOf(passed.argument)?.let { bindRef(passed.parameter, it, param) }
+            }
+            val bare = (unborrowed(ref) as? TypeRef.Named)?.takeIf { it.args.isEmpty() && it.name in currentFuncTypeParams }
+            when {
+                bare != null -> {
+                    val has = currentTypeParamBounds[bare.name].orEmpty()
+                    for (spec in required) {
+                        if (Bounds.includes(has, spec)) continue
+                        val shown = Bounds.shown(spec)
+                        errors.add(
+                            "line $line: '$param' of '$callee' must be $shown, and '${bare.name}' is not declared to be; " +
+                                "add 'where ${bare.name}: $shown'",
+                        )
+                    }
+                }
+                ref != null -> {
+                    val binding = ConstraintEvaluator.bindingOf(ref) ?: continue
+                    val outcome = ConstraintEvaluator.evaluate(clause, mapOf(param to binding), table, assumedTypeParams())
+                    if (outcome is ConstraintEvaluator.Outcome.Violated) {
+                        errors.add("line $line: '$callee' does not satisfy its 'where' clause here: ${outcome.reason}")
+                    }
+                }
+                required.all(::isWitnessSpec) -> {}
+                arguments.any { it.type.isErased() && bindsBare(it.parameter, param) } -> errors.add(
+                    "line $line: cannot tell which type '$param' of '$callee' is here, so its bound " +
+                        "'$param: ${required.joinToString(", ") { Bounds.shown(it) }}' cannot be checked; " +
+                        if (writable) "write it, as in '$callee<…>(…)'" else "give the argument a declared type, as in 'fin value: Type = …'",
+                )
+            }
+        }
+    }
+
+    private fun isWitnessSpec(spec: String): Boolean =
+        Bounds.shown(spec) in setOf(Witnesses.HASH, Witnesses.EQUAL, Witnesses.ORDER, Witnesses.CLONE)
+
+    private fun IrType?.isErased(): Boolean = this == IrType.Any || this == IrType.Nullable(IrType.Any)
+
+    /** Whether the parameter type [pattern] is [param] itself, borrowed or optional. */
+    private fun bindsBare(pattern: TypeRef, param: String): Boolean = when (val bare = unborrowed(pattern)) {
+        is TypeRef.Named -> bare.args.isEmpty() && bare.name == param
+        is TypeRef.Nullable -> bindsBare(bare.inner, param)
+        else -> false
+    }
+
+    private fun unborrowed(ref: TypeRef?): TypeRef? = if (ref is TypeRef.Reference) unborrowed(ref.inner) else ref
+
+    /**
+     * The type [expr]'s value was declared with, where the resolved type
+     * erased it: a binding's, a field's (through its owner's arguments), a
+     * call's that returns one of the type arguments it wrote. Null when no
+     * declaration says.
+     */
+    private fun declaredRefOf(expr: Expr): TypeRef? = when (expr) {
+        is Expr.Identifier -> table.lookupVariable(expr.name)?.declaredRef
+        is Expr.Grouping -> declaredRefOf(expr.expr)
+        // `take x`, `lend x`, `x.&`: still `x`'s value, of `x`'s type.
+        is Expr.Isolated -> declaredRefOf(expr.value)
+        is Expr.Member -> fieldRefOf(expr.target, expr.name)
+        // `xs[i]` where `xs: Array<U>` holds a `U`.
+        is Expr.Index -> when (val array = unborrowed(declaredRefOf(expr.target))) {
+            is TypeRef.Array -> array.element
+            is TypeRef.Named -> array.args.firstOrNull()?.takeIf { array.name == Intrinsics.ARRAY }
+            else -> null
+        }
+        is Expr.MethodCall -> if (expr.name == "clone" && expr.args.isEmpty()) declaredRefOf(expr.target)
+            else memberReturnRef(expr.target, expr.name, expr.args)
+        is Expr.Call -> returnedRefOf(expr)
+            // `f(x)` through a value declared `(U&) -> U`.
+            ?: (unborrowed(table.lookupVariable(expr.callee)?.declaredRef) as? TypeRef.Function)?.ret
+        // Both branches declared alike: the expression is of that type.
+        is Expr.IfExpr -> declaredRefOf(expr.thenExpr)?.takeIf { it == declaredRefOf(expr.elseExpr) }
+        // `pair.0` where `pair: (U, Int)`.
+        is Expr.TupleAccess -> (unborrowed(declaredRefOf(expr.target)) as? TypeRef.Tuple)?.elements?.getOrNull(expr.index)
+        // `maybe ?? fallback` where `maybe: U?` and `fallback: U`.
+        is Expr.NullCoalesce -> declaredRefOf(expr.right)?.takeIf { right ->
+            val left = unborrowed(declaredRefOf(expr.left))
+            left != null && ((left as? TypeRef.Nullable)?.inner ?: left) == right
+        }
+        else -> null
+    }
+
+    private fun fieldRefOf(target: Expr, field: String): TypeRef? {
+        val declared = unborrowed(declaredRefOf(target))
+        // `pair.0` reads a tuple's element by position.
+        if (declared is TypeRef.Tuple) return field.toIntOrNull()?.let { declared.elements.getOrNull(it) }
+        val owner = declared as? TypeRef.Named ?: return null
+        val struct = table.lookupStruct(owner.name)
+        // Not a field: a property, read as `list.first`.
+        val ref = struct?.fields?.firstOrNull { it.name == field }?.typeRef
+            ?: return memberReturnRef(target, field, emptyList())
+        if (owner.args.size != struct.typeParams.size) return ref.takeIf { struct.typeParams.isEmpty() }
+        return substituteTypeParams(ref, struct.typeParams.zip(owner.args).associate { (param, arg) -> param to listOf(arg) })
+    }
+
+    /** A member's declared signature, in terms of its owner's and its own type parameters. */
+    private class MemberSignature(
+        val returned: TypeRef,
+        val ownerParams: List<String>,
+        val memberParams: List<String>,
+        /** The parameters a call writes arguments for, in order. */
+        val params: List<TypeRef>,
+    )
+
+    /**
+     * What `target.name(args)` (or the property `target.name`) returns, by its
+     * declaration: the owner's type arguments put in place, and a member's own
+     * returned type parameter told by its arguments' declared types.
+     */
+    private fun memberReturnRef(target: Expr, name: String, args: List<Expr>): TypeRef? {
+        val owner = unborrowed(declaredRefOf(target)) as? TypeRef.Named ?: return null
+        val signature = table.lookupMethod(owner.name, name)?.let(table::lookupFunction)?.let { func ->
+            func.returnTypeRef?.let { returned ->
+                MemberSignature(
+                    returned, table.lookupStruct(owner.name)?.typeParams.orEmpty(), func.typeParams,
+                    func.paramTypeRefs.drop(1 + func.contextualParams),
+                )
+            }
+        } ?: table.lookupSpecMethod(owner.name, name)?.takeIf { it.owner == owner.name }?.let { sig ->
+            sig.returnTypeRef?.let { returned ->
+                MemberSignature(returned, table.lookupSpec(owner.name)?.typeParams.orEmpty(), sig.typeParams, sig.paramTypeRefs)
+            }
+        } ?: return null
+        if (owner.args.size != signature.ownerParams.size) return null
+        val returned = substituteTypeParams(
+            signature.returned,
+            signature.ownerParams.zip(owner.args).associate { (param, arg) -> param to listOf(arg) },
+        )
+        val own = (unborrowed(returned) as? TypeRef.Named)?.takeIf { it.args.isEmpty() && it.name in signature.memberParams }
+        if (own != null) {
+            if (args.any { it is Expr.NamedArg || it is Expr.Spread }) return null
+            return signature.params.zip(args).firstNotNullOfOrNull { (pattern, argument) ->
+                declaredRefOf(argument)?.let { bindRef(pattern, it, own.name) }
+            }
+        }
+        return returned.takeUnless { mentionsAny(it, signature.memberParams) }
+    }
+
+    private fun mentionsAny(ref: TypeRef, names: List<String>): Boolean = when (ref) {
+        is TypeRef.Named -> (ref.args.isEmpty() && ref.name in names) || ref.args.any { mentionsAny(it, names) }
+        is TypeRef.Reference -> mentionsAny(ref.inner, names)
+        is TypeRef.Nullable -> mentionsAny(ref.inner, names)
+        is TypeRef.Pointer -> mentionsAny(ref.inner, names)
+        is TypeRef.Array -> mentionsAny(ref.element, names)
+        is TypeRef.Tuple -> ref.elements.any { mentionsAny(it, names) }
+        is TypeRef.Failable -> mentionsAny(ref.ok, names)
+        is TypeRef.Function -> ref.params.any { mentionsAny(it, names) } || mentionsAny(ref.ret, names)
+        else -> false
+    }
+
+    /**
+     * What a generic call returns when it returns a value of one of its type
+     * parameters: the type argument written (`get<U>(…)`), or the one its
+     * arguments' declared types bind (`ident(x)` with `x: U`).
+     */
+    private fun returnedRefOf(call: Expr.Call): TypeRef? {
+        if (call.receiver != null) return null
+        val func = table.lookupFunction(call.callee) ?: return null
+        val returned = unborrowed(func.returnTypeRef) as? TypeRef.Named ?: return null
+        val index = func.typeParams.indexOf(returned.name)
+        if (returned.args.isNotEmpty() || index < 0) return null
+        call.typeArgs.getOrNull(index)?.takeUnless { it.isHole }?.let { return it }
+        if (call.args.any { it is Expr.NamedArg || it is Expr.Spread }) return null
+        return func.paramTypeRefs.zip(call.args).firstNotNullOfOrNull { (pattern, argument) ->
+            declaredRefOf(argument)?.let { bindRef(pattern, it, returned.name) }
+        }
+    }
+
+    /** What [param] stands for when a value declared [actual] fills a parameter declared [pattern]. */
+    private fun bindRef(pattern: TypeRef, actual: TypeRef, param: String): TypeRef? {
+        val p = unborrowed(pattern) ?: return null
+        val a = unborrowed(actual) ?: return null
+        return when (p) {
+            is TypeRef.Named -> when {
+                p.args.isEmpty() && p.name == param -> a
+                p.name == Intrinsics.ARRAY && a is TypeRef.Array && p.args.isNotEmpty() -> bindRef(p.args[0], a.element, param)
+                a is TypeRef.Named && sameTypeName(p.name, a.name) && a.args.size == p.args.size ->
+                    p.args.zip(a.args).firstNotNullOfOrNull { (inner, part) -> bindRef(inner, part, param) }
+                else -> null
+            }
+            is TypeRef.Nullable -> bindRef(p.inner, (a as? TypeRef.Nullable)?.inner ?: a, param)
+            is TypeRef.Array -> when (a) {
+                is TypeRef.Array -> bindRef(p.element, a.element, param)
+                is TypeRef.Named -> a.args.firstOrNull()?.takeIf { a.name == Intrinsics.ARRAY }?.let { bindRef(p.element, it, param) }
+                else -> null
+            }
+            is TypeRef.Tuple -> (a as? TypeRef.Tuple)?.takeIf { it.elements.size == p.elements.size }
+                ?.let { tuple -> p.elements.zip(tuple.elements).firstNotNullOfOrNull { (inner, part) -> bindRef(inner, part, param) } }
+            else -> null
         }
     }
 
@@ -6538,10 +6966,12 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line $line: type mismatch in '$name': declared ${wanted.shown()} but initializer is ${initType.shown()}")
                 }
                 table.defineVariable(VariableSymbol(name, wanted, mutable, valueMutable = valueMutable,
-                    hasStorageEffects = hasStorageEffects, nonNullGeneric = isNonNullGenericPosition(typeAnn.ref)))
+                    hasStorageEffects = hasStorageEffects, nonNullGeneric = isNonNullGenericPosition(typeAnn.ref),
+                    declaredRef = typeAnn.ref))
             }
             is TypeAnnotation.Inferred -> {
-                table.defineVariable(VariableSymbol(name, initType, mutable, valueMutable = valueMutable, hasStorageEffects = hasStorageEffects))
+                table.defineVariable(VariableSymbol(name, initType, mutable, valueMutable = valueMutable, hasStorageEffects = hasStorageEffects,
+                    declaredRef = declaredRefOf(initializer)))
             }
         }
         if (initType is IrType.Array) {
@@ -6584,7 +7014,6 @@ class TypeResolver(private val table: SymbolTable) {
     }
 
     private fun resolveDeclaredType(ref: TypeRef, typeParams: Set<String> = currentFuncTypeParams): IrType {
-        validateGenericInstantiation(ref, typeParams)
         return IrType.resolve(
             TypeFunctionEvaluator.resolve(
                 ref,
@@ -6647,8 +7076,9 @@ class TypeResolver(private val table: SymbolTable) {
         val bindings = mutableMapOf<String, ConstraintEvaluator.Binding>()
         for ((index, param) in declaration.typeParams.withIndex()) {
             val arg = named.args[index]
-            // Still abstract - the combination is not known yet.
-            if (arg is TypeRef.Named && (arg.name in typeParams || arg.name in declaration.typeParams)) return
+            // Still abstract - the combination is not known yet. An erased
+            // argument (`Any`) is a type parameter the enclosing code holds.
+            if (arg is TypeRef.Named && (arg.name in typeParams || arg.name in declaration.typeParams || arg.name == "Any")) return
             bindings[param] = ConstraintEvaluator.bindingOf(arg) ?: return
         }
 

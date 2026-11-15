@@ -134,6 +134,32 @@ class SymbolCollector {
     }
 
     /**
+     * Why [written] cannot implement [requirement] by what it demands of its
+     * own type parameters, or null when it can.
+     *
+     * A caller reaching the member through the spec chooses those type
+     * arguments under the spec member's bounds alone, and nothing checks them
+     * against this implementation's. So an implementation may ask no more than
+     * the spec member promises - what that promise implies included - as it
+     * may not take its receiver less carefully ([receiverMismatch]).
+     */
+    private fun boundMismatch(impl: TopLevel.Impl, requirement: FuncDecl, written: FuncDecl, table: SymbolTable): String? {
+        for ((index, param) in written.typeParams.withIndex()) {
+            val demanded = Bounds.required(written.whereClause, param)
+            if (demanded.isEmpty()) continue
+            val counterpart = requirement.typeParams.getOrNull(index)
+            val promised = counterpart?.let { Bounds.implied(Bounds.required(requirement.whereClause, it), table) }.orEmpty()
+            val extra = demanded.filterNot { Bounds.includes(promised, it) }
+            if (extra.isEmpty()) continue
+            val spelled = extra.joinToString(", ") { Bounds.shown(it) }
+            return "line ${written.line}: '${impl.typeName}.${written.name}' requires '$param: $spelled', which " +
+                "'${impl.traitName}.${requirement.name}' does not promise for '${counterpart ?: param}'; a caller " +
+                "through '${impl.traitName}' may pass any type there - bound the spec member, or drop the bound here"
+        }
+        return null
+    }
+
+    /**
      * Whether [member] is an operator rather than a named member.
      *
      * Operators are registered as `oper<symbol>`, except the three reached by
@@ -619,6 +645,7 @@ class SymbolCollector {
                                 memberCallStyle = declaredStyle ?: method.memberCallStyle,
                                 returnTypeRef = (method.returnType as? TypeAnnotation.Explicit)?.ref,
                                 paramTypeRefs = listOf(selfRef) + method.params.map { it.type },
+                                whereClause = method.whereClause,
                                 isBodyless = method.body.isEmpty(),
                                 contextualParams = method.contextualParams,
                                 exclusiveParams = indicesWith(ParamModifier.EXCLUSIVE),
@@ -751,6 +778,8 @@ class SymbolCollector {
                         returnTypeRef = (m.returnType as? TypeAnnotation.Explicit)?.ref,
                         owner = item.name,
                         receiver = m.receiverModifier.takeIf { m.declaresReceiver },
+                        typeParams = m.typeParams,
+                        whereClause = m.whereClause,
                     )
                 }
                 // Spec inheritance (`spec Mutable: Read`): store only own members
@@ -879,6 +908,10 @@ class SymbolCollector {
                         val written = item.methods.firstOrNull { it.name == req }
                         if (requirement != null && written != null) {
                             receiverMismatch(item, requirement, written)?.let {
+                                complete = false
+                                errors.add(it)
+                            }
+                            boundMismatch(item, requirement, written, table)?.let {
                                 complete = false
                                 errors.add(it)
                             }

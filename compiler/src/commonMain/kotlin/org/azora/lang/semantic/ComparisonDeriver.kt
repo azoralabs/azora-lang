@@ -183,8 +183,10 @@ object ComparisonDeriver {
         fun provides(ref: TypeRef, cap: String): Boolean? = when (ref) {
             is TypeRef.Named -> has(ref.name, cap)
             is TypeRef.Nullable -> provides(ref.inner, cap)
-            is TypeRef.Array -> provides(ref.element, cap)
-            is TypeRef.Tuple -> ref.elements.map { provides(it, cap) }.let { all ->
+            // A tuple and an array compare and hash part by part, but have no
+            // order: `<` does not apply to them, so neither can a derived `<=>`.
+            is TypeRef.Array -> if (cap == ORDER) false else provides(ref.element, cap)
+            is TypeRef.Tuple -> if (cap == ORDER) false else ref.elements.map { provides(it, cap) }.let { all ->
                 if (false in all) false else if (null in all) null else true
             }
             is TypeRef.Function -> false

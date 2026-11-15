@@ -4422,3 +4422,244 @@ required), AZLS 93, 0 failures; `StdlibSelfTest`, `UnicodeDataTest`,
 `ContainerStdlibTest` and the serializer tests among them. After deleting
 `std/testme.az`: **3,018 tests, 0 failures, 0 skipped** (one module fewer for
 `StdlibSelfTest`), AZLS 93, 0 failures.
+
+## 2026-11-15 — 022.3 / §1.1: a bound is kept wherever it is written and checked wherever it is used
+
+0.1 roadmap §1.1, the last open miscompile shape: "`<T: Spec>` in a
+type-parameter list is parsed and discarded". Measured before the change:
+
+- `pack Box<T: Shape>` accepted `Box<NoShape>(…)`; a member reading
+  `self.item.area()` then failed at run time with `no method 'area' on map`.
+  Only `func` kept an inline bound; `pack`, `enum`, `error`, `variant`,
+  `spec`, `typealias` and every member but `func` dropped it.
+- A method's own bound (`func<U: Shape> &.m(x: U&)`, either spelling) was kept
+  in the AST but never reached its symbol, so no call checked it - the same
+  run-time failure.
+- The `where` clause of an `oper` (in an `impl` and at top level) and of a
+  `prop` in an `impl` was parsed and thrown away.
+- A `where` clause on a pack was checked only where the type was written with
+  arguments inside a body: `Box(value)` (inferred), a parameter's or field's
+  type and an `impl Spec<Arg>` head were not checked, and generic code could
+  build `Box<U>` for any `U`.
+
+### What changed
+
+- **Parser / AST.** `<T: Spec>` becomes the same clause `where T: Spec` is, on
+  every declaration that takes type parameters (`Pack`, `Enum`, `Fail`,
+  `Slot`, `Spec`, `TypeAlias` gained `whereClause`; `prop`, `ctor`, `oper` and
+  spec members keep theirs). A bound on a lambda's, a bridge declaration's or a
+  member alias's type parameter is refused where it is written: no use binds
+  those to a type a check could be made for. `DeclarationRenamer` carries the
+  new clauses through std's module renaming.
+- **`semantic/BoundChecker.kt`** (new, run after `TypeResolver`): every written
+  generic type in any position and at any depth; `.(…)` against the type its
+  position declares (a local's, a global's, a field default's); `impl
+  Spec<Arg>` heads; and **pass-on**: generic code that builds a bounded type
+  (`Box<U>(x)`, `Box(x)` with `x: U`, `.()`) or calls a bounded function
+  (`twice(x)`, `twice<U>(x)`) must declare the bound itself - `'T' of 'Box'
+  must be Shape, and 'U' is not declared to be; add 'where U: Shape'`, the
+  wording 022.1's witness check already used. A declared bound brings its
+  spec's parents and requirements (`U: Order` stands where `Equal` is asked).
+  Naming `Box<U>` without building one asks nothing, so a generic that merely
+  mentions a constrained type is unaffected. One combination is reported once.
+- **`TypeResolver`**: an inferred construction (`Box(value)`) is checked
+  against the pack's clause; a member's own bound is checked at the call for
+  the types its arguments bind - on a concrete type, through a spec-typed value
+  (the spec's declaration answers; `SpecMethodSig` now carries the member's
+  type parameters and clause), and for an operator's operand (`a + b`,
+  `a += b`, `a[k]`). `SymbolCollector` now gives a method's symbol its clause.
+  The written-type check moved from `resolveDeclaredType` to `BoundChecker`.
+
+Found on the way: the first pass-on draft rejected std's own `impl Clone for
+HashMap` and `oper[:] HashMap<K, V>&.(…)` - members that write no parameter
+list use the type's names, and a receiver-free member is lifted out of its
+`impl` as `Type__member`. Both now see the type's parameters with the type's
+bounds.
+
+### Open (GENERICS_DIP §5.3)
+
+- A type argument that is not a named type is accepted undecided:
+  `Box<Sq?>`, `Box<(Sq, Sq)>` (the evaluator accepts what it cannot decide,
+  DIP §1.2). `Box<Array<Sq>>` is rejected.
+- An `impl` member may demand more than the spec member it implements.
+- Pass-on through a local (`fin y = x`, then `Box(y)`) is not traced; only a
+  function's own parameters are.
+- A property's own bound is kept but unreachable: `f.pick<NoShape>` does not
+  parse, so no use writes a property's type argument.
+- §1.1's audit: a range operator's `by` step is still parsed and discarded
+  ("declarative metadata" by its own comment); the rest of the parser is not
+  audited.
+
+The Engine and Studio are unaffected: their only bound outside the witness
+specs is `composeChild<T: Compose>`, which nothing calls, and neither bounds a
+pack, spec, enum or alias. A scratch-copy `azora build` of the Engine
+workspace reports none of the new diagnostics (8 of 31 members build, as
+before: item 072).
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue
+```
+
+- Compiler: **3,031 tests, 0 failures, 0 skipped** (3,018 before; the 13 new
+  are `BoundCheckTest`: each declaration kind, every written position, inferred
+  and `.(…)` constructions, pass-on by construction and by call, spec
+  requirements counting as declared, method, spec-member and operator bounds
+  (`+`, `+=`, `[]`), refused bounds, and the valid forms run on the
+  interpreter). AZLS 93, 0 failures. `StdlibSelfTest`, `StdSurfaceTest` (std's
+  stable listing unchanged), `WitnessTest` and `TypeFunctionTest` among them.
+- An earlier full run reported 67 failures with `NoClassDefFoundError`: the
+  CLI was rebuilt while its tests loaded classes. Discarded, and rerun with
+  nothing else building.
+
+## 2026-11-16 — 022.3 remainders: GENERICS_DIP §5.3's four open cases closed
+
+The four cases yesterday's entry left open, each closed rather than listed.
+
+### Compound type arguments are decided, not accepted
+
+`Box<Sq?>` and `Box<(Sq, Sq)>` were accepted because the evaluator had no
+binding for a type written with structure and accepted what it could not
+decide. Measured first what the language gives such types: `(1, 2) == (1, 2)`
+and `.hash` work on a tuple, `<` does not (`cannot compare (Int, Int) and
+(Int, Int)`); a nullable compares and hashes when its value does; a pointer
+compares and hashes by address. `HashSet<(Int, Int)>` and `HashSet<Int?>` run
+today on the interpreter (LLVM refuses tuple equality by name), so rejecting
+every compound type would have broken working programs.
+
+`ConstraintEvaluator` now binds such a type (`Binding.Structural`) and decides
+it by the rule the compiler already uses to derive a pack's `Clone` and
+`Copy` (`fieldHasCapability`): equality and hashing part by part, `Clone` by
+`SymbolTable.isClonable`, `Copy` only for a nullable of a `Copy` type, no
+ordering, and for any other spec what `Tuple` declares (`PrettyPrint`) or
+nothing. A type parameter inside one (`HashSet<(U, Int)>`) answers with its
+declared bounds: the evaluator takes the asking code's type parameters and
+what they imply (`assumed`). Found by it: `TreeSet<(Int, Int)>` compiled and
+ordered tuples by an undefined comparison; it is refused now.
+
+### An implementation keeps its spec member's promise
+
+`impl Fold for Sq { func<U: Shape> &.fold(…) }` against `spec Fold { func<U>
+&.fold(…) }` was accepted, and a caller through `Fold` could pass any `U`.
+`SymbolCollector.boundMismatch`, beside `receiverMismatch`, refuses an
+implementation that requires of its own type parameters more than the spec
+member promises (implied specs included).
+
+Found on the way: a spec's generic member called through a spec-typed value
+was refused - `f.fold(Sq(2))` gave `arg 1 of 'fold': expected U, got Sq`,
+because that path compared the argument with the member's unresolved type
+parameter. It now binds the member's type parameters from the call, as the
+concrete-member path already did.
+
+### Pass-on is traced through every declared value
+
+The resolver erases a type parameter to `Any`, so `fin y = x` then `Box(y)` in
+`func<U>` reached no check. The resolver now records each binding's declared
+type (`VariableSymbol.declaredRef`: a parameter's, the receiver's from its
+`impl`, a local's or its initializer's) and follows it, as lowering's witness
+code already did: borrows, `take`, `clone()`, fields and properties through
+their owner's arguments, `xs[i]`, `pair.0`, a generic call's or member's
+result, a call through a function-typed value, an `if` whose branches agree, `??`.
+Inferred pass-on moved from `BoundChecker`'s syntactic parameter tracking
+(deleted) into the resolver, at calls, constructions, member calls, spec-member
+calls and operators. A bounded parameter filled only by an erased value no
+declaration tells is refused: `cannot tell which type 'T' of 'twice' is here,
+so its bound 'T: Shape' cannot be checked; write it, as in 'twice<…>(…)'` - the
+rule lowering already applied to the four witness specs, which stay lowering's.
+
+### A property's own type parameter takes no bound
+
+A property is read without type arguments (`value.pick`; only the reflection
+intrinsics `hasAnnot<D>` / `annotMeta<D>` / `withAnnot<D>` take them, by
+name), so a bound on a property's own type parameter could never be checked.
+Adding use-site syntax would be new syntax nobody asked for, so the bound is
+refused where it is written - inline, in a `where` clause, in a spec - as for
+lambdas and bridges. A `where` clause about the owner's parameters stays. No
+property in std, the Engine or Studio bounds its own parameter.
+
+Shared helpers: `semantic/Bounds.kt` (what a clause requires of a parameter,
+what bounds imply), used by `BoundChecker`, `TypeResolver` and
+`SymbolCollector`.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue
+```
+
+- Compiler: **3,036 tests, 0 failures, 0 skipped** (3,031 before; the 5 new
+  `BoundCheckTest` cases: compound type arguments rejected and accepted ones
+  running, an implementation stricter than its spec member and a spec member
+  called through a spec-typed value, pass-on through eight kinds of declared
+  value with the bounded forms running, the "cannot tell" refusal and its
+  written fix, a property's own bound). AZLS 93, 0 failures. `WitnessTest`,
+  `StdlibSelfTest`, `StdSurfaceTest`, `TypeFunctionTest` and the pack-size and
+  spread constraint suites among them.
+- The Engine: a scratch-copy `azora build` gives output identical to
+  2026-11-15's (8 of 31 members, item 072), none of the new diagnostics.
+
+### Open, found on the way
+
+The operations are looser than the bounds now are. `(P(1), 2) == (P(1), 2)`
+and `(P(1), 2).hash` are accepted although `P` has no equality - `P(1) ==
+P(1)` alone is refused - and the interpreter compares the `P`s field by field.
+`2.5.hash` is accepted although `Double` is not `Hash`. A bound now refuses
+`HashSet<(P, Int)>`; the expressions themselves should be refused the same
+way (§1.1's audit). *Closed the same day, next entry.*
+
+## 2026-11-16 (continued) — a tuple or array compares and hashes by its parts' own operations
+
+The open item above, owner's go-ahead. Measured on the interpreter and LLVM
+before the change:
+
+- `P(1) == P(2)` is `true` under a `P` whose `oper==` compares parity, but
+  `(P(1), 2) == (P(2), 2)` was `false` on the interpreter: a tuple compared
+  its parts field by field, ignoring their declared `==` - a wrong answer.
+  LLVM refused tuple equality outright (`cannot apply EQ to (Int, Int) yet`).
+- `(P(1), 2) == (P(1), 2)`, `[P(1)] == [P(1)]` and their `.hash` compiled for
+  a `P` with no equality or hash; `2.5.hash` compiled though no float is
+  `Hash`.
+- `derive Order for P` with a `(Int, Int)` field compiled, and `<` then failed
+  at run time (`Cannot compare [1, 2] and [2, 1]`): the derivation rule let
+  `Order` through tuple and array fields, which have no `<`.
+
+What changed:
+
+- **Resolver.** `==`/`!=` on a tuple or array (a nullable of one included)
+  requires every part to be comparable by the rule `==` on that part alone
+  uses, and names the part otherwise. `.hash` on anything but a pack is
+  allowed exactly where the type is `Hash` by GENERICS_DIP §5.3's rule - so
+  `x.hash` and `HashSet<T>` cannot disagree; a float's refusal says why.
+- **The bound rule** treats an array as it does a tuple (equality and hashing
+  element-wise, no order), as `derive` already did for array fields; an erased
+  part (`Any`) is left undecided rather than refused.
+- **`derive`** refuses `Order` through a tuple or array field.
+- **Lowering.** A tuple's or array's `==` and `hash` call a generated helper
+  (`__structural_equal_N` / `__structural_hash_N`, one per type, emitted after
+  the witness dispatchers, which use them) built from each part's own `==` or
+  `hash`, as ordinary code would write it: a declared `oper==` decides inside
+  a tuple, nested tuples recurse, an array compares lengths and then elements,
+  and a hash mixes parts in order with a derived `hash`'s formula
+  (`17`, `* 31 +`). The helpers borrow their operands (`refParams`), as the
+  generated array renderers do, so nothing is freed twice. Every backend runs
+  the same code; LLVM and WebAssembly compare and hash tuples now.
+
+Changed expectation: `WitnessTest`'s built-in parity program hashed `2.5` to
+check that the float bit pattern hashed alike on every target (written for
+A3's hash parity). A float has no `hash` now - `0.0` and `-0.0` are equal and
+NaN is not equal to itself, which is why std declares no `Hash` on floats and
+`derive Hash` already refused float fields - so the line moved to a refusal
+in `StructuralEqualityTest`; the parity of the other built-ins is unchanged.
+
+Evidence (`AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue`):
+compiler **3,043 tests, 0 failures, 0 skipped** (3,036 before; new:
+`StructuralEqualityTest` 5 - the three programs on the interpreter, parts
+without equality refused at any depth, `.hash` refused for `(P, Int)`,
+`Array<P>` and a float with the reason, `HashSet<Array<Int>>` accepted and
+`TreeSet<Array<Int>>` refused, `derive Order` through a tuple or array field
+refused; `StructuralEqualityExecTest` 2 - the same programs on LLVM and
+WebAssembly, optimized and not, printing what the interpreter prints). AZLS
+93, 0 failures. The Engine's scratch build is unchanged (8 of 31 members), and
+neither the Engine nor Studio compares tuples or arrays or calls `.hash`.
+

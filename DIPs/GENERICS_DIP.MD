@@ -127,7 +127,8 @@ parameter may separately appear in `constParams`, `constDefaults`,
 Further problems include:
 
 - `T: Spec` written inside a type-parameter list can be parsed but its bound is
-  not represented uniformly;
+  not represented uniformly (kept and checked on every declaration since
+  2026-11-15, §5.3; the uniform parameter model of §4 is still to come);
 - generic spec arguments are sometimes parsed and then ignored by conformance;
 - `SymbolTable.conformsTo` can ignore type arguments entirely;
 - the constraint evaluator treats an unknown concrete constraint as accepted;
@@ -356,6 +357,132 @@ where I: Iterator && I::Item == T {
 
 A comma never means logical conjunction in a `where` clause. Commas remain
 separators inside generic parameter lists, argument lists, and type tuples.
+
+### 5.3 Where a bound is checked
+
+*Implemented 2026-11-15/16 (`semantic/BoundChecker.kt`, `semantic/Bounds.kt`,
+`TypeResolver`, `ConstraintEvaluator`; `BoundCheckTest`).*
+
+An inline bound and a `where` clause are one requirement. It is kept by every
+declaration that takes type parameters - `pack`, `unsafe union`, `enum`,
+`error`, `variant enum`, `variant error`, `spec`, `typealias`, `func`, `ctor`,
+`oper`, and the members a `spec` declares - and it holds wherever the
+declaration is used:
+
+```azora
+pack Box<T: Shape> { var item: T }
+
+fin a = Box<NoShape>(value)        // rejected: written
+fin b = Box(value)                 // rejected: inferred to Box<NoShape>
+func grab(b: Box<NoShape>&) { }    // rejected: a parameter's type
+pack Outer { var inner: Box<NoShape>? }   // rejected: a field's type
+impl Holder<NoShape> for Sq { }    // rejected: `spec Holder<T: Shape>`
+```
+
+A written type is checked in every position a type can be written, at any
+depth (`Free<Box<NoShape>>`, `Array<Box<NoShape>>`, `Box<NoShape>?`). A member's own
+bound is checked at the call for the types its arguments bind, whether the call
+goes to a concrete type's member or through a spec-typed value, where the
+spec's declaration answers. An operator's own bound is checked for its operand
+in the same way: `a + b`, `a += b` and `a[k]` against `oper+ <U: Shape>`,
+`oper+= <U: Shape>` and `oper[] <U: Shape>`.
+
+**Generic code declares what it passes on.** A type parameter standing where a
+bound is required is only as good as its own declaration:
+
+```azora
+func<U> wrap(x: U): Box<U> = Box(x)
+// rejected: 'T' of 'Box' must be Shape, and 'U' is not declared to be;
+//           add 'where U: Shape'
+```
+
+The rule applies where generic code builds a value or makes a call: a
+construction, written (`Box<U>(x)`), inferred (`Box(x)` where `x: U`) or
+written `.(…)` where a declared type says what it builds (`var t: Tally<U> =
+.()`, a field's default); a call to a bounded function (`twice(x)`,
+`twice<U>(x)`); a bounded member or operator. It applies as well to a type
+built from the parameter: `HashSet<(U, Int)>` needs `U: Hash`. Naming the type alone - `func<U> held(b: Box<U>&)`, a field
+`var slot: Box<U>?` - asks nothing: every `Box` such code is handed was built
+where its argument answered, and asking more would reject each generic that
+merely mentions a constrained type.
+A declared bound brings what its spec requires and inherits:
+`U: Order` may stand where `Equal` is asked for. Only a clause's outright
+`T: Spec` conjuncts are passed on this way; a requirement under `||` or `!`
+names no single spec and is decided for the concrete type.
+
+**Which type parameter a value holds.** The resolver erases a type parameter
+to `Any`, so the type a value was *declared* with decides what is passed on:
+a parameter's or a binding's written type, a binding's initializer's
+(`fin y = x`), a borrow, `take` or `clone()` of one, a field or property read
+through its owner's arguments (`self.item`, `xs.first` with
+`xs: ArrayList<U>`), an element (`xs[i]`, `pair.0`), a generic call's or a
+member's result (`ident(x)`, `xs.get(0)`), a call through a value declared
+`(U&) -> U`, an `if` whose branches agree, and `a ?? b` whose sides agree. The
+lowering of `Hash`, `Equal`, `Order` and `Clone` witnesses reads the same
+declarations.
+
+Where a bounded parameter is filled only by an erased value no declaration
+tells, the bound cannot be decided, and the use is refused with the way to
+state it:
+
+```azora
+fin make = [x.&] { x }
+twice(make())
+// rejected: cannot tell which type 'T' of 'twice' is here, so its bound
+//           'T: Shape' cannot be checked; write it, as in 'twice<…>(…)'
+twice<U>(make())   // accepted where U: Shape
+```
+
+A member call cannot write type arguments; the fix there is a binding of a
+declared type (`fin value: U = …`). For the four witness specs this decision
+is lowering's, which says the same (`cannot tell which type … is here; write
+it`).
+
+**A type built with structure** - a tuple, a nullable, a pointer, a function -
+can be named by no `impl`, so it has the capabilities the language gives it,
+the rule a pack's derived `Clone` and `Copy` already follow:
+
+| | `Equal`, `PartialEqual`, `Hash` | `Order`, `PartialOrder` | `Clone` | `Copy` | any other spec |
+|---|---|---|---|---|---|
+| `(A, B)` | when every element has it | never | when every element clones | never | what `Tuple` declares (`PrettyPrint`) |
+| `Array<T>` | when `T` has it | never | when `T` clones | never | what `Array` declares |
+| `T?` | when `T` has it | never | when `T` clones | when `T` is | never |
+| `T*` | always, by address | never | yes | never | never |
+| `(A) -> B` | never | never | yes | never | never |
+
+So `HashSet<(Int, Int)>` and `HashSet<Int?>` hold, while `HashSet<(P, Int)>`
+(`P` not `Hash`), `TreeSet<(Int, Int)>` and `Box<Sq?>` are refused, and a type
+parameter inside one answers with its declared bounds.
+
+The operations follow the same rule (2026-11-16). `a == b` on a tuple or an
+array compares part by part, each part by its *own* `==` - a declared
+`oper==` inside a tuple decides as it does outside one - and is refused when a
+part has no equality (`(P(1), 2) == (P(1), 2)` for a `P` without one, as
+`P(1) == P(1)` is). `x.hash` on anything but a pack is allowed exactly where
+`x`'s type is `Hash`: a tuple or array hashes its parts in order (the mix a
+derived `hash` uses), and `2.5.hash` is refused, since equal floats (`0.0`,
+`-0.0`) need not hash equally and NaN is not equal to itself. Lowering builds
+both from each part's own operation, so every backend runs the same code; LLVM
+compares tuples since. A derived `Order` no longer passes through a tuple or
+array field, which has no `<`.
+
+**An implementation keeps its spec member's promise.** A caller reaching a
+member through the spec chooses its type arguments under the spec member's
+bounds alone, so an `impl` member may require of its own type parameters only
+what the spec member does, with what that implies:
+
+```azora
+spec Fold { func<U> &.fold(x: U&): Int }
+impl Fold for Sq { func<U: Shape> &.fold(x: U&): Int = … }
+// rejected: 'Sq.fold' requires 'U: Shape', which 'Fold.fold' does not promise
+```
+
+A lambda's, a bridge declaration's and a member alias's type parameters take no
+bound, and neither do a property's own (`prop<U: Shape> &.pick`, or `where U:
+Shape` on it): no use binds them to a type a check could be made for - a
+property is read without type arguments - so the bound is refused where it is
+written. A property's `where` clause about its owner's parameters stays: it
+says where the property is available.
 
 ---
 

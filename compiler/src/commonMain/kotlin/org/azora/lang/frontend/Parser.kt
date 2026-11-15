@@ -731,7 +731,7 @@ class Parser(
             operRet = applySignatureFragment(operRet, fragment, start)
         }
         // An operator may carry its own constraint.
-        parseWhereClause()
+        val operatorWhere = withInlineBounds(operatorTypeParams.boundClause, parseWhereClause(), start.line)
         // The step is declarative metadata: parsed so the source may state it,
         // then discarded.
         if (match(TokenType.BY)) parseExpr()
@@ -765,6 +765,7 @@ class Parser(
                         start.line, start.column, receiverModifier = recv.modifier,
                         receiverName = recv.name, visibility = visibility,
                         annotations = annotations,
+                        whereClause = operatorWhere,
                     ),
                 ),
                 null, start.line, start.column, isBridge = true,
@@ -783,6 +784,7 @@ class Parser(
             // `oper * <N: Int>` is generic over a value, and the member has to say so:
             // the specializations of whatever it mentions are what bind `N`.
             constParams = operatorTypeParams.constParams,
+            whereClause = operatorWhere,
         )
         return TopLevel.Impl(typeName, listOf(method), null, start.line, start.column)
     }
@@ -2134,7 +2136,7 @@ class Parser(
         if (isUnion && derives.isNotEmpty()) {
             error("an unsafe union cannot derive field-wise implementations at line ${start.line}")
         }
-        val whereClause = parseWhereClause()
+        val whereClause = withInlineBounds(tp.boundClause, parseWhereClause(), start.line)
         val minLen = variadicMinLengthOf(whereClause)
         val enforceNumFields = annotations.any { it.name == "EnforceNumFields" }
         enqueueDerives(name, derives, start, tp.names, tp.variadic)
@@ -2891,7 +2893,8 @@ class Parser(
         consume(TokenType.ENUM, "Expected 'enum'")
         val name = consume(TokenType.IDENTIFIER, "Expected enum name").lexeme
         // `enum Name<T>` - parameters after the name they parametrize, as everywhere.
-        val enumTypeParams = parseTypeParams().names
+        val enumGenerics = parseTypeParams()
+        val enumTypeParams = enumGenerics.names
         consume(TokenType.L_BRACE, "Expected '{' after enum name")
         skipNewlines()
         val variants = mutableListOf<String>()
@@ -2916,7 +2919,7 @@ class Parser(
         consume(TokenType.R_BRACE, "Expected '}' after enum variants")
         consumeNewline()
         declaredEnums[name] = variants
-        return TopLevel.Enum(name, variants, start.line, start.column, annotations, variantAnns, enumTypeParams)
+        return TopLevel.Enum(name, variants, start.line, start.column, annotations, variantAnns, enumTypeParams, whereClause = enumGenerics.boundClause)
     }
 
     /** `fail ErrSet { V1, V2 }` - an error-set declaration (variants one per line, each optionally annotated). */
@@ -2925,7 +2928,8 @@ class Parser(
         consume(TokenType.ERROR, "Expected 'fail'")
         val name = consume(TokenType.IDENTIFIER, "Expected error-set name").lexeme
         // `error Name<T>` - an error set may be generic over what its cases carry.
-        val failTypeParams = parseTypeParams().names
+        val failGenerics = parseTypeParams()
+        val failTypeParams = failGenerics.names
         consume(TokenType.L_BRACE, "Expected '{' after error-set name")
         skipNewlines()
         val variants = mutableListOf<String>()
@@ -2968,6 +2972,7 @@ class Parser(
         return TopLevel.Fail(
             name, variants, start.line, start.column, annotations, variantAnns, variantPayloads,
             typeParams = failTypeParams,
+            whereClause = failGenerics.boundClause,
         )
     }
 
@@ -3649,6 +3654,7 @@ class Parser(
                     // A property may carry its own constraint, as an operator or a
                     // function does - `prop normalized[…]: Self ?! E where T is …`.
                     val propWhere = parseWhereClause()
+                    refuseOwnBounds(propTypeParams, propWhere, methodStart.line)
                     // A `?!` in the property's type binds the error set for
                     // `return .Variant(payload)` in its body.
                     val savedPropFailSets = currentFailSets
@@ -3658,11 +3664,11 @@ class Parser(
                         // `prop name: T = expr` - expression-body property (returns the expression).
                         val expr = parseExpr()
                         consumeNewline()
-                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, propTypeParams.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, declaresReceiver = propReceiver.declared, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp))
+                        methods.add(FuncDecl(propName, emptyList(), propType, listOf(Stmt.Return(expr, expr.line, expr.column)), false, propTypeParams.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, declaresReceiver = propReceiver.declared, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp, whereClause = propWhere))
                     } else {
                         val contracts = parseContractClauses()
                         val propBody = parseMemberBody("prop", "prop &.$propName: T { … }")
-                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, propTypeParams.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, declaresReceiver = propReceiver.declared, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp))
+                        methods.add(FuncDecl(propName, emptyList(), propType, applyContracts(propBody, contracts), false, propTypeParams.names, methodStart.line, methodStart.column, annotations = memberAnnotations, visibility = visibility, receiverModifier = propReceiver.modifier, receiverName = propReceiver.name, declaresReceiver = propReceiver.declared, memberCallStyle = MemberCallStyle.PROPERTY, returnTypeDeclared = propTypeDeclared, isReactive = isReactiveMember, isTask = isAsyncProp, whereClause = propWhere))
                     }
                     currentFailSets = savedPropFailSets
                 }
@@ -3697,6 +3703,7 @@ class Parser(
                         check(TokenType.PROP) -> {
                             advance()
                             val tp = parseTypeParams()
+                            refuseBounds(tp, "a bridge property", methodStart.line)
                             val prefixReceiver = parseImplicitMemberReceiver()
                             val propName = consumeIdentifierLike("Expected property name after 'bridge prop'")
                             if (check(TokenType.L_BRACKET)) {
@@ -3720,6 +3727,7 @@ class Parser(
                         check(TokenType.FUNC) -> {
                             advance()
                             val tp = parseTypeParams()
+                            refuseBounds(tp, "a bridge function", methodStart.line)
                             val prefixReceiver = parseImplicitMemberReceiver()
                             val fnName = consumeIdentifierLike("Expected function name after 'bridge func'")
                             consume(TokenType.L_PAREN, "Expected '(' after bridge function name")
@@ -3795,7 +3803,7 @@ class Parser(
                     } else false
                     // `where T is Keyed` - decided for the type arguments a
                     // construction (or a `[…]` literal) chooses, as a function's is.
-                    val ctorWhere = parseWhereClause()
+                    val ctorWhere = withInlineBounds(ctorTypeParams.boundClause, parseWhereClause(), ctorStart.line)
                     val contracts = parseContractClauses()
                     val ctorBody = parseMemberBody("ctor", "ctor .(…) { … }")
                     // A repetition of none builds nothing, so the count is checked
@@ -3914,7 +3922,7 @@ class Parser(
                         ret = applySignatureFragment(ret, fragment, operStart)
                     }
                     // An operator may carry its own constraint, like any member.
-                    val operWhere = parseWhereClause()
+                    val operWhere = withInlineBounds(operTypeParams.boundClause, parseWhereClause(), operStart.line)
                     // `return .Variant(payload)` in the body needs the error set the
                     // signature declares, exactly as it does for a `func`.
                     val savedOperFailSets = currentFailSets
@@ -3940,6 +3948,7 @@ class Parser(
                                 annotations = memberAnnotations, visibility = visibility,
                                 receiverModifier = recv.modifier, receiverName = recv.name,
                                 constParams = operTypeParams.constParams,
+                                whereClause = operWhere,
                             ),
                         )
                         continue
@@ -3964,6 +3973,7 @@ class Parser(
                         annotations = memberAnnotations, visibility = visibility,
                         receiverModifier = recv.modifier, receiverName = recv.name,
                         constParams = operTypeParams.constParams,
+                        whereClause = operWhere,
                     ))
                 }
                 check(TokenType.FUNC) -> methods.add(parseFuncDecl(isInline, annotations = memberAnnotations, isVirtual = isVirt, visibility = visibility, inImplBlock = true, isReactive = isReactiveMember, isDeepInline = isDeepInline))
@@ -4347,6 +4357,8 @@ class Parser(
         val tpBefore = parseTypeParams()
         val parsedName = parseBridgeName()
         val tpAfter = parseTypeParams()
+        refuseBounds(tpBefore, "a bridge function", start.line)
+        refuseBounds(tpAfter, "a bridge function", start.line)
         consume(TokenType.L_PAREN, "Expected '(' after bridge function name")
         val params = parseParams()
         consume(TokenType.R_PAREN, "Expected ')' after bridge parameters")
@@ -4688,7 +4700,8 @@ class Parser(
         val name = consume(TokenType.IDENTIFIER, "Expected name after 'variant $kind'").lexeme
         // `variant enum Option<T>` - a tagged union is generic over what its cases
         // carry, so the parameters go where every other declaration puts them.
-        val slotTypeParams = parseTypeParams().names
+        val slotGenerics = parseTypeParams()
+        val slotTypeParams = slotGenerics.names
         consume(TokenType.L_BRACE, "Expected '{' after 'variant $kind $name'")
         skipNewlines()
         val variants = mutableListOf<TopLevel.SlotVariant>()
@@ -4719,6 +4732,7 @@ class Parser(
         return TopLevel.Slot(
             name, variants, start.line, start.column, annotations,
             isError = kind == "error", typeParams = slotTypeParams,
+            whereClause = slotGenerics.boundClause,
         )
     }
 
@@ -5407,6 +5421,7 @@ class Parser(
                 isBridge = isBridge,
                 isDirect = isDirect,
                 typeDefaults = typeParams.typeDefaults,
+                whereClause = typeParams.boundClause,
             )
         }
         var parentSpecs: List<TypeRef> = emptyList()
@@ -5453,6 +5468,7 @@ class Parser(
                 callback = callback,
                 typeParams = typeParams.names,
                 isDirect = isDirect,
+                whereClause = typeParams.boundClause,
             )
             }
         }
@@ -5497,7 +5513,7 @@ class Parser(
         val assocNames = parseAssocNames()
         if (!check(TokenType.L_BRACE)) {
             consumeNewline()
-            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, isDirect = isDirect, typeDefaults = typeParams.typeDefaults, assocNames = assocNames)
+            return TopLevel.Spec(name, emptyList(), start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, isDirect = isDirect, typeDefaults = typeParams.typeDefaults, assocNames = assocNames, whereClause = typeParams.boundClause)
         }
         consume(TokenType.L_BRACE, "Expected '{' after spec name")
         skipNewlines()
@@ -5572,6 +5588,7 @@ class Parser(
                         operTypeParams.names, operStart.line, operStart.column,
                         receiverModifier = orecv.modifier, receiverName = orecv.name,
                         annotations = memberAnnotations,
+                        whereClause = operTypeParams.boundClause,
                     ),
                 )
                 continue
@@ -5591,7 +5608,7 @@ class Parser(
                 parseTypeName()
                 consume(TokenType.EQUAL, "Expected '=' and the member this aliases")
                 val target = consumeIdentifierLike("Expected the aliased member's name")
-                parseTypeParams()
+                refuseBounds(parseTypeParams(), "a member alias", aliasStart.line)
                 consumeNewline()
                 val aliased = methods.indexOfFirst { it.name == target }
                 if (aliased < 0) {
@@ -5604,6 +5621,7 @@ class Parser(
             if (check(TokenType.PROP)) {
                 advance()
                 val ptypeParams = parseTypeParams()
+                refuseOwnBounds(ptypeParams, null, start.line)
                 val prefixReceiver = parseImplicitMemberReceiver()
                 val pname = consumeMemberName("Expected property name in spec")
                 // `prop<T> into[self: Self&]: T` - the member carries its own
@@ -5692,12 +5710,13 @@ class Parser(
                 useAsTemplate = memberUseAs,
                 contextualParams = mScopeReceivers.size,
                 annotations = memberAnnotations,
+                whereClause = mtypeParams.boundClause,
             ))
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
         currentImplTypeName = savedImplTypeName
         consumeNewline()
-        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, isDirect = isDirect, typeDefaults = typeParams.typeDefaults, assocNames = assocNames)
+        return TopLevel.Spec(name, methods, start.line, start.column, typeParams = typeParams.names, parents = parentSpecs, requires = requiredSpecs, isBridge = isBridge, isDirect = isDirect, typeDefaults = typeParams.typeDefaults, assocNames = assocNames, whereClause = typeParams.boundClause)
     }
 
     /** `assoc Item` / `assoc (Scalar, Rows, Columns)` on a spec. */
@@ -6779,6 +6798,44 @@ class Parser(
         /** `<T: Clone>` - the inline form of `where T: Clone`, as the clause it means. */
         val boundClause: Expr? = null,
     )
+
+    /**
+     * Refuses a bound where no use binds the parameter to a type a check could
+     * be made for. Accepting it would state a requirement nothing enforces.
+     */
+    private fun refuseBounds(
+        params: TypeParams,
+        what: String,
+        line: Int,
+        why: String = "nothing checks a bound written there",
+    ) {
+        if (params.boundClause == null) return
+        error("$what cannot bound a type parameter: $why; remove the ': Spec' at line $line")
+    }
+
+    /**
+     * Refuses a bound on a property's own type parameters, inline or in its
+     * `where` clause. A use reads a property without writing type arguments
+     * (`value.pick`), so nothing could ever bind one to a type to check.
+     * A `where` clause about the owning type's parameters stays: it decides
+     * where the property is available.
+     */
+    private fun refuseOwnBounds(params: TypeParams, where: Expr?, line: Int) {
+        refuseBounds(params, "a property", line, "no use writes a property's type argument, so nothing checks the bound")
+        fun boundsOwn(expr: Expr): Boolean = when (expr) {
+            is Expr.IsCheck -> (expr.expr as? Expr.Identifier)?.name in params.names
+            is Expr.Binary -> boundsOwn(expr.left) || boundsOwn(expr.right)
+            is Expr.Grouping -> boundsOwn(expr.expr)
+            is Expr.Unary -> boundsOwn(expr.operand)
+            else -> false
+        }
+        if (where != null && boundsOwn(where)) {
+            error(
+                "a property cannot bound its own type parameter: no use writes a property's type argument, " +
+                    "so nothing checks the bound; remove it from the 'where' clause at line $line",
+            )
+        }
+    }
 
     /** [inline] and [written] bounds as one where clause, inline ones first. */
     private fun withInlineBounds(inline: Expr?, written: Expr?, line: Int): Expr? = when {
@@ -8961,6 +9018,7 @@ class Parser(
         val start = peek()
         consume(TokenType.PROP, "Expected 'prop'")
         val typeParams = parseTypeParams()
+        refuseOwnBounds(typeParams, null, start.line)
         val prefixReceiver = parseExplicitMemberReceiver() ?: parseTypedMemberReceiver()
         if (pendingMemberContextReceivers.isNotEmpty()) {
             pendingMemberContextReceivers = emptyList()
@@ -9040,7 +9098,7 @@ class Parser(
         consume(TokenType.EQUAL, "Expected '=' in typealias")
         val type = parseTypeName()
         consumeNewline()
-        return TopLevel.TypeAlias(name, type, start.line, start.column, annotations, typeParams = tp.names)
+        return TopLevel.TypeAlias(name, type, start.line, start.column, annotations, typeParams = tp.names, whereClause = tp.boundClause)
     }
 
     /**
@@ -12509,6 +12567,7 @@ class Parser(
     private fun parseGenericLambda(): Expr.Lambda {
         val start = peek()
         val generic = parseTypeParams()
+        refuseBounds(generic, "a lambda", start.line)
         if (generic.constParams.isNotEmpty()) {
             error("line ${start.line}: lambda generics are types; const generic parameters are not supported here")
         }

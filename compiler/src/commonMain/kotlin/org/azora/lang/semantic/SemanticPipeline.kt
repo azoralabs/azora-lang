@@ -242,8 +242,12 @@ class SemanticPipeline(
                 tupleDemands = typeResolver.tupleDemands.toSet(),
             )
         }
-        if (typeErrors.isNotEmpty()) {
+        // Every written generic type and generic call against its declared
+        // bounds; reported with the resolver's own findings, which it adds to.
+        val boundErrors = BoundChecker.check(currentProgram, table)
+        if (typeErrors.isNotEmpty() || boundErrors.isNotEmpty()) {
             allErrors.addAll(typeErrors)
+            allErrors.addAll(boundErrors.filter { it !in typeErrors })
             return SemanticResult(
                 currentProgram,
                 table,

@@ -2922,6 +2922,8 @@ sealed class TopLevel {
         val variantAnnotations: List<List<Annotation>> = emptyList(),
         /** `enum Name<T>` - the parameters the declaration is generic over. */
         val typeParams: List<String> = emptyList(),
+        /** `enum Name<T: Spec>` - the bounds on [typeParams], as the clause `where T: Spec` is. */
+        val whereClause: Expr? = null,
     ) : TopLevel()
 
     /** `fail ErrSet { V1, V2 }` - an error set (a named set of error variants). */
@@ -2943,6 +2945,8 @@ sealed class TopLevel {
         val variantPayloads: List<List<TypeRef>> = emptyList(),
         /** `error Name<T>` - the parameters the declaration is generic over. */
         val typeParams: List<String> = emptyList(),
+        /** `error Name<T: Spec>` - the bounds on [typeParams], as the clause `where T: Spec` is. */
+        val whereClause: Expr? = null,
     ) : TopLevel()
 
     /**
@@ -3058,10 +3062,12 @@ sealed class TopLevel {
         val assocNames: List<String> = emptyList(),
         /** Decorators written above the spec - `@Experimental(since: "0.1") spec List<T>`. */
         val annotations: List<Annotation> = emptyList(),
+        /** `spec Name<T: Spec>` - the bounds on [typeParams], as the clause `where T: Spec` is. */
+        val whereClause: Expr? = null,
     ) : TopLevel()
 
     /** `typealias Name = Type` - a type alias. */
-    data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val typeParams: List<String> = emptyList()) : TopLevel()
+    data class TypeAlias(val name: String, val type: TypeRef, val line: Int, val column: Int = 0, val annotations: List<Annotation> = emptyList(), val typeParams: List<String> = emptyList(), val whereClause: Expr? = null) : TopLevel()
 
     /** One case of a tagged union: `Name(Type1, Type2)`, or `Name` with no payload. */
     data class SlotVariant(val name: String, val payloadTypes: List<TypeRef>)
@@ -3083,6 +3089,8 @@ sealed class TopLevel {
         val isError: Boolean = false,
         /** `variant enum Name<T>` - the parameters the declaration is generic over. */
         val typeParams: List<String> = emptyList(),
+        /** `variant enum Name<T: Spec>` - the bounds on [typeParams], as the clause `where T: Spec` is. */
+        val whereClause: Expr? = null,
     ) : TopLevel()
 
     /**

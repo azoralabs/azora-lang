@@ -138,12 +138,17 @@ internal class DeclarationRenamer(
                 )
             },
         )
-        is TopLevel.Enum -> item.copy(name = declared(item.name), annotations = annotations(item.annotations, top))
+        is TopLevel.Enum -> item.copy(
+            name = declared(item.name),
+            annotations = annotations(item.annotations, top),
+            whereClause = item.whereClause?.let { expr(it, top.withTypes(item.typeParams)) },
+        )
         is TopLevel.Fail -> {
             val scope = top.withTypes(item.typeParams)
             item.copy(
                 name = declared(item.name),
                 variantPayloads = item.variantPayloads.map { payload -> payload.map { typeRef(it, scope) } },
+                whereClause = item.whereClause?.let { expr(it, scope) },
             )
         }
         is TopLevel.Slot -> {
@@ -153,6 +158,7 @@ internal class DeclarationRenamer(
                 variants = item.variants.map { variant ->
                     variant.copy(payloadTypes = variant.payloadTypes.map { typeRef(it, scope) })
                 },
+                whereClause = item.whereClause?.let { expr(it, scope) },
             )
         }
         is TopLevel.Impl -> {
@@ -176,9 +182,17 @@ internal class DeclarationRenamer(
                 parents = item.parents.map { typeRef(it, scope) },
                 requires = item.requires.map { typeRef(it, scope) },
                 typeDefaults = item.typeDefaults.mapValues { (_, default) -> typeRef(default, scope) },
+                whereClause = item.whereClause?.let { expr(it, scope) },
             )
         }
-        is TopLevel.TypeAlias -> item.copy(name = declared(item.name), type = typeRef(item.type, top.withTypes(item.typeParams)))
+        is TopLevel.TypeAlias -> {
+            val scope = top.withTypes(item.typeParams)
+            item.copy(
+                name = declared(item.name),
+                type = typeRef(item.type, scope),
+                whereClause = item.whereClause?.let { expr(it, scope) },
+            )
+        }
         // A compiler-provided bridge has no foreign symbol to keep: every
         // backend recognises it by its local name (`symbolDenotes`), so it
         // takes its module identity when the program declares the same name,

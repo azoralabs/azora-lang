@@ -151,7 +151,7 @@ open class AstMapper {
         is Expr.IfExpr -> e.copy(condition = expr(e.condition), thenExpr = expr(e.thenExpr), elseExpr = expr(e.elseExpr))
         is Expr.Cast -> e.copy(expr = expr(e.expr), targetType = typeRef(e.targetType))
         is Expr.InlineForArgs -> e.copy(iterable = expr(e.iterable), body = expr(e.body))
-        is Expr.IsCheck -> e.copy(expr = expr(e.expr))
+        is Expr.IsCheck -> e.copy(expr = expr(e.expr), typeArgs = e.typeArgs.map { typeRef(it) })
         is Expr.InCheck -> e.copy(value = expr(e.value), collection = expr(e.collection))
         is Expr.Alloc -> e.copy(value = expr(e.value))
         is Expr.Deref -> e.copy(target = expr(e.target))

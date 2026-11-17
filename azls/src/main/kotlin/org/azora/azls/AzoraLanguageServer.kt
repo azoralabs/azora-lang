@@ -22,6 +22,7 @@ import kotlinx.serialization.json.Json
 import org.azora.lang.Compiler
 import org.azora.lang.diagnostics.AnalysisMode
 import org.azora.lang.diagnostics.AnalysisRequest
+import org.azora.lang.diagnostics.AnalysisSnapshot
 import org.azora.lang.diagnostics.DiagnosticRenderer
 import org.azora.lang.diagnostics.DocumentVersion
 import org.azora.lang.diagnostics.ImmutableSourceManager
@@ -29,6 +30,7 @@ import org.azora.lang.diagnostics.PositionEncoding
 import org.azora.lang.diagnostics.SourceId
 import org.azora.lang.diagnostics.SourceKind
 import org.azora.lang.diagnostics.SourceUnit
+import org.azora.lang.diagnostics.TextOffset
 import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.ImportSpec
 import org.azora.lang.frontend.Lexer
@@ -196,6 +198,32 @@ class AzoraLanguageServer {
     // -----------------------------------------------------------------
 
     fun diagnostics(source: String, workspaceSource: String = ""): String {
+        val (snapshot, sources) = analyzeDocument(source, workspaceSource)
+        val document = sources.first()
+        val manager = ImmutableSourceManager(sources)
+        val mapped = snapshot.diagnostics.mapNotNull { diagnostic ->
+            val span = manager.resolveToUserSource(diagnostic.primary.span)
+            if (span.source != document.id) return@mapNotNull null
+            val range = manager.range(span, PositionEncoding.UTF16) ?: return@mapNotNull null
+            Diagnostic(
+                line = range.start.line + 1,
+                message = DiagnosticRenderer.summary(diagnostic),
+                severity = diagnostic.severity.name.lowercase(),
+                column = range.start.character + 1,
+                endLine = range.end.line + 1,
+                endColumn = range.end.character + 1,
+                code = diagnostic.code.value,
+                stage = diagnostic.stage.name.lowercase(),
+            )
+        }
+        return json.encodeToString(ListSerializer(Diagnostic.serializer()), mapped)
+    }
+
+    /**
+     * The compiler's analysis of [source] - the document first among the
+     * sources it read, then [workspaceSource] as a library when there is one.
+     */
+    private fun analyzeDocument(source: String, workspaceSource: String): Pair<AnalysisSnapshot, List<SourceUnit>> {
         val document = SourceUnit(
             id = SourceId("azora-memory:/document.az"),
             uri = "azora-memory:/document.az",
@@ -228,24 +256,19 @@ class AzoraLanguageServer {
                 mode = AnalysisMode.IDE,
             ),
         )
-        val manager = ImmutableSourceManager(sources)
-        val mapped = snapshot.diagnostics.mapNotNull { diagnostic ->
-            val span = manager.resolveToUserSource(diagnostic.primary.span)
-            if (span.source != document.id) return@mapNotNull null
-            val range = manager.range(span, PositionEncoding.UTF16) ?: return@mapNotNull null
-            Diagnostic(
-                line = range.start.line + 1,
-                message = DiagnosticRenderer.summary(diagnostic),
-                severity = diagnostic.severity.name.lowercase(),
-                column = range.start.character + 1,
-                endLine = range.end.line + 1,
-                endColumn = range.end.character + 1,
-                code = diagnostic.code.value,
-                stage = diagnostic.stage.name.lowercase(),
-            )
-        }
-        return json.encodeToString(ListSerializer(Diagnostic.serializer()), mapped)
+        return snapshot to sources
     }
+
+    /**
+     * The type the compiler decided for the name at [offset] - an untyped
+     * local's, `Range<Int>` for `fin r = 0..<10` - or null when the
+     * document does not analyze that far.
+     */
+    private fun resolvedTypeAt(source: String, offset: Int, workspaceSource: String): String? =
+        runCatching {
+            val (snapshot, sources) = analyzeDocument(source, workspaceSource)
+            snapshot.semanticFacts.hover(sources.first().id, TextOffset(offset))?.type
+        }.getOrNull()
 
     // -----------------------------------------------------------------
     // Completion
@@ -540,7 +563,10 @@ class AzoraLanguageServer {
     fun hover(source: String, offset: Int, prelude: String = ""): String {
         val word = wordAt(source, offset) ?: return "null"
         localDeclaration(source, word, offset)?.let { local ->
-            return json.encodeToString(Hover.serializer(), Hover(local.detail))
+            // A binding written without a type shows the one the compiler decided.
+            val detail = if (':' in local.detail) local.detail
+                else resolvedTypeAt(source, offset, prelude)?.let { "${local.detail}: $it" } ?: local.detail
+            return json.encodeToString(Hover.serializer(), Hover(detail))
         }
         val role = referenceRole(source, offset)
         val imports = importsOf(source)
@@ -1519,10 +1545,23 @@ internal class SymbolIndex {
                 is Stmt.VarDecl -> if (stmt.line <= line) out.add(Triple(stmt.name, "variable", declDetail("var", stmt.name, stmt.type)))
                 is Stmt.LetDecl -> if (stmt.line <= line) out.add(Triple(stmt.name, "variable", declDetail("let", stmt.name, stmt.type)))
                 is Stmt.FinDecl -> if (stmt.line <= line) out.add(Triple(stmt.name, "variable", declDetail("fin", stmt.name, stmt.type)))
-                is Stmt.For -> if (stmt.line <= line) out.add(Triple(stmt.name, "param", "${stmt.name}: Int"))
+                is Stmt.For -> if (stmt.line <= line) out.add(Triple(stmt.name, "param", forRowDetail(stmt)))
                 else -> {}
             }
         }
+    }
+
+    /**
+     * A `for` row's name and, where the header says it, its type: the one
+     * written, or `Int` for a range of two unsuffixed integer literals. A
+     * range walks any `Step` type (RANGE_DIP §6), so nothing else is assumed.
+     */
+    private fun forRowDetail(stmt: Stmt.For): String {
+        stmt.declaredType?.let { return "${stmt.name}: ${it.displayName()}" }
+        val range = stmt.iterable as? org.azora.lang.frontend.Expr.Range ?: return stmt.name
+        fun integerLiteral(bound: org.azora.lang.frontend.Expr) = bound is org.azora.lang.frontend.Expr.IntLiteral ||
+            (bound is org.azora.lang.frontend.Expr.Unary && bound.operand is org.azora.lang.frontend.Expr.IntLiteral)
+        return if (integerLiteral(range.from) && integerLiteral(range.to)) "${stmt.name}: Int" else stmt.name
     }
 
     private fun declDetail(keyword: String, name: String, type: TypeAnnotation): String =

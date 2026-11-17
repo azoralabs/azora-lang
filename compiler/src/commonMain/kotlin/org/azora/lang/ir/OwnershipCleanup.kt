@@ -29,7 +29,7 @@ object OwnershipCleanup {
     ): IrProgram {
         val functions = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }.associateBy { it.name }
         val fields = program.items.filterIsInstance<IrTopLevel.Struct>().associate { struct -> struct.name to struct.fields.associateBy { it.name } }
-        val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow), returnsBorrow, transferredByValue, variadic)
+        val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow), returnsBorrow, transferredByValue, variadic, returnedOnlyParameters(functions))
         return program.copy(items = program.items.map { item ->
         when (item) {
             is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(context, returnsBorrow(item.function.name)).lower(
@@ -53,6 +53,7 @@ object OwnershipCleanup {
         val returnsBorrow: (String) -> Boolean,
         val transferredByValue: (IrType) -> Boolean,
         val variadic: (String) -> Boolean,
+        val returnedOnly: Map<String, Set<Int>>,
     ) {
         /**
          * Whether [function] owns its by-value parameter [index] and destroys it.
@@ -159,13 +160,31 @@ object OwnershipCleanup {
      * so a kept one must arrive as a value nobody else will free; an erased
      * generic body cannot copy it, so its concrete caller does.
      */
-    private fun retainedParameters(functions: Map<String, IrFunction>): Map<String, Set<Int>> {
+    private fun retainedParameters(functions: Map<String, IrFunction>): Map<String, Set<Int>> =
+        keptAndReturned(functions).let { (kept, returned) ->
+            functions.keys.associateWith { kept.getValue(it) + returned.getValue(it) }
+        }
+
+    /**
+     * The by-value parameters each function only hands back: they reach a
+     * `return` - directly, through either branch of an `if`, or one `return`
+     * among several - and are stored nowhere else. The call site keeps such a
+     * temporary when it is the value returned and frees it otherwise.
+     */
+    private fun returnedOnlyParameters(functions: Map<String, IrFunction>): Map<String, Set<Int>> =
+        keptAndReturned(functions).let { (kept, returned) ->
+            functions.keys.associateWith { returned.getValue(it) - kept.getValue(it) }
+        }
+
+    private fun keptAndReturned(functions: Map<String, IrFunction>): Pair<Map<String, Set<Int>>, Map<String, Set<Int>>> {
         val retained = functions.mapValues { mutableSetOf<Int>() }
+        val returnedBy = functions.mapValues { mutableSetOf<Int>() }
         var changed = true
         while (changed) {
             changed = false
             for (function in functions.values) {
                 val found = retained.getValue(function.name)
+                val returnedHere = returnedBy.getValue(function.name)
                 val parameters = function.params.withIndex()
                     .filter { it.index !in function.refParams }
                     .associate { it.value.first to it.index }
@@ -178,6 +197,13 @@ object OwnershipCleanup {
                 fun keep(value: IrExpr?) {
                     val index = parameter(value) ?: return
                     if (found.add(index)) changed = true
+                }
+                // What a `return` hands back: either branch of an `if` may be it.
+                fun handBack(value: IrExpr?) {
+                    when (value) {
+                        is IrExpr.IfExpr -> { handBack(value.thenExpr); handBack(value.elseExpr) }
+                        else -> parameter(value)?.let { if (returnedHere.add(it)) changed = true }
+                    }
                 }
                 // A lambda body holds statements, so the expression walk reaches
                 // back into the statement walk declared after it.
@@ -222,7 +248,7 @@ object OwnershipCleanup {
                         is IrStmt.Assignment -> { keep(stmt.value); visit(stmt.value) }
                         is IrStmt.IndexAssign -> { keep(stmt.value); visit(stmt.target); visit(stmt.index); visit(stmt.value) }
                         is IrStmt.MemberAssign -> { keep(stmt.value); visit(stmt.target); visit(stmt.value) }
-                        is IrStmt.Return -> { keep(stmt.value); visit(stmt.value) }
+                        is IrStmt.Return -> { handBack(stmt.value); visit(stmt.value) }
                         is IrStmt.Throw -> { keep(stmt.value); visit(stmt.value) }
                         is IrStmt.ExprStmt -> visit(stmt.expr)
                         is IrStmt.Scope -> stmt.body.forEach(::statement)
@@ -241,7 +267,7 @@ object OwnershipCleanup {
                 function.body.forEach(::statement)
             }
         }
-        return retained
+        return retained to returnedBy
     }
 
     /** [borrowedReturn]: the function returns `T&`, so a returned place stays its owner's. */
@@ -382,6 +408,11 @@ object OwnershipCleanup {
                     parameter is IrType.Function -> copyCallablePlace(argument)
                     // The callee owns what it was given and destroys it.
                     context.ownsParameter(callee, i) -> argument
+                    // A new allocation the callee may hand back - one of two
+                    // in `if c then a else b` - is freed after the call
+                    // unless it is the very value the call returned.
+                    i in context.returnedOnly[expr.name].orEmpty() && expr.name != "async" && expr.name != "__launch" &&
+                        freshArgument(argument) -> IrExpr.Call("__temporaryUnlessReturned", listOf(argument), argument.type)
                     // An erased parameter the callee keeps: only this call site
                     // knows the value is a `Copy` it must not share.
                     parameter != null && erased(parameter) && i in context.retained[expr.name].orEmpty() -> isolatedPlace(argument)

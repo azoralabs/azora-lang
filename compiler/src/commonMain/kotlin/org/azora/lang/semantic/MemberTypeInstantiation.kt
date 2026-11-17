@@ -142,7 +142,7 @@ internal fun literalFactoryTypes(table: SymbolTable, target: IrType.Named, facto
     return typed.params.single().second to typed.returnType
 }
 
-private fun substituteMemberType(ref: TypeRef, bindings: Map<String, TypeRef>): TypeRef = when (ref) {
+internal fun substituteMemberType(ref: TypeRef, bindings: Map<String, TypeRef>): TypeRef = when (ref) {
     is TypeRef.Named -> if (ref.args.isEmpty() && ref.name in bindings) bindings.getValue(ref.name)
         else ref.copy(args = ref.args.map { substituteMemberType(it, bindings) })
     is TypeRef.Array -> ref.copy(element = substituteMemberType(ref.element, bindings))

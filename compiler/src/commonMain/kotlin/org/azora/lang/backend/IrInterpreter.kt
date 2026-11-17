@@ -1092,16 +1092,30 @@ class IrInterpreter {
         else -> value.hashCode().toLong()
     }
 
+    /** Whether literal digits [text] of [type] are a 64-bit value: a `ULong` up to 2^64 - 1. */
+    private fun fitsSixtyFourBits(text: String, type: IrType): Boolean {
+        val integer = type as? IrType.Integer ?: return false
+        if (integer.bits > 64) return false
+        val digits = text.replace("_", "")
+        // `Long::minValue` is written `-9223372036854775808`: a signed text that
+        // a `Long` holds exactly, though its magnitude alone does not.
+        return if (integer.signed) digits.toLongOrNull() != null else digits.toULongOrNull() != null
+    }
+
     private suspend fun evalExpr(expr: IrExpr): Any? {
         val value = when (expr) {
             IrExpr.UnitLiteral -> kotlin.Unit
+            // `Cent` and `UCent` are 128 bits, held as a [WideInt] from their own digits.
+            is IrExpr.IntLiteral if isWide(expr.type) -> WideInt.parse(expr.text ?: expr.value.toString(), 128, isSignedWide(expr.type))
             is IrExpr.IntLiteral -> expr.text?.let {
-                // The interpreter's integers are `Long`s. A 128-bit literal is
-                // not one, and quietly handing back its low 64 bits would be a
-                // wrong answer rather than a missing one.
-                error("a ${'$'}{expr.type} literal '${'$'}it' is wider than this backend evaluates")
+                // The interpreter's integers are `Long`s. A `ULong` past
+                // `Long.MAX` is still 64 bits, held as their pattern - its
+                // `value` - as every unsigned 64-bit value here is.
+                if (fitsSixtyFourBits(it, expr.type)) expr.value
+                else error("a ${expr.type} literal '$it' is wider than this backend evaluates")
             } ?: expr.value
-            is IrExpr.DoubleLiteral -> expr.value
+            // A `Float` literal is the nearest `Float`, as the native targets read it.
+            is IrExpr.DoubleLiteral -> if (expr.type == IrType.Float) expr.value.toFloat() else expr.value
             is IrExpr.StringLiteral -> expr.value
             is IrExpr.EnumLiteral -> expr.variant
             is IrExpr.BoolLiteral -> expr.value
@@ -1114,17 +1128,21 @@ class IrInterpreter {
                     IrUnaryOp.NEG -> when (operand) {
                         is Long -> -operand
                         is Double -> -operand
+                        is WideInt -> -operand
                         else -> error("Cannot negate $operand")
                     }
                     IrUnaryOp.NOT -> !(operand as Boolean)
-                    IrUnaryOp.BIT_NOT -> {
-                        if (operand is Long) operand.inv() else error("Cannot bitwise-NOT $operand")
+                    IrUnaryOp.BIT_NOT -> when (operand) {
+                        is Long -> operand.inv()
+                        is WideInt -> operand.inv()
+                        else -> error("Cannot bitwise-NOT $operand")
                     }
                 }
             }
             is IrExpr.IncDec -> {
                 val old = lookupVar(expr.target.name)
                 val updated = when (old) {
+                    is WideInt -> old + WideInt.of(expr.delta.toLong(), 128, old.signed)
                     is Long -> expr.type.wrapInteger(old + expr.delta)
                     is Double -> old + expr.delta.toDouble()
                     is Float -> old + expr.delta.toFloat()
@@ -1292,6 +1310,7 @@ class IrInterpreter {
             is IrExpr.CatchExpr -> {
                 try { evalExpr(expr.expr) } catch (e: AzoraThrownException) { evalExpr(expr.fallback) }
             }
+            is IrExpr.NumCast if isWide(expr.type) || evalTypeIsWide(expr.value.type) -> wideCast(evalExpr(expr.value), expr.value.type, expr.type)
             is IrExpr.NumCast -> {
                 val v = evalExpr(expr.value)
                 val n: Number? = when (v) {
@@ -1506,6 +1525,82 @@ class IrInterpreter {
         return executeFunction(target, listOf(left, right))
     }
 
+    private fun isWide(type: IrType): Boolean = (type as? IrType.Integer)?.bits == 128
+
+    private fun evalTypeIsWide(type: IrType): Boolean = isWide((type as? IrType.Nullable)?.inner ?: type)
+
+    private fun isSignedWide(type: IrType): Boolean = (type as? IrType.Integer)?.signed ?: true
+
+    /** [value], a number of [type], as a 128-bit value of [target]'s signedness. */
+    private fun widened(value: Any?, type: IrType, target: IrType): WideInt {
+        val signed = isSignedWide(target)
+        return when (value) {
+            is WideInt -> value.at(128, signed)
+            // A 64-bit unsigned value is held as its bit pattern: zero-extended.
+            is Long -> if (isUnsigned64(type)) WideInt.parse(value.toULong().toString(), 128, signed)
+                else WideInt.of(value, 128, signed)
+            is AzoraChar -> WideInt.of(value.code.toLong(), 128, signed)
+            is Double -> wideOfDouble(value, signed)
+            is Float -> wideOfDouble(value.toDouble(), signed)
+            is Number -> WideInt.of(value.toLong(), 128, signed)
+            else -> error("Cannot read $value as a 128-bit integer")
+        }
+    }
+
+    /** A float truncated toward zero, then wrapped to 128 bits as every conversion wraps. */
+    private fun wideOfDouble(value: Double, signed: Boolean): WideInt {
+        if (value.isNaN() || value.isInfinite()) return WideInt.of(0, 128, signed)
+        val whole = kotlin.math.truncate(value)
+        val two64 = 18446744073709551616.0
+        val high = kotlin.math.floor(whole / two64)
+        val low = whole - high * two64
+        return (WideInt.of(high.toLong(), 128, signed).shiftedLeft(64) +
+            WideInt.parse(low.toULong().toString(), 128, signed))
+    }
+
+    /** `x as T` where either side is `Cent`/`UCent`: widened, truncated or read as a float. */
+    private fun wideCast(value: Any?, from: IrType, to: IrType): Any? {
+        if (value == null) return null
+        if (isWide(to)) return widened(value, from, to)
+        val wide = value as? WideInt ?: return value
+        return when (to) {
+            IrType.Float -> wide.toString().toDouble().toFloat()
+            IrType.Double, IrType.Quad -> wide.toString().toDouble()
+            IrType.Char -> AzoraChar(wide.toLong().toInt())
+            else -> to.wrapInteger(wide.toLong())
+        }
+    }
+
+    /** `a op b` at 128 bits: `Cent`/`UCent` arithmetic wraps modulo 2^128 and divides toward zero. */
+    private fun wideBinary(expr: IrExpr.Binary, left: Any?, right: Any?): Any {
+        val operandType = listOf(expr.left.type, expr.right.type, expr.type).firstOrNull(::isWide) ?: IrType.Cent
+        if (expr.op == IrBinaryOp.SHL || expr.op == IrBinaryOp.SHR) {
+            val count = (right as? Number)?.toLong() ?: (right as WideInt).toLong()
+            check(count in 0..127) { "panic: integer shift count is outside the operand width" }
+            val value = widened(left, expr.left.type, operandType)
+            return if (expr.op == IrBinaryOp.SHL) value.shiftedLeft(count.toInt()) else value.shiftedRight(count.toInt())
+        }
+        val a = widened(left, expr.left.type, operandType)
+        val b = widened(right, expr.right.type, operandType)
+        return when (expr.op) {
+            IrBinaryOp.ADD -> a + b
+            IrBinaryOp.SUB -> a - b
+            IrBinaryOp.MUL -> a * b
+            IrBinaryOp.DIV -> { if (b.isZero()) throw AzoraPanicException("division by zero"); a / b }
+            IrBinaryOp.MOD -> { if (b.isZero()) throw AzoraPanicException("division by zero"); a % b }
+            IrBinaryOp.EQ -> a == b
+            IrBinaryOp.NEQ -> a != b
+            IrBinaryOp.LT -> a < b
+            IrBinaryOp.LTE -> a <= b
+            IrBinaryOp.GT -> a > b
+            IrBinaryOp.GTE -> a >= b
+            IrBinaryOp.BIT_AND -> a and b
+            IrBinaryOp.BIT_OR -> a or b
+            IrBinaryOp.BIT_XOR -> a xor b
+            else -> error("Cannot apply ${expr.op} to 128-bit integers")
+        }
+    }
+
     private suspend fun evalBinary(expr: IrExpr.Binary): Any {
         // Short-circuit logical operators: the right operand must not be evaluated
         // when the left already determines the result (matches the codegen backends).
@@ -1518,6 +1613,9 @@ class IrInterpreter {
 
         val left = evalExpr(expr.left)
         val right = evalExpr(expr.right)
+
+        // A null on either side is an optional's comparison, which the general path makes.
+        if ((left is WideInt || right is WideInt) && left != null && right != null) return wideBinary(expr, left, right)
 
         // A generic body sees its type parameter erased, so `a + b` inside
         // `func<T> total(…) where T: Arithmetic` lowered to the built-in add
@@ -1551,6 +1649,24 @@ class IrInterpreter {
             }
         }
 
+        // A float compares as IEEE 754 says, as LLVM's ordered compares and
+        // Wasm's `f64.lt` do: a NaN relates to nothing and equals nothing, and
+        // `0.0 == -0.0`. Kotlin's `compareTo` and boxed `==` order NaN above
+        // everything and tell the zeros apart, which is not the language's.
+        if ((left is Double || right is Double) && left is Number && right is Number) {
+            val a = toNum(left)
+            val b = toNum(right)
+            when (expr.op) {
+                IrBinaryOp.LT -> return a < b
+                IrBinaryOp.LTE -> return a <= b
+                IrBinaryOp.GT -> return a > b
+                IrBinaryOp.GTE -> return a >= b
+                IrBinaryOp.EQ -> return a == b
+                IrBinaryOp.NEQ -> return a != b
+                else -> {}
+            }
+        }
+
         return when (expr.op) {
             IrBinaryOp.ADD -> when {
                 left is String || right is String -> formatValue(left) + formatValue(right)
@@ -1564,6 +1680,9 @@ class IrInterpreter {
                 else -> error("Cannot subtract $left and $right")
             }
             IrBinaryOp.MUL -> when {
+                // `"ab" * 3` and `3 * "ab"` repeat the text; a negative count is a failure.
+                left is String && right is Number -> repeated(left, right.toLong())
+                left is Number && right is String -> repeated(right, left.toLong())
                 left is Long && right is Long -> left * right
                 left is Number && right is Number -> toNum(left) * toNum(right)
                 else -> error("Cannot multiply $left and $right")
@@ -1701,6 +1820,12 @@ class IrInterpreter {
         }
     }
 
+    /** [text] [count] times over, as every backend repeats a string. */
+    private fun repeated(text: String, count: Long): String {
+        if (count < 0) throw AzoraPanicException("a string repeated $count times: a repeat count cannot be negative")
+        return text.repeat(count.toInt())
+    }
+
     private suspend fun evalCall(expr: IrExpr.Call): Any? {
         // `a ?? b` short-circuits: `b` runs only when `a` is null.
         if (expr.name == NULL_COALESCE) {
@@ -1817,7 +1942,7 @@ class IrInterpreter {
         }
         // A call argument the native targets free after the call; values
         // here are collected, so it is the value itself.
-        if (expr.name == "__temporary") {
+        if (expr.name == "__temporary" || expr.name == "__temporaryUnlessReturned") {
             return args[0]
         }
         if (expr.name == "__inject") {

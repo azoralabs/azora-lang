@@ -361,7 +361,7 @@ separators inside generic parameter lists, argument lists, and type tuples.
 ### 5.3 Where a bound is checked
 
 *Implemented 2026-11-15/16 (`semantic/BoundChecker.kt`, `semantic/Bounds.kt`,
-`TypeResolver`, `ConstraintEvaluator`; `BoundCheckTest`).*
+`TypeResolver`, `ConstraintEvaluator`; `BoundCheckTest`, `BoundPlacementTest`).*
 
 An inline bound and a `where` clause are one requirement. It is kept by every
 declaration that takes type parameters - `pack`, `unsafe union`, `enum`,
@@ -418,8 +418,12 @@ through its owner's arguments (`self.item`, `xs.first` with
 `xs: ArrayList<U>`), an element (`xs[i]`, `pair.0`), a generic call's or a
 member's result (`ident(x)`, `xs.get(0)`), a call through a value declared
 `(U&) -> U`, an `if` whose branches agree, and `a ?? b` whose sides agree. The
-lowering of `Hash`, `Equal`, `Order` and `Clone` witnesses reads the same
-declarations.
+lowering of the witnesses - `Hash`, `Equal`, `Order`, `Clone`, and since
+RANGE_DIP `PartialOrder`, `Display` and `Step` - reads the same declarations.
+A value of a type parameter bounded by one of them reaches that spec's members
+through the concrete type's descriptor: `a < b` where `T: PartialOrder`,
+`"$x"` where `T: Display`, `x.unit`, `x.reaches(s, k)` and `x.moved(s, k)`
+where `T: Step`, and a `for` over a `Range<T>` (RANGE_DIP §7).
 
 Where a bounded parameter is filled only by an erased value no declaration
 tells, the bound cannot be decided, and the use is refused with the way to
@@ -434,7 +438,7 @@ twice<U>(make())   // accepted where U: Shape
 ```
 
 A member call cannot write type arguments; the fix there is a binding of a
-declared type (`fin value: U = …`). For the four witness specs this decision
+declared type (`fin value: U = …`). For the witness specs this decision
 is lowering's, which says the same (`cannot tell which type … is here; write
 it`).
 
@@ -483,6 +487,41 @@ Shape` on it): no use binds them to a type a check could be made for - a
 property is read without type arguments - so the bound is refused where it is
 written. A property's `where` clause about its owner's parameters stays: it
 says where the property is available.
+
+**A bound keeps its spec's arguments** *(2026-11-16, `BoundPlacementTest`)*.
+`T: Conv<Int>` - in a `where` clause, inline, or in a bound list - holds where
+`T` implements `Conv<Int>`; an `impl Conv<String>` does not satisfy it. An
+implementation's arguments are read in the implementing type's own:
+`impl Indexed<T> for ArrayList<T>` makes an `ArrayList<Int>` an
+`Indexed<Int>`. An argument left unwritten is its default, so a bare
+`T: PartialEqual` is `PartialEqual<T>` by `Rhs = Self`, as §7.4 of the
+operator DIP says, and `Index<K>` is `Index<K, Self>`. Generic code passes a
+bound on with its arguments (`where U: Conv<String>` does not stand where
+`Conv<Int>` is asked, nor does a bare `where U: Conv`), and an `impl` member
+may not demand other arguments than its spec member promises.
+
+**A member's bound on its type's parameters** is decided for the receiver, as
+a member's own bound is for its arguments:
+
+```azora
+impl Box<T> { func &.measure(): Int where T: Shape = self.item.area() }
+Box(NoShape(2)).measure()
+// rejected: 'measure' does not satisfy its 'where' clause here:
+//           'T is Shape': NoShape does not implement Shape
+```
+
+This holds for a method, a property, an operator and a subscript, and generic
+code whose receiver is a `Box<U>` declares `U: Shape` itself. An inherent
+impl's head declares its parameters, and a bound written there is every
+member's: `impl Box<T: Shape> { … }` says what `where T: Shape` on each member
+would (`N: Int` there states a const parameter's kind). A bound cannot be
+written where nothing is declared - a spec implementation's target (`impl Show
+for Box<T: Shape>` would make the spec hold for some `T` and not others), a
+spec's arguments in an `impl` head, or any other type-argument list - and is
+refused there rather than read and dropped. For the same reason a member
+implementing a spec may not bound the implementing type's parameters beyond
+what the type's declaration and the spec's bounds promise: a caller through
+the spec could hold a `Pile<NoShape>`.
 
 ---
 
@@ -560,6 +599,24 @@ where T: Into<U> {
 Every implementation parameter must be constrained by the target type, the
 implemented spec, or a decidable equality/const condition. An unconstrained
 parameter is rejected because it cannot be inferred for conformance selection.
+
+**What is implemented (2026-11-16).** Parameters are written after the target
+they belong to, never after `impl`: `impl Box<T>`, `impl Equal for Box<T>`,
+`impl Into<Box<U>> for Box<T>`, `impl PrettyPrint for Tuple<...T>`,
+`impl Array<T, N: Int>`. The target's `<…>` *declares* them, one name each, so
+an implementation holds for every `Box`:
+
+- A name that is a type is refused - `impl Show for Box<Int>` would declare a
+  parameter called `Int` that hides the type in every member, and implement
+  every `Box`; so is a type written with structure (`Box<Array<T>>`,
+  `Box<Int?>`). One implementation per instantiation is not supported: generics
+  are erased (§21), and a member is dispatched by its type alone (owner's
+  decision).
+- An inherent implementation may bound what it declares, `impl Box<T: Shape>`,
+  and the bound is each member's (§5.3). A spec implementation may not
+  (`impl Show for Box<T: Shape>`): the conformance would hold for some `T` and
+  not others, and a conditional conformance is not implemented; nor is a
+  `where` clause on an implementation.
 
 ### 6.4 Bridge declarations
 
@@ -1603,6 +1660,10 @@ impl Display for Box<Int> { ... } // overlapping: rejected initially
 User-defined specialization priorities are excluded. Compiler-generated derives
 yield to an explicit non-overlapping implementation according to derive rules,
 not general specialization.
+
+Today the second form cannot be written at all: an implementation's target
+declares parameters, so `Box<Int>` there is refused (§6.3) and every
+implementation holds for all of `Box`.
 
 ### 20.4 Variance and conformance lookup
 

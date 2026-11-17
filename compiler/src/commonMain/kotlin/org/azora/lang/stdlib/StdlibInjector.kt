@@ -975,7 +975,10 @@ class StdlibInjector private constructor(
                         expression(expr.expr, typeParams, currentScope)
                         type(expr.targetType, expr.line, typeParams, currentScope)
                     }
-                    is Expr.IsCheck -> expression(expr.expr, typeParams, currentScope)
+                    is Expr.IsCheck -> {
+                        expression(expr.expr, typeParams, currentScope)
+                        expr.typeArgs.forEach { type(it, expr.line, typeParams, currentScope) }
+                    }
                     is Expr.MapLit -> expr.entries.forEach { (key, value) ->
                         expression(key, typeParams, currentScope)
                         expression(value, typeParams, currentScope)
@@ -2639,7 +2642,14 @@ class StdlibInjector private constructor(
             }
             is Stmt.For -> {
                 stmt.declaredType?.let { collectNamesFromTypeRef(it, names) }
-                collectNamesFromExpr(stmt.iterable, names)
+                // A range written in the header walks without becoming a value.
+                when (val iterable = stmt.iterable) {
+                    is Expr.Range -> {
+                        collectNamesFromExpr(iterable.from, names)
+                        collectNamesFromExpr(iterable.to, names)
+                    }
+                    else -> collectNamesFromExpr(iterable, names)
+                }
                 stmt.step?.let { collectNamesFromExpr(it, names) }
                 stmt.body.forEach { collectNamesFromStmt(it, names) }
             }
@@ -2802,7 +2812,10 @@ class StdlibInjector private constructor(
                 collectNamesFromExpr(expr.target, names)
                 collectNamesFromExpr(expr.index, names)
             }
+            // A range is a `Range` value (RANGE_DIP §4), whose members come
+            // with it, written import or not - as an array literal's do.
             is Expr.Range -> {
+                names.add(Intrinsics.RANGE)
                 collectNamesFromExpr(expr.from, names)
                 collectNamesFromExpr(expr.to, names)
             }
@@ -2867,6 +2880,7 @@ class StdlibInjector private constructor(
             is Expr.IsCheck -> {
                 collectNamesFromExpr(expr.expr, names)
                 names.add(expr.typeName)
+                expr.typeArgs.forEach { collectNamesFromTypeRef(it, names) }
             }
             is Expr.Alloc -> collectNamesFromExpr(expr.value, names)
             is Expr.Deref -> collectNamesFromExpr(expr.target, names)

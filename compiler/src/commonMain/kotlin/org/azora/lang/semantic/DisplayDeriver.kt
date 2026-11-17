@@ -69,7 +69,9 @@ object DisplayDeriver {
         val packs = program.items.filterIsInstance<TopLevel.Pack>().associateBy { it.name }
 
         val generated = implementors.filterNot { it in existing }.mapNotNull { typeName ->
-            val pack = packs[typeName] ?: return@mapNotNull null
+            // A bridge pack - `Int`, `String` - renders as the backend prints
+            // it and has no `display` body to call.
+            val pack = packs[typeName]?.takeUnless { it.isBridge } ?: return@mapNotNull null
             renderImpl(typeName, pack)
         }
         if (generated.isEmpty()) return program

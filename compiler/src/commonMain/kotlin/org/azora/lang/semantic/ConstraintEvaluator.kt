@@ -66,7 +66,8 @@ internal object ConstraintEvaluator {
      * an integer.
      */
     sealed class Binding {
-        data class Type(val name: String) : Binding()
+        /** A named type, with the arguments it was applied to (`Box<Int>` is `Box` and `[Int]`). */
+        data class Type(val name: String, val args: List<TypeRef> = emptyList()) : Binding()
         data class Const(val value: Long) : Binding()
 
         /**
@@ -99,7 +100,7 @@ internal object ConstraintEvaluator {
          * mention (`(U, Int)`): each with the specs its declaration implies, or
          * null when nothing is to be assumed and the question stays open.
          */
-        assumed: Map<String, Set<String>?> = emptyMap(),
+        assumed: Map<String, Set<Bounds.Bound>?> = emptyMap(),
     ): Outcome {
         if (clause == null) return Outcome.Satisfied
         return Evaluation(table, assumed).eval(clause, bindings)
@@ -143,7 +144,7 @@ internal object ConstraintEvaluator {
         is TypeRef.Const -> Binding.Const(arg.value)
         // `Array<T>` is a container of `T`s, decided by what it holds.
         is TypeRef.Named -> if (arg.name == ARRAY && arg.args.isNotEmpty()) Binding.Structural(TypeRef.Array(arg.args[0]))
-            else Binding.Type(arg.name)
+            else Binding.Type(arg.name, arg.args)
         // A borrow is of the type it borrows.
         is TypeRef.Reference -> bindingOf(arg.inner)
         else -> Binding.Structural(arg)
@@ -151,6 +152,9 @@ internal object ConstraintEvaluator {
 
     private const val ARRAY = "Array"
     private const val TUPLE = "Tuple"
+
+    /** Names the language provides as types without a declaration a table would hold. */
+    private val BUILTIN_TYPES = setOf("Any", "Self", "Array", "Tuple", "Task", "Map", "Set", "Nothing", "Unit")
 
     /** Equality and hashing: a compound value has them when its parts do. */
     private val partWise = setOf("Equal", "PartialEqual", "Hash")
@@ -172,7 +176,7 @@ internal object ConstraintEvaluator {
     }
 
     /** One evaluation: the symbol table and what the asking code's type parameters are known to be. */
-    private class Evaluation(val table: SymbolTable?, val assumed: Map<String, Set<String>?>) {
+    private class Evaluation(val table: SymbolTable?, val assumed: Map<String, Set<Bounds.Bound>?>) {
 
     fun eval(expr: Expr, env: Map<String, Binding>): Outcome = when (expr) {
         is Expr.Grouping -> eval(expr.expr, env)
@@ -181,19 +185,22 @@ internal object ConstraintEvaluator {
         is Expr.IsCheck -> {
             val subject = nameOf(expr.expr)
             val bound = subject?.let { env[it] }
+            // `T: Conv<U>` asks for `Conv` with the arguments as this combination
+            // binds them; one naming a parameter left open stays open.
+            val wanted = Bounds.Bound(expr.typeName, expr.typeArgs.map { substitute(it, env) })
             when {
                 bound == null -> Outcome.Unknown("'${subject ?: "expression"} is ${expr.typeName}'")
                 bound is Binding.Pack -> {
                     val elements = bound.elementTypes
                     if (elements == null) Outcome.Unknown("'$subject is ${expr.typeName}' for an unresolved pack")
                     else {
-                        val outcomes = elements.map { conformance(subject, it, expr.typeName) }
+                        val outcomes = elements.map { conformance(subject, it, wanted) }
                         outcomes.firstOrNull { it is Outcome.Violated }
                             ?: outcomes.firstOrNull { it is Outcome.Unknown }
                             ?: Outcome.Satisfied // The empty pack satisfies every element-wise bound.
                     }
                 }
-                else -> conformance(subject, bound, expr.typeName)
+                else -> conformance(subject, bound, wanted)
             }
         }
 
@@ -234,34 +241,149 @@ internal object ConstraintEvaluator {
         else -> Outcome.Unknown(render(expr))
     }
 
-    private fun conformance(subject: String?, bound: Binding?, spec: String): Outcome = when (bound) {
-        is Binding.Structural -> when (val outcome = structural(bound.ref, spec)) {
-            is Outcome.Violated -> Outcome.Violated("'$subject is ${Bounds.shown(spec)}': ${outcome.reason}")
+    private fun conformance(subject: String?, bound: Binding?, wanted: Bounds.Bound): Outcome = when (bound) {
+        is Binding.Structural -> when (val outcome = structuralWith(bound.ref, wanted)) {
+            is Outcome.Violated -> Outcome.Violated("'$subject is ${Bounds.shown(wanted)}': ${outcome.reason}")
             else -> outcome
         }
-        is Binding.Type -> when (val outcome = named(bound.name, spec)) {
-            is Outcome.Violated -> Outcome.Violated("'$subject is ${Bounds.shown(spec)}': ${outcome.reason}")
+        is Binding.Type -> when (val outcome = named(bound.name, wanted, bound.args)) {
+            is Outcome.Violated -> Outcome.Violated("'$subject is ${Bounds.shown(wanted)}': ${outcome.reason}")
             else -> outcome
         }
-        else -> Outcome.Unknown("'$subject is $spec' for an unresolved type binding")
+        else -> Outcome.Unknown("'$subject is ${wanted.spec}' for an unresolved type binding")
+    }
+
+    /** [ref] with each parameter [env] binds to a type replaced by that type. */
+    private fun substitute(ref: TypeRef, env: Map<String, Binding>): TypeRef {
+        if (env.isEmpty()) return ref
+        val types = env.mapNotNull { (param, binding) ->
+            when (binding) {
+                is Binding.Type -> param to TypeRef.Named(binding.name, binding.args)
+                is Binding.Structural -> param to binding.ref
+                is Binding.Const -> param to TypeRef.Const(binding.value)
+                is Binding.Pack -> null
+            }
+        }.toMap()
+        return substituteMemberType(ref, types)
     }
 
     /** Whether the type called [name] is [spec]; the reason names the type when it is not. */
-    private fun named(name: String, spec: String): Outcome {
+    private fun named(name: String, spec: String): Outcome = named(name, Bounds.Bound(spec), emptyList())
+
+    /**
+     * Whether the type called [name], applied to [typeArgs], is [wanted]. A
+     * spec wanted with arguments is satisfied only by an `impl` of it with the
+     * same arguments, read in the type's own (`impl Indexed<T> for
+     * ArrayList<T>` makes an `ArrayList<Int>` an `Indexed<Int>`).
+     */
+    private fun named(name: String, written: Bounds.Bound, typeArgs: List<TypeRef>): Outcome {
+        val spec = written.spec
         // An erased slot: which type it holds is decided where it was filled.
         if (name == "Any") return Outcome.Unknown("'$name is $spec' for an erased value")
+        // `PartialEqual` asked of `P` is `PartialEqual<P>`, by its `Rhs = Self`.
+        val self = TypeRef.Named(name, typeArgs)
+        val wanted = Bounds.withDefaults(written, self, table)
         if (name in assumed) {
             val has = assumed[name] ?: return Outcome.Unknown("'$name is $spec' for a type parameter")
-            return if (Bounds.includes(has, spec)) Outcome.Satisfied
-            else Outcome.Violated("'$name' is not declared to be ${Bounds.shown(spec)}; add 'where $name: ${Bounds.shown(spec)}'")
+            if (wanted.args.isNotEmpty() && wanted.args.any(::mentionsOpen)) {
+                return if (has.any { Bounds.sameSpec(it.spec, spec) }) Outcome.Unknown("'$name is ${Bounds.shown(wanted)}'")
+                else Outcome.Violated("'$name' is not declared to be ${Bounds.shown(spec)}; add 'where $name: ${Bounds.shown(wanted)}'")
+            }
+            return if (Bounds.includes(has, wanted, table)) Outcome.Satisfied
+            else Outcome.Violated("'$name' is not declared to be ${Bounds.shown(wanted)}; add 'where $name: ${Bounds.shown(wanted)}'")
         }
         val table = table ?: return Outcome.Unknown("'$name is $spec' without a symbol table")
-        return when {
-            table.conformsTo(name, spec) -> Outcome.Satisfied
-            // `Long` is `Int<64>`: a width answers with its family's conformances.
-            integerFamily(name)?.let { table.conformsTo(it, spec) } == true -> Outcome.Satisfied
-            else -> Outcome.Violated("$name does not implement ${Bounds.shown(spec)}")
+        // `Long` is `Int<64>`: a width answers with its family's conformances -
+        // those the family states for every width. A spec implemented width by
+        // width (`Step`, whose `Cent` has none) answers for each width alone.
+        val family = integerFamily(name)
+        val owner = when {
+            table.conformsTo(name, spec) -> name
+            family != null && table.conformsTo(family, spec) && !perWidth(family, spec, table) -> family
+            else -> return Outcome.Violated("$name does not implement ${Bounds.shown(spec)}")
         }
+        if (wanted.args.isEmpty()) return Outcome.Satisfied
+        if (wanted.args.any(::mentionsOpen)) return Outcome.Unknown("'$name is ${Bounds.shown(wanted)}'")
+        val implemented = table.allConformances().filter { it.typeName == owner && Bounds.sameSpec(it.contractName, spec) }
+        var open = false
+        for (conformance in implemented) {
+            val args = implementedArgs(conformance, self, typeArgs, table)
+            when (Bounds.sameArgs(args.orEmpty(), wanted.args, table)) {
+                true -> return Outcome.Satisfied
+                null -> open = true
+                false -> if (args!!.any(::mentionsOpen)) open = true
+            }
+        }
+        if (open) return Outcome.Unknown("'$name is ${Bounds.shown(wanted)}'")
+        val has = implemented.mapNotNull { implementedArgs(it, self, typeArgs, table) }
+            .joinToString(" and ") { "${Bounds.shown(spec)}<${it.joinToString(", ")}>" }
+        return Outcome.Violated("$name implements $has, not ${Bounds.shown(wanted)}")
+    }
+
+    /** Whether [spec] is implemented for some width of [family] under the width's own name. */
+    private fun perWidth(family: String, spec: String, table: SymbolTable): Boolean =
+        table.allConformances().any {
+            it.typeName != family && Bounds.sameSpec(it.contractName, spec) && integerFamily(it.typeName) == family
+        }
+
+    /**
+     * The arguments [conformance] implements its spec with, for the type
+     * [self] (applied to [typeArgs]): the impl's own spelled in the type's,
+     * or the spec's defaults (`Rhs = Self`) when it wrote none. Null when they
+     * cannot be read off the type - an impl over parameters the type was not
+     * applied to here.
+     */
+    private fun implementedArgs(
+        conformance: TraitConformance,
+        self: TypeRef.Named,
+        typeArgs: List<TypeRef>,
+        table: SymbolTable,
+    ): List<TypeRef>? {
+        val params = conformance.implTypeParams
+        val bindings = HashMap<String, TypeRef>()
+        bindings["Self"] = self
+        if (params.isNotEmpty() && conformance.typeArgs.isNotEmpty()) {
+            if (params.size != typeArgs.size) return null
+            params.zip(typeArgs).forEach { (param, arg) -> bindings[param] = arg }
+        }
+        val written = Bounds.Bound(conformance.contractName, conformance.typeArgs.map { substituteMemberType(it, bindings) })
+        return Bounds.withDefaults(written, self, table).args.ifEmpty { null }
+    }
+
+    /**
+     * Whether [ref] names something this evaluation cannot identify: a
+     * parameter of the declaration no binding fills. A type parameter of the
+     * asking code is known (by name), and so is every declared type.
+     */
+    private fun mentionsOpen(ref: TypeRef): Boolean = when (ref) {
+        is TypeRef.Named -> (ref.args.isEmpty() && !isKnownTypeName(ref.name)) || ref.args.any(::mentionsOpen)
+        is TypeRef.Reference -> mentionsOpen(ref.inner)
+        is TypeRef.Nullable -> mentionsOpen(ref.inner)
+        is TypeRef.Pointer -> mentionsOpen(ref.inner)
+        is TypeRef.Array -> mentionsOpen(ref.element)
+        is TypeRef.Tuple -> ref.elements.any(::mentionsOpen)
+        is TypeRef.Function -> ref.params.any(::mentionsOpen) || mentionsOpen(ref.ret)
+        else -> false
+    }
+
+    private fun isKnownTypeName(name: String): Boolean {
+        if (name in assumed || IrType.isPrimitiveName(name) || name in BUILTIN_TYPES) return true
+        val table = table ?: return false
+        return table.lookupStruct(name) != null || table.lookupEnum(name) != null ||
+            table.lookupSlot(name) != null || table.lookupSpec(name) != null ||
+            table.lookupFail(name) != null || table.lookupAlias(name) != null
+    }
+
+    /** A structured type against a spec wanted with arguments: what the language gives it, it has with itself only. */
+    private fun structuralWith(ref: TypeRef, wanted: Bounds.Bound): Outcome {
+        if (wanted.args.isNotEmpty()) {
+            if (wanted.args.any(::mentionsOpen)) return Outcome.Unknown("'$ref is ${Bounds.shown(wanted)}'")
+            val itself = Bounds.canonical(ref, table)
+            if (wanted.args.any { Bounds.canonical(it, table) != itself }) {
+                return Outcome.Violated("${shown(ref)} has ${Bounds.shown(wanted.spec)} only with itself")
+            }
+        }
+        return structural(ref, wanted.spec)
     }
 
     /**

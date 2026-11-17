@@ -18,7 +18,7 @@
 > | the operator families (§12.1) and partial implementation (§12.2) | **shipped** |
 > | `Display`, and `"${v}"` routed through it (§12.7) | **shipped** |
 > | the cast specs, and `impl as T for Type` retired (§12.9) | **shipped** |
-> | `Iterator` (§12.8) | proposed |
+> | `Iterator` (§12.8) | **withdrawn** - ranges are std's `Range<T>` and `Step` (RANGE_DIP) |
 > | closing the free-operator form language-wide (§14, phase 11) | proposed |
 >
 > Naming note: the specs shipped as `Order` / `PartialOrder`, not `Ordering` /
@@ -416,10 +416,18 @@ A new level between shift and relational, matching C++:
 ```
 parseEquality      ==  !=
 parseComparison    <  <=  >  >=
+parseMembership    x in c         (2026-11-18: was at the `as`/`is` level)
 parseSpaceship     <=>            ← new
 parseInfix         a plus b
 parseShift         <<  >>
+parseRange         ..  ..<  >..
+parseAddition      +  -
 ```
+
+`in` sits below arithmetic and ranges and above comparison, by the owner's
+decision of 2026-11-18: `x + 3 in r` is `(x + 3) in r`, `N in 2..4` asks about
+the whole range, and `x in r && y in s` is two tests. It used to bind with
+`as`/`is`, so `x + 3 in r` was `x + (3 in r)` and was refused.
 
 `parseComparison` (`Parser.kt:7197`) descends into `parseSpaceship`, which
 descends into `parseInfix`. So `a <=> b == Compare.Less` groups as
@@ -1312,7 +1320,7 @@ would open ten `impl` blocks to say it. The families are:
 | `Indexable<Idx = Int, Out>`                     | `[]` `[]=` `[:]`                                               | 12.1 |
 | `Deref<To>`                                     | `.*`                                                           | 12.1 |
 | `DerefMut<To>`                                  | `.^`, `requires Deref`                                         | 12.1 |
-| `Iterator<Rhs = Self, Out>`                     | `..` `>..`                                               | 12.8 |
+| (none - `..` `>..` are not operators; RANGE_DIP) | `..` `..<` `>..`                                         | 12.8 |
 | `Hash`                                          | `prop hash`, `requires Equal`                                  | 12.6 |
 | `Display`                                       | `$`                                                            | 12.7 |
 | `Cast<To>`                                      | `as`                                                           | 12.9 |
@@ -1547,41 +1555,24 @@ Four spellings, four results, no rule for which one `"${v}"` picks. Proposed:
 - **`value as String` on an enum** stays a cast (`CAST_DIP.MD` §1.1), derived
   for payload-free enums as the variant name - which is what it does now.
 
-### 12.8 `Iterator`
+### 12.8 Ranges are not operators (was `Iterator`)
 
-```azora
-/**
- * A type whose values bound a range: what `a..b` and `a>..b` produce.
- */
-@Since("0.1")
-bridge spec Iterator<Rhs = Self, Out = Range<Self>> {
-    oper..         &.(rhs: Rhs&): Out
-    oper>.. &.(rhs: Rhs&): Out
-}
-```
+> Superseded by RANGE_DIP (implemented 2026-11-17). This section proposed a
+> `bridge spec Iterator` whose members `oper..` and `oper>..` would build a
+> `Range<Self>`; no such spec was added.
 
-Three notes, each from something the parser already does:
+`a..b`, `a..<b` and `a>..b` are not operators a type declares: every ordered
+type forms a `Range<T>` (std's `std.range`), and a type says how its ranges
+walk by implementing `Step` (RANGE_DIP §5). Declaring one is refused - `'oper..'
+is not declared: every ordered type forms ranges; to walk them, implement
+'Step' (RANGE_DIP §5)` - for `oper..`, `oper..<` and `oper>..` alike, and so is
+a `by` after any operator declaration (`'by' does not follow an operator
+declaration`): the step it carried was parsed and discarded, and a step is
+written in a `for` header. std's numeric `bridge oper..`/`oper>..` lines and
+the Engine's two on `Vec` were removed.
 
-- **`..` and `..<` are one member.** `parseOperatorName` maps both to `".."`
-  (`Parser.kt:468`–`:469`) because inclusivity is a flag on the range node, not
-  a different operator. So `Iterator` has two members and not four, and
-  `SYNTAX.MD:90`'s four-element `Iterable` alias would have been wrong.
-- **`>..` is separate.** It excludes its left bound and includes its right
-  bound, stepping down from `left - 1`. It replaces the removed reverse keyword
-  and range spelling per the 2026-09-09 instruction.
-- **The `by` step survives as metadata.** `bridge oper.. Ty&.(rhs: Ty&) by 1`
-  (`traits/core.az:22`) parses its step and discards it (`Parser.kt:567`). This
-  DIP does not change that; it just gives the declaration a spec to live in.
-
-`Iterator` is not the loop protocol. `loop iterable { … }` lowers to
-`reset()` then `hasNext()` (`IrGenerator.kt:1003`), which is a separate,
-already-working mechanism over an existing object. `Iterator` is what *builds*
-the thing to loop over from two endpoints.
-
-`Range<Self>` does not exist in `std/` today - a range is a compiler node
-(`Expr.Range`), not a type. §17 asks whether it should become one; until it
-does, `Out` is supplied by the `bridge` and the spec is not usable with a
-written body.
+The loop protocol is separate: `for row in it` walks anything with `hasNext`
+and `next`, and `Indexed` collections walk by position.
 
 ### 12.9 `Cast`, `CheckedCast`, `BitCast`
 
@@ -1826,7 +1817,7 @@ lookup runs. Independently valuable - `-v` on a `Vec2` is a compile error today
 whatever the type says.
 
 **Phase 10 - the remaining families.** `Arithmetic`, `Bitwise`, `Logical`,
-`Indexable`, `Deref`, `Iterator`, `Hash`, `Display`, `Cast`, `CheckedCast`
+`Indexable`, `Deref`, `Hash`, `Display`, `Cast`, `CheckedCast`
 and `BitCast` in `traits.az`
 (§12.1), plus the three mechanisms they need: optional members on an operator
 family (§12.2), member-selecting bounds `T: Arithmetic[+, /]` (§12.3), and the
@@ -1951,11 +1942,9 @@ Worth doing whether or not the rest lands:
    `TryInto` is the obvious answer and it needs the error model settled first:
    `?!` and `Result` are two different answers today. `CAST_DIP.MD` §8 records
    the same question.
-8. **Should `Range<T>` become a real type?** §12.8's `Iterator` spec names
-   `Range<Self>` as its output, but a range is a compiler node (`Expr.Range`)
-   and not a `std` type today. Until it is one, `Iterator` can only be satisfied
-   by a `bridge` impl, which means user types cannot define `..`. Making
-   `Range<T>` a pack is the fix and is a small DIP of its own.
+8. **Should `Range<T>` become a real type?** Answered by RANGE_DIP
+   (implemented 2026-11-17): yes. `Range<T>` is a std pack every ordered type
+   forms, `..` is not overloadable, and `Step` says how a type walks (§12.8).
 9. **Does `Display` need a format specifier?** `"$value"` calls `oper$` with no
    arguments, so there is no width, precision or alignment. Every language
    eventually grows this (`{:>8.2}`), and retrofitting it means either a second

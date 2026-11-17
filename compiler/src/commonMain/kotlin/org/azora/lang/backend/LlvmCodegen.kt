@@ -222,6 +222,9 @@ class LlvmCodegen {
     private var usesStrlen = false
     private var usesUsleep = false
     private var usesStrcpy = false
+
+    /** A `Cent`/`UCent` written as text. */
+    private var usesWideToStr = false
     private var usesStrcat = false
     private var usesStrcmp = false
     private var usesStrncmp = false
@@ -311,6 +314,7 @@ class LlvmCodegen {
         usesStrstr = false
         neededIntrinsics.clear()
         usesStrcpy = false
+        usesWideToStr = false
         usesStrcat = false
         usesStrcmp = false
         usesMemcpy = false
@@ -376,6 +380,7 @@ class LlvmCodegen {
                 if (impl.typeName !in specTypeIds) specTypeIds[impl.typeName] = nextTypeId++
             }
         }
+        dispatchedSignatures = program.items.filterIsInstance<IrTopLevel.Func>().associate { it.function.name to it.function }
         for (t in specDispatch.values) {
             for (m in t.methods) deferredFunctions += renderSpecDispatcher(t, m)
         }
@@ -3377,6 +3382,21 @@ end:
         val fromPtr = ft.endsWith("*")
         val toPtr = tt.endsWith("*")
 
+        // A 16-byte scalar (`Cent`, `UCent`, `Quad`) is wider than an erased
+        // slot's eight bytes: it crosses in a cell of its own, which the slot
+        // points at, and is read back out of it.
+        if (sizeOfScalar(from) == 16 && !fromPtr && isErasedSlot(to)) {
+            val cell = emitHeapAlloc("16")
+            val typed = nextTmp(); emit("  $typed = bitcast i8* $cell to $ft*")
+            emit("  store $ft $value, $ft* $typed")
+            return if (tt == "i8*") cell else nextTmp().also { emit("  $it = bitcast i8* $cell to $tt") }
+        }
+        if (sizeOfScalar(to) == 16 && !toPtr && isErasedSlot(from)) {
+            val cell = if (ft == "i8*") value else nextTmp().also { emit("  $it = bitcast $ft $value to i8*") }
+            val typed = nextTmp(); emit("  $typed = bitcast i8* $cell to $tt*")
+            val loaded = nextTmp(); emit("  $loaded = load $tt, $tt* $typed")
+            return loaded
+        }
         // Pointer ↔ integer (FFI): `window as Long`, `az_sym(...) as String`, …
         if (fromPtr && toInt) {
             val t = nextTmp(); emit("  $t = ptrtoint $ft $value to $tt"); return t
@@ -3998,11 +4018,20 @@ end:
         val ret = abiReturnType(m.returnType)
         val paramTypes = m.paramTypes.map { mapType(it) }
         val sigParams = (listOf("i8* %box") + paramTypes.mapIndexed { i, ty -> "$ty %a$i" }).joinToString(", ")
-        val forwardArgs = paramTypes.mapIndexed { i, ty -> "$ty %a$i" }
         val cases = t.impls.mapNotNull { impl ->
             val id = specTypeIds[impl.typeName] ?: return@mapNotNull null
             val fn = impl.methodFuncs[m.name] ?: return@mapNotNull null
             Triple(id, impl.typeName, fn)
+        }
+        // The spec's operands are erased where the implementer's are concrete
+        // (`Step<S>`'s step is an `i8*`; `Temp`'s is a `double`): each is
+        // converted to the implementer's own type, and its result back.
+        fun converted(value: String, from: IrType, to: IrType): String = when {
+            mapType(from) == mapType(to) -> value
+            mapType(from) == "i8*" && fitsErasedSlot(to) -> fromErasedBits(value, to)
+            mapType(to) == "i8*" && fitsErasedSlot(from) -> erasedBits(value, from)
+            from is IrType.Nullable || to is IrType.Nullable -> coerceNullable(value, from, to) ?: value
+            else -> coerceNumeric(value, from, to)
         }
         val sb = StringBuilder()
         sb.appendLine("define $ret @${specDispatcherName(t.specName, m.name)}($sigParams) {")
@@ -4017,15 +4046,26 @@ end:
             val st = "%struct.${sanitizeName(typeName)}*"
             sb.appendLine("case_$id:")
             sb.appendLine("  %self_$id = bitcast i8* %data to $st")
-            val callArgs = (listOf("$st %self_$id") + forwardArgs).joinToString(", ")
+            val target = dispatchedSignatures[fn]
+            // Conversions are written through the ordinary emitter, into this stub.
+            val saved = out
+            out = StringBuilder()
+            val callArgs = (listOf("$st %self_$id") + m.paramTypes.mapIndexed { i, specType ->
+                val ownType = target?.params?.getOrNull(i + 1)?.second ?: specType
+                "${mapType(ownType)} ${converted("%a$i", specType, ownType)}"
+            }).joinToString(", ")
             if (m.returnType == IrType.Unit || m.returnType == IrType.Nothing) {
-                sb.appendLine("  call void @$fn($callArgs)")
-                if (m.returnType == IrType.Nothing) sb.appendLine("  unreachable")
-                else sb.appendLine("  ret void")
+                out.appendLine("  call void @$fn($callArgs)")
+                if (m.returnType == IrType.Nothing) out.appendLine("  unreachable")
+                else out.appendLine("  ret void")
             } else {
-                sb.appendLine("  %r_$id = call $ret @$fn($callArgs)")
-                sb.appendLine("  ret $ret %r_$id")
+                val ownReturn = target?.returnType ?: m.returnType
+                val result = nextTmp()
+                out.appendLine("  $result = call ${abiReturnType(ownReturn)} @$fn($callArgs)")
+                out.appendLine("  ret $ret ${converted(result, ownReturn, m.returnType)}")
             }
+            sb.append(out)
+            out = saved
         }
         sb.appendLine("default:")
         when (m.returnType) {
@@ -5430,7 +5470,8 @@ end:
                     IrBinaryOp.DIV -> "fdiv $llvmType"
                     IrBinaryOp.MOD -> "frem $llvmType"
                     IrBinaryOp.EQ -> "fcmp oeq $llvmType"
-                    IrBinaryOp.NEQ -> "fcmp one $llvmType"
+                    // IEEE: `!=` holds when either side is NaN (unordered), as `==` does not.
+                    IrBinaryOp.NEQ -> "fcmp une $llvmType"
                     IrBinaryOp.LT -> "fcmp olt $llvmType"
                     IrBinaryOp.LTE -> "fcmp ole $llvmType"
                     IrBinaryOp.GT -> "fcmp ogt $llvmType"
@@ -5446,6 +5487,11 @@ end:
                     IrBinaryOp.BIT_AND -> emit("  $tmp = and i1 $left, $right")
                     IrBinaryOp.BIT_OR -> emit("  $tmp = or i1 $left, $right")
                     IrBinaryOp.BIT_XOR -> emit("  $tmp = xor i1 $left, $right")
+                    // `false < true`: Bool is ordered as the unsigned bit it is.
+                    IrBinaryOp.LT -> emit("  $tmp = icmp ult i1 $left, $right")
+                    IrBinaryOp.LTE -> emit("  $tmp = icmp ule i1 $left, $right")
+                    IrBinaryOp.GT -> emit("  $tmp = icmp ugt i1 $left, $right")
+                    IrBinaryOp.GTE -> emit("  $tmp = icmp uge i1 $left, $right")
                     else -> error("Unsupported bool op: ${expr.op}")
                 }
             }
@@ -5628,6 +5674,24 @@ end:
                 emit("  $tmp = icmp $pred i32 $cmp, 0")
                 tmp
             }
+            // Code point order: `strcmp` compares unsigned bytes, and UTF-8
+            // keeps code point order byte by byte.
+            IrBinaryOp.LT, IrBinaryOp.LTE, IrBinaryOp.GT, IrBinaryOp.GTE -> {
+                usesStrcmp = true
+                val left = emitExpr(expr.left)
+                val right = emitExpr(expr.right)
+                val cmp = nextTmp()
+                emit("  $cmp = call i32 @strcmp(i8* $left, i8* $right)")
+                val tmp = nextTmp()
+                val pred = when (expr.op) {
+                    IrBinaryOp.LT -> "slt"
+                    IrBinaryOp.LTE -> "sle"
+                    IrBinaryOp.GT -> "sgt"
+                    else -> "sge"
+                }
+                emit("  $tmp = icmp $pred i32 $cmp, 0")
+                tmp
+            }
             else -> error("Unsupported string op: ${expr.op}")
         }
     }
@@ -5672,16 +5736,23 @@ end:
      * Arguments marked `__temporary` while the call that receives them is being
      * emitted: new allocations only lent to it. They are freed once it returns.
      */
+    /** Every function by name, for the dispatch stubs that call spec implementations. */
+    private var dispatchedSignatures: Map<String, IrFunction> = emptyMap()
+
     private val pendingTemporaries = mutableListOf<Pair<String, IrType>>()
+
+    /** The [pendingTemporaries] the call may hand back, freed only when it does not. */
+    private val unlessReturned = mutableSetOf<String>()
 
     private fun emitCall(expr: IrExpr.Call): String {
         if (expr.name == Intrinsics.NULL_COALESCE) return emitNullCoalesce(expr)
         // `a?.b` reaches only the interpreter so far; a call to a symbol that
         // does not exist would fail later, in the assembler, without a name.
         check(expr.name != "__safeMember") { "LLVM cannot lower '?.' (safe member access) yet" }
-        if (expr.name == "__temporary") {
+        if (expr.name == "__temporary" || expr.name == "__temporaryUnlessReturned") {
             val value = emitExpr(expr.args.single())
             pendingTemporaries += value to expr.type
+            if (expr.name == "__temporaryUnlessReturned") unlessReturned += value
             return value
         }
         val mark = pendingTemporaries.size
@@ -5694,7 +5765,25 @@ end:
                     emit("  $it = bitcast ${mapType(type)} $value to i8*")
                 }
                 usesAllocatorRuntime = true
-                emit("  call void @__azora_free(i8* $raw)")
+                val resultType = mapType(expr.type)
+                if (value in unlessReturned && resultType.endsWith("*")) {
+                    // Kept when it is what the call handed back; freed otherwise.
+                    val returned = if (resultType == "i8*") result else nextTmp().also {
+                        emit("  $it = bitcast $resultType $result to i8*")
+                    }
+                    val same = nextTmp()
+                    val freeLabel = nextLabel("temp_free")
+                    val keptLabel = nextLabel("temp_kept")
+                    emit("  $same = icmp eq i8* $raw, $returned")
+                    emitTerminator("  br i1 $same, label %$keptLabel, label %$freeLabel")
+                    startBlock(freeLabel)
+                    emit("  call void @__azora_free(i8* $raw)")
+                    emitTerminator("  br label %$keptLabel")
+                    startBlock(keptLabel)
+                } else {
+                    emit("  call void @__azora_free(i8* $raw)")
+                }
+                unlessReturned -= value
             }
             lent.clear()
         }
@@ -6051,6 +6140,9 @@ end:
     private fun tupleSlotWidth(type: IrType): Int =
         if (fitsErasedSlot(type)) ERASED_SLOT_BYTES else (sizeOfScalar(type) + ERASED_SLOT_BYTES - 1) / ERASED_SLOT_BYTES * ERASED_SLOT_BYTES
 
+    /** An erased generic slot: `Any`, or an erased `Any?`. */
+    private fun isErasedSlot(type: IrType): Boolean = type == IrType.Any || type == IrType.Nullable(IrType.Any)
+
     /** True when a value of [type] travels through an erased `Any` slot as its bits. */
     private fun fitsErasedSlot(type: IrType): Boolean = sizeOfScalar(type) <= ERASED_SLOT_BYTES
 
@@ -6226,11 +6318,9 @@ end:
                 printfFmt("%llu$nl", listOf("i64 $v"))
             }
             IrType.Cent, IrType.UCent -> {
-                val v = emitExpr(arg)
-                // No portable printf length modifier for i128; truncate to i64.
-                val t = nextTmp()
-                emit("  $t = trunc i128 $v to i64")
-                printfFmt(if (arg.type == IrType.UCent) "%llu$nl" else "%lld$nl", listOf("i64 $t"))
+                // printf has no 128-bit conversion: the runtime writes the digits.
+                val text = wideToString(emitExpr(arg), arg.type)
+                printfFmt("%s$nl", listOf("i8* $text"))
             }
             IrType.Double -> {
                 val v = emitExpr(arg)
@@ -6488,6 +6578,7 @@ end:
                 emit("  $tmp = getelementptr [${ref.byteLen} x i8], [${ref.byteLen} x i8]* ${ref.name}, i64 0, i64 0")
                 tmp
             }
+            IrType.Cent, IrType.UCent -> wideToString(raw, type)
             else -> {
                 // Integer types → 64-bit then format (unsigned types use %llu).
                 usesSnprintf = true; usesMalloc = true
@@ -6503,6 +6594,15 @@ end:
                 tmp
             }
         }
+    }
+
+    /** A `Cent`'s or `UCent`'s decimal text, written by the runtime: no printf conversion is 128 bits wide. */
+    private fun wideToString(value: String, type: IrType): String {
+        usesWideToStr = true
+        usesAllocatorRuntime = true
+        val text = nextTmp()
+        emit("  $text = call i8* @__azora_wide_to_str(i128 $value, i1 ${if (type == IrType.Cent) "true" else "false"})")
+        return text
     }
 
     private fun widenToI64(value: String, type: IrType): String {
@@ -6926,11 +7026,64 @@ allocate:
             sb.appendLine()
         }
 
+        if (usesWideToStr) {
+            sb.appendLine("; runtime: a 128-bit integer's decimal text - counted, then written right to left")
+            sb.appendLine("define i8* @__azora_wide_to_str(i128 %v, i1 %signed) {")
+            sb.appendLine("entry:")
+            sb.appendLine("  %below = icmp slt i128 %v, 0")
+            sb.appendLine("  %neg = and i1 %signed, %below")
+            sb.appendLine("  %flipped = sub i128 0, %v")
+            sb.appendLine("  %mag = select i1 %neg, i128 %flipped, i128 %v")
+            sb.appendLine("  br label %count")
+            sb.appendLine("count:")
+            sb.appendLine("  %cm = phi i128 [ %mag, %entry ], [ %cq, %count ]")
+            sb.appendLine("  %cn = phi i64 [ 0, %entry ], [ %cn2, %count ]")
+            sb.appendLine("  %cq = udiv i128 %cm, 10")
+            sb.appendLine("  %cn2 = add i64 %cn, 1")
+            sb.appendLine("  %cmore = icmp ne i128 %cq, 0")
+            sb.appendLine("  br i1 %cmore, label %count, label %sized")
+            sb.appendLine("sized:")
+            sb.appendLine("  %signlen = zext i1 %neg to i64")
+            sb.appendLine("  %len = add i64 %cn2, %signlen")
+            sb.appendLine("  %size = add i64 %len, 1")
+            sb.appendLine("  %buf = call i8* @__azora_alloc(i64 %size)")
+            sb.appendLine("  %endp = getelementptr i8, i8* %buf, i64 %len")
+            sb.appendLine("  store i8 0, i8* %endp")
+            sb.appendLine("  br i1 %neg, label %minus, label %write")
+            sb.appendLine("minus:")
+            sb.appendLine("  store i8 45, i8* %buf")
+            sb.appendLine("  br label %write")
+            sb.appendLine("write:")
+            sb.appendLine("  %wm = phi i128 [ %mag, %sized ], [ %mag, %minus ], [ %wq, %write ]")
+            sb.appendLine("  %wp = phi i8* [ %endp, %sized ], [ %endp, %minus ], [ %wp2, %write ]")
+            sb.appendLine("  %wq = udiv i128 %wm, 10")
+            sb.appendLine("  %wr = urem i128 %wm, 10")
+            sb.appendLine("  %wr8 = trunc i128 %wr to i8")
+            sb.appendLine("  %digit = add i8 %wr8, 48")
+            sb.appendLine("  %wp2 = getelementptr i8, i8* %wp, i64 -1")
+            sb.appendLine("  store i8 %digit, i8* %wp2")
+            sb.appendLine("  %wmore = icmp ne i128 %wq, 0")
+            sb.appendLine("  br i1 %wmore, label %write, label %done")
+            sb.appendLine("done:")
+            sb.appendLine("  ret i8* %buf")
+            sb.appendLine("}")
+            sb.appendLine()
+        }
+
         if (usesStrRepeat) {
-            usesStrlen = true
-            sb.appendLine("; runtime: string repetition")
+            usesStrlen = true; usesStrcpy = true; usesPuts = true; usesAbort = true
+            sb.appendLine("; runtime: string repetition; a negative count stops the program")
+            sb.appendLine("@.str_repeat_negative = private unnamed_addr constant [45 x i8] c\"a string repeated a negative number of times\\00\"")
             sb.appendLine("define i8* @__azora_str_repeat(i8* %s, i32 %n) {")
             sb.appendLine("entry:")
+            sb.appendLine("  %negative = icmp slt i32 %n, 0")
+            sb.appendLine("  br i1 %negative, label %fail, label %start")
+            sb.appendLine("fail:")
+            sb.appendLine("  %message = getelementptr [45 x i8], [45 x i8]* @.str_repeat_negative, i64 0, i64 0")
+            sb.appendLine("  %printed = call i32 @puts(i8* %message)")
+            sb.appendLine("  call void @__azora_abort()")
+            sb.appendLine("  unreachable")
+            sb.appendLine("start:")
             sb.appendLine("  %len = call i64 @strlen(i8* %s)")
             sb.appendLine("  %n64 = sext i32 %n to i64")
             sb.appendLine("  %total = mul i64 %len, %n64")
@@ -6939,8 +7092,8 @@ allocate:
             sb.appendLine("  store i8 0, i8* %buf")
             sb.appendLine("  br label %cond")
             sb.appendLine("cond:")
-            sb.appendLine("  %i = phi i32 [ 0, %entry ], [ %inext, %body ]")
-            sb.appendLine("  %dst = phi i8* [ %buf, %entry ], [ %dst2, %body ]")
+            sb.appendLine("  %i = phi i32 [ 0, %start ], [ %inext, %body ]")
+            sb.appendLine("  %dst = phi i8* [ %buf, %start ], [ %dst2, %body ]")
             sb.appendLine("  %done = icmp sge i32 %i, %n")
             sb.appendLine("  br i1 %done, label %end, label %body")
             sb.appendLine("body:")

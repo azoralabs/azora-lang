@@ -478,10 +478,15 @@ class TypeResolver(private val table: SymbolTable) {
                     val savedMethodTypeParams = currentFuncTypeParams
                     currentFuncTypeParams = method.typeParams.toSet() + table.lookupStruct(item.typeName)?.typeParams.orEmpty()
                     val savedMethodBounds = currentTypeParamBounds
-                    currentTypeParamBounds = declaredBounds(
-                        table.lookupStruct(item.typeName)?.typeParams.orEmpty(),
-                        genericDeclarations[item.typeName]?.whereClause,
-                    ) + declaredBounds(method.typeParams, method.whereClause)
+                    // The type's parameters carry the type's bounds, and those
+                    // the member's own clause adds for them (`where T: Shape`
+                    // in `impl Box<T>`): inside the member, they hold.
+                    val ownerParams = table.lookupStruct(item.typeName)?.typeParams.orEmpty()
+                    val typeBounds = declaredBounds(ownerParams, genericDeclarations[item.typeName]?.whereClause)
+                    val memberOwnerBounds = declaredBounds(ownerParams - method.typeParams.toSet(), method.whereClause)
+                    currentTypeParamBounds = ownerParams.associateWith { param ->
+                        typeBounds[param].orEmpty() + memberOwnerBounds[param].orEmpty()
+                    } + declaredBounds(method.typeParams, method.whereClause)
                     val savedGenericReturn = nonNullGenericReturn
                     nonNullGenericReturn = (method.returnType as? TypeAnnotation.Explicit)?.ref?.let(::isNonNullGenericPosition) == true
                     resolveBody(method.body, func.returnType)
@@ -911,13 +916,13 @@ class TypeResolver(private val table: SymbolTable) {
      * what they imply. A parameter in [currentFuncTypeParams] and absent here
      * (a lambda's) is declared to conform to nothing.
      */
-    private var currentTypeParamBounds: Map<String, Set<String>> = emptyMap()
+    private var currentTypeParamBounds: Map<String, Set<Bounds.Bound>> = emptyMap()
 
-    private fun declaredBounds(typeParams: Collection<String>, clause: Expr?): Map<String, Set<String>> =
-        Bounds.declared(typeParams, clause).mapValues { (_, specs) -> Bounds.implied(specs, table) }
+    private fun declaredBounds(typeParams: Collection<String>, clause: Expr?): Map<String, Set<Bounds.Bound>> =
+        Bounds.declared(typeParams, clause).mapValues { (param, specs) -> Bounds.implied(specs, table, subject = param) }
 
     /** The type parameters in scope as the constraint evaluator assumes them. */
-    private fun assumedTypeParams(): Map<String, Set<String>?> =
+    private fun assumedTypeParams(): Map<String, Set<Bounds.Bound>?> =
         currentFuncTypeParams.associateWith { currentTypeParamBounds[it].orEmpty() }
     private var nonNullGenericReturn = false
 
@@ -2016,30 +2021,18 @@ class TypeResolver(private val table: SymbolTable) {
             is Stmt.For -> {
                 when (val iter = stmt.iterable) {
                     is Expr.Range -> {
-                        val fromType = resolveExpr(iter.from)
-                        val toType = resolveExpr(iter.to)
-                        if (fromType != null && fromType != IrType.Int) {
-                            errors.add("line ${stmt.line}: range start must be Int, got $fromType")
-                        }
-                        if (toType != null && toType != IrType.Int) {
-                            errors.add("line ${stmt.line}: range end must be Int, got $toType")
-                        }
-                        stmt.step?.let { step ->
-                            val stepType = resolveExpr(step)
-                            if (stepType != null && stepType != IrType.Int) {
-                                errors.add("line ${stmt.line}: range step must be Int, got $stepType")
-                            }
-                        }
+                        val row = resolveWalk(stmt, iter) ?: return
                         table.pushScope()
                         // Fixed like every other loop's row: the counter is the
                         // loop's, and writing the binding never advanced it.
                         table.defineVariable(
                             VariableSymbol(
                                 stmt.name,
-                                loopRowType(stmt, IrType.Int),
+                                loopRowType(stmt, row),
                                 mutable = false,
                                 valueMutable = false,
                                 loopVariable = true,
+                                declaredRef = table.lookupRangeBounds(iter)?.takeIf { row.isErased() },
                             ),
                         )
                         stmt.indexName?.let { index ->
@@ -2053,6 +2046,32 @@ class TypeResolver(private val table: SymbolTable) {
                     else -> {
                         val iterType = resolveExpr(iter)
                         if (iterType == null) return
+                    // A range value walks as its literal would (RANGE_DIP §6).
+                    val rangeBound = (iterType as? IrType.Named)
+                        ?.takeIf { it.name.substringAfterLast("__") == Intrinsics.RANGE && it.args.size == 1 }
+                        ?.args?.single()
+                    if (rangeBound != null) {
+                        val (row, param) = resolveRangeValueWalk(stmt, rangeBound) ?: return
+                        table.pushScope()
+                        table.defineVariable(
+                            VariableSymbol(
+                                stmt.name,
+                                loopRowType(stmt, row),
+                                mutable = false,
+                                valueMutable = false,
+                                loopVariable = true,
+                                declaredRef = param?.let { TypeRef.Named(it) },
+                            ),
+                        )
+                        stmt.indexName?.let { index ->
+                            table.defineVariable(
+                                VariableSymbol(index, IrType.Int, mutable = false, valueMutable = false, loopVariable = true),
+                            )
+                        }
+                        inLoop { resolveBody(stmt.body, returnType) }
+                        table.popScope()
+                        return
+                    }
                     // An iterator walks itself: it says when there is a row and
                     // what the row is, which is all `for` needs.
                     val walked = (iterType as? IrType.Named)?.name?.let { owner ->
@@ -2747,6 +2766,7 @@ class TypeResolver(private val table: SymbolTable) {
                     adoptLiteralType(expr.right, rightType, leftType),
                     expr.line,
                     operand = expr.right,
+                    receiverExpr = expr.left,
                 )
             }
             is Expr.Call -> {
@@ -3300,7 +3320,7 @@ class TypeResolver(private val table: SymbolTable) {
                         array.element
                     } else resolveContextualArgument(arg, paramType) ?: return null
                     argTypes.add(argType)
-                    if (printCall) undisplayable(argType)?.let {
+                    if (printCall) (undisplayable(argType) ?: unshownParameter(arg))?.let {
                         errors.add("line ${expr.line}: cannot print $it")
                         return null
                     }
@@ -3437,10 +3457,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.Grouping -> resolveExpr(expr.expr)
-            is Expr.Range -> {
-                errors.add("line ${expr.line}: ranges can only be used as for-loop iterables")
-                null
-            }
+            is Expr.Range -> resolveRangeValue(expr)
             is Expr.ArrayLiteral -> {
                 resolveArrayLiteral(expr)
             }
@@ -3476,7 +3493,7 @@ class TypeResolver(private val table: SymbolTable) {
                         val operator = table.lookupFunction(mangled)?.let { instantiateMember(table, targetType, it) }
                         val key = subscriptArgument(expr.index, operator?.params?.lastOrNull()?.second, targetType, expr.line)
                             ?: return null
-                        checkOperatorBound("oper[]", mangled, key, expr.line, expr.index)
+                        checkOperatorBound("oper[]", mangled, key, expr.line, expr.index, targetType, expr.target)
                         return operator?.returnType ?: IrType.Any
                     }
                     val required = table.lookupSpecMethod(targetType.name, "index")
@@ -3657,6 +3674,9 @@ class TypeResolver(private val table: SymbolTable) {
                                         reportInaccessible(expr.line, "property", targetType.name, expr.name, func.visibility)
                                         null
                                     } else {
+                                        // A property is available where its bounds on
+                                        // the type's parameters hold, as a method is.
+                                        checkOwnerBound(expr.name, targetType, func, expr.target, expr.line)
                                         instantiateMember(table, targetType, func).returnType
                                     }
                                 }
@@ -3884,6 +3904,8 @@ class TypeResolver(private val table: SymbolTable) {
                             expr.name, func.typeParams, func.whereClause, memberArguments,
                             decided = concretelyBound(func.typeParams, memberBindings), line = expr.line, writable = false,
                         )
+                        // ...and its bounds on the type's own parameters, for the receiver.
+                        checkOwnerBound(expr.name, targetType, func, expr.target, expr.line)
                         // Every receiver the member reads must actually be in scope.
                         for (i in 0 until func.contextualParams) {
                             val needed = func.params[i + 1].second
@@ -4047,6 +4069,7 @@ class TypeResolver(private val table: SymbolTable) {
                 if (targetType is IrType.Map) {
                     return resolveMapMethod(expr.name, expr.args, targetType, expr.line)
                 }
+                boundMemberType(expr)?.let { return it }
                 resolveBuiltinMethod(targetType, expr.name, expr.args, expr.line)
             }
             is Expr.StringTemplate -> {
@@ -4058,7 +4081,8 @@ class TypeResolver(private val table: SymbolTable) {
                         // layout (`{__type=Vec2, x=1, y=2}`) reaching program
                         // output.
                         val partType = resolveExpr(part.expr)
-                        undisplayable(partType)?.let { errors.add("line ${expr.line}: cannot interpolate $it") }
+                        (undisplayable(partType) ?: unshownParameter(part.expr))
+                            ?.let { errors.add("line ${expr.line}: cannot interpolate $it") }
                     }
                 }
                 IrType.String
@@ -4696,9 +4720,19 @@ class TypeResolver(private val table: SymbolTable) {
      * to: `oper+ <U: Shape> &.(x: U&)` applied to a `NoShape` is refused, as
      * the same member written as a method is.
      */
-    private fun checkOperatorBound(name: String, mangled: String, operand: IrType, line: Int, operandExpr: Expr? = null) {
+    private fun checkOperatorBound(
+        name: String,
+        mangled: String,
+        operand: IrType,
+        line: Int,
+        operandExpr: Expr? = null,
+        /** The value the operator is applied to, which decides its owner's parameters. */
+        receiver: IrType? = null,
+        receiverExpr: Expr? = null,
+    ) {
         val func = table.lookupFunction(mangled) ?: return
         val clause = func.whereClause ?: return
+        (receiver as? IrType.Named)?.let { checkOwnerBound(name, it, func, receiverExpr, line) }
         if (func.typeParams.isEmpty()) return
         // Parameter 0 is the receiver; the operand is the one after it.
         val pattern = func.paramTypeRefs.getOrNull(1) ?: return
@@ -4713,6 +4747,265 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * A member's `where` clause about its owner's type parameters - `impl
+     * Box<T: Shape>`, or `func &.measure() where T: Shape` in `impl Box<T>` -
+     * decided for the receiver. `Box<NoShape>` has no `measure`, as a call
+     * binding a member's own parameter to the wrong type is refused; generic
+     * code whose receiver is a `Box<U>` must declare `U: Shape` itself.
+     *
+     * [func] is the member as registered: its parameter 0 is the receiver,
+     * written over the owner's own parameters (`Box<T>`).
+     */
+    private fun checkOwnerBound(name: String, receiver: IrType.Named, func: FunctionSymbol, receiverExpr: Expr?, line: Int) {
+        val clause = func.whereClause ?: return
+        val ownerParams = table.lookupStruct(receiver.name)?.typeParams ?: return
+        val params = ownerParams.filter { it !in func.typeParams && clauseMentions(clause, it) }
+        if (params.isEmpty()) return
+        val pattern = unborrowed(func.paramTypeRefs.firstOrNull())?.takeIf { it is TypeRef.Named && it.args.isNotEmpty() }
+            ?: TypeRef.Named(receiver.name, ownerParams.map { TypeRef.Named(it) })
+        val bindings = mutableMapOf<String, List<TypeRef>>()
+        unifyTypeArguments(pattern, receiver, params.toSet(), bindings)
+        if (bindings.isNotEmpty()) checkMemberConstraints(name, params, clause, bindings, line)
+        if (receiverExpr != null) {
+            checkPassedOn(
+                name, params, clause, listOf(PassedArgument(pattern, receiverExpr, receiver)),
+                decided = concretelyBound(params, bindings), line = line, writable = false,
+            )
+        }
+    }
+
+    /**
+     * `a..b`, `a..<b` or `a>..b` as a value: a `Range<T>` of the bounds' one
+     * type, which has an order (RANGE_DIP §4). An unsuffixed literal takes the
+     * other bound's type. The `T` decided is recorded for lowering, which
+     * builds `Range<T>(a, b, …)` from it.
+     */
+    private fun resolveRangeValue(expr: Expr.Range): IrType? {
+        val fromOwn = resolveExpr(expr.from) ?: return null
+        val toOwn = resolveExpr(expr.to) ?: return null
+        val from = adoptLiteralType(expr.from, fromOwn, toOwn)
+        val to = adoptLiteralType(expr.to, toOwn, from)
+        if (from != to && !from.isErased() && !to.isErased()) {
+            errors.add(
+                "line ${expr.line}: range bounds must have one type, got ${from.shown()} and ${to.shown()}; " +
+                    "convert one, as in 'a as ${to.shown()}'",
+            )
+            return null
+        }
+        val bound = if (from.isErased()) to else from
+        val ref: TypeRef = if (bound.isErased()) {
+            // A type parameter of the code doing the asking: only as good as
+            // its declared bounds, as anything handed a bounded parameter is.
+            val declared = (unborrowed(declaredRefOf(expr.from) ?: declaredRefOf(expr.to)) as? TypeRef.Named)
+                ?.takeIf { it.args.isEmpty() && it.name in currentFuncTypeParams }
+            if (declared != null) {
+                val has = currentTypeParamBounds[declared.name].orEmpty()
+                if (!Bounds.includes(has, Bounds.Bound(PARTIAL_ORDER)) && !Bounds.includes(has, Bounds.Bound(ORDER))) {
+                    errors.add(
+                        "line ${expr.line}: a range of '${declared.name}' needs an order, and '${declared.name}' " +
+                            "is not declared to have one; add 'where ${declared.name}: PartialOrder'",
+                    )
+                    return null
+                }
+                declared
+            } else {
+                errors.add(
+                    "line ${expr.line}: cannot tell which type the bounds of this range are; " +
+                        "give them a declared type, as in 'fin a: Int = …'",
+                )
+                return null
+            }
+        } else {
+            if (!isOrdered(bound)) {
+                errors.add(
+                    "line ${expr.line}: '${bound.shown()}' has no order, so 'a..b' cannot be a range of it; " +
+                        "a range needs 'PartialOrder'",
+                )
+                return null
+            }
+            typeRefOf(bound)
+        }
+        table.defineRangeBounds(expr, ref)
+        return IrType.Named(Intrinsics.RANGE, listOf(bound))
+    }
+
+    /**
+     * A call on a value of a bounded type parameter, typed as the bound's spec
+     * declares the member (`x.reaches(…)` is a `Bool` where `T: Step`) rather
+     * than left `Any`; the value's own type is erased, `Self` with it. Null
+     * when the receiver is no such value or no bound declares the member.
+     */
+    private fun boundMemberType(expr: Expr.MethodCall): IrType? {
+        val param = (unborrowed(declaredRefOf(expr.target)) as? TypeRef.Named)
+            ?.takeIf { it.args.isEmpty() && it.name in currentFuncTypeParams }?.name ?: return null
+        val sig = currentTypeParamBounds[param].orEmpty().firstNotNullOfOrNull { bound ->
+            table.lookupSpecMethod(bound.spec, expr.name)
+        } ?: return null
+        if (sig.isProperty || sig.paramTypes.size != expr.args.size) return null
+        expr.args.forEach { resolveExpr(it) ?: return null }
+        fun erased(type: IrType): IrType = when {
+            type is IrType.Named && type.name == "Self" -> IrType.Any
+            type is IrType.Nullable -> IrType.Nullable(erased(type.inner))
+            else -> type
+        }
+        return erased(sig.returnType)
+    }
+
+    /**
+     * The row type of `for x in a..b [by s]` (RANGE_DIP §6): the bounds' one
+     * type `T`, which must be `Step`, walked by a step of its `S` - the one
+     * written, or its unit. An unsuffixed literal takes the row's declared
+     * type or the other bound's. Bounds of a type parameter walk in generic
+     * code through its `Step` bound. The decided `T` is recorded for lowering.
+     */
+    private fun resolveWalk(stmt: Stmt.For, range: Expr.Range): IrType? {
+        val declared = stmt.declaredType?.let { runCatching { IrType.resolve(it, currentFuncTypeParams) }.getOrNull() }
+        val fromOwn = resolveExpr(range.from) ?: return null
+        val toOwn = resolveExpr(range.to) ?: return null
+        val from = adoptLiteralType(range.from, fromOwn, declared ?: toOwn)
+        val to = adoptLiteralType(range.to, toOwn, declared ?: from)
+        if (from != to && !from.isErased() && !to.isErased()) {
+            errors.add(
+                "line ${stmt.line}: range bounds must have one type, got ${from.shown()} and ${to.shown()}; " +
+                    "convert one, as in 'a as ${to.shown()}'",
+            )
+            return null
+        }
+        val row = if (from.isErased()) to else from
+        if (row.isErased()) {
+            // Generic code: both bounds of one type parameter.
+            val params = listOf(range.from, range.to).map { typeParamOf(it) }
+            val param = params.firstOrNull { it != null }
+            if (param == null || params.any { it != param }) {
+                errors.add(
+                    "line ${stmt.line}: cannot tell which type this range's bounds are; give them a declared type, " +
+                        "as in 'fin a: Int = …'",
+                )
+                return null
+            }
+            val stride = walkStride(stmt, row, param) ?: return null
+            table.defineRangeBounds(range, TypeRef.Named(param))
+            stride.ref?.let { table.defineWalkStride(range, it) }
+            return row
+        }
+        val stride = walkStride(stmt, row, null) ?: return null
+        table.defineRangeBounds(range, typeRefOf(row))
+        stride.ref?.let { table.defineWalkStride(range, it) }
+        return row
+    }
+
+    /** What a walk steps by: its `S`, or no ref when generic code walks by an unknown `S`'s unit. */
+    private class WalkStride(val ref: TypeRef?)
+
+    /**
+     * The `S` a walk over [row] - or over the type parameter [param] - steps
+     * by, after checking that it steps and that a written `by s` is an `S`.
+     * Null, with the error reported, when it cannot walk.
+     */
+    private fun walkStride(stmt: Stmt.For, row: IrType, param: String?): WalkStride? {
+        val shown = param ?: row.shown()
+        val stride: IrType? = if (param != null) {
+            val bound = currentTypeParamBounds[param].orEmpty().firstOrNull { it.spec.substringAfterLast("__") == Intrinsics.STEP }
+            if (bound == null) {
+                errors.add(
+                    "line ${stmt.line}: cannot walk a 'Range<$param>': '$param' is not bounded by 'Step'; " +
+                        "write 'where $param: Step'",
+                )
+                return null
+            }
+            bound.args.firstOrNull()?.let { runCatching { IrType.resolve(it, currentFuncTypeParams) }.getOrNull() }
+        } else {
+            // An `Int` range is the language's own counter loop, which needs no
+            // declaration - it walks with or without std loaded.
+            (if (row == IrType.Int) IrType.Int else strideOfType(row)) ?: run {
+                errors.add("line ${stmt.line}: cannot walk a 'Range<$shown>': '$shown' does not implement 'Step'")
+                return null
+            }
+        }
+        val step = stmt.step ?: return WalkStride(stride?.let(::typeRefOf))
+        val written = resolveExpr(step) ?: return null
+        if (stride == null) {
+            // `T: Step` says T steps, not by what: a written step cannot be checked.
+            val stepType = adoptLiteralType(step, written, written)
+            errors.add(
+                "line ${stmt.line}: 'by ${stepText(step)}' is a ${stepType.shown()}, but '$param: Step' does not say " +
+                    "what '$param' steps by; write 'where $param: Step<${stepType.shown()}>'",
+            )
+            return null
+        }
+        val stepType = adoptLiteralType(step, written, stride)
+        if (stepType != stride) {
+            errors.add(
+                "line ${stmt.line}: 'by ${stepText(step)}' is a ${stepType.shown()}, but a " +
+                    "'Range<$shown>' steps by ${stride.shown()}",
+            )
+            return null
+        }
+        return WalkStride(typeRefOf(stride))
+    }
+
+    /** The type parameter [expr] is declared as - `a` where `a: T` - or null. */
+    private fun typeParamOf(expr: Expr): String? =
+        (unborrowed(declaredRefOf(expr)) as? TypeRef.Named)
+            ?.takeIf { it.args.isEmpty() && it.name in currentFuncTypeParams }?.name
+
+    /**
+     * `for x in r [by s]` over a `Range<T>` value: the row type, `T` - erased
+     * in generic code, where [param] names it - or null with the error
+     * reported. The decided `T` and `S` are recorded for lowering.
+     */
+    private fun resolveRangeValueWalk(stmt: Stmt.For, bound: IrType): Pair<IrType, String?>? {
+        val param = if (bound.isErased()) {
+            val declared = unborrowed(declaredRefOf(stmt.iterable)) as? TypeRef.Named
+            (declared?.args?.singleOrNull() as? TypeRef.Named)
+                ?.takeIf { it.args.isEmpty() && it.name in currentFuncTypeParams }?.name
+                ?: run {
+                    errors.add(
+                        "line ${stmt.line}: cannot tell which type this range's bounds are; give it a declared type, " +
+                            "as in 'fin r: Range<Int> = …'",
+                    )
+                    return null
+                }
+        } else null
+        val stride = walkStride(stmt, bound, param) ?: return null
+        table.defineRangeBounds(stmt.iterable, param?.let { TypeRef.Named(it) } ?: typeRefOf(bound))
+        stride.ref?.let { table.defineWalkStride(stmt.iterable, it) }
+        return bound to param
+    }
+
+    /** The `S` [type] steps by - its `Step<S>` argument - or null when it does not step. */
+    private fun strideOfType(type: IrType): IrType? {
+        val name = (type as? IrType.Named)?.name ?: type.toString()
+        val conformance = table.allConformances().firstOrNull {
+            it.typeName == name && it.contractName.substringAfterLast("__") == Intrinsics.STEP
+        } ?: return null
+        return conformance.typeArgs.firstOrNull()?.let { runCatching { IrType.resolve(it, emptySet()) }.getOrNull() } ?: type
+    }
+
+    /** Whether values of [type] have an order a range can stand on: a built-in that compares, or a `PartialOrder`. */
+    private fun isOrdered(type: IrType): Boolean = when {
+        IrType.isNumeric(type) || type == IrType.Char || type == IrType.Bool || type == IrType.String -> true
+        type is IrType.Named -> table.allConformances().any {
+            it.typeName == type.name && it.contractName.substringAfterLast("__") == PARTIAL_ORDER
+        }
+        else -> false
+    }
+
+    /** Whether [clause] names [param] anywhere: `T is Shape`, `N in 2..4`, `(...T).size`. */
+    private fun clauseMentions(clause: Expr, param: String): Boolean = when (clause) {
+        is Expr.Identifier -> clause.name == param
+        is Expr.Grouping -> clauseMentions(clause.expr, param)
+        is Expr.Binary -> clauseMentions(clause.left, param) || clauseMentions(clause.right, param)
+        is Expr.Unary -> clauseMentions(clause.operand, param)
+        is Expr.IsCheck -> clauseMentions(clause.expr, param)
+        is Expr.InCheck -> clauseMentions(clause.value, param) || clauseMentions(clause.collection, param)
+        is Expr.Member -> clauseMentions(clause.target, param)
+        is Expr.Range -> clauseMentions(clause.from, param) || clauseMentions(clause.to, param)
+        is Expr.Spread -> clauseMentions(clause.array, param)
+        else -> false
+    }
+
     /** The parameters [bindings] binds to a type the evaluator can decide. */
     private fun concretelyBound(typeParams: List<String>, bindings: Map<String, List<TypeRef>>): Set<String> =
         typeParams.filterTo(HashSet()) { param ->
@@ -4720,6 +5013,9 @@ class TypeResolver(private val table: SymbolTable) {
         }
 
     private val HASHED = "__hashed"
+
+    private val ORDER = "Order"
+    private val PARTIAL_ORDER = "PartialOrder"
 
     /**
      * The first part of a tuple or array (at any depth) that `==` cannot
@@ -5175,7 +5471,7 @@ class TypeResolver(private val table: SymbolTable) {
         val member = compoundAssignMemberName(op) ?: return false
         val operandType = resolveExpr(binary.right) ?: return false
         val mangled = table.lookupOperator(named.name, member, operandKeyOf(operandType)) ?: return false
-        checkOperatorBound(member, mangled, operandType, binary.line, binary.right)
+        checkOperatorBound(member, mangled, operandType, binary.line, binary.right, named, binary.left)
         return true
     }
 
@@ -5216,7 +5512,15 @@ class TypeResolver(private val table: SymbolTable) {
         return table.lookupStruct(typeName) == null
     }
 
-    private fun resolveBinaryType(op: TokenType, left: IrType, right: IrType, line: Int, operand: Expr? = null): IrType? {
+    private fun resolveBinaryType(
+        op: TokenType,
+        left: IrType,
+        right: IrType,
+        line: Int,
+        operand: Expr? = null,
+        /** The left operand as written: the receiver of a pack's operator. */
+        receiverExpr: Expr? = null,
+    ): IrType? {
         // An operator may also be declared with a primitive on the left - `2 * vec`
         // is `impl oper* for Int` taking a Vec. Such an overload must name its
         // operand, so only the operand-keyed member is consulted: nothing here can
@@ -5239,7 +5543,7 @@ class TypeResolver(private val table: SymbolTable) {
             // rewrites answer Bool.
             when (val plan = comparisonPlan(op, left.name, operandKeyOf(right), table)) {
                 is ComparisonPlan.Direct -> {
-                    checkOperatorBound(operOverloadName(op) ?: "operator", plan.mangled, right, line, operand)
+                    checkOperatorBound(operOverloadName(op) ?: "operator", plan.mangled, right, line, operand, left, receiverExpr)
                     return table.lookupFunction(plan.mangled)?.returnType
                 }
                 is ComparisonPlan.Spaceship, is ComparisonPlan.NegatedEquals -> return IrType.Bool
@@ -5346,9 +5650,12 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL -> {
-                // Any (e.g. an erased generic T) compares at runtime.
+                // Any (e.g. an erased generic T) compares at runtime. The
+                // built-ins std declares `Order` - numbers, `Char`, `Bool`
+                // (`false < true`) and `String` (by code point) - compare.
                 val anyInvolved = left == IrType.Any || right == IrType.Any
-                if (!anyInvolved && (left != right || (!IrType.isNumeric(left) && left != IrType.Char))) {
+                val ordered = IrType.isNumeric(left) || left == IrType.Char || left == IrType.Bool || left == IrType.String
+                if (!anyInvolved && (left != right || !ordered)) {
                     errors.add("line $line: cannot compare $left and $right with '$op'")
                     null
                 } else IrType.Bool
@@ -5627,19 +5934,28 @@ class TypeResolver(private val table: SymbolTable) {
         writable: Boolean,
     ) {
         if (clause == null || typeParams.isEmpty()) return
+        // What each of the callee's parameters is here, where a declaration
+        // tells: `Conv<T>` asked of it reads `T` as the caller's type.
+        val passedRefs = typeParams.mapNotNull { param ->
+            arguments.firstNotNullOfOrNull { passed ->
+                declaredRefOf(passed.argument)?.let { bindRef(passed.parameter, it, param) }
+            }?.let { ref -> unborrowed(ref)?.let { param to it } }
+        }.toMap()
         for (param in typeParams) {
             if (param in decided) continue
             val required = Bounds.required(clause, param)
             if (required.isEmpty()) continue
-            val ref = arguments.firstNotNullOfOrNull { passed ->
-                declaredRefOf(passed.argument)?.let { bindRef(passed.parameter, it, param) }
-            }
+            val ref = passedRefs[param]
             val bare = (unborrowed(ref) as? TypeRef.Named)?.takeIf { it.args.isEmpty() && it.name in currentFuncTypeParams }
             when {
                 bare != null -> {
                     val has = currentTypeParamBounds[bare.name].orEmpty()
-                    for (spec in required) {
-                        if (Bounds.includes(has, spec)) continue
+                    for (bound in required) {
+                        // A bound whose arguments name a parameter nothing here
+                        // tells is asked of its spec alone.
+                        val spec = Bounds.withDefaults(Bounds.substituted(bound, passedRefs), bare.name, table)
+                            .let { if (it.args.any { arg -> mentionsAny(arg, typeParams.toSet() - passedRefs.keys) }) Bounds.Bound(it.spec) else it }
+                        if (Bounds.includes(has, spec, table)) continue
                         val shown = Bounds.shown(spec)
                         errors.add(
                             "line $line: '$param' of '$callee' must be $shown, and '${bare.name}' is not declared to be; " +
@@ -5654,7 +5970,7 @@ class TypeResolver(private val table: SymbolTable) {
                         errors.add("line $line: '$callee' does not satisfy its 'where' clause here: ${outcome.reason}")
                     }
                 }
-                required.all(::isWitnessSpec) -> {}
+                required.all { isWitnessSpec(it.spec) } -> {}
                 arguments.any { it.type.isErased() && bindsBare(it.parameter, param) } -> errors.add(
                     "line $line: cannot tell which type '$param' of '$callee' is here, so its bound " +
                         "'$param: ${required.joinToString(", ") { Bounds.shown(it) }}' cannot be checked; " +
@@ -5664,8 +5980,23 @@ class TypeResolver(private val table: SymbolTable) {
         }
     }
 
+    /** Whether [ref] names one of [names] as a type. */
+    private fun mentionsAny(ref: TypeRef, names: Set<String>): Boolean = when (ref) {
+        is TypeRef.Named -> (ref.args.isEmpty() && ref.name in names) || ref.args.any { mentionsAny(it, names) }
+        is TypeRef.Reference -> mentionsAny(ref.inner, names)
+        is TypeRef.Nullable -> mentionsAny(ref.inner, names)
+        is TypeRef.Pointer -> mentionsAny(ref.inner, names)
+        is TypeRef.Array -> mentionsAny(ref.element, names)
+        is TypeRef.Tuple -> ref.elements.any { mentionsAny(it, names) }
+        is TypeRef.Function -> ref.params.any { mentionsAny(it, names) } || mentionsAny(ref.ret, names)
+        else -> false
+    }
+
     private fun isWitnessSpec(spec: String): Boolean =
-        Bounds.shown(spec) in setOf(Witnesses.HASH, Witnesses.EQUAL, Witnesses.ORDER, Witnesses.CLONE)
+        Bounds.shown(spec) in setOf(
+            Witnesses.HASH, Witnesses.EQUAL, Witnesses.ORDER, Witnesses.CLONE, Witnesses.PARTIAL_ORDER, Witnesses.DISPLAY,
+            Witnesses.STEP,
+        )
 
     private fun IrType?.isErased(): Boolean = this == IrType.Any || this == IrType.Nullable(IrType.Any)
 
@@ -6780,6 +7111,9 @@ class TypeResolver(private val table: SymbolTable) {
      * with none is refused rather than having its private layout printed.
      */
     private fun undisplayable(type: IrType?): String? = when (type) {
+        // A range is written out as its bounds are, like an array's elements.
+        is IrType.Named if type.name.substringAfterLast("__") == Intrinsics.RANGE && type.args.size == 1 ->
+            undisplayable(type.args[0])
         is IrType.Named -> {
             val struct = table.lookupStruct(type.name)
             if (struct != null && !struct.isBridge && !table.conformsTo(type.name, "Display")) {
@@ -6793,6 +7127,31 @@ class TypeResolver(private val table: SymbolTable) {
         is IrType.Array -> undisplayable(type.element)
         is IrType.Tuple -> type.elements.firstNotNullOfOrNull(::undisplayable)
         else -> null
+    }
+
+    /**
+     * Why [expr] - of a type parameter, or an array, tuple, optional or range
+     * of one - cannot be shown, or null when it can. An erased value carries
+     * no type when the program runs; only its `Display` bound says how to
+     * show it.
+     */
+    private fun unshownParameter(expr: Expr): String? {
+        fun unbounded(ref: TypeRef?): String? = when (val type = unborrowed(ref)) {
+            is TypeRef.Named -> when {
+                type.args.isEmpty() && type.name in currentFuncTypeParams -> type.name.takeIf { param ->
+                    currentTypeParamBounds[param].orEmpty().none { it.spec.substringAfterLast("__") == "Display" }
+                }
+                type.name == Intrinsics.ARRAY || type.name.substringAfterLast("__") == Intrinsics.RANGE ->
+                    type.args.firstNotNullOfOrNull(::unbounded)
+                else -> null
+            }
+            is TypeRef.Array -> unbounded(type.element)
+            is TypeRef.Tuple -> type.elements.firstNotNullOfOrNull(::unbounded)
+            is TypeRef.Nullable -> unbounded(type.inner)
+            else -> null
+        }
+        val param = unbounded(declaredRefOf(expr)) ?: return null
+        return "a '$param' - '$param' is not bounded by 'Display'; write 'where $param: Display'"
     }
 
     /** Where a tuple's members are registered: per shape (`VariadicMonomorphizer.specializeTuples`). */

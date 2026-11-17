@@ -39,12 +39,24 @@ internal object Witnesses {
     const val ORDER = "Order"
     const val CLONE = "Clone"
 
+    /** `<` and its kin where a NaN relates to nothing (RANGE_DIP §7). */
+    const val PARTIAL_ORDER = "PartialOrder"
+
+    /** `"${'$'}x"` as the concrete type renders. */
+    const val DISPLAY = "Display"
+
+    /** `x.unit` and `x.offset(step, count)`: walking a range of it (RANGE_DIP §7). */
+    const val STEP = "Step"
+
     /** The one spec a set of needs names in a diagnostic: what the bound must say. */
     fun named(needs: Set<String>): String = when {
         HASH in needs -> HASH
         ORDER in needs -> ORDER
+        PARTIAL_ORDER in needs -> PARTIAL_ORDER
         EQUAL in needs -> EQUAL
         CLONE in needs -> CLONE
+        DISPLAY in needs -> DISPLAY
+        STEP in needs -> STEP
         else -> EQUAL
     }
 
@@ -75,6 +87,10 @@ internal object Witnesses {
                         // An erased slot is a shared pointer; only the concrete
                         // type knows how to make an independent copy of it.
                         CLONE -> found.getOrPut(param) { linkedSetOf() }.add(CLONE)
+                        PARTIAL_ORDER -> found.getOrPut(param) { linkedSetOf() }.add(PARTIAL_ORDER)
+                        DISPLAY -> found.getOrPut(param) { linkedSetOf() }.add(DISPLAY)
+                        // A walk compares its rows as well as moving them.
+                        STEP -> found.getOrPut(param) { linkedSetOf() }.addAll(listOf(STEP, PARTIAL_ORDER))
                     }
                 }
                 is Expr.Grouping -> visit(expr.expr)

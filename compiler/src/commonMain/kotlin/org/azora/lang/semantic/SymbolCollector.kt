@@ -17,6 +17,7 @@
 package org.azora.lang.semantic
 
 import org.azora.lang.ir.ctorCount
+import org.azora.lang.ir.Intrinsics
 import org.azora.lang.putIfAbsentCompat
 import org.azora.lang.ir.ctorFactorySymbol
 import org.azora.lang.ir.ctorSymbol
@@ -103,6 +104,14 @@ class SymbolCollector {
      * the value as the spec. A member of the type cannot stand for a member of a
      * value, nor the other way round.
      */
+    /** Every `impl Step<…>` after the first for its type, in program order. */
+    private fun secondStepImpls(program: Program): Set<TopLevel.Impl> {
+        val stepping = HashSet<String>()
+        return program.items.filterIsInstance<TopLevel.Impl>()
+            .filter { it.traitName?.substringAfterLast("__") == Intrinsics.STEP && !stepping.add(it.typeName) }
+            .toSet()
+    }
+
     private fun receiverMismatch(impl: TopLevel.Impl, requirement: FuncDecl, written: FuncDecl): String? {
         val member = "'${impl.typeName}.${written.name}'"
         val required = "'${impl.traitName}.${requirement.name}'"
@@ -143,18 +152,63 @@ class SymbolCollector {
      * the spec member promises - what that promise implies included - as it
      * may not take its receiver less carefully ([receiverMismatch]).
      */
-    private fun boundMismatch(impl: TopLevel.Impl, requirement: FuncDecl, written: FuncDecl, table: SymbolTable): String? {
+    private fun boundMismatch(
+        impl: TopLevel.Impl,
+        requirement: FuncDecl,
+        written: FuncDecl,
+        table: SymbolTable,
+        /** What the implementing type's declaration requires of its parameters. */
+        ownerClause: Expr?,
+        spec: TopLevel.Spec?,
+    ): String? {
+        // The spec member's parameters, spelled as the implementation names them,
+        // so `Conv<U>` promised and `Conv<V>` demanded are compared as one.
+        val renamed = requirement.typeParams.zip(written.typeParams)
+            .associate { (spec, own) -> spec to (TypeRef.Named(own) as TypeRef) }
         for ((index, param) in written.typeParams.withIndex()) {
             val demanded = Bounds.required(written.whereClause, param)
             if (demanded.isEmpty()) continue
             val counterpart = requirement.typeParams.getOrNull(index)
-            val promised = counterpart?.let { Bounds.implied(Bounds.required(requirement.whereClause, it), table) }.orEmpty()
-            val extra = demanded.filterNot { Bounds.includes(promised, it) }
+            val promised = counterpart?.let { spec ->
+                Bounds.implied(
+                    Bounds.required(requirement.whereClause, spec).mapTo(LinkedHashSet()) { Bounds.substituted(it, renamed) },
+                    table,
+                    subject = param,
+                )
+            }.orEmpty()
+            val extra = demanded.filterNot { Bounds.includes(promised, Bounds.withDefaults(it, param, table), table) }
             if (extra.isEmpty()) continue
             val spelled = extra.joinToString(", ") { Bounds.shown(it) }
             return "line ${written.line}: '${impl.typeName}.${written.name}' requires '$param: $spelled', which " +
                 "'${impl.traitName}.${requirement.name}' does not promise for '${counterpart ?: param}'; a caller " +
                 "through '${impl.traitName}' may pass any type there - bound the spec member, or drop the bound here"
+        }
+        // The implementing type's own parameters. A caller through the spec holds
+        // a value it built under the type's bounds and the spec's, and neither
+        // promises what this member adds (`where T: Shape` in `impl Bag<T> for
+        // Pile<T>`): it would reach a `Pile<NoShape>` through `Bag` unchecked.
+        val ownerParams = impl.typeParams.ifEmpty { table.lookupStruct(impl.typeName)?.typeParams.orEmpty() }
+        for (param in ownerParams) {
+            if (param in written.typeParams) continue
+            val demanded = Bounds.required(written.whereClause, param)
+            if (demanded.isEmpty()) continue
+            // The spec's bound on the parameter it is given this one as:
+            // `spec Bag<E: Shape>` and `impl Bag<T> for Pile<T>` promise `T: Shape`.
+            val throughSpec = spec?.typeParams.orEmpty().zip(impl.traitArgs).flatMap { (specParam, arg) ->
+                if ((arg as? TypeRef.Named)?.takeIf { it.args.isEmpty() }?.name == param) {
+                    Bounds.required(spec?.whereClause, specParam)
+                } else {
+                    emptySet()
+                }
+            }
+            val promised = Bounds.implied(Bounds.required(ownerClause, param) + throughSpec, table, subject = param)
+            val extra = demanded.filterNot { Bounds.includes(promised, Bounds.withDefaults(it, param, table), table) }
+            if (extra.isEmpty()) continue
+            val spelled = extra.joinToString(", ") { Bounds.shown(it) }
+            return "line ${written.line}: '${impl.typeName}.${written.name}' requires '$param: $spelled', which " +
+                "'${impl.traitName}.${requirement.name}' cannot promise; a caller through '${impl.traitName}' may hold " +
+                "a '${impl.typeName}' of any '$param' - bound the type ('pack ${impl.typeName}<$param: $spelled>'), " +
+                "or drop the bound here"
         }
         return null
     }
@@ -528,10 +582,18 @@ class SymbolCollector {
             }
         }
 
+        // A type steps one way (RANGE_DIP §5): a second `impl Step<…>` for it
+        // is refused, and none of its members are registered.
+        val secondSteps = secondStepImpls(program)
+        secondSteps.forEach { item ->
+            errors.add("line ${item.line}: '${item.typeName.substringAfterLast("__")}' implements Step already; a type steps one way")
+        }
+
         // Register impl methods as functions `Type_method(self, ...)`
         val localPackNames = program.localPackNames
         for (item in program.items) {
             if (item is TopLevel.Impl) {
+                if (item in secondSteps) continue
                 val struct = table.lookupStruct(item.typeName)
                 if (item.isPackImpl && item.typeName !in localPackNames) {
                     errors.add("line ${item.line}: 'impl pack ${item.typeName}' is only allowed in the file that declares pack ${item.typeName}")
@@ -795,7 +857,7 @@ class SymbolCollector {
                 // not write it inherits the spec's, so requiring it would reject
                 // exactly the implementations the body exists to serve.
                 val methodNames = item.methods.filter { it.body.isEmpty() }.map { it.name }
-                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, ownPropTypes, ownMethodSigs, parentNames, requiredSpecs, item.isBridge, item.parents)
+                table.defineSpec(item.name, methodNames, item.callback, item.typeParams, ownPropTypes, ownMethodSigs, parentNames, requiredSpecs, item.isBridge, item.parents, item.typeDefaults)
             }
         }
         for (item in program.items.filterIsInstance<TopLevel.Deco>()) {
@@ -824,6 +886,7 @@ class SymbolCollector {
         val familyResults = mutableMapOf<Triple<String, String, List<String>>, String>()
         for (item in program.items) {
             if (item is TopLevel.Impl && item.traitName != null) {
+                if (item in secondSteps) continue
                 if (!item.hasBody && !item.isDerived) {
                     errors.add(
                         "line ${item.line}: manual implementation 'impl ${item.traitName} for ${item.typeName}' " +
@@ -911,10 +974,27 @@ class SymbolCollector {
                                 complete = false
                                 errors.add(it)
                             }
-                            boundMismatch(item, requirement, written, table)?.let {
+                            val ownerClause = program.items.firstNotNullOfOrNull { declared ->
+                                (declared as? TopLevel.Pack)?.takeIf { it.name == item.typeName }?.whereClause
+                            }
+                            boundMismatch(item, requirement, written, table, ownerClause, specDeclaration)?.let {
                                 complete = false
                                 errors.add(it)
                             }
+                        }
+                    }
+                    // A provided member the implementation replaces is reached
+                    // through the spec as surely as a required one is, so it may
+                    // demand no more either.
+                    for (requirement in specDeclaration?.methods.orEmpty()) {
+                        if (requirement.body.isEmpty() || requirement.name in required) continue
+                        val written = item.methods.firstOrNull { it.name == requirement.name } ?: continue
+                        val ownerClause = program.items.firstNotNullOfOrNull { declared ->
+                            (declared as? TopLevel.Pack)?.takeIf { it.name == item.typeName }?.whereClause
+                        }
+                        boundMismatch(item, requirement, written, table, ownerClause, specDeclaration)?.let {
+                            complete = false
+                            errors.add(it)
                         }
                     }
                     // An operator impl for a spec the type already conforms to
@@ -1041,6 +1121,10 @@ class SymbolCollector {
             val required = table.lookupSpec(item.traitName)?.requiredSpecs.orEmpty()
             for (requirement in required) {
                 if (table.conformsTo(item.typeName, requirement)) continue
+                // An alias implements what the type it names does: `UByte` is
+                // `UInt<8>`, whose conformances are stated once, on `UInt`.
+                val aliased = (table.lookupAlias(item.typeName) as? TypeRef.Named)?.name
+                if (aliased != null && table.conformsTo(aliased, requirement)) continue
                 errors.add(
                     "line ${item.line}: '${item.typeName}' cannot implement '${item.traitName}' " +
                         "until it also implements '$requirement'",
@@ -1246,7 +1330,8 @@ class SymbolCollector {
         is Expr.Call -> symbolTable?.lookupStruct(expr.callee)?.let { IrType.Named(it.name) }
             ?: symbolTable?.lookupFunction(expr.callee)?.returnType
         is Expr.UpperScopeAccess -> null // can't infer type from upper scope access during symbol collection
-        is Expr.Range -> null // ranges are not first-class values
+        // `a..b` is a `Range` of its bounds' type (RANGE_DIP §4).
+        is Expr.Range -> inferExprType(expr.from, env)?.let { IrType.Named(Intrinsics.RANGE, listOf(it)) }
         is Expr.ArrayLiteral -> expr.elements.firstOrNull()?.let { inferExprType(it, env) }?.let(IrType::Array)
         is Expr.SetLiteral -> expr.elements.firstOrNull()?.let { inferExprType(it, env) }?.let(IrType::Set)
         is Expr.MapLit -> expr.entries.firstOrNull()?.let { (key, value) ->

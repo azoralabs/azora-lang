@@ -154,6 +154,13 @@ class SemanticPipeline(
         // BEFORE symbol collection. This flattens conditional function
         // declarations so SymbolCollector can see them.
         // ---------------------------------------------------------------
+        // An implementation's target declares parameters; a type written
+        // there would be a parameter hiding it (`impl Show for Box<Int>`).
+        val targetErrors = ImplParameterAligner.typesWrittenAsParameters(program)
+        if (targetErrors.isNotEmpty()) {
+            allErrors.addAll(targetErrors)
+            return SemanticResult(program, table, emptyList(), allErrors)
+        }
         // An implementation written with its own parameter names is typed by
         // its pack's (`impl Box<U>` for `pack Box<T>`).
         var currentProgram = ImplParameterAligner.align(program)
@@ -218,7 +225,7 @@ class SemanticPipeline(
 
             // CTCE - evaluate compile-time expressions and fold into AST
             val ctfeResult = CtfeEvaluator(table)
-                .apply { seedConstants = topLevelConstants }
+                .apply { seedConstants = topLevelConstants; seedConstantTypes = topLevelCtfe.topLevelConstantTypes }
                 .evaluate(currentProgram)
             allErrors.addAll(ctfeResult.errors)
             val ctfeDoubleErrors = ctfeResult.errors.filter { !it.startsWith("warning:") }

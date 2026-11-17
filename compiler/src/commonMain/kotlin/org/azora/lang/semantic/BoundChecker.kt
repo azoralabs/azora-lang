@@ -67,7 +67,7 @@ internal class BoundChecker private constructor(
     private val violated = HashSet<String>()
 
     /** Type parameters in scope → the specs each is declared to conform to. */
-    private var scope: Map<String, Set<String>> = emptyMap()
+    private var scope: Map<String, Set<Bounds.Bound>> = emptyMap()
 
     /** The line of the statement being walked, for a type that carries none. */
     private var line = 0
@@ -136,7 +136,7 @@ internal class BoundChecker private constructor(
      * An `impl` names the type's parameters again, in the type's order, so each
      * keeps the bounds the type declared for that position.
      */
-    private fun implScope(item: TopLevel.Impl): Map<String, Set<String>> {
+    private fun implScope(item: TopLevel.Impl): Map<String, Set<Bounds.Bound>> {
         val owner = declared[item.typeName]
         val ownerParams = paramsOf(item.typeName)
         val result = LinkedHashMap(ownerScope(item.typeName))
@@ -157,7 +157,7 @@ internal class BoundChecker private constructor(
      * its bounds. `impl Clone for HashMap` and `oper[:] HashMap<K, V>&.(…)`
      * write no parameter list of their own and use those names.
      */
-    private fun ownerScope(type: String): Map<String, Set<String>> {
+    private fun ownerScope(type: String): Map<String, Set<Bounds.Bound>> {
         val owner = declared[type]
         return paramsOf(type).associateWith { param -> Bounds.required(owner?.clause, param) }
     }
@@ -170,7 +170,7 @@ internal class BoundChecker private constructor(
      * [typeParams] with what [clause] requires of each. A member that names a
      * parameter of the type it belongs to keeps the type's bounds for it.
      */
-    private fun declaredScope(typeParams: List<String>, clause: Expr?): Map<String, Set<String>> =
+    private fun declaredScope(typeParams: List<String>, clause: Expr?): Map<String, Set<Bounds.Bound>> =
         typeParams.associateWith { param -> scope[param].orEmpty() + Bounds.required(clause, param) }
 
     /**
@@ -183,7 +183,7 @@ internal class BoundChecker private constructor(
             table.lookupStruct(name) != null || table.lookupEnum(name) != null ||
             table.lookupSlot(name) != null || table.lookupSpec(name) != null || table.lookupFail(name) != null
 
-    private inline fun within(added: Map<String, Set<String>>, block: () -> Unit) {
+    private inline fun within(added: Map<String, Set<Bounds.Bound>>, block: () -> Unit) {
         val saved = scope
         scope = scope + added
         try {
@@ -196,7 +196,13 @@ internal class BoundChecker private constructor(
     private fun function(decl: FuncDecl) {
         val savedLine = line
         line = decl.line
-        within(declaredScope(decl.typeParams, decl.whereClause)) {
+        // A member's clause may bound the type's parameters as well as its own
+        // (`where T: Shape` in `impl Box<T>`); inside the member, both hold.
+        val narrowed = scope.keys.filter { it !in decl.typeParams }.mapNotNull { param ->
+            Bounds.required(decl.whereClause, param).takeIf { it.isNotEmpty() }
+                ?.let { param to scope[param].orEmpty() + it }
+        }.toMap()
+        within(narrowed + declaredScope(decl.typeParams, decl.whereClause)) {
             decl.params.forEach { param(it) }
             (decl.returnType as? TypeAnnotation.Explicit)?.let { typeRef(it.ref) }
             stmts(decl.body)
@@ -266,7 +272,7 @@ internal class BoundChecker private constructor(
 
     private inline fun withTypeParams(lambda: Expr.Lambda, block: () -> Expr): Expr {
         val saved = scope
-        scope = scope + lambda.typeParams.associateWith { emptySet() }
+        scope = scope + lambda.typeParams.associateWith { emptySet<Bounds.Bound>() }
         try {
             return block()
         } finally {
@@ -292,7 +298,12 @@ internal class BoundChecker private constructor(
         for ((param, arg) in declaration.typeParams.zip(args)) {
             val passed = bare(arg)?.takeIf { it in scope }
             if (passed != null) {
-                if (builds) requireDeclared(declaration.clause, param, passed, "'$param' of '$name'", at)
+                if (builds) {
+                    requireDeclared(
+                        declaration.clause, param, passed, "'$param' of '$name'", at,
+                        declaration.typeParams.zip(args).toMap(),
+                    )
+                }
                 continue
             }
             if (arg.isHole || (arg as? TypeRef.Named)?.name == "Any") continue
@@ -318,7 +329,10 @@ internal class BoundChecker private constructor(
             if (param == callee.variadicParam) continue
             val passed = bare(arg)?.takeIf { it in scope }
             if (passed != null) {
-                requireDeclared(clause, param, passed, "'$param' of '${call.callee}'", call.line)
+                requireDeclared(
+                    clause, param, passed, "'$param' of '${call.callee}'", call.line,
+                    callee.typeParams.zip(call.typeArgs).toMap(),
+                )
                 continue
             }
             if (!mentionsScope(arg)) continue
@@ -336,9 +350,9 @@ internal class BoundChecker private constructor(
      * nothing, so a question about them stays open. A bare name this walk does
      * not know as a type is a parameter it does not model, and stays open too.
      */
-    private fun assumed(args: List<TypeRef>, builds: Boolean): Map<String, Set<String>?> {
-        val result = HashMap<String, Set<String>?>()
-        for ((param, bounds) in scope) result[param] = if (builds) Bounds.implied(bounds, table) else null
+    private fun assumed(args: List<TypeRef>, builds: Boolean): Map<String, Set<Bounds.Bound>?> {
+        val result = HashMap<String, Set<Bounds.Bound>?>()
+        for ((param, bounds) in scope) result[param] = if (builds) Bounds.implied(bounds, table, subject = param) else null
         fun visit(ref: TypeRef) {
             when (ref) {
                 is TypeRef.Named -> {
@@ -371,12 +385,22 @@ internal class BoundChecker private constructor(
 
     /**
      * [source], a type parameter in scope, is put where [clause] bounds [param]:
-     * every spec the clause requires of [param] must be one [source] declares.
+     * every spec the clause requires of [param] must be one [source] declares,
+     * with the arguments it asks for read through [passed] - what the use puts
+     * in each of the declaration's parameters.
      */
-    private fun requireDeclared(clause: Expr, param: String, source: String, what: String, at: Int) {
-        val has = Bounds.implied(scope[source].orEmpty(), table)
-        for (spec in Bounds.required(clause, param)) {
-            if (Bounds.includes(has, spec)) continue
+    private fun requireDeclared(
+        clause: Expr,
+        param: String,
+        source: String,
+        what: String,
+        at: Int,
+        passed: Map<String, TypeRef>,
+    ) {
+        val has = Bounds.implied(scope[source].orEmpty(), table, subject = source)
+        for (bound in Bounds.required(clause, param)) {
+            val spec = Bounds.withDefaults(Bounds.substituted(bound, passed), source, table)
+            if (Bounds.includes(has, spec, table)) continue
             val shown = Bounds.shown(spec)
             errors.add(
                 "line $at: $what must be $shown, and '$source' is not declared to be; " +

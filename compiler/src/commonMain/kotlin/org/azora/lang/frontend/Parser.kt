@@ -579,10 +579,15 @@ class Parser(
             advance() // ']'
             "slice"
         }
-        // Descending ranges have an exclusive upper bound and inclusive lower bound.
-        match(TokenType.GREATER_DOT_DOT) -> ">.."
-        match(TokenType.DOT_DOT) -> ".."
-        match(TokenType.DOT_DOT_LESS) -> ".."
+        // A range is not an operator a type declares: every ordered type forms
+        // one, and `Step` says how it walks (RANGE_DIP §4).
+        check(TokenType.GREATER_DOT_DOT) || check(TokenType.DOT_DOT) || check(TokenType.DOT_DOT_LESS) -> {
+            val written = advance()
+            error(
+                "'oper${written.lexeme}' is not declared: every ordered type forms ranges; to walk them, " +
+                    "implement 'Step' (RANGE_DIP §5), at line ${written.line}",
+            )
+        }
         // `<=>` before `<=`, matching the lexer's munch order. The spec that owns
         // it (`Order`/`PartialOrder`) is what fixes its result type.
         match(TokenType.SPACESHIP) -> "<=>"
@@ -681,13 +686,22 @@ class Parser(
     /**
      * Operators the compiler looks up by their bare member name.
      *
-     * Indexing, slicing and the range operators are reached through a check that
-     * asks for the name directly rather than through `lookupOperator`'s
-     * operand-keyed fallback, so an overload suffix would hide them - a
-     * suffixed `oper..` makes `for i in 0..<n` report that `Int` has no range
-     * operator.
+     * Indexing and slicing are reached through a check that asks for the name
+     * directly rather than through `lookupOperator`'s operand-keyed fallback,
+     * so an overload suffix would hide them.
      */
-    private val bareLookupOperators = setOf("index", "indexSet", "slice", "..", ">..")
+    private val bareLookupOperators = setOf("index", "indexSet", "slice")
+
+    /**
+     * Refuses a `by` after an operator's signature. It was a range operator's
+     * step, which no operator declares any more (RANGE_DIP §4); a step is
+     * written in a `for` header.
+     */
+    private fun refuseOperatorStep() {
+        if (check(TokenType.BY)) {
+            error("'by' does not follow an operator declaration; a step is written in a 'for' header, at line ${peek().line}")
+        }
+    }
 
     /**
      * `[bridge] impl oper<OP> for Type(params): Ret (mod self) [{ body }]`.
@@ -732,9 +746,7 @@ class Parser(
         }
         // An operator may carry its own constraint.
         val operatorWhere = withInlineBounds(operatorTypeParams.boundClause, parseWhereClause(), start.line)
-        // The step is declarative metadata: parsed so the source may state it,
-        // then discarded.
-        if (match(TokenType.BY)) parseExpr()
+        refuseOperatorStep()
         // The same overload suffix an operator inside an `impl` gets: the operand
         // it accepts, and - for operators that do not already imply mutation -
         // the receiver's exclusivity. Without it a unary `oper-` and a binary
@@ -1282,7 +1294,7 @@ class Parser(
             TokenType.IF -> parseTopLevelInlineIf()
             TokenType.ASSERT -> parseTopLevelInlineAssert()
             TokenType.TRACE -> parseTopLevelInlineTrace()
-            TokenType.FIN -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.InlineFin(name, init, start.line, start.column) }
+            TokenType.FIN -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); TopLevel.InlineFin(name, init, start.line, start.column, type = inlineFinType(type)) }
             TokenType.LET -> { val start = peek(); advance(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineLet(name, init, start.line, start.column) }
             TokenType.VAR, TokenType.VAL -> { val start = peek(); advance(); val valueMutable = advance().type == TokenType.VAR; val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); TopLevel.InlineVar(name, init, start.line, start.column, valueMutable = valueMutable) }
             TokenType.IDENTIFIER -> { val start = peek(); advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; consume(TokenType.EQUAL, "Expected '='"); val value = parseExpr(); consumeNewline(); TopLevel.InlineAssignment(name, value, start.line, start.column) }
@@ -1420,6 +1432,10 @@ class Parser(
      * is left exactly as written - a splice may name something instead.
      */
     private fun foldConstantArithmetic(tokens: List<Token>): List<Token> {
+        // A lone token has nothing to fold, and rebuilding it from its value
+        // would drop what the value cannot carry: `18_446_744_073_709_551_615`
+        // (`ULong::maxValue`) is `-1` as a `Long`.
+        if (tokens.size <= 1) return tokens
         val value = ConstantFolder(tokens).evaluate() ?: return tokens
         val first = tokens.first()
         return listOf(
@@ -1490,7 +1506,8 @@ class Parser(
             val token = peek() ?: return null
             return when (token.type) {
                 TokenType.MINUS -> { at++; atom()?.let { -it } }
-                TokenType.INT_LITERAL -> { at++; (token.literal as? NumericLiteral)?.value as? Long }
+                // A literal wider than a `Long` is not folded through one.
+                TokenType.INT_LITERAL -> { at++; (token.literal as? NumericLiteral)?.takeIf { it.magnitude == null && it.text == null }?.value as? Long }
                 TokenType.L_PAREN -> {
                     at++
                     val inner = shift() ?: return null
@@ -1906,7 +1923,7 @@ class Parser(
             }
             // Bare declarations: inline if deepInline, runtime otherwise
             check(TokenType.VAR) || check(TokenType.VAL) -> { val valueMutable = advance().type == TokenType.VAR; val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineVar(name, init, start.line, start.column, valueMutable = valueMutable) else TopLevel.VarDecl(name, type, init, start.line, start.column, valueMutable = valueMutable) }
-            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); if (deepInline) TopLevel.InlineFin(name, init, start.line, start.column) else TopLevel.FinDecl(name, type, init, start.line, start.column) }
+            check(TokenType.FIN) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); noteBridgeTargetConstant(name, init); if (deepInline) TopLevel.InlineFin(name, init, start.line, start.column, type = inlineFinType(type)) else TopLevel.FinDecl(name, type, init, start.line, start.column) }
             check(TokenType.LET) -> { advance(); val name = consume(TokenType.IDENTIFIER, "Expected name").lexeme; val type = if (match(TokenType.COLON)) parseTypeName() else null; consume(TokenType.EQUAL, "Expected '='"); val init = parseInitializer(type); consumeNewline(); if (deepInline) TopLevel.InlineLet(name, init, start.line, start.column) else TopLevel.LetDecl(name, type, init, start.line, start.column) }
             check(TokenType.IF) -> {
                 consume(TokenType.IF, "Expected 'if'")
@@ -2976,11 +2993,10 @@ class Parser(
         )
     }
 
-    /** Skips `<T, U>` generic type arguments at the current position (erased at IR). */
     /**
      * The type-parameter names of the impl target most recently parsed.
      *
-     * `impl Vec<T, N>::` erases its arguments - the members it holds are ordinary
+     * `impl Vec<T, N>` erases its arguments - the members it holds are ordinary
      * generic declarations - but `T` still has to name something inside them, so the
      * names are kept here for the caller to put back.
      */
@@ -2989,48 +3005,119 @@ class Parser(
     /** The variadic parameter of the last impl target, when it declared one. */
     private var lastImplVariadicParam: String? = null
 
-    private fun skipGenericTypeArgs() {
+    /**
+     * `<T, U>` after a spec implementation's target - `impl Show for Box<T>`,
+     * `Tuple<...T>`, `Array<T, N: Int>` - the parameters it declares, kept in
+     * [lastImplTypeParams] and [lastImplVariadicParam].
+     *
+     * `impl Show for Box<T: Shape>` is refused: it would make every `Box` a
+     * `Show` and promise the members a `Shape` no use is checked against - the
+     * conformance would hold for some `T` and not others, which nothing
+     * decides. `N: Int` states a const parameter's kind and stays.
+     */
+    private fun parseImplTargetParams(target: String) {
         lastImplTypeParams = emptyList()
         lastImplVariadicParam = null
         if (!check(TokenType.LESS)) return
-        advance() // '<'
-        var depth = 1
-        val names = mutableListOf<String>()
-        while (depth > 0) {
-            // At the top level of `<…>`, an identifier that is not part of a nested
-            // application names a parameter; `N: Int` contributes `N`.
-            if (depth == 1 && peek().type == TokenType.IDENTIFIER &&
-                peekNext()?.type != TokenType.LESS &&
-                tokens.getOrNull(current - 1)?.type != TokenType.COLON
-            ) {
-                names.add(peek().lexeme)
-                // `Tuple<...T>` - the target declares a variadic parameter, and
-                // the ellipsis is the only thing that says so.
-                if (tokens.getOrNull(current - 1)?.type == TokenType.ELLIPSIS) {
-                    lastImplVariadicParam = peek().lexeme
-                }
-            }
-            when (peek().type) { TokenType.LESS -> depth++; TokenType.GREATER -> depth--; else -> {} }
-            advance()
+        val at = peek()
+        val args = parseGenericTypeArgsIfPresent(declaresParams = true)
+        val bounds = lastDeclaredBounds
+        lastDeclaredBounds = null
+        if (bounds != null) {
+            val bound = generateSequence(bounds) { (it as? Expr.Binary)?.left }.last() as? Expr.IsCheck
+            val param = (bound?.expr as? Expr.Identifier)?.name ?: "T"
+            val spec = bound?.typeName ?: "Spec"
+            error(
+                "a bound on an implementation's target would make the spec hold for some " +
+                    "'$param' and not others, which is not supported; bound the type itself " +
+                    "('pack $target<$param: $spec>') or each member ('where $param: $spec') " +
+                    "at line ${at.line}",
+            )
         }
-        lastImplTypeParams = names
+        lastImplTypeParams = implParamNames(target, args, at)
+        lastImplVariadicParam = args.firstNotNullOfOrNull { (it as? TypeRef.Named)?.takeIf { arg -> arg.variadic }?.name }
     }
 
-    /** Parses `<T, U>` generic type arguments at the current position. */
-    private fun parseGenericTypeArgsIfPresent(): List<TypeRef> {
+    /**
+     * The names an implementation's target declares as its parameters, one
+     * per argument. An argument that is a type rather than a name - `Box<Array<T>>`,
+     * `Box<Int?>`, `Box<3>` - would make the implementation one for some `Box`
+     * and not others, and generics are erased (GENERICS_DIP §21): it is
+     * refused. A bare name that is a type (`Box<Int>`) is refused by
+     * `SymbolCollector`, which knows every type.
+     */
+    private fun implParamNames(target: String, args: List<TypeRef>, at: Token): List<String> = args.map { arg ->
+        (arg as? TypeRef.Named)
+            ?.takeIf { it.args.isEmpty() && it.qualifier == null && it.valueArgs.isEmpty() && it.name != TypeRef.HOLE }
+            ?.name
+            ?: error(
+                "'$target<${args.joinToString(", ")}>': an implementation's target declares its parameters, " +
+                    "one name each, as in '$target<T>'; '$arg' is ${if (arg is TypeRef.Const) "a value" else "a type"}, " +
+                    "and an implementation for one kind " +
+                    "of '$target' is not supported (generics are erased) at line ${at.line}",
+            )
+    }
+
+    /**
+     * The bounds the last impl head wrote on the parameters it declares -
+     * `impl Box<T: Shape>` - as one clause, or null. Read by [parseImpl] right
+     * after the head, before anything else parses type arguments.
+     */
+    private var lastDeclaredBounds: Expr? = null
+
+    /** Whether `N: <kind>` declares a const parameter (`N: Int`, `O: MatrixOrder`) rather than a bound. */
+    private fun isConstParameterKind(kind: String): Boolean = kind == "Int" || kind in declaredEnums
+
+    /**
+     * Parses `<T, U>` generic type arguments at the current position.
+     *
+     * Where the list [declaresParams] - an inherent impl's head, `impl
+     * Box<T: Shape>` - an entry may carry a bound, kept as the clause
+     * [lastDeclaredBounds] for the impl to give its members; `N: Int` states a
+     * const parameter's kind. Anywhere else a bound has nothing to declare and
+     * is refused rather than read and dropped.
+     */
+    private fun parseGenericTypeArgsIfPresent(declaresParams: Boolean = false): List<TypeRef> {
+        if (declaresParams) lastDeclaredBounds = null
         if (!check(TokenType.LESS)) return emptyList()
         advance() // '<'
         val args = mutableListOf<TypeRef>()
+        var bounds: Expr? = null
         if (!check(TokenType.GREATER)) {
             do {
-                args.add(parseTypeArg())
-                // `impl Array<T, N: Int>` - an impl target *declares* its parameters,
-                // so an entry may carry a bound. The bound belongs to the type's own
-                // declaration; here it only has to parse.
-                if (match(TokenType.COLON)) parseTypeName()
+                val arg = parseTypeArg()
+                args.add(arg)
+                if (check(TokenType.COLON)) {
+                    val colon = advance()
+                    val param = (arg as? TypeRef.Named)
+                        ?.takeIf { it.args.isEmpty() && it.qualifier == null && !it.variadic }?.name
+                    val at = peek()
+                    val constraint = parseTypeName()
+                    val kind = (constraint as? TypeRef.Named)?.name
+                    if (!declaresParams || param == null) {
+                        error(
+                            "'$arg: $constraint' bounds a type parameter, and nothing is declared here; " +
+                                "write the bound where '$arg' is declared at line ${colon.line}",
+                        )
+                    }
+                    if (kind == null) {
+                        error("a bound names a spec, as in '$param: Shape', not '$constraint', at line ${colon.line}")
+                    }
+                    if (!isConstParameterKind(kind)) {
+                        val check = Expr.IsCheck(
+                            Expr.Identifier(param, at.line, at.column, param.length),
+                            kind,
+                            at.line,
+                            at.column,
+                            typeArgs = (constraint as TypeRef.Named).args,
+                        )
+                        bounds = bounds?.let { Expr.Binary(it, TokenType.AND_AND, check, at.line) } ?: check
+                    }
+                }
             } while (matchTypeArgumentComma())
         }
         consumeTypeArgumentClose("Expected '>' after generic type arguments")
+        if (declaresParams) lastDeclaredBounds = bounds
         return args
     }
 
@@ -3178,7 +3265,7 @@ class Parser(
     private fun parseImplTarget(): String {
         val owner = consume(TokenType.IDENTIFIER, "Expected implementation target").lexeme
         if (!match(TokenType.DOUBLE_COLON)) {
-            skipGenericTypeArgs()
+            parseImplTargetParams(owner)
             return owner
         }
         val member = when {
@@ -3187,7 +3274,7 @@ class Parser(
         }
         // A scope-qualified target carries its parameters like any other:
         // `impl PrettyPrint for Tuple<...T>`.
-        skipGenericTypeArgs()
+        parseImplTargetParams(member)
         return "$owner.$member"
     }
 
@@ -3307,97 +3394,6 @@ class Parser(
                     "write '$replacement' inside 'impl T { … }'",
             )
         }
-        if (check(TokenType.CTOR)) {
-            val ctorStart = advance()
-            val ctorParams = if (match(TokenType.L_PAREN)) {
-                val parsed = parseParams()
-                consume(TokenType.R_PAREN, "Expected ')' after ctor params")
-                parsed
-            } else {
-                emptyList()
-            }
-            consume(TokenType.FOR, "Expected 'for' after 'impl ctor'")
-            val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
-            skipGenericTypeArgs() // `impl ctor(...) for Type<T>` - discard erased type args
-            val contracts = parseContractClauses()
-            skipScopeBodyIntroducer()
-            if (!check(TokenType.L_BRACE)) {
-                consumeNewline()
-                return TopLevel.Impl(typeName, emptyList(), null, ctorStart.line, ctorStart.column)
-            }
-            consume(TokenType.L_BRACE, "Expected '{' before ctor impl body")
-            skipNewlines()
-            // The receiver belongs to the signature. This form predates that rule and
-            // is removed whole in its own step, so its in-brace receiver is optional
-            // here rather than an error - the body alone is the modern spelling.
-            val receiverModifier = if (isSelfReceiverHeaderAhead()) {
-                val bound = parseReceiverBinding("ctor receiver").modifier
-                consume(TokenType.ARROW, "Expected '->' after ctor receiver")
-                skipNewlines()
-                bound
-            } else {
-                ParamModifier.EXCLUSIVE
-            }
-            val body = mutableListOf<Stmt>()
-            while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                body.addAll(parseStmts())
-                skipNewlines()
-            }
-            consume(TokenType.R_BRACE, "Expected '}' after ctor impl body")
-            consumeNewline()
-            val method = FuncDecl(
-                name = "ctor",
-                params = ctorParams,
-                returnType = TypeAnnotation.Inferred,
-                body = applyContracts(body, contracts),
-                line = ctorStart.line,
-                column = ctorStart.column,
-                receiverModifier = receiverModifier,
-            )
-            return TopLevel.Impl(typeName, listOf(method), null, ctorStart.line, ctorStart.column)
-        }
-        if (check(TokenType.DTOR)) {
-            val dtorStart = advance()
-            if (match(TokenType.L_PAREN)) {
-                consume(TokenType.R_PAREN, "Expected ')' after dtor params")
-            }
-            consume(TokenType.FOR, "Expected 'for' after 'impl dtor'")
-            val typeName = consume(TokenType.IDENTIFIER, "Expected type name after 'for'").lexeme
-            skipGenericTypeArgs()
-            skipScopeBodyIntroducer()
-            if (!check(TokenType.L_BRACE)) {
-                consumeNewline()
-                return TopLevel.Impl(typeName, emptyList(), null, dtorStart.line, dtorStart.column)
-            }
-            consume(TokenType.L_BRACE, "Expected '{' before dtor impl body")
-            skipNewlines()
-            // Optional for the same reason the ctor form's is - see above.
-            val receiverModifier = if (isSelfReceiverHeaderAhead()) {
-                val bound = parseReceiverBinding("dtor receiver").modifier
-                consume(TokenType.ARROW, "Expected '->' after dtor receiver")
-                skipNewlines()
-                bound
-            } else {
-                ParamModifier.SHARED
-            }
-            val body = mutableListOf<Stmt>()
-            while (!check(TokenType.R_BRACE) && !isAtEnd()) {
-                body.addAll(parseStmts())
-                skipNewlines()
-            }
-            consume(TokenType.R_BRACE, "Expected '}' after dtor impl body")
-            consumeNewline()
-            val method = FuncDecl(
-                name = "dtor",
-                params = emptyList(),
-                returnType = TypeAnnotation.Inferred,
-                body = body,
-                line = dtorStart.line,
-                column = dtorStart.column,
-                receiverModifier = receiverModifier,
-            )
-            return TopLevel.Impl(typeName, listOf(method), null, dtorStart.line, dtorStart.column)
-        }
         // `impl as T for Type { self& -> … }` - a bespoke declaration with a
         // bespoke receiver, and the last surviving use of the in-brace receiver
         // the bracket redesign replaced everywhere else. `Cast<To>` says the
@@ -3455,8 +3451,13 @@ class Parser(
             head.copy(args = parseGenericTypeArgsIfPresent())
         } ?: run {
             val head = parseContractName("Expected type or trait name after 'impl'")
-            listOf(head.copy(args = parseGenericTypeArgsIfPresent()))
+            listOf(head.copy(args = parseGenericTypeArgsIfPresent(declaresParams = true)))
         }
+        // `impl Box<T: Shape> { … }` - the head declares `T` and bounds it, so
+        // each member holds where `T` is a `Shape`. Taken now: the body parses
+        // type arguments of its own.
+        val headBounds = lastDeclaredBounds
+        lastDeclaredBounds = null
         val firstHead = traitHeads.first()
         val first = firstHead.name
         val firstArgs = firstHead.args
@@ -3471,6 +3472,13 @@ class Parser(
         var implementationTargets = listOf(first)
         if (match(TokenType.FOR)) {
             if (isPackImpl) error("'impl pack' cannot be used for prot implementations at line ${peek().line}")
+            // The spec's arguments name types; they declare nothing to bound.
+            if (headBounds != null) {
+                error(
+                    "'impl $first<…>' bounds a type parameter in the spec's arguments, which declare " +
+                        "nothing; the target declares the parameters at line ${start.line}",
+                )
+            }
             traitName = first
             traitArgs = firstArgs
             implementationTargets = expandTypeListTargets(parseImplTargets())
@@ -3488,7 +3496,7 @@ class Parser(
             TypeParams(lastImplTypeParams, lastImplVariadicParam)
         } else {
             TypeParams(
-                firstArgs.mapNotNull { (it as? TypeRef.Named)?.takeIf { a -> a.args.isEmpty() && a.qualifier == null }?.name },
+                implParamNames(first, firstArgs, start),
                 firstArgs.filterIsInstance<TypeRef.Named>().firstOrNull { it.variadic }?.name,
             )
         }
@@ -3931,9 +3939,7 @@ class Parser(
                     skipNewlines()
                     // `oper+ &.(rhs: Self&): Self = <expr>` - an expression
                     // body, the same shorthand a `func` has.
-                    // A range operator's default step trails the declaration, as it
-                    // does at top level; it is declarative metadata.
-                    if (match(TokenType.BY)) parseExpr()
+                    refuseOperatorStep()
                     skipNewlines()
                     val operBody: List<Stmt>
                     if (!check(TokenType.L_BRACE) && !check(TokenType.EQUAL)) {
@@ -3999,6 +4005,14 @@ class Parser(
         currentImplTypeName = savedImplTypeName
         consume(TokenType.R_BRACE, "Expected '}' after impl methods")
         consumeNewline()
+        // The head's bounds are every member's: `impl Box<T: Shape>` says what
+        // `where T: Shape` on each of them would.
+        if (headBounds != null) {
+            for (i in methods.indices) {
+                val member = methods[i]
+                methods[i] = member.copy(whereClause = withInlineBounds(headBounds, member.whereClause, member.line))
+            }
+        }
         // A member of a plain `impl T { }` that wrote no receiver belongs to the
         // type, not to a value of it: `func make(): Arena` leaves as `Arena__make`
         // and is reached as `Arena::make()`. It uses the same desugaring as the
@@ -4326,6 +4340,15 @@ class Parser(
             declared.append('.').append(advance().lexeme)
         }
         return ParsedBridgeName(declared.toString())
+    }
+
+    /**
+     * An `inline fin`'s written type as its uses read it: `Self` inside an
+     * `impl` is that impl's type, so `Long::maxValue` is a `Long`.
+     */
+    private fun inlineFinType(type: TypeRef?): TypeRef? {
+        val impl = currentImplTypeName
+        return if (type is TypeRef.Named && type.name == "Self" && type.args.isEmpty() && impl != null) TypeRef.Named(impl) else type
     }
 
     /** Records `fin`/`inline fin X = Target.C` so `bridge X { … }` can resolve. */
@@ -5579,8 +5602,7 @@ class Parser(
                     skipNewlines()
                     TypeAnnotation.Explicit(parseTypeName())
                 } else TypeAnnotation.Inferred
-                // A range operator's declarative step, as at every other site.
-                if (match(TokenType.BY)) parseExpr()
+                refuseOperatorStep()
                 consumeNewline()
                 methods.add(
                     FuncDecl(
@@ -6872,7 +6894,7 @@ class Parser(
             // Optional kind/constraint after `:`:
             //  - `N: Int` → a const-generic value parameter (supplied as a `TypeRef.Const` arg).
             //  - `O: MatrixOrder` → the same, over an enum's variants.
-            //  - `T: Spec` → a conformance constraint (accepted, not yet enforced).
+            //  - `T: Spec`, `T: Conv<Int>` → a conformance bound, its arguments included.
             var constEnum: String? = null
             if (match(TokenType.COLON)) {
                 val at = peek()
@@ -6887,8 +6909,13 @@ class Parser(
                 } else if (constraintName != null) {
                     // A conformance bound means what `where T: Spec` means, so
                     // generic code sees one shape for both spellings.
-                    val check = Expr.IsCheck(Expr.Identifier(name, at.line, at.column, name.length), constraintName, at.line, at.column)
+                    val check = Expr.IsCheck(
+                        Expr.Identifier(name, at.line, at.column, name.length), constraintName, at.line, at.column,
+                        typeArgs = (constraint as TypeRef.Named).args,
+                    )
                     boundClause = boundClause?.let { Expr.Binary(it, TokenType.AND_AND, check, at.line) } ?: check
+                } else {
+                    error("a bound names a spec, as in '$name: Shape', not '$constraint', at line ${at.line}")
                 }
             }
             // `= <default>` - the same slot holds either kind of default:
@@ -6963,10 +6990,9 @@ class Parser(
      * so nothing downstream has to learn a second shape, and several bounds
      * become a conjunction.
      *
-     * The spec's type arguments are read and discarded here - conformance is
-     * nominal (`SymbolTable.conformsTo`), so `PartialEqual<U>` and
-     * `PartialEqual` check the same thing today. Reading them keeps the source
-     * able to say what it means before the checker can act on it.
+     * The spec's type arguments are part of the bound: `T: Conv<Int>` holds
+     * where `T` implements `Conv<Int>`, and a `Conv<String>` does not satisfy
+     * it ([Expr.IsCheck.typeArgs]).
      *
      * Returns null when what follows is not a bound, so an ordinary constraint
      * expression (`T.length >= 2 && T is Number`) still parses as one.
@@ -6978,23 +7004,24 @@ class Parser(
             val subject = peek()
             val name = consume(TokenType.IDENTIFIER, "Expected a type parameter before ':'").lexeme
             consume(TokenType.COLON, "Expected ':' in a conformance bound")
-            val specs = mutableListOf<String>()
+            val specs = mutableListOf<Pair<String, List<TypeRef>>>()
             if (match(TokenType.L_BRACKET)) {
                 do {
-                    specs.add(consume(TokenType.IDENTIFIER, "Expected a spec name in the bound list").lexeme)
-                    parseGenericTypeArgsIfPresent()
+                    val spec = consume(TokenType.IDENTIFIER, "Expected a spec name in the bound list").lexeme
+                    specs.add(spec to parseGenericTypeArgsIfPresent())
                 } while (match(TokenType.COMMA))
                 consume(TokenType.R_BRACKET, "Expected ']' after the bound list")
             } else {
-                specs.add(parseQualifiedTypeName("Expected a spec name after ':'"))
-                parseGenericTypeArgsIfPresent()
+                val spec = parseQualifiedTypeName("Expected a spec name after ':'")
+                specs.add(spec to parseGenericTypeArgsIfPresent())
             }
-            for (spec in specs) {
+            for ((spec, args) in specs) {
                 val check = Expr.IsCheck(
                     Expr.Identifier(name, subject.line, subject.column, name.length),
                     spec,
                     subject.line,
                     subject.column,
+                    typeArgs = args,
                 )
                 clause = clause?.let { Expr.Binary(it, TokenType.AND_AND, check, subject.line) } ?: check
             }
@@ -10849,14 +10876,7 @@ class Parser(
      */
     private fun parseAsIs(): Expr {
         var e = parseUnary()
-        while (check(TokenType.AS) || check(TokenType.IS) || (inOperatorEnabled && check(TokenType.IN))) {
-            if (check(TokenType.IN)) {
-                val inTok = advance()
-                // The collection is parsed at range precedence: `N in 2..4` asks about
-                // the whole range, and `parseUnary` would stop at the `2`.
-                e = Expr.InCheck(e, parseRange(), line = inTok.line, column = inTok.column)
-                continue
-            }
+        while (check(TokenType.AS) || check(TokenType.IS)) {
             val op = advance()
             if (op.type == TokenType.AS) {
                 // `as` (static), `as?` (dynamic → T?), `as*` (reinterpret).
@@ -10939,15 +10959,30 @@ class Parser(
     }
 
     private fun parseComparison(): Expr {
-        var left = parseSpaceship()
+        var left = parseMembership()
         while (check(TokenType.LESS) || check(TokenType.LESS_EQUAL) ||
                check(TokenType.GREATER) || check(TokenType.GREATER_EQUAL)
         ) {
             val op = advance().type
-            val right = parseSpaceship()
+            val right = parseMembership()
             left = Expr.Binary(left, op, right, left.line)
         }
         return left
+    }
+
+    /**
+     * `value in collection` - looser than arithmetic, ranges and the infix
+     * levels, tighter than comparison and logic: `x + 3 in r` asks about
+     * `x + 3`, `N in 2..4` about the whole range, and `x in r && y in s` is
+     * two tests. Off inside a `for` header, whose `in` is the loop's.
+     */
+    private fun parseMembership(): Expr {
+        var e = parseSpaceship()
+        while (inOperatorEnabled && check(TokenType.IN)) {
+            val inTok = advance()
+            e = Expr.InCheck(e, parseSpaceship(), line = inTok.line, column = inTok.column)
+        }
+        return e
     }
 
     /**
@@ -11058,7 +11093,12 @@ class Parser(
             val operator = advance()
             val inclusive = operator.type != TokenType.DOT_DOT_LESS
             val right = parseAddition()
-            left = Expr.Range(left, right, inclusive, left.line, descending = operator.type == TokenType.GREATER_DOT_DOT)
+            // At the operator: two ranges on one line have different positions,
+            // which is what the type the resolver records for each is keyed by.
+            left = Expr.Range(
+                left, right, inclusive, operator.line, operator.column, operator.lexeme.length,
+                descending = operator.type == TokenType.GREATER_DOT_DOT,
+            )
         }
         return left
     }

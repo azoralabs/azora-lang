@@ -300,6 +300,8 @@ private val OPS: Map<String, Op> = buildMap {
     put("v128.not", Op(77, prefix = 0xFD)); put("v128.and", Op(78, prefix = 0xFD)); put("v128.andnot", Op(79, prefix = 0xFD))
     put("v128.or", Op(80, prefix = 0xFD)); put("v128.xor", Op(81, prefix = 0xFD)); put("v128.any_true", Op(83, prefix = 0xFD))
     put("i64x2.eq", Op(214, prefix = 0xFD)); put("i64x2.ne", Op(215, prefix = 0xFD))
+    // 1 when both 64-bit lanes are nonzero: with `i64x2.eq`, whether two 128-bit integers are equal.
+    put("i64x2.all_true", Op(195, prefix = 0xFD))
 }
 
 // ── The module ─────────────────────────────────────────────────────

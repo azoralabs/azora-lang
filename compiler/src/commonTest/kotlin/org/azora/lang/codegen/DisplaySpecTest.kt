@@ -63,6 +63,41 @@ class DisplaySpecTest {
         )
     }
 
+    /**
+     * An erased `T` carries no type when the program runs, so only a `Display`
+     * bound can say how to show it. Unbounded, it printed an address on LLVM
+     * and the interpreter's internal map (`{__type=P, n=3}`).
+     */
+    @Test fun showingAnUnboundedTypeParameterIsAnError() {
+        val sources = listOf(
+            "func<T> show(x: T): String { return \"<${'$'}{x}>\" }",
+            "func<T> show(x: T): String { println(x)\n return \"\" }",
+            "func<T> show(xs: Array<T>): String { return \"${'$'}xs\" }",
+            "func<T> show(x: T?): String { return \"${'$'}x\" }",
+            "func<T: Order> show(x: T): String { return \"${'$'}x\" }",
+        )
+        for (declaration in sources) {
+            val result = compile("import std.io\nimport std.traits\n$declaration\nfunc main() {}")
+            assertIs<CompilationResult.Failure>(result, "an unbounded T must not be shown: $declaration")
+            assertTrue(
+                result.errors.any { "'T' is not bounded by 'Display'; write 'where T: Display'" in it },
+                "the error should name the fix, got: ${result.errors}",
+            )
+        }
+    }
+
+    @Test fun aDisplayBoundedTypeParameterShowsItself() {
+        assertEquals("<42> <hi> <true> [1, 2]", run("""
+            import std.io
+            import std.format
+            func<T: Display> show(x: T): String { return "<${'$'}{x}>" }
+            func<T: Display> all(xs: Array<T>): String { return "${'$'}xs" }
+            func main() {
+                println(show(42) + " " + show("hi") + " " + show(true) + " " + all([1, 2]))
+            }
+        """.trimIndent()))
+    }
+
     @Test fun interpolationGoesThroughDisplay() {
         assertEquals("Vec2(1, 2)", run("""
             import std.io

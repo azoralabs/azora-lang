@@ -68,6 +68,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
     /** Compile-time bindings from `inline fin` declarations. */
     private val inlineEnv = mutableMapOf<String, Expr>()
 
+    /** A numeric `inline fin`'s written type, which its value keeps where run-time code reads it. */
+    private val inlineTypes = mutableMapOf<String, TypeRef>()
+
+
     /**
      * Compile-time constants folded by the top-level pass ([evaluateTopLevel]).
      * These come from top-level `deepinline`/`inline` bindings - including those
@@ -85,6 +89,12 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * config constants resolve inside functions, not only at the top level.
      */
     var seedConstants: Map<String, Expr> = emptyMap()
+
+    /** The written types of [topLevelConstants] that have one, by name. */
+    var topLevelConstantTypes: Map<String, TypeRef> = emptyMap()
+
+    /** The written types of [seedConstants] that have one, by name. */
+    var seedConstantTypes: Map<String, TypeRef> = emptyMap()
 
     private val reflectionTypes = mutableMapOf<String, String>()
     private var compileTimeDepth = 0
@@ -121,6 +131,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         activeErrors = errors
         val (resolvedItems, changed) = resolveTopLevelItems(program.items, program, errors)
         topLevelConstants = inlineEnv.toMap()
+        topLevelConstantTypes = inlineTypes.toMap()
         return CtfeResult(program.copy(items = resolvedItems), changed, errors)
     }
 
@@ -141,6 +152,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
         // Phase A: Resolve top-level inline items
         inlineEnv.clear()
+        inlineTypes.putAll(seedConstantTypes)
         val (resolvedItems, topChanged) = resolveTopLevelItems(program.items, program, errors)
         if (topChanged) changed = true
         // Phase A consumed the top-level `inline` items, so their values live
@@ -153,6 +165,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             inlineEnv.clear()
             inlineEnv.putAll(seedConstants)
             inlineEnv.putAll(topLevelEnv)
+            inlineTypes.putAll(seedConstantTypes)
             reflectionTypes.clear()
             decl.params.forEach { reflectionTypes[it.name] = it.type.displayName() }
             erasedTypeParams = if (decl.isInline) emptySet() else decl.typeParams.toSet()
@@ -288,7 +301,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
         }
         is TopLevel.InlineFin -> {
             val (folded, _) = foldCompileTimeExpr(item.initializer, program)
-            if (isConstant(folded)) { inlineEnv[item.name] = folded; Pair(emptyList(), true) }
+            if (isConstant(folded)) {
+                inlineEnv[item.name] = folded
+                item.type?.let { inlineTypes[item.name] = it }
+                Pair(emptyList(), true)
+            }
             else Pair(listOf(item), false)
         }
         is TopLevel.InlineLet -> {
@@ -1472,7 +1489,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
             is Expr.Identifier -> {
                 // Substitute inline fin bindings
                 val inlineValue = inlineEnv[expr.name]
-                if (inlineValue != null) Pair(inlineValue, true)
+                if (inlineValue != null) Pair(typedForRuntime(expr.name, inlineValue), true)
                 else Pair(expr, false)
             }
             is Expr.UpperScopeAccess -> Pair(expr, false)
@@ -1621,6 +1638,26 @@ class CtfeEvaluator(private val table: SymbolTable) {
     }
 
     // -- Constant folding helpers -------------------------------------------
+
+    /**
+     * [value], the constant [name] holds, as run-time code reads it: a number
+     * keeps the type its `inline fin` declares (`Long::maxValue` is a `Long`,
+     * not an unsuffixed literal an `Int` must hold). Compile-time code - an
+     * `inline if`, a splice - reads the bare number.
+     */
+    private fun typedForRuntime(name: String, value: Expr): Expr {
+        if (compileTimeDepth > 0) return value
+        val declared = inlineTypes[name] as? TypeRef.Named ?: return value
+        if (declared.args.isNotEmpty() || declared.name !in NUMERIC_TYPES) return value
+        if (value is Expr.IntLiteral && declared.name == "Int") return value
+        if (value !is Expr.IntLiteral && value !is Expr.DoubleLiteral) return value
+        return Expr.Cast(value, declared, line = value.line)
+    }
+
+    private val NUMERIC_TYPES = setOf(
+        "Byte", "Short", "Int", "Long", "Cent", "UByte", "UShort", "UInt", "ULong", "UCent",
+        "Half", "Float", "Double", "Quad",
+    )
 
     private fun isConstant(expr: Expr): Boolean = when (expr) {
         is Expr.IntLiteral, is Expr.DoubleLiteral,

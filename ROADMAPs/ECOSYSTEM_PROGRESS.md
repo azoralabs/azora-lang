@@ -3,14 +3,14 @@
 Plan: [150-step delivery plan](ECOSYSTEM_DELIVERY_PLAN.md).
 Initial evidence: [2026-09-08 audit](ECOSYSTEM_AUDIT_2026_09_08.md).
 
-## Current status — 2026-11-14
+## Current status — 2026-11-16
 
 The ordered short- and long-term plan for the language, Engine and Studio
 (every OS and graphics backend, written in Azora; packages; editor plugins;
 self-hosting; a flagship game as the qualification) is
 [the 2026-11 roadmap](ECOSYSTEM_ROADMAP_2026_11.md).
-Last full run, native tools required: **3,018 tests, 0 failures, 0 skipped**;
-AZLS 93 tests, 0 failures. Roadmap steps A1 and A2 closed 2026-11-06 (with
+Last full run, native tools required: **3,055 tests, 0 failures, 0 skipped**;
+AZLS 93 tests, 0 failures (2026-11-16). Roadmap steps A1 and A2 closed 2026-11-06 (with
 decision D-6), A3 to A6 on 2026-11-07 (`Char` is a code point on every
 backend; the package manager, PACKAGES_DIP.MD; decisions D-1 to D-5 and D-7,
 all by the owner; D-7 and D-5 implemented the same day). On 2026-11-14 two of
@@ -19,7 +19,13 @@ all by the owner; D-7 and D-5 implemented the same day). On 2026-11-14 two of
 generated and checked in, and std's exposed internals were marked; see the
 entries at the end. Next in §11: feature gating (undecided), the compatibility
 suite's job, the release process; the owner's review of the 455-line stable
-listing; Track B can start (D-1 to D-4 settled).
+listing; Track B can start (D-1 to D-4 settled). On 2026-11-15/16 0.1's
+§1.1 was worked down: bounds are kept and checked everywhere they are written
+(spec arguments, a member's bound on its type's parameters and impl-head
+bounds included), and tuples and arrays compare and hash by their parts. An impl
+target written with a type as its argument (`impl Show for Box<Int>`) is
+refused (owner's decision). §1.1 stays open on the range operator's `by` step
+with `Range<T>` (a decision) and three smaller drops; see the last entries.
 
 ## Status — 2026-10-04
 
@@ -4663,3 +4669,319 @@ WebAssembly, optimized and not, printing what the interpreter prints). AZLS
 93, 0 failures. The Engine's scratch build is unchanged (8 of 31 members), and
 neither the Engine nor Studio compares tuples or arrays or calls `.hash`.
 
+
+## 2026-11-16 (continued) — §1.1 audit, the parser: bounds read and dropped
+
+0.1 roadmap §1.1's last item, "anything parsed and dropped rather than
+enforced". The parser was swept for every value it reads and does not keep
+(`parseX()` results unused, `skip…` helpers, comments saying "discarded").
+Three findings let a program compile and then fail or print the wrong thing,
+measured on the interpreter before the change:
+
+- **A bound's spec arguments were dropped.** `where T: Conv<Int>` (and
+  `<T: Conv<Int>>`, and `T: [Conv<Int>]`) kept `Conv` and threw `<Int>` away,
+  so a type implementing only `Conv<String>` satisfied it; `x.conv() +
+  x.conv()` in a function declared `: Int` printed `aa`.
+- **A member's `where` clause about its type's parameters was never decided
+  for the receiver.** `impl Box<T> { func &.measure(): Int where T: Shape }`
+  accepted `Box(NoShape(2)).measure()`, which failed at run time with
+  `no method 'area' on map`.
+- **`impl Box<T: Shape> { … }` parsed the bound and dropped it** ("the bound
+  belongs to the type's own declaration; here it only has to parse"), with the
+  same run-time failure. Every other type-argument list did the same: a
+  `derive Spec<T: X>`, a decorator binding, `reflect<…>`, a static access.
+
+### What changed
+
+- **AST / parser.** `Expr.IsCheck` carries `typeArgs`; `parseSpecBounds` and
+  `parseTypeParams` keep them. `parseGenericTypeArgsIfPresent(declaresParams)`
+  keeps a bound only where an inherent impl head declares its parameters
+  (`impl Box<T: Shape>`; `N: Int` there is a const parameter's kind), and
+  refuses one anywhere else; a spec implementation's target (`impl Show for
+  Box<T: Shape>`, which would make the spec hold for some `T` only) and a
+  spec's arguments in an impl head are refused too. An inline bound that names
+  no spec (`<T: (A, B)>`) is refused rather than ignored. The impl head's bound
+  becomes every member's `where` clause, statics lifted out of the impl
+  included.
+- **`semantic/Bounds.kt`.** A bound is a `Bound(spec, args)`, not a name.
+  `implied` passes a child spec's arguments to its parents (`MutableList<Int>`
+  implies `List<Int>`); `withDefaults` fills unwritten arguments from the
+  spec's defaults (`T: PartialEqual` is `PartialEqual<T>` by `Rhs = Self`,
+  OPERATOR_OVERLOADING_DIP §7.4; `Index<K>` is `Index<K, Self>`), for which
+  `SpecSymbol` now records `typeDefaults`; `sameArgs` compares arguments
+  through aliases, primitive widths, borrows and module-qualified names.
+- **`ConstraintEvaluator`.** A named binding keeps its arguments
+  (`Binding.Type(name, args)`). A bound with arguments is satisfied by an
+  `impl` of the spec whose arguments, read in the implementing type's own
+  (`impl Indexed<T> for ArrayList<T>` makes `ArrayList<Int>` an
+  `Indexed<Int>`), equal the bound's; a parameter of the declaration no
+  binding fills leaves it undecided, as before. `T is Conv<Int>` on a type
+  parameter of the asking code answers with its declared bounds, arguments
+  included. A structured type has a language-given capability only with
+  itself.
+- **`TypeResolver`.** `checkOwnerBound`: a member's clause about its type's
+  parameters is decided for the receiver's arguments at a method call, a
+  property read, a binary operator, a compound assignment and a subscript; a
+  receiver declared `Box<U>` in generic code passes the bound on (`add 'where
+  U: Shape'`). Inside such a member, the bound holds (it joins the type's own
+  bounds in scope, in the resolver and in `BoundChecker`). Pass-on compares
+  arguments: `where U: Conv<String>` and a bare `where U: Conv` do not stand
+  where `Conv<Int>` is asked.
+- **`SymbolCollector.boundMismatch`.** An `impl` member may not demand other
+  spec arguments than its spec member promises, and - since a spec member
+  takes no `where` clause - may not bound the implementing type's parameters
+  beyond what the type's declaration and the spec's own bounds promise, for a
+  provided member it overrides as for a required one: through `Bag`, a
+  `Pile<NoShape>` would reach the member unchecked.
+- **Plumbing.** `IsCheck.typeArgs` are renamed by `DeclarationRenamer`,
+  walked by `AstMapper`, `StdlibInjector`'s dependency discovery and the
+  stability walk (a deprecated type in a bound's arguments is a use).
+
+### Open, found by the sweep
+
+- **An impl target's argument that names a type** - `impl Show for
+  Box<Int>`, or the Engine's `impl ButtonInput<KeyCode>` - declares a type
+  parameter *named* `Int` (or `KeyCode`), shadowing the type; the impl then
+  applies to every `Box`, and `self.item + 1` on a `Box<String>` printed
+  `int box text1`. Refusing it, or implementing per-instantiation impls
+  (erased dispatch allows one per type), is the owner's decision. *Decided
+  the same day (refused), next entry.*
+- **The range operator's `by` step** is still discarded, and `a..b` itself
+  works only over `Int` (`range start must be Int`), so every `oper..` /
+  `oper>..` std or a program declares is never called. OPERATOR_OVERLOADING_DIP
+  §17 Q8 (`Range<T>`) is the decision this waits on.
+- An `inline prop` alias's written type is not compared with the member it
+  aliases; a type function's visibility (`private deepinline …`) is parsed and
+  dropped (`TypeFunctionDecl` has none); `@name[…]` in a compile-time list
+  position reads the list whatever `name` is.
+- Not drops: a spec member takes no `where` clause (a parse error), so a spec
+  cannot bound its own parameter for one member; `T is Conv<Int>` in a clause
+  does not parse.
+- The `impl ctor(…) for` / `impl dtor for` branches in `parseImpl` follow an
+  unconditional error and are unreachable.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue
+```
+
+- Compiler: **3,053 tests, 0 failures, 0 skipped** (3,043 before; the 10 new
+  are `BoundPlacementTest`: spec arguments kept in a `where` clause, inline,
+  on a pack and in a bound list; pass-on with arguments, a bare bound and other
+  arguments refused; unwritten arguments read as defaults, with the programs
+  running; an implementation demanding other arguments; a member's bound on
+  its type's parameter for a method, property, operator and subscript;
+  generic code calling such a member; an implementing member bounding its
+  type's parameter, required and provided, and the promised forms running;
+  an impl head's bound on its members, arguments included; a bound refused on
+  a spec implementation's target, in a spec's arguments and in a `derive`,
+  with `N: Int` in an impl head still a const parameter; the bounds that
+  hold, compiled and run). AZLS 93, 0 failures. `StdlibSelfTest`,
+  `StdSurfaceTest` (std's stable listing unchanged), `WitnessTest`,
+  `BoundCheckTest`, `StructuralEqualityTest` and the generic and stability
+  suites among them. Afterwards one test more (a deprecated type named in a
+  bound's arguments is reported as a use) and a simplification of the
+  receiver check: those five classes again, 102 tests, 0 failures.
+- No backend lowers anything differently. The programs that hold run on the
+  interpreter; LLVM refuses them as it did before the change (`LLVM cannot
+  call '.area' on Any yet` - a member call on an erased `T`, with or without
+  a bound).
+- The Engine: a scratch-copy `azora build` gives 8 of 31 members, as before
+  (item 072), and none of the new diagnostics. Studio's 20 Azora sources write
+  none of the affected forms.
+
+## 2026-11-16 (continued) — an impl target declares parameters, not types
+
+The first open item above, decided by the owner: refuse it. An
+implementation's target declares its parameters (`impl Show for Box<T>`), so
+`impl Show for Box<Int>` declared a parameter *called* `Int`, hiding the type in
+every member, and the implementation held for every `Box`: `self.item + 1` on a
+`Box<String>` printed `int box text1`. An inherent `impl Box<Int>` was worse:
+`ImplParameterAligner` renamed the parameter `Int` to the pack's own `T`, and
+every `Int` in its members with it.
+
+- **Parser.** An impl target's `<…>` (inherent head, or after `for`) is read
+  as declared parameters - `T`, `...T`, `N: Int` - and an argument written with
+  structure (`Box<Array<T>>`, `Box<Int?>`, `Box<(T, Int)>`, `Box<3>`) is
+  refused: an implementation for one kind of `Box` is not supported.
+  `skipGenericTypeArgs`, which stepped over the list token by token, is
+  replaced by `parseImplTargetParams`. The `impl ctor(…)
+  for` / `impl dtor for` branches it served followed an unconditional error
+  and are deleted.
+- **Semantics.** `ImplParameterAligner.typesWrittenAsParameters`, run before
+  anything is renamed, refuses a declared name that is a type - a primitive,
+  `Array`/`Tuple`/`Task`, or any type the program declares (std's included):
+  `'impl Show for Box<Int>': 'Int' is a type, but an implementation's target
+  declares parameters, so this declares one called 'Int' that hides it and
+  implements every 'Box'; write a parameter ('T') - an implementation for one
+  instantiation is not supported, since generics are erased`.
+- **GENERICS_DIP** §6.3 now says what is implemented (the `impl<T> …` spelling
+  it showed was removed long ago), §20.3 that the overlapping form cannot be
+  written.
+- **The Engine.** `azora-input`'s `impl ButtonInput<KeyCode>` (keyboard
+  members) now reads `impl ButtonInput<T>`; the members take a `KeyCode`, which
+  is what makes them the keyboard's. No other impl in std, the Engine, Studio or
+  the compiler's fixtures wrote a type there. `azora-input` failed before and
+  still does, now with the real error: before, `KeyCode` there was the hidden
+  parameter, which masked that a **receiver-free member of an impl inside a
+  `scope` cannot name the scope's types** (`undefined type 'KeyCode'; ... use
+  'engine::input::KeyCode'`) - a member with a receiver can, and a free
+  function beside it can. A two-line probe shows it outside the Engine; it is a
+  compiler defect of its own, not fixed here.
+
+A first full run failed 5 tests: std's `impl Integer for Int<N>` (and its
+siblings) were refused in programs that declare a `pack N` of their own. `N`
+there is `Int`'s own parameter (`bridge pack Int<N: __uint = 32>`), and the
+program's `N` is not visible in std's module. So a name equal to the target's
+own parameter at that position is always a parameter, and a library's impl is
+judged against primitives and its own module's packs only - the unit's own
+impls against every type it sees (`declaringModule`, as the stability walk
+decides "the unit's own"). A library is checked in full where it is compiled
+itself.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test :app:installDist --offline --continue
+```
+
+- Compiler: **3,055 tests, 0 failures, 0 skipped** (3,053 before; one more
+  test since the last entry, `BoundPlacementTest.aTypeNamedInABoundsArgumentsIsAUseOfIt`,
+  and `aTypeWrittenAsAnImplTargetsArgumentIsRefused`: a spec target, an
+  inherent one and a declared pack refused, three structured arguments refused
+  by the parser, a target's own parameter beside a program's type of that name
+  accepted and running, a renamed parameter running). AZLS 93, 0 failures.
+  `OperatorFamilyTest`, `RepeatedConstructionTest`, `SpecReturnAdoptionExecTest`
+  (the five above), `StdlibSelfTest` and `StdSurfaceTest` among them.
+- The Engine, scratch copy: 8 of 31 members, the same members failing as
+  before, none of the new diagnostics; the original `impl ButtonInput<KeyCode>`
+  checked against the new compiler gives the refusal above.
+
+## 2026-11-17 — ranges are values of every ordered type (RANGE_DIP)
+
+The owner approved RANGE_DIP on 2026-11-16 ("i just want everything to work
+and cover all cases in a correct way"); it is implemented, delivery plan
+022.6, and closes roadmap §1.1's "a range operator's `by` step is parsed and
+discarded".
+
+### What changed
+
+- **`Range<T>` is a std value** (`std/range.az`, an exposed module): `a..b`,
+  `a..<b` and `a>..b` build one for any `T: PartialOrder` wherever an
+  expression stands. Members: `start`, `end`, `lower`, `upper`,
+  `upperIncluded`, `descending`, `isEmpty`, `contains` (and `x in r`),
+  `reversed`, `size where T: Step`, `==`, and `"$r"` (`0..<10`, `'a'..'z'`,
+  `10>..0`). Every `Order` type is a `PartialOrder`; `String` and `Bool`
+  compare with `<` as their declared order says; every primitive and `String`
+  declares `Display`.
+- **`Step<S>`** (`unit`, `offset`, provided `reaches`/`moved`) is implemented
+  for the integer widths but `Cent`/`UCent`, `Float`, `Double` and `Char`
+  (by `Int`, skipping the surrogates). A type implements it once.
+- **`for` walks any `Step` range**, literal or value, concrete or generic:
+  `by` checked against `S`, the step checked before any row (even of an empty
+  range), a walk ending at its type's limit instead of wrapping, and a row that
+  does not move past the one before failing the loop. `Int` keeps its native
+  counter loop and needs no declaration.
+- **Generic code** reaches `PartialOrder`, `Display` and `Step` through
+  witnesses: `func<T: Step> rows(r: Range<T>)` counts rows of `Int`, `Double`,
+  `Char` and user types alike; `by s` there needs `T: Step<S>`.
+- **`oper..`, `oper..<` and `oper>..` are refused**, as is `by` after any
+  operator declaration. std's 28 numeric declarations (14 types) and the Engine's two on
+  `Vec` (`azora-math/src/vec.az`) are removed; the stable surface loses only
+  those lines and gains `Range`, `Step`, its implementations and the
+  `Display` declarations.
+- **AZLS** hover shows the compiler's type for a local written without one
+  (`fin digits: Range<Int>`), and a `for` row's completion detail no longer
+  claims `Int`.
+
+### Found and fixed on the way
+
+Each compiled and then ran wrong on one backend: the interpreter's float
+comparisons (not IEEE); `ULong` literals above `Long`'s maximum refused by
+the interpreter and WebAssembly; a `T`-typed local truncating a `Double` on
+WebAssembly; `fin x: Byte = small - 2` not assembling on LLVM; `take
+o.require()`/`o.take()` of a pack freeing the moved value on LLVM, and
+`return take o.require()` freeing what it returned; the optimizer turning
+`var held: Int? = 7; held != null` into IR that did not assemble. Roadmap
+§1.1 records each.
+
+### Open, recorded in roadmap §1.1
+
+An unbounded erased `T` interpolated (an address on LLVM); a generic
+conditional return of temporaries freed on LLVM; `Cent`/`UCent` arithmetic;
+mixed `Int` × `Double` arithmetic across backends; `ULong::maxValue - x`
+refused; no `String` repeat in the interpreter; `dyn` thunks of a spec with a
+type argument. `Half` and `Quad` are not `Step` until their arithmetic is
+checked on every backend.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler: **3,098 tests, 0 failures, 0 skipped** (3,055 at the last entry):
+  `RangeValueTest` (19), `RangeLoopTest` (16), `RangeExecTest` (both maps on
+  LLVM and WebAssembly, optimized and not), `KnownOptionalExecTest` (3),
+  `BindingOwnershipExecTest` (2, AddressSanitizer), `StringOrderExecTest`,
+  `WitnessTest`/`WitnessExecTest`, `BoundPlacementTest`, `StdSurfaceTest`.
+  Two `MultiOperImplTest` tests that asserted range iteration gated on an
+  `oper..` declaration were removed with the design they described. AZLS:
+  **94, 0 failures**.
+- The Engine, scratch copy (`azora build`): 8 of 31 members, as before; none
+  of this work's diagnostics (`vec.az` fails only on the missing
+  `std.convert`).
+
+## 2026-11-18 — the owner's list after RANGE_DIP: eight fixes on every backend
+
+The owner asked for every open item the RANGE_DIP work had recorded to be
+fixed, and decided `x + 3 in r` means `(x + 3) in r`.
+
+### What changed
+
+- **`in` binds looser than arithmetic and ranges**, tighter than comparison
+  and logic (OPERATOR_OVERLOADING_DIP §5.2).
+- **Showing an unbounded `T`** - `"${x}"` or `println(x)`, directly or inside
+  an array, tuple, optional or range - is refused with the bound to write
+  (`where T: Display`). It printed an address on LLVM.
+- **A generic function that hands back one of two temporaries** keeps the one
+  it returns: the call site frees the other only.
+- **`Cent`/`UCent` are 128 bits** on the interpreter (`WideInt`), LLVM (its own
+  decimal text) and WebAssembly (`v128` and a runtime: carry-propagating add
+  and subtract, products from 32-bit halves, shift-subtract division,
+  once-rounded float conversion, decimal text). A 16-byte value crosses an
+  erased slot in a cell. They are `Step`.
+- **Integer × float arithmetic** converts the integer to the promoted float
+  type; WebAssembly computes a float `%` exactly in the module.
+- **`inline fin` constants keep their written type** (`Long::maxValue` is a
+  `Long`; it printed `-1` on LLVM), and std's splice no longer folds a lone
+  wide literal through a `Long` (`ULong::maxValue - x` is accepted).
+- **String repetition** runs everywhere; a negative count fails everywhere.
+- **`dyn` dispatch** hands the implementer its own operand types (LLVM).
+- On the way: LLVM's float `!=` is IEEE (`NaN != NaN`), the interpreter reads
+  a `Float` literal at `Float` precision, and every backend accepts a signed
+  64-bit literal text such as `-9223372036854775808`.
+
+### Open, recorded in roadmap §1.1
+
+Two unsuffixed literals multiplied in a typed binding are read as `Int`
+(`fin x: Cent = 4_611_686_018_427_387_904 * 8` is refused); a 16-byte value's
+cell in an erased slot is never freed.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler: **3,121 tests, 0 failures, 0 skipped** (3,098 at the last entry):
+  `WideIntegerExecTest` (4), `MixedArithmeticExecTest` (4),
+  `StringRepeatExecTest` (4), `PrimitiveLimitsExecTest` (3),
+  `DynStepExecTest` (3), `BindingOwnershipExecTest` (3, AddressSanitizer),
+  `DisplaySpecTest` (+2), `RangeValueTest` (+1: membership), `RangeLoopTest`
+  (+1: the widest integers walk), all on the interpreter, LLVM and WebAssembly
+  where they run programs. One `BoundPlacementTest` program interpolated an
+  unbounded `T`; it now prints without doing so. AZLS: **94, 0 failures**.
+- The Engine, scratch copy (`azora build`): 8 of 31 members, diagnostics
+  identical to the last entry's.

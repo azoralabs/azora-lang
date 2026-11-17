@@ -519,8 +519,21 @@ sealed class Expr {
      */
     data class Cast(val expr: Expr, val targetType: TypeRef, val kind: CastKind = CastKind.STATIC, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
 
-    /** `expr is Type` - runtime type check, returns Bool. */
-    data class IsCheck(val expr: Expr, val typeName: String, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    /**
+     * `expr is Type` - runtime type check, returns Bool.
+     *
+     * In a `where` clause it is a bound, `T: Conv<Int>`, and [typeArgs] are the
+     * spec's arguments as written: the bound holds only where `T` implements
+     * `Conv<Int>`, not any `Conv`. Empty for a spec written bare.
+     */
+    data class IsCheck(
+        val expr: Expr,
+        val typeName: String,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val typeArgs: List<TypeRef> = emptyList(),
+    ) : Expr()
 
     /**
      * `value in collection` - membership.
@@ -2588,7 +2601,14 @@ sealed class TopLevel {
      * @property line 1-based source line
      * @property column 1-based source column
      */
-    data class InlineFin(val name: String, val initializer: Expr, val line: Int, val column: Int = 0) : TopLevel()
+    data class InlineFin(
+        val name: String,
+        val initializer: Expr,
+        val line: Int,
+        val column: Int = 0,
+        /** The type written for it (`inline fin maxValue: Long = …`), `Self` read as the impl's type; null when none is. */
+        val type: TypeRef? = null,
+    ) : TopLevel()
 
     /**
      * A top-level compile-time immutable binding (`inline let`).

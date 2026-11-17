@@ -165,11 +165,17 @@ object SpecDefaults {
                     ?.let { specs[it] ?: specs[it.substringAfterLast("__")] }
                     ?: return@map item
                 val own = impl.methods.mapTo(mutableSetOf()) { it.name }
+                // `Self` in a provided body is this implementation's type -
+                // that is what makes one body serve every implementation - and
+                // a spec parameter is the argument the implementation wrote
+                // (`S` of `impl Step<Int> for Int` is `Int`), or its default.
+                val self = TypeRef.Named(impl.typeName)
+                val arguments = spec.typeParams.mapIndexedNotNull { index, param ->
+                    (impl.traitArgs.getOrNull(index) ?: spec.typeDefaults[param])?.let { param to it }
+                }.toMap().mapValues { (_, ref) -> if (ref is TypeRef.Named && ref.name == "Self") self else ref }
                 val inherited = spec.methods
                     .filter { it.body.isNotEmpty() && it.name !in own }
-                    // `Self` in a provided body is this implementation's type -
-                    // that is what makes one body serve every implementation.
-                    .map { bindAssoc(it, impl.assocBindings + ("Self" to TypeRef.Named(impl.typeName))) }
+                    .map { bindAssoc(it, arguments + impl.assocBindings + ("Self" to self)) }
                 if (inherited.isEmpty()) item else impl.copy(methods = impl.methods + inherited)
             },
         )

@@ -1,0 +1,294 @@
+/*
+ * Copyright 2026 AzoraLabs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * @file std/range.az
+ *
+ * Ranges: the values between two bounds of an ordered type (RANGE_DIP).
+ *
+ * `a..b`, `a..<b` and `a>..b` build a [Range] of any ordered type; `for`
+ * walks a range of a type that is [Step].
+ *
+ * @since 0.1
+ */
+@Supress(.Unused)
+exposed module std.range
+
+import std.traits::{PartialOrder}
+
+/**
+ * The values between two bounds of an ordered type, walked in a direction.
+ *
+ * The bounds are kept as written: `a..b` is `Range(a, b)`, `a..<b` is
+ * `Range(a, b, false)`, and `a>..b` - from `a` down to `b`, `a` left out -
+ * is `Range(a, b, false, true)`. The lower bound is always in the range when
+ * the range is not empty; only the upper one may be left out. A range may be
+ * empty (`5..0`); building one is never an error.
+ *
+ * @generic T The bounds' type, which has an order.
+ */
+@Since("0.1")
+pack Range<T> where T: PartialOrder {
+    /** The bound written first: where a walk starts. */
+    fin start: T
+
+    /** The bound written last: where a walk ends. */
+    fin end: T
+
+    /** Whether the upper bound - [end] ascending, [start] descending - is in the range. */
+    fin upperIncluded: Bool = true
+
+    /** Whether a walk goes down, from [start] to [end]. */
+    fin descending: Bool = false
+}
+
+/**
+ * A type whose ranges can be walked: what one step is, and how to move by it.
+ *
+ * `for x in a..b` walks a range of a `Step` type by its [unit]; `by s`
+ * steps by `s` instead, which must be an `S`.
+ *
+ * @generic S What one step is: the type itself for the numbers, `Int` for
+ *            `Char`, a duration for a date.
+ */
+@Since("0.1")
+spec Step<S> requires PartialOrder {
+    /** The step a walk takes when none is written: one unit. It does not depend on the value. */
+    prop &.unit: S
+
+    /**
+     * This value moved [count] steps of [step] - forward for a positive count,
+     * backward for a negative one - or null when no such value exists. A walk
+     * asks for the whole count at once, so a float walk multiplies rather than
+     * adding up rounding errors, and ends at a null rather than wrapping.
+     */
+    func &.offset(step: S&, count: Long): Self?
+
+    /** Whether [offset] has a value: the move stays within the type. */
+    func &.reaches(step: S&, count: Long): Bool {
+        return self.offset(step, count) != null
+    }
+
+    /**
+     * [offset]'s value, for a move [reaches] said stays within the type. Generic
+     * code walks by these two: an erased `Self?` has nowhere to keep its null.
+     */
+    func &.moved(step: S&, count: Long): Self {
+        var moved: Self? = self.offset(step, count)
+        return take moved.require()
+    }
+}
+
+impl Range<T> {
+    /** The smaller bound: [start], or [end] for a descending range. */
+    prop &.lower: T = if self.descending then self.end else self.start
+
+    /** The larger bound: [end], or [start] for a descending range. */
+    prop &.upper: T = if self.descending then self.start else self.end
+
+    /** Whether no value lies in the range. A NaN bound makes a range empty. */
+    prop &.isEmpty: Bool = !(self.lower < self.upper || (self.upperIncluded && self.lower <= self.upper && self.upper <= self.lower))
+
+    /** Whether [value] lies in the range; `value in range` asks the same. False for a NaN. */
+    func &.contains(value: T&): Bool {
+        if !(self.lower <= value) {
+            return false
+        }
+        return if self.upperIncluded then value <= self.upper else value < self.upper
+    }
+
+    /** The same values walked the other way: `(0..<5).reversed` is `5>..0`. */
+    prop &.reversed: Range<T> = Range<T>(self.end, self.start, self.upperIncluded, !self.descending)
+
+    /**
+     * How many rows `for x in range` visits with the unit step. Fails for a
+     * range of more rows than an `Int` holds.
+     */
+    prop &.size: Int where T: Step = self._rowCount()
+
+    /** [size], found by doubling and then halving over the row index. */
+    func &._rowCount(): Int where T: Step {
+        if self.isEmpty {
+            return 0
+        }
+        fin unit = self.lower.unit
+        var origin: T = self.lower
+        if self.descending {
+            origin = self.upper
+            if !self.upperIncluded {
+                if !self.upper.reaches(unit, -1) {
+                    return 0
+                }
+                origin = self.upper.moved(unit, -1)
+            }
+        }
+        if !self._holdsRow(origin) {
+            return 0
+        }
+        fin direction: Long = if self.descending then -1 else 1
+        var inside: Long = 0
+        var outside: Long = 1
+        while origin.reaches(unit, direction * outside) && self._holdsRow(origin.moved(unit, direction * outside)) {
+            inside = outside
+            assert outside < 2147483648 panic "a range of more than 2147483647 rows has no Int size"
+            outside = outside * 2
+        }
+        while outside - inside > 1 {
+            fin middle = inside + (outside - inside) / 2
+            if origin.reaches(unit, direction * middle) && self._holdsRow(origin.moved(unit, direction * middle)) {
+                inside = middle
+            } else {
+                outside = middle
+            }
+        }
+        fin rows = inside + 1
+        assert rows <= 2147483647 panic "a range of more than 2147483647 rows has no Int size"
+        return rows as Int
+    }
+
+    /** Whether a row of a walk is still in the range. */
+    func &._holdsRow(value: T&): Bool {
+        if self.descending {
+            return value >= self.lower
+        }
+        return if self.upperIncluded then value <= self.upper else value < self.upper
+    }
+
+    /**
+     * How `"$range"` reads, its bounds already rendered: `0..<10`,
+     * `10>..0`, and `(0..10).reversed` for a closed range walked down.
+     */
+    func &._text(start: String, end: String): String {
+        if !self.descending {
+            return if self.upperIncluded then "${start}..${end}" else "${start}..<${end}"
+        }
+        return if self.upperIncluded then "(${end}..${start}).reversed" else "${start}>..${end}"
+    }
+}
+
+/**
+ * Two ranges are equal when they hold the same bounds the same way. Bounds
+ * are compared by their order, so two NaN-bounded ranges are not equal.
+ */
+@Since("0.1")
+oper== Range<T>&.(rhs: Range<T>&): Bool {
+    return self.lower <= rhs.lower && rhs.lower <= self.lower &&
+        self.upper <= rhs.upper && rhs.upper <= self.upper &&
+        self.upperIncluded == rhs.upperIncluded && self.descending == rhs.descending
+}
+
+/**
+ * Every integer width up to 64 bits steps by itself, one at a time.
+ *
+ * `offset` is exact: it measures how far the value may move before leaving
+ * its type as a distance in `ULong` - which holds the distance between any
+ * two values of these widths - and moves only when `|count|` steps of
+ * `|step|` fit, so nothing wraps and a value past the limits is null.
+ * `Cent` and `UCent` have no wider type to measure in and are not `Step`.
+ */
+inline for Ty in [Byte, Short, Int, Long, UByte, UShort, UInt, ULong] {
+    @Since("0.1")
+    impl Step<Ty> for Ty {
+        prop &.unit: Ty = 1
+
+        func &.offset(step: Ty&, count: Long): Ty? {
+            if count == 0 || step == 0 {
+                return self
+            }
+            fin up = (step > 0) == (count > 0)
+            fin zero: ULong = 0
+            fin stride: ULong = if step > 0 then step as ULong else zero - (step as ULong)
+            fin times: ULong = if count > 0 then count as ULong else zero - (count as ULong)
+            fin here: ULong = self as ULong
+            fin room: ULong = if up then (Ty::maxValue as ULong) - here else here - (Ty::minValue as ULong)
+            if times > room / stride {
+                return null
+            }
+            fin moved: ULong = if up then here + stride * times else here - stride * times
+            return moved as Ty
+        }
+    }
+}
+
+/*
+ * The 128-bit integers step as the others do, measuring room in a `UCent`:
+ * every distance between two of their values fits one.
+ */
+inline for Ty in [Cent, UCent] {
+    @Since("0.1")
+    impl Step<Ty> for Ty {
+        prop &.unit: Ty = 1
+
+        func &.offset(step: Ty&, count: Long): Ty? {
+            if count == 0 || step == 0 {
+                return self
+            }
+            fin up = (step > 0) == (count > 0)
+            fin zero: UCent = 0
+            fin stride: UCent = if step > 0 then step as UCent else zero - (step as UCent)
+            fin times: UCent = if count > 0 then count as UCent else zero - (count as UCent)
+            fin here: UCent = self as UCent
+            fin room: UCent = if up then (Ty::maxValue as UCent) - here else here - (Ty::minValue as UCent)
+            if times > room / stride {
+                return null
+            }
+            fin moved: UCent = if up then here + stride * times else here - stride * times
+            return moved as Ty
+        }
+    }
+}
+
+/**
+ * `Float` and `Double` step by one, and move by `step · count` in one
+ * multiply and one add, so a walk's hundredth row carries two roundings, not
+ * a hundred.
+ */
+inline for Ty in [Float, Double] {
+    @Since("0.1")
+    impl Step<Ty> for Ty {
+        prop &.unit: Ty = 1.0
+
+        func &.offset(step: Ty&, count: Long): Ty? = self + step * (count as Ty)
+    }
+}
+
+/**
+ * A `Char` steps by code points, skipping the surrogate block
+ * (U+D800-U+DFFF), which holds no character: `'\u{D7FF}'` is followed by
+ * `'\u{E000}'`. Past U+10FFFF or below U+0000 there is no character.
+ */
+@Since("0.1")
+impl Step<Int> for Char {
+    prop &.unit: Int = 1
+
+    func &.offset(step: Int&, count: Long): Char? {
+        if count == 0 || step == 0 {
+            return self
+        }
+        // 1,112,064 characters: a move of more is past the end whatever the step.
+        if count > 1112064 || count < -1112064 {
+            return null
+        }
+        fin code: Long = ord(self) as Long
+        fin index: Long = if code < 55296 then code else code - 2048
+        fin moved: Long = index + (step as Long) * count
+        if moved < 0 || moved > 1112063 {
+            return null
+        }
+        fin result: Long = if moved < 55296 then moved else moved + 2048
+        return chr(result as Int)
+    }
+}

@@ -106,7 +106,94 @@ Each lets a program be silently wrong. This list must be empty to ship.
   with no equality, a tuple ignoring its parts' declared `oper==`, `2.5.hash`,
   and a derived `Order` through a tuple field failing at run time - fixed:
   both compare and hash by their parts' own operations on every backend,
-  GENERICS_DIP §5.3.)*
+  GENERICS_DIP §5.3.)* *(2026-11-16, the parser swept for every value it
+  reads and does not use. Fixed, each a program that compiled and then failed
+  or printed the wrong thing: a bound's spec arguments were dropped
+  (`where T: Conv<Int>` accepted an `impl Conv<String>`, and `x.conv() +
+  x.conv()` printed `aa` as an `Int`); a member's `where` clause about its
+  type's parameters was never decided for the receiver (`Box(NoShape(2))
+  .measure()` failed at run time); `impl Box<T: Shape>` dropped its bound; a
+  bound in any other type-argument list was dropped. Now the arguments are
+  part of the bound, the receiver decides a member's bounds on its type's
+  parameters, an impl head's bound is its members', and a bound where nothing
+  is declared is refused (GENERICS_DIP §5.3). An impl target's argument that
+  is a type is refused too (owner's decision, GENERICS_DIP §6.3):
+  `impl Show for Box<Int>` declared a type parameter *named* `Int`, so the
+  impl applied to every `Box` and `self.item + 1` concatenated a
+  `Box<String>`'s text; the Engine's `impl ButtonInput<KeyCode>` now reads
+  `impl ButtonInput<T>`. *(2026-11-17: **the range operator's `by` step** is
+  closed by RANGE_DIP, implemented: `a..b` is a `Range<T>` value of any
+  ordered type, `for` walks a range of every integer width but `Cent`/`UCent`,
+  `Char`, `Float`, `Double` and any `Step` type - literal or value, concrete
+  or generic - on the interpreter, LLVM and WebAssembly alike, and an
+  `oper..`/`oper..<`/`oper>..` declaration or a `by` after any operator
+  declaration is refused; std's 28 numeric declarations (14 types) and the Engine's two
+  on `Vec` are gone.)* Open, needing a decision or not yet done: an `inline prop` alias's written type is not compared
+  with the member it aliases; a type function's visibility
+  (`private deepinline …`) is dropped; `@name[…]` reads a compile-time list
+  whatever `name` is. Not drops, but found: a spec member takes no `where`
+  clause; `T is Conv<Int>` does not parse; a receiver-free member of an impl
+  inside a `scope` cannot name the scope's types unqualified (a member with a
+  receiver can) - what still stops the Engine's keyboard members.)*
+- ✅ *(2026-11-17, found and fixed while implementing RANGE_DIP; each was a
+  program that compiled and then ran wrong on one backend)*
+  **Backend disagreements under ranges.** The interpreter compared floats with
+  Kotlin's `compareTo` (`1.0 < NaN` true, `NaN == NaN` true, `0.0 != -0.0`);
+  it is IEEE now, as LLVM and WebAssembly are. The interpreter and WebAssembly
+  refused a `ULong` literal above `Long`'s maximum; both use its bit pattern.
+  On WebAssembly a local declared with a type parameter (`fin a: T = …`) was a
+  32-bit pointer and truncated a `Double`. On LLVM `fin x: Byte = small - 2`
+  did not assemble (the literal was widened to `Int`). On LLVM `take
+  o.require()` and `o.take()` of a pack freed the value they had just moved
+  out, and `return take o.require()` freed what it returned; both now move
+  through the backends' own `__take` (`BindingOwnershipExecTest`, under
+  AddressSanitizer). The optimizer turned `var held: Int? = 7; held != null`
+  into `icmp ne i32 7, null`, which did not assemble (`KnownOptionalExecTest`).
+- ✅ *(2026-11-18, the owner's list after RANGE_DIP; each with tests on the
+  interpreter, LLVM and WebAssembly)* **Seven backend disagreements and one
+  precedence.**
+  - *An unbounded erased `T` interpolated* printed an address on LLVM and the
+    interpreter's internal map: showing a `T` (or an array, tuple, optional or
+    range of one) not bounded by `Display` is refused - `cannot interpolate a
+    'T' - 'T' is not bounded by 'Display'; write 'where T: Display'`, the same
+    for `println` (`DisplaySpecTest`).
+  - *A generic conditional return of temporaries* (`if c then a else b`, or
+    one `return` among several) was freed on LLVM: the call site now frees a
+    temporary the callee may hand back only when it is not the value returned
+    (`BindingOwnershipExecTest`, AddressSanitizer).
+  - *`Cent`/`UCent`* are 128 bits everywhere: the interpreter holds them in a
+    `WideInt`, LLVM writes their text itself (printf has no 128-bit
+    conversion), WebAssembly holds them in a `v128` with a runtime for the
+    arithmetic, conversions (rounded once) and text, and a 16-byte value
+    crosses an erased slot in a cell of its own (it was cut to 64 bits on
+    LLVM). They are `Step` now (`WideIntegerExecTest`, `RangeLoopTest`).
+  - *Mixed `Int` × float arithmetic* converts the integer to the promoted
+    float type, as the resolver types it; the float literal used to be cast
+    down to the integer's type. WebAssembly's missing float `%` is an exact
+    `fmod` in the module (`MixedArithmeticExecTest`). Mixed *comparisons*
+    stay refused, as the resolver has always refused them.
+  - *`ULong::maxValue - x`*: std's splice folded a lone literal through a
+    `Long` (`-1`), and an `inline fin`'s written type was dropped, so
+    `Long::maxValue` printed `-1` on LLVM; both kept now, and a signed 64-bit
+    text such as `Long::minValue` is accepted by every backend
+    (`PrimitiveLimitsExecTest`).
+  - *String repeat* runs on the interpreter, LLVM declares the `strcpy` it
+    calls, and a negative count fails on every backend
+    (`StringRepeatExecTest`).
+  - *`dyn` thunks* convert each operand to the implementer's own type and its
+    result back (`Step<Double>` dispatch read garbage on LLVM;
+    `DynStepExecTest`).
+  - *`in` precedence*: `x + 3 in r` is `(x + 3) in r` (owner's decision;
+    OPERATOR_OVERLOADING_DIP §5.2).
+  Found and fixed on the way: LLVM's float `!=` was ordered (`NaN != NaN`
+  false); the interpreter held a `Float` literal at `Double` precision.
+- ⬜ **Literal-only arithmetic does not take the declared type.** `fin x: Cent
+  = 4_611_686_018_427_387_904 * 8` is refused (`integer literal … does not fit
+  Int`): two unsuffixed literals are read as `Int` before the binding's type is
+  consulted. A typed operand works (`fin seed: Cent = …; seed * 8`).
+- ⬜ **A 16-byte value in an erased slot is never freed.** `Cent`, `UCent` and
+  `Quad` cross generic code in a heap cell (LLVM and WebAssembly) that nothing
+  frees: correct values, but a leak per crossing.
 
 ### 1.2 Type system
 

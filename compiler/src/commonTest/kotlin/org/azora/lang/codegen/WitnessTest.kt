@@ -112,10 +112,62 @@ class WitnessTest {
             }
         """.trimIndent()
 
+        /**
+         * `PartialOrder` reaches erased code (RANGE_DIP §7): `<` and `<=` on a
+         * parameter bounded by it apply the concrete type's own, a NaN
+         * relates to nothing, and every `Order` type is one.
+         */
+        val partialOrder = """
+            import std.io
+            import std.traits
+            pack P { var v: Int }
+            derive Order for P
+            func<T: PartialOrder> within(lo: T, x: T, hi: T): Bool = lo <= x && x <= hi
+            func<T: PartialOrder> lesser(a: T, b: T): T = if a < b then a else b
+            func<T: PartialOrder> after(a: T, b: T): Bool = a > b || a >= b
+            func main() {
+                var one = 0
+                for i in 1..1 { one += i }
+                var zero = 0.0
+                for i in 1..one { zero = zero + 0.0 }
+                fin nan = zero / zero
+                println(within(1.0, 2.0, 3.0))
+                println(within(1.0, nan, 3.0))
+                println(within("a", "m", "z"))
+                println(within(1, 5, 3))
+                fin bigger = P(one + 1)
+                fin smaller = P(one)
+                println(lesser(bigger, smaller).v)
+                println(lesser('b', 'a'))
+                println(after(nan, 1.0))
+                println(after(2.0, 2.0))
+            }
+        """.trimIndent()
+
+        /** `Display` reaches erased code: `"${'$'}x"` renders the concrete type, as non-generic code does. */
+        val display = """
+            import std.io
+            import std.format::Display
+            func<T: Display> tag(x: T): String = "<${'$'}x>"
+            func main() {
+                var n = 0
+                for i in 1..7 { n += 1 }
+                println(tag(n))
+                println(tag("s" + "${'$'}n"))
+                var half = 0.0
+                for i in 1..n { half = half + 0.5 }
+                println(tag(half))
+                println(tag('c'))
+                println(tag(n > 3))
+            }
+        """.trimIndent()
+
         val programs = listOf(
             bounded to "true\ntrue\ntrue\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue",
             collections to "3\ntrue\ntrue\n2\n5\n40\n1521\n2\nfalse\ntrue\n2\n30\n29",
             builtins to "true\nfalse\n931\ntrue\ntrue\ntrue\n613",
+            partialOrder to "true\nfalse\ntrue\nfalse\n1\na\nfalse\ntrue",
+            display to "<7>\n<s7>\n<3.5>\n<c>\n<true>",
         )
 
         fun compile(source: String, optimized: Boolean): IrProgram {

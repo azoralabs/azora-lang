@@ -27,7 +27,6 @@ class ExchangeSemanticsTest {
             """.trimIndent(), release = optimized)).ir
 
         internal val program = """
-            bridge oper.. Int&.(rhs: Int&) by 1
             pack Box { var value: Int }
             func main() {
                 var a = 3

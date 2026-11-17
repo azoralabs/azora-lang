@@ -10,8 +10,6 @@ import kotlin.test.assertTrue
 class RangeBoundaryTest {
     companion object {
         internal val headerProgram = """
-            bridge oper.. Int&.(rhs: Int&) by 1
-            bridge oper>.. Int&.(rhs: Int&) by 1
             pack Calls { var order: Int }
             func upper(calls: Calls!): Int { calls.order = calls.order * 10 + 1
                 return 5 }
@@ -54,13 +52,10 @@ class RangeBoundaryTest {
         """.trimIndent()
 
         internal fun invalidStepProgram(step: Int) = """
-            bridge oper>.. Int&.(rhs: Int&) by 1
             func main() { for i in 0>..0 by $step {} }
         """.trimIndent()
 
         internal val program = """
-            bridge oper.. Int&.(rhs: Int&) by 1
-            bridge oper>.. Int&.(rhs: Int&) by 1
             pack Visits { var count: Int }
             func last(size: Int, target: Int, visits: Visits!): Int {
                 return for i: Int in size>..0 {
@@ -120,8 +115,10 @@ class RangeBoundaryTest {
         for (step in listOf(0, -1)) {
             for (optimized in listOf(false, true)) {
                 val ir = AssertionSemanticsTest.lower(invalidStepProgram(step), optimized)
-                val error = assertFailsWith<IllegalStateException> { IrInterpreter().interpret(ir) }
-                assertTrue("range step must be positive" in error.message.orEmpty())
+                // A language panic naming the step (RANGE_DIP §6), raised before
+                // any row and even though the range is empty.
+                val error = kotlin.test.assertFails { IrInterpreter().interpret(ir) }
+                assertTrue("does not move the range forward" in error.message.orEmpty(), error.message)
             }
         }
     }

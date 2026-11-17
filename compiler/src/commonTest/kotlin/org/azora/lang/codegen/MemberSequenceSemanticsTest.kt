@@ -9,7 +9,6 @@ import kotlin.test.assertEquals
 class MemberSequenceSemanticsTest {
     companion object {
         internal val program = """
-            bridge oper.. Int&.(rhs: Int&) by 1
             pack CircuitProbe { var order: Int }
             impl CircuitProbe {
                 func !.h(target: Int) scope self.order = self.order * 10 + target

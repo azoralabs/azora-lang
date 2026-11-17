@@ -132,6 +132,23 @@ std.format  (format.az)
     prop &.rendered: String
   bridge spec Display  @Since("0.1")
     func &.display(formatter: Formatter!)
+  impl Display for UByte  @Since("0.1")
+  impl Display for UShort  @Since("0.1")
+  impl Display for UInt  @Since("0.1")
+  impl Display for ULong  @Since("0.1")
+  impl Display for UCent  @Since("0.1")
+  impl Display for Byte  @Since("0.1")
+  impl Display for Short  @Since("0.1")
+  impl Display for Int  @Since("0.1")
+  impl Display for Long  @Since("0.1")
+  impl Display for Cent  @Since("0.1")
+  impl Display for Half  @Since("0.1")
+  impl Display for Float  @Since("0.1")
+  impl Display for Double  @Since("0.1")
+  impl Display for Quad  @Since("0.1")
+  impl Display for Bool  @Since("0.1")
+  impl Display for Char  @Since("0.1")
+  impl Display for String  @Since("0.1")
   func<T> format(value: T&): String  @Since("0.1")
 
 std.io  (io/io.az)
@@ -298,6 +315,66 @@ std.random  (random.az)
   pack Random  @Since("0.1")
     var seed: Int = 12345
 
+std.range  (range.az)
+  pack Range<T>  @Since("0.1")
+    fin start: T
+    fin end: T
+    fin upperIncluded: Bool = true
+    fin descending: Bool = false
+  spec Step<S> : PartialOrder  @Since("0.1")
+    prop &.unit: S
+    func &.offset(step: S&, count: Long): Self?
+    func &.reaches(step: S&, count: Long): Bool
+    func &.moved(step: S&, count: Long): Self
+  impl Range<T>
+    prop &.lower: T
+    prop &.upper: T
+    prop &.isEmpty: Bool
+    func &.contains(value: T&): Bool
+    prop &.reversed: Range<T>
+    prop &.size: Int where …
+  impl Range
+    func &.oper==@Range(rhs: Range<T>&): Bool  @Since("0.1")
+  impl Step<Byte> for Byte  @Since("0.1")
+    prop &.unit: Byte
+    func &.offset(step: Byte&, count: Long): Byte?
+  impl Step<Short> for Short  @Since("0.1")
+    prop &.unit: Short
+    func &.offset(step: Short&, count: Long): Short?
+  impl Step<Int> for Int  @Since("0.1")
+    prop &.unit: Int
+    func &.offset(step: Int&, count: Long): Int?
+  impl Step<Long> for Long  @Since("0.1")
+    prop &.unit: Long
+    func &.offset(step: Long&, count: Long): Long?
+  impl Step<UByte> for UByte  @Since("0.1")
+    prop &.unit: UByte
+    func &.offset(step: UByte&, count: Long): UByte?
+  impl Step<UShort> for UShort  @Since("0.1")
+    prop &.unit: UShort
+    func &.offset(step: UShort&, count: Long): UShort?
+  impl Step<UInt> for UInt  @Since("0.1")
+    prop &.unit: UInt
+    func &.offset(step: UInt&, count: Long): UInt?
+  impl Step<ULong> for ULong  @Since("0.1")
+    prop &.unit: ULong
+    func &.offset(step: ULong&, count: Long): ULong?
+  impl Step<Cent> for Cent  @Since("0.1")
+    prop &.unit: Cent
+    func &.offset(step: Cent&, count: Long): Cent?
+  impl Step<UCent> for UCent  @Since("0.1")
+    prop &.unit: UCent
+    func &.offset(step: UCent&, count: Long): UCent?
+  impl Step<Float> for Float  @Since("0.1")
+    prop &.unit: Float
+    func &.offset(step: Float&, count: Long): Float?
+  impl Step<Double> for Double  @Since("0.1")
+    prop &.unit: Double
+    func &.offset(step: Double&, count: Long): Double?
+  impl Step<Int> for Char  @Since("0.1")
+    prop &.unit: Int
+    func &.offset(step: Int&, count: Long): Char?
+
 std.string  (string.az)
   bridge pack String  @Since("0.1")
   impl PartialEqual for String
@@ -312,88 +389,32 @@ std.string  (string.az)
     func !.clear(): Unit  @Since("0.1")
 
 std.traits.core  (traits/core.az)
-  impl UByte
-    func &.oper..(rhs: UByte&)
-  impl UByte
-    func &.oper>..(rhs: UByte&)
   impl Clone for UByte
   impl Copy for UByte
-  impl UShort
-    func &.oper..(rhs: UShort&)
-  impl UShort
-    func &.oper>..(rhs: UShort&)
   impl Clone for UShort
   impl Copy for UShort
-  impl UInt
-    func &.oper..(rhs: UInt&)
-  impl UInt
-    func &.oper>..(rhs: UInt&)
   impl Clone for UInt
   impl Copy for UInt
-  impl ULong
-    func &.oper..(rhs: ULong&)
-  impl ULong
-    func &.oper>..(rhs: ULong&)
   impl Clone for ULong
   impl Copy for ULong
-  impl UCent
-    func &.oper..(rhs: UCent&)
-  impl UCent
-    func &.oper>..(rhs: UCent&)
   impl Clone for UCent
   impl Copy for UCent
-  impl Byte
-    func &.oper..(rhs: Byte&)
-  impl Byte
-    func &.oper>..(rhs: Byte&)
   impl Clone for Byte
   impl Copy for Byte
-  impl Short
-    func &.oper..(rhs: Short&)
-  impl Short
-    func &.oper>..(rhs: Short&)
   impl Clone for Short
   impl Copy for Short
-  impl Int
-    func &.oper..(rhs: Int&)
-  impl Int
-    func &.oper>..(rhs: Int&)
   impl Clone for Int
   impl Copy for Int
-  impl Long
-    func &.oper..(rhs: Long&)
-  impl Long
-    func &.oper>..(rhs: Long&)
   impl Clone for Long
   impl Copy for Long
-  impl Cent
-    func &.oper..(rhs: Cent&)
-  impl Cent
-    func &.oper>..(rhs: Cent&)
   impl Clone for Cent
   impl Copy for Cent
-  impl Half
-    func &.oper..(rhs: Half&)
-  impl Half
-    func &.oper>..(rhs: Half&)
   impl Clone for Half
   impl Copy for Half
-  impl Float
-    func &.oper..(rhs: Float&)
-  impl Float
-    func &.oper>..(rhs: Float&)
   impl Clone for Float
   impl Copy for Float
-  impl Double
-    func &.oper..(rhs: Double&)
-  impl Double
-    func &.oper>..(rhs: Double&)
   impl Clone for Double
   impl Copy for Double
-  impl Quad
-    func &.oper..(rhs: Quad&)
-  impl Quad
-    func &.oper>..(rhs: Quad&)
   impl Clone for Quad
   impl Copy for Quad
   impl Clone for Bool

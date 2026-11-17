@@ -214,6 +214,8 @@ data class SpecSymbol(
     /** Specs an implementor must also implement; see `TopLevel.Spec.requires`. */
     val requiredSpecs: List<String> = emptyList(),
     val isBridge: Boolean = false,
+    /** Type parameter → what an unwritten argument stands for (`Rhs = Self`). */
+    val typeDefaults: Map<String, org.azora.lang.frontend.TypeRef> = emptyMap(),
 )
 
 /** A spec method's erased signature, used to type-check calls on a spec-typed value. */
@@ -500,8 +502,9 @@ class SymbolTable {
         requiredSpecs: List<String> = emptyList(),
         isBridge: Boolean = false,
         parents: List<org.azora.lang.frontend.TypeRef> = emptyList(),
+        typeDefaults: Map<String, org.azora.lang.frontend.TypeRef> = emptyMap(),
     ) {
-        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs, parentNames = parentNames, parents = parents, requiredSpecs = requiredSpecs, isBridge = isBridge)
+        specs[name] = SpecSymbol(methodNames, callback, isDecorator = false, typeParams = typeParams, propTypes = propTypes, methodSigs = methodSigs, parentNames = parentNames, parents = parents, requiredSpecs = requiredSpecs, isBridge = isBridge, typeDefaults = typeDefaults)
     }
 
     /**
@@ -563,7 +566,21 @@ class SymbolTable {
             }
         ) return false
         conformances.add(conformance)
+        // A total order is a partial one (RANGE_DIP §3.3): an `Order` type
+        // answers every comparison `PartialOrder` asks, so it is one without
+        // writing it, and `Range<Int>` needs nothing more.
+        if (!conformance.isDecorator && conformance.contractName.substringAfterLast("__") == ORDER) {
+            val partial = conformance.contractName.removeSuffix(ORDER) + PARTIAL_ORDER
+            if (conformances.none { it.typeName == conformance.typeName && it.contractName.substringAfterLast("__") == PARTIAL_ORDER }) {
+                conformances.add(TraitConformance(conformance.typeName, partial, implTypeParams = conformance.implTypeParams))
+            }
+        }
         return true
+    }
+
+    private companion object {
+        const val ORDER = "Order"
+        const val PARTIAL_ORDER = "PartialOrder"
     }
 
     /** Returns whether [typeName] implements the requested spec or decorator contract. */
@@ -635,6 +652,34 @@ class SymbolTable {
 
     fun lookupInferredConstruction(line: Int, column: Int): org.azora.lang.frontend.TypeRef? =
         inferredConstructions[line to column]
+
+    /**
+     * The bounds' type of each range literal that builds a value (`a..b` is a
+     * `Range<T>`, RANGE_DIP §4): lowering builds the `Range<T>` the resolver
+     * decided rather than working `T` out again. Keyed by the node, not its
+     * position: a range inside a string template is positioned within the
+     * template, so two templates on one line could share a position.
+     */
+    /**
+     * The `T` the resolver decided for a range: a literal's bounds' type, or
+     * the `T` of a `Range<T>` value a `for` walks - keyed by the expression.
+     */
+    private val rangeBounds = mutableMapOf<org.azora.lang.frontend.Expr, org.azora.lang.frontend.TypeRef>()
+
+    fun defineRangeBounds(range: org.azora.lang.frontend.Expr, type: org.azora.lang.frontend.TypeRef) {
+        rangeBounds[range] = type
+    }
+
+    fun lookupRangeBounds(range: org.azora.lang.frontend.Expr): org.azora.lang.frontend.TypeRef? = rangeBounds[range]
+
+    /** The `S` a walked range steps by, keyed by the walked expression; absent when generic code walks by an unknown `S`'s unit. */
+    private val walkStrides = mutableMapOf<org.azora.lang.frontend.Expr, org.azora.lang.frontend.TypeRef>()
+
+    fun defineWalkStride(range: org.azora.lang.frontend.Expr, stride: org.azora.lang.frontend.TypeRef) {
+        walkStrides[range] = stride
+    }
+
+    fun lookupWalkStride(range: org.azora.lang.frontend.Expr): org.azora.lang.frontend.TypeRef? = walkStrides[range]
 
     /**
      * `.(args)` as the `Type<…>(args)` call the resolver decided it stands for,

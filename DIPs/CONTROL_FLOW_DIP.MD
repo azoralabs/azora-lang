@@ -69,16 +69,26 @@ below the right bound produce an empty range. `5>..0 by 2` visits `4, 2, 0`:
 stepping starts at the first included value, not at an ascending-range alignment.
 
 The two bounds and optional step are evaluated once, left to right, before the
-loop starts. A step must be a positive `Int`; a zero or negative step fails even
-for an empty range. `continue` advances normally; `with index` counts visited
-rows from zero. An increment beyond the `Int` boundary terminates iteration
-without wrapping the counter into a new row.
+loop starts. A step must move the range forward; a step that does not (`by 0`,
+a negative one) fails even for an empty range: `the step 'by 0' does not move
+the range forward`. `continue` advances normally; `with index` counts visited
+rows from zero. A walk ends at its type's limit instead of wrapping into a new
+row.
 
 As directed on 2026-09-09, `reverse` is an ordinary identifier, not a keyword.
-The former loop modifier and `reverse..` operator are removed. Declare descending
-iteration with `oper>..`; ordinary library functions named `reverse` remain legal.
-Current executable ranges require `Int` bounds; generic/user-defined iteration
-and other numeric widths still need their own semantic and backend completion.
+The former loop modifier and `reverse..` operator are removed; `>..` is the
+descending form. Ordinary library functions named `reverse` remain legal.
+
+### Ranges are values (RANGE_DIP)
+
+`a..b`, `a..<b` and `a>..b` build a `Range<T>` for any ordered `T`, wherever an
+expression may stand: `fin r = 0..<n`, a parameter, a field, `x in r`. `for`
+walks a range - a literal or a value - of every integer width, `Char`
+(skipping the surrogates), `Float`, `Double` and any type that
+implements `Step`; `by s` steps by `s`, which has the type the range steps by
+(`Int` for `Char`). `for i in a..b` over `Int` stays the counter loop it always
+was. The step rules, the rows and the messages are RANGE_DIP §6's; ranges in a
+`where` clause and an `inline for` are still compile-time integer ranges.
 
 ### 2.1 break / continue
 

@@ -60,6 +60,85 @@ class BindingOwnershipExecTest {
         }
     """, "6\n6 10\n10\n5\n15\n6\n20")
 
+    /**
+     * Moving a pack out of an optional - `take o.require()`, `o.take()`, and
+     * the same in a `return` - hands it on once: the optional is emptied
+     * without destroying what it held, so the new owner reads a live value
+     * and destroys it once. A scalar optional taken in a `return` is emptied
+     * before the function leaves.
+     */
+    @Test fun movingOutOfAnOptionalHandsThePackOnOnce() = sanitized("""
+        import std.io
+        pack Box {
+            var items: Array<Int>
+        }
+        func total(b: Box&): Int {
+            var sum = 0
+            for v in b.items { sum = sum + v }
+            return sum
+        }
+        func made(n: Int): Box {
+            var held: Box? = Box([n, n])
+            return take held.require()
+        }
+        func taken(n: Int): Box {
+            var held: Box? = Box([n])
+            return held.take()
+        }
+        func scalar(): Int {
+            var held: Int? = 7
+            return held.take()
+        }
+        func main() {
+            var o: Box? = Box([1, 2])
+            fin v = take o.require()
+            println(total(v))
+            println(o == null)
+            var p: Box? = Box([3])
+            fin w = p.take()
+            println(total(w))
+            println(p == null)
+            println(total(made(4)))
+            fin m = made(5)
+            println(total(m))
+            println(total(taken(6)))
+            println(scalar())
+        }
+    """, "3\ntrue\n3\ntrue\n8\n10\n6\n7")
+
+    /**
+     * A generic function may hand back either of two temporaries it was given
+     * (`if first then a else b`, or two `return`s). The call site frees the
+     * one not returned and keeps the one that is - it used to free both, and
+     * the result was read after it was freed.
+     */
+    @Test fun aGenericConditionalReturnKeepsWhatItReturns() = sanitized("""
+        import std.io
+        pack Box {
+            var items: Array<Int>
+        }
+        func total(b: Box&): Int {
+            var sum = 0
+            for v in b.items { sum = sum + v }
+            return sum
+        }
+        func<T> pick(a: T, b: T, first: Bool): T = if first then a else b
+        func<T> pickByReturn(a: T, b: T, first: Bool): T {
+            if first {
+                return a
+            }
+            return b
+        }
+        func main() {
+            println(total(pick(Box([1, 2]), Box([5]), true)))
+            println(total(pick(Box([1, 2]), Box([5]), false)))
+            println(total(pickByReturn(Box([1]), Box([7, 7]), false)))
+            println(total(pickByReturn(Box([9]), Box([7, 7]), true)))
+            fin kept = pick(Box([4]), Box([6]), true)
+            println(total(kept))
+        }
+    """, "3\n5\n14\n9\n4")
+
     private fun sanitized(source: String, expected: String) {
         val program = source.trimIndent()
         for (release in listOf(false, true)) {

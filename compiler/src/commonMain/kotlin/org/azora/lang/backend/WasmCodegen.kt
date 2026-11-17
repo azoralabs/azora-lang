@@ -119,8 +119,16 @@ class WasmCodegen {
     /** A host import returns a `String`, which [RT_OWN_FOREIGN] copies (D-5). */
     private var usesOwnForeign = false
     private var usesStrEq = false
+    /** `__str_cmp`, the code-point order of two strings, is referenced. */
+    private var usesStrCmp = false
     private var usesStrHash = false
     private var usesRepeat = false
+
+    /** A float `%`: WebAssembly has no remainder instruction for floats. */
+    private var usesFmod = false
+
+    /** `Cent`/`UCent` arithmetic, conversion or text: the 128-bit runtime. */
+    private var usesWide = false
     private var usesIntToStr = false
     private var usesLongToStr = false
 
@@ -284,7 +292,7 @@ class WasmCodegen {
     fun generate(program: IrProgram): String {
         out.clear(); indent = 0
         structs.clear(); structDefinitions.clear(); ownershipDrops.clear(); isolatedCopies.clear(); layouts.clear(); globalTypes.clear(); stringConsts.clear(); constCursor = STRING_BASE
-        usesAlloc = false; usesConcat = false; usesOwnForeign = false; usesStrEq = false; usesStrHash = false; usesRepeat = false; usesIntToStr = false; usesLongToStr = false; usesUtf8 = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
+        usesAlloc = false; usesConcat = false; usesOwnForeign = false; usesStrEq = false; usesStrCmp = false; usesStrHash = false; usesRepeat = false; usesFmod = false; usesWide = false; usesIntToStr = false; usesLongToStr = false; usesUtf8 = false; usesDoubleToStr = false; usesTrig = false; usesExpLog = false; usesInvTrig = false; usesVhaTrig = false; usesIsCheck = false
         neededIntrinsics.clear(); externs.clear(); neededExterns.clear(); injectedSingletons.clear()
         reactiveStorage.clear(); reactiveAliases.clear()
         closureTypes.clear(); closureFunctions.clear()
@@ -454,8 +462,11 @@ class WasmCodegen {
         if (usesOwnForeign) sb.append(RT_OWN_FOREIGN)
         if (usesIsCheck) usesStrEq = true
         if (usesStrEq) sb.append(RT_STR_EQ)
+        if (usesStrCmp) sb.append(RT_STR_CMP)
         if (usesStrHash) sb.append(RT_STR_HASH)
         if (usesRepeat) sb.append(RT_REPEAT)
+        if (usesFmod) sb.append(RT_FMOD)
+        if (usesWide) sb.append(RT_WIDE)
         if (usesIntToStr) sb.append(RT_INT_TO_STR)
         if (usesLongToStr) sb.append(RT_LONG_TO_STR)
         if (usesDoubleToStr) sb.append(RT_REAL_TO_STR)
@@ -1120,7 +1131,19 @@ class WasmCodegen {
         IrExpr.UnitLiteral -> "(i32.const 0)"
         // WebAssembly's widest integer is 64 bits, so a 128-bit literal has
         // nowhere to go and says so rather than arriving truncated.
+        // A `ULong` past `Long.MAX` is still 64 bits: written as their pattern.
+        // A 128-bit literal is its two 64-bit halves, from its own digits.
+        is IrExpr.IntLiteral if isWide(expr.type) -> {
+            val bits = WideInt.parse(expr.text ?: expr.value.toString(), 128, false)
+            "(v128.const i64x2 ${bits.toLong()} ${bits.shiftedRight(64).toLong()})"
+        }
         is IrExpr.IntLiteral -> expr.text
+            ?.takeUnless { text ->
+                val digits = text.replace("_", "")
+                (expr.type as? IrType.Integer)?.let {
+                    it.bits <= 64 && (if (it.signed) digits.toLongOrNull() != null else digits.toULongOrNull() != null)
+                } == true
+            }
             ?.let { error("a ${expr.type} literal '$it' is wider than WebAssembly's integers") }
             ?: "(${wasmType(expr.type)}.const ${expr.value})"
         is IrExpr.DoubleLiteral -> "(${wasmType(expr.type)}.const ${expr.value})"
@@ -1144,6 +1167,11 @@ class WasmCodegen {
                 "($operation \$$target)"
             }
         }
+        is IrExpr.Unary if isWide(expr.type) && expr.op != IrUnaryOp.NOT -> {
+            usesWide = true
+            if (expr.op == IrUnaryOp.NEG) "(call \$__w_sub (v128.const i64x2 0 0) ${emitExpr(expr.operand)})"
+            else "(v128.not ${emitExpr(expr.operand)})"
+        }
         is IrExpr.Unary -> when (expr.op) {
             IrUnaryOp.NEG -> {
                 val p = numPrefix(expr.type)
@@ -1162,8 +1190,12 @@ class WasmCodegen {
             val write = storeVariable(expr.target.name, expr.type, "(local.get $updated)")
             // Save the old value before writing. A textual local.get emitted
             // after the write would return the new value even for postfix.
+            val step = if (isWide(expr.type)) {
+                usesWide = true
+                "(call \$__w_${if (expr.delta > 0) "add" else "sub"} (local.get $old) (v128.const i64x2 1 0))"
+            } else "($op (local.get $old) ($scalar.const 1))"
             "(block (result $scalar) (local.set $old $read) " +
-                "(local.set $updated ($op (local.get $old) ($scalar.const 1))) " +
+                "(local.set $updated $step) " +
                 "$write (local.get ${if (expr.prefix) updated else old}))"
         }
         is IrExpr.Binary -> emitBinary(expr)
@@ -1310,6 +1342,13 @@ class WasmCodegen {
             val eq = "(call \$__str_eq ${emitExpr(l)} ${emitExpr(r)})"
             return if (expr.op == IrBinaryOp.EQ) eq else "(i32.eqz $eq)"
         }
+        // Strings order by code point, which over UTF-8 is byte order.
+        val relational = mapOf(IrBinaryOp.LT to "lt_s", IrBinaryOp.LTE to "le_s", IrBinaryOp.GT to "gt_s", IrBinaryOp.GTE to "ge_s")
+        if (l.type == IrType.String && expr.op in relational) {
+            usesStrCmp = true
+            return "(i32.${relational.getValue(expr.op)} (call \$__str_cmp ${emitExpr(l)} ${emitExpr(r)}) (i32.const 0))"
+        }
+        if (isWide(l.type) || isWide(r.type) || isWide(expr.type)) return emitWideBinary(expr.op, l, r, expr.type)
         // Mixed numeric operands widen to a common type so the machine op sees two
         // operands of one Wasm type.
         val bothNum = isNumericWasm(l.type) && isNumericWasm(r.type)
@@ -1332,7 +1371,76 @@ class WasmCodegen {
         }
         val lv = if (bothNum) coerceWasm(emitExpr(l), l.type, opType) else emitExpr(l)
         val rv = if (bothNum) coerceWasm(emitExpr(r), r.type, opType) else emitExpr(r)
+        if (expr.op == IrBinaryOp.MOD && flt) {
+            // The remainder of a float, as C's `fmod` and LLVM's `frem` give it -
+            // exact - computed in f64, where an f32 remainder is exact too.
+            usesFmod = true
+            return if (p == "f64") "(call \$__fmod $lv $rv)"
+            else "(f32.demote_f64 (call \$__fmod (f64.promote_f32 $lv) (f64.promote_f32 $rv)))"
+        }
         return "($instr $lv $rv)"
+    }
+
+    /** `Cent` or `UCent`: 128 bits, held in a `v128`. */
+    private fun isWide(type: IrType): Boolean = type == IrType.Cent || type == IrType.UCent
+
+    /**
+     * `a op b` at 128 bits, through the runtime ([RT_WIDE]): WebAssembly's
+     * integers stop at 64. Both sides are read at the wide operand's type; a
+     * shift's count is an `Int`.
+     */
+    private fun emitWideBinary(op: IrBinaryOp, l: IrExpr, r: IrExpr, resultType: IrType): String {
+        usesWide = true
+        val wideType = listOf(l.type, r.type, resultType).first(::isWide)
+        val signed = wideType == IrType.Cent
+        val a = coerceWasm(emitExpr(l), l.type, wideType)
+        if (op == IrBinaryOp.SHL || op == IrBinaryOp.SHR) {
+            val count = coerceWasm(emitExpr(r), r.type, IrType.Int)
+            return if (op == IrBinaryOp.SHL) "(call \$__w_shl $a $count)"
+            else "(call \$__w_shr $a $count (i32.const ${if (signed) 1 else 0}))"
+        }
+        val b = coerceWasm(emitExpr(r), r.type, wideType)
+        val less = if (signed) "__w_lt_s" else "__w_lt_u"
+        val flag = if (signed) 1 else 0
+        return when (op) {
+            IrBinaryOp.ADD -> "(call \$__w_add $a $b)"
+            IrBinaryOp.SUB -> "(call \$__w_sub $a $b)"
+            IrBinaryOp.MUL -> "(call \$__w_mul $a $b)"
+            IrBinaryOp.DIV -> "(call \$__w_div $a $b (i32.const $flag) (i32.const 0))"
+            IrBinaryOp.MOD -> "(call \$__w_div $a $b (i32.const $flag) (i32.const 1))"
+            IrBinaryOp.EQ -> "(i64x2.all_true (i64x2.eq $a $b))"
+            IrBinaryOp.NEQ -> "(i32.eqz (i64x2.all_true (i64x2.eq $a $b)))"
+            IrBinaryOp.LT -> "(call \$$less $a $b)"
+            IrBinaryOp.GT -> "(call \$$less $b $a)"
+            IrBinaryOp.LTE -> "(i32.eqz (call \$$less $b $a))"
+            IrBinaryOp.GTE -> "(i32.eqz (call \$$less $a $b))"
+            IrBinaryOp.BIT_AND -> "(v128.and $a $b)"
+            IrBinaryOp.BIT_OR -> "(v128.or $a $b)"
+            IrBinaryOp.BIT_XOR -> "(v128.xor $a $b)"
+            else -> error("WebAssembly cannot apply $op to 128-bit integers")
+        }
+    }
+
+    /** A number of [from] - an integer, a float or a `Char` - as 128 bits, or 128 bits as [to]. */
+    private fun wideConversion(value: String, from: IrType, to: IrType): String {
+        usesWide = true
+        if (isWide(to)) {
+            if (isWide(from)) return value
+            val signedSource = if (isUnsigned(from)) 0 else 1
+            return when (wasmType(from)) {
+                "i64" -> "(call \$__w_from_i64 $value (i32.const $signedSource))"
+                "f64" -> "(call \$__w_from_f64 $value)"
+                "f32" -> "(call \$__w_from_f64 (f64.promote_f32 $value))"
+                else -> "(call \$__w_from_i64 (i64.extend_i32_${if (signedSource == 0) "u" else "s"} $value) (i32.const $signedSource))"
+            }
+        }
+        val signed = if (from == IrType.Cent) 1 else 0
+        return when (wasmType(to)) {
+            "i64" -> "(i64x2.extract_lane 0 $value)"
+            "f64" -> "(call \$__w_to_f64 $value (i32.const $signed))"
+            "f32" -> "(call \$__w_to_f32 $value (i32.const $signed))"
+            else -> "(i32.wrap_i64 (i64x2.extract_lane 0 $value))"
+        }
     }
 
     private fun isNumericWasm(t: IrType): Boolean =
@@ -1359,6 +1467,7 @@ class WasmCodegen {
         checkSharedElements(from, to)
         val ft = wasmType(from); val tt = wasmType(to)
         if (ft == tt) return value
+        if ((isWide(from) && isNumericWasm(to)) || (isWide(to) && isNumericWasm(from))) return wideConversion(value, from, to)
         // Crossing an erased boundary keeps the value's bits rather than
         // converting its number: a Double travels as its IEEE pattern.
         if (from == IrType.Any) return unerase(value, to)
@@ -1386,6 +1495,8 @@ class WasmCodegen {
     /** [value] of type [from] as the eight-byte bits of an erased slot. */
     private fun erase(value: String, from: IrType): String = when (wasmType(from)) {
         "i64" -> value
+        // Sixteen bytes do not fit the slot's eight: the slot holds a cell's address.
+        "v128" -> { usesAlloc = true; usesWide = true; "(i64.extend_i32_u (call \$__w_box $value))" }
         "f64" -> "(i64.reinterpret_f64 $value)"
         "f32" -> "(i64.extend_i32_u (i32.reinterpret_f32 $value))"
         else -> "(i64.extend_i32_${if (isUnsigned(from)) "u" else "s"} $value)"
@@ -1394,6 +1505,7 @@ class WasmCodegen {
     /** The erased bits [value] read back as a value of [to]. */
     private fun unerase(value: String, to: IrType): String = when (wasmType(to)) {
         "i64" -> value
+        "v128" -> "(v128.load (i32.wrap_i64 $value))"
         "f64" -> "(f64.reinterpret_i64 $value)"
         "f32" -> "(f32.reinterpret_i32 (i32.wrap_i64 $value))"
         else -> "(i32.wrap_i64 $value)"
@@ -1480,7 +1592,7 @@ class WasmCodegen {
         // `a?.b` reaches only the interpreter so far; a call to a symbol that
         // does not exist would fail later, in the assembler, without a name.
         check(expr.name != "__safeMember") { "WebAssembly cannot lower '?.' (safe member access) yet" }
-        if (expr.name == "__temporary") return emitExpr(expr.args.single())
+        if (expr.name == "__temporary" || expr.name == "__temporaryUnlessReturned") return emitExpr(expr.args.single())
         if (expr.name == "__panic") {
             // The message is evaluated even though the MVP target has no host
             // panic reporter. `unreachable` is Wasm's bottom instruction.
@@ -1638,7 +1750,7 @@ class WasmCodegen {
         }
         // The host prints numbers signed; an unsigned one is rendered here, and
         // a `Char` is the text of its code point.
-        if (isUnsignedNumber(type) || type == IrType.Char) return "(call \$${operation}_str ${stringifyValue(value, type)})"
+        if (isUnsignedNumber(type) || type == IrType.Char || isWide(type)) return "(call \$${operation}_str ${stringifyValue(value, type)})"
         val fn = when {
             type == IrType.String -> "${operation}_str"
             type == IrType.Bool -> "${operation}_bool"
@@ -2210,6 +2322,7 @@ class WasmCodegen {
         type == IrType.String -> value
         type == IrType.Bool -> "(if (result i32) $value (then (i32.const ${internString("true")})) (else (i32.const ${internString("false")})))"
         type == IrType.Char -> { useUtf8(); "(call \$__char_to_str $value)" }
+        isWide(type) -> { usesAlloc = true; usesWide = true; "(call \$__w_to_str $value (i32.const ${if (type == IrType.Cent) 1 else 0}))" }
         // An unsigned value is its magnitude; a narrow one is first cut to its width.
         isUnsignedNumber(type) -> {
             usesAlloc = true; usesLongToStr = true
@@ -2234,6 +2347,10 @@ class WasmCodegen {
         if (expr.value.type == IrType.Any || expr.type == IrType.Any) return emitAs(expr.value, expr.type)
         // Unwrapping a narrowed nullable, or wrapping a value into one.
         if (isFlagged(expr.value.type) || isFlagged(expr.type)) return emitAs(expr.value, expr.type)
+        // To or from 128 bits: the runtime widens, truncates and converts.
+        if ((isWide(expr.value.type) || isWide(expr.type)) && isNumericWasm(expr.value.type) && isNumericWasm(expr.type)) {
+            return wideConversion(emitExpr(expr.value), expr.value.type, expr.type)
+        }
         val from = numPrefix(expr.value.type)
         val to = numPrefix(expr.type)
         val v = emitExpr(expr.value)
@@ -2793,7 +2910,9 @@ class WasmCodegen {
     }
 
     private fun wasmType(type: IrType): String = when (type) {
-        IrType.Long, IrType.ULong, IrType.Cent, IrType.UCent, IrType.ISize, IrType.USize -> "i64"
+        // 128 bits: a `v128` holding the low half in lane 0 and the high in lane 1.
+        IrType.Cent, IrType.UCent -> "v128"
+        IrType.Long, IrType.ULong, IrType.ISize, IrType.USize -> "i64"
         // An erased generic value is eight bytes, like LLVM's pointer-sized slot,
         // so any value's bits fit; see [coerceWasm] for crossing into and out of it.
         IrType.Any -> "i64"
@@ -2886,6 +3005,31 @@ class WasmCodegen {
     (local.get ${'$'}h))
 """
 
+    /**
+     * -1, 0 or 1: [a] before, equal to or after [b] by code point. UTF-8
+     * keeps code point order byte by byte, so the first differing byte (as
+     * unsigned) decides, and a proper prefix comes first.
+     */
+    private val RT_STR_CMP = """
+  (func ${'$'}__str_cmp (param ${'$'}a i32) (param ${'$'}b i32) (result i32)
+    (local ${'$'}la i32) (local ${'$'}lb i32) (local ${'$'}i i32) (local ${'$'}x i32) (local ${'$'}y i32)
+    (local.set ${'$'}la (i32.load (local.get ${'$'}a)))
+    (local.set ${'$'}lb (i32.load (local.get ${'$'}b)))
+    (local.set ${'$'}i (i32.const 0))
+    (block ${'$'}c (loop ${'$'}l
+      (br_if ${'$'}c (i32.ge_s (local.get ${'$'}i) (local.get ${'$'}la)))
+      (br_if ${'$'}c (i32.ge_s (local.get ${'$'}i) (local.get ${'$'}lb)))
+      (local.set ${'$'}x (i32.load8_u (i32.add (i32.add (local.get ${'$'}a) (i32.const 4)) (local.get ${'$'}i))))
+      (local.set ${'$'}y (i32.load8_u (i32.add (i32.add (local.get ${'$'}b) (i32.const 4)) (local.get ${'$'}i))))
+      (if (i32.lt_u (local.get ${'$'}x) (local.get ${'$'}y)) (then (return (i32.const -1))))
+      (if (i32.gt_u (local.get ${'$'}x) (local.get ${'$'}y)) (then (return (i32.const 1))))
+      (local.set ${'$'}i (i32.add (local.get ${'$'}i) (i32.const 1)))
+      (br ${'$'}l)))
+    (if (i32.lt_s (local.get ${'$'}la) (local.get ${'$'}lb)) (then (return (i32.const -1))))
+    (if (i32.gt_s (local.get ${'$'}la) (local.get ${'$'}lb)) (then (return (i32.const 1))))
+    (i32.const 0))
+"""
+
     private val RT_STR_EQ = """
   (func ${'$'}__str_eq (param ${'$'}a i32) (param ${'$'}b i32) (result i32)
     (local ${'$'}la i32) (local ${'$'}i i32)
@@ -2937,6 +3081,8 @@ class WasmCodegen {
     private val RT_REPEAT = """
   (func ${'$'}__str_repeat (param ${'$'}s i32) (param ${'$'}n i32) (result i32)
     (local ${'$'}ls i32) (local ${'$'}p i32) (local ${'$'}i i32)
+    ;; a negative count stops the program, as on every backend
+    (if (i32.lt_s (local.get ${'$'}n) (i32.const 0)) (then unreachable))
     (local.set ${'$'}ls (i32.load (local.get ${'$'}s)))
     (local.set ${'$'}p (call ${'$'}__alloc (i32.add (i32.const 4) (i32.mul (local.get ${'$'}ls) (local.get ${'$'}n)))))
     (i32.store (local.get ${'$'}p) (i32.mul (local.get ${'$'}ls) (local.get ${'$'}n)))
@@ -2947,6 +3093,256 @@ class WasmCodegen {
                    (i32.add (local.get ${'$'}s) (i32.const 4)) (local.get ${'$'}ls))
       (local.set ${'$'}i (i32.add (local.get ${'$'}i) (i32.const 1)))
       (br ${'$'}l)))
+    (local.get ${'$'}p))
+"""
+
+    /**
+     * `x % y` for floats: the exact remainder with the sign of `x`, NaN for a
+     * zero `y` or an infinite `x`. `y` is doubled up to just below `|x|`, then
+     * taken off and halved back down; each subtraction is between values
+     * within a factor of two of each other, so it is exact (Sterbenz).
+     */
+    private val RT_FMOD = """
+  (func ${'$'}__fmod (param ${'$'}x f64) (param ${'$'}y f64) (result f64)
+    (local ${'$'}r f64) (local ${'$'}ay f64) (local ${'$'}t f64)
+    (if (i32.or (f64.ne (local.get ${'$'}x) (local.get ${'$'}x)) (f64.ne (local.get ${'$'}y) (local.get ${'$'}y)))
+      (then (return (f64.add (local.get ${'$'}x) (local.get ${'$'}y)))))
+    (if (i32.or (f64.eq (local.get ${'$'}y) (f64.const 0)) (f64.eq (f64.abs (local.get ${'$'}x)) (f64.const inf)))
+      (then (return (f64.const nan))))
+    (local.set ${'$'}r (f64.abs (local.get ${'$'}x)))
+    (local.set ${'$'}ay (f64.abs (local.get ${'$'}y)))
+    (if (f64.lt (local.get ${'$'}r) (local.get ${'$'}ay)) (then (return (local.get ${'$'}x))))
+    (local.set ${'$'}t (local.get ${'$'}ay))
+    (block ${'$'}up (loop ${'$'}double
+      (br_if ${'$'}up (f64.gt (f64.mul (local.get ${'$'}t) (f64.const 2)) (local.get ${'$'}r)))
+      (local.set ${'$'}t (f64.mul (local.get ${'$'}t) (f64.const 2)))
+      (br ${'$'}double)))
+    (block ${'$'}down (loop ${'$'}halve
+      (br_if ${'$'}down (f64.lt (local.get ${'$'}t) (local.get ${'$'}ay)))
+      (if (f64.ge (local.get ${'$'}r) (local.get ${'$'}t))
+        (then (local.set ${'$'}r (f64.sub (local.get ${'$'}r) (local.get ${'$'}t)))))
+      (local.set ${'$'}t (f64.mul (local.get ${'$'}t) (f64.const 0.5)))
+      (br ${'$'}halve)))
+    (f64.copysign (local.get ${'$'}r) (local.get ${'$'}x)))
+"""
+
+    /**
+     * `Cent` and `UCent` at 128 bits, in a `v128` (low half in lane 0, high in
+     * lane 1): WebAssembly's integers stop at 64. Arithmetic wraps modulo
+     * 2^128, division truncates toward zero and traps on zero, conversions to
+     * float round once, and text is decimal.
+     */
+    private val RT_WIDE = """
+  (func ${'$'}__w_make (param ${'$'}lo i64) (param ${'$'}hi i64) (result v128)
+    (i64x2.replace_lane 1 (i64x2.splat (local.get ${'$'}lo)) (local.get ${'$'}hi)))
+  (func ${'$'}__w_add (param ${'$'}a v128) (param ${'$'}b v128) (result v128)
+    (local ${'$'}al i64) (local ${'$'}lo i64)
+    (local.set ${'$'}al (i64x2.extract_lane 0 (local.get ${'$'}a)))
+    (local.set ${'$'}lo (i64.add (local.get ${'$'}al) (i64x2.extract_lane 0 (local.get ${'$'}b))))
+    (call ${'$'}__w_make (local.get ${'$'}lo)
+      (i64.add (i64.add (i64x2.extract_lane 1 (local.get ${'$'}a)) (i64x2.extract_lane 1 (local.get ${'$'}b)))
+        (i64.extend_i32_u (i64.lt_u (local.get ${'$'}lo) (local.get ${'$'}al))))))
+  (func ${'$'}__w_sub (param ${'$'}a v128) (param ${'$'}b v128) (result v128)
+    (local ${'$'}al i64) (local ${'$'}bl i64)
+    (local.set ${'$'}al (i64x2.extract_lane 0 (local.get ${'$'}a)))
+    (local.set ${'$'}bl (i64x2.extract_lane 0 (local.get ${'$'}b)))
+    (call ${'$'}__w_make (i64.sub (local.get ${'$'}al) (local.get ${'$'}bl))
+      (i64.sub (i64.sub (i64x2.extract_lane 1 (local.get ${'$'}a)) (i64x2.extract_lane 1 (local.get ${'$'}b)))
+        (i64.extend_i32_u (i64.lt_u (local.get ${'$'}al) (local.get ${'$'}bl))))))
+  ;; The high 64 bits of the unsigned product of two 64-bit values, from 32-bit halves.
+  (func ${'$'}__w_mulhi (param ${'$'}a i64) (param ${'$'}b i64) (result i64)
+    (local ${'$'}al i64) (local ${'$'}ah i64) (local ${'$'}bl i64) (local ${'$'}bh i64)
+    (local ${'$'}p0 i64) (local ${'$'}p1 i64) (local ${'$'}p2 i64) (local ${'$'}p3 i64) (local ${'$'}mid i64)
+    (local.set ${'$'}al (i64.and (local.get ${'$'}a) (i64.const 0xFFFFFFFF)))
+    (local.set ${'$'}ah (i64.shr_u (local.get ${'$'}a) (i64.const 32)))
+    (local.set ${'$'}bl (i64.and (local.get ${'$'}b) (i64.const 0xFFFFFFFF)))
+    (local.set ${'$'}bh (i64.shr_u (local.get ${'$'}b) (i64.const 32)))
+    (local.set ${'$'}p0 (i64.mul (local.get ${'$'}al) (local.get ${'$'}bl)))
+    (local.set ${'$'}p1 (i64.mul (local.get ${'$'}al) (local.get ${'$'}bh)))
+    (local.set ${'$'}p2 (i64.mul (local.get ${'$'}ah) (local.get ${'$'}bl)))
+    (local.set ${'$'}p3 (i64.mul (local.get ${'$'}ah) (local.get ${'$'}bh)))
+    (local.set ${'$'}mid (i64.add (i64.add (i64.shr_u (local.get ${'$'}p0) (i64.const 32))
+        (i64.and (local.get ${'$'}p1) (i64.const 0xFFFFFFFF)))
+      (i64.and (local.get ${'$'}p2) (i64.const 0xFFFFFFFF))))
+    (i64.add (i64.add (local.get ${'$'}p3) (i64.shr_u (local.get ${'$'}p1) (i64.const 32)))
+      (i64.add (i64.shr_u (local.get ${'$'}p2) (i64.const 32)) (i64.shr_u (local.get ${'$'}mid) (i64.const 32)))))
+  (func ${'$'}__w_mul (param ${'$'}a v128) (param ${'$'}b v128) (result v128)
+    (local ${'$'}al i64) (local ${'$'}bl i64)
+    (local.set ${'$'}al (i64x2.extract_lane 0 (local.get ${'$'}a)))
+    (local.set ${'$'}bl (i64x2.extract_lane 0 (local.get ${'$'}b)))
+    (call ${'$'}__w_make (i64.mul (local.get ${'$'}al) (local.get ${'$'}bl))
+      (i64.add (call ${'$'}__w_mulhi (local.get ${'$'}al) (local.get ${'$'}bl))
+        (i64.add (i64.mul (local.get ${'$'}al) (i64x2.extract_lane 1 (local.get ${'$'}b)))
+          (i64.mul (i64x2.extract_lane 1 (local.get ${'$'}a)) (local.get ${'$'}bl))))))
+  (func ${'$'}__w_lt_u (param ${'$'}a v128) (param ${'$'}b v128) (result i32)
+    (local ${'$'}ah i64) (local ${'$'}bh i64)
+    (local.set ${'$'}ah (i64x2.extract_lane 1 (local.get ${'$'}a)))
+    (local.set ${'$'}bh (i64x2.extract_lane 1 (local.get ${'$'}b)))
+    (if (result i32) (i64.eq (local.get ${'$'}ah) (local.get ${'$'}bh))
+      (then (i64.lt_u (i64x2.extract_lane 0 (local.get ${'$'}a)) (i64x2.extract_lane 0 (local.get ${'$'}b))))
+      (else (i64.lt_u (local.get ${'$'}ah) (local.get ${'$'}bh)))))
+  (func ${'$'}__w_lt_s (param ${'$'}a v128) (param ${'$'}b v128) (result i32)
+    (local ${'$'}ah i64) (local ${'$'}bh i64)
+    (local.set ${'$'}ah (i64x2.extract_lane 1 (local.get ${'$'}a)))
+    (local.set ${'$'}bh (i64x2.extract_lane 1 (local.get ${'$'}b)))
+    (if (result i32) (i64.eq (local.get ${'$'}ah) (local.get ${'$'}bh))
+      (then (i64.lt_u (i64x2.extract_lane 0 (local.get ${'$'}a)) (i64x2.extract_lane 0 (local.get ${'$'}b))))
+      (else (i64.lt_s (local.get ${'$'}ah) (local.get ${'$'}bh)))))
+  (func ${'$'}__w_shl (param ${'$'}a v128) (param ${'$'}n i32) (result v128)
+    (local ${'$'}lo i64) (local ${'$'}hi i64) (local ${'$'}k i64)
+    (if (i32.gt_u (local.get ${'$'}n) (i32.const 127)) (then unreachable))
+    (if (i32.eqz (local.get ${'$'}n)) (then (return (local.get ${'$'}a))))
+    (local.set ${'$'}lo (i64x2.extract_lane 0 (local.get ${'$'}a)))
+    (local.set ${'$'}hi (i64x2.extract_lane 1 (local.get ${'$'}a)))
+    (local.set ${'$'}k (i64.extend_i32_u (local.get ${'$'}n)))
+    (if (result v128) (i64.ge_u (local.get ${'$'}k) (i64.const 64))
+      (then (call ${'$'}__w_make (i64.const 0) (i64.shl (local.get ${'$'}lo) (i64.sub (local.get ${'$'}k) (i64.const 64)))))
+      (else (call ${'$'}__w_make (i64.shl (local.get ${'$'}lo) (local.get ${'$'}k))
+        (i64.or (i64.shl (local.get ${'$'}hi) (local.get ${'$'}k)) (i64.shr_u (local.get ${'$'}lo) (i64.sub (i64.const 64) (local.get ${'$'}k))))))))
+  (func ${'$'}__w_shr (param ${'$'}a v128) (param ${'$'}n i32) (param ${'$'}signed i32) (result v128)
+    (local ${'$'}lo i64) (local ${'$'}hi i64) (local ${'$'}k i64)
+    (if (i32.gt_u (local.get ${'$'}n) (i32.const 127)) (then unreachable))
+    (if (i32.eqz (local.get ${'$'}n)) (then (return (local.get ${'$'}a))))
+    (local.set ${'$'}lo (i64x2.extract_lane 0 (local.get ${'$'}a)))
+    (local.set ${'$'}hi (i64x2.extract_lane 1 (local.get ${'$'}a)))
+    (local.set ${'$'}k (i64.extend_i32_u (local.get ${'$'}n)))
+    (if (result v128) (i64.ge_u (local.get ${'$'}k) (i64.const 64))
+      (then (call ${'$'}__w_make
+        (if (result i64) (local.get ${'$'}signed)
+          (then (i64.shr_s (local.get ${'$'}hi) (i64.sub (local.get ${'$'}k) (i64.const 64))))
+          (else (i64.shr_u (local.get ${'$'}hi) (i64.sub (local.get ${'$'}k) (i64.const 64)))))
+        (if (result i64) (local.get ${'$'}signed) (then (i64.shr_s (local.get ${'$'}hi) (i64.const 63))) (else (i64.const 0)))))
+      (else (call ${'$'}__w_make
+        (i64.or (i64.shr_u (local.get ${'$'}lo) (local.get ${'$'}k)) (i64.shl (local.get ${'$'}hi) (i64.sub (i64.const 64) (local.get ${'$'}k))))
+        (if (result i64) (local.get ${'$'}signed)
+          (then (i64.shr_s (local.get ${'$'}hi) (local.get ${'$'}k)))
+          (else (i64.shr_u (local.get ${'$'}hi) (local.get ${'$'}k))))))))
+  (func ${'$'}__w_bit (param ${'$'}a v128) (param ${'$'}i i32) (result i64)
+    (if (result i64) (i32.ge_u (local.get ${'$'}i) (i32.const 64))
+      (then (i64.and (i64.shr_u (i64x2.extract_lane 1 (local.get ${'$'}a)) (i64.extend_i32_u (i32.sub (local.get ${'$'}i) (i32.const 64)))) (i64.const 1)))
+      (else (i64.and (i64.shr_u (i64x2.extract_lane 0 (local.get ${'$'}a)) (i64.extend_i32_u (local.get ${'$'}i))) (i64.const 1)))))
+  ;; Unsigned division by shifting and subtracting, one bit of the quotient a step.
+  ;; A remainder past 2^127 shifts out its top bit: it is then past the divisor too.
+  (func ${'$'}__w_divu (param ${'$'}a v128) (param ${'$'}b v128) (param ${'$'}rem i32) (result v128)
+    (local ${'$'}q v128) (local ${'$'}r v128) (local ${'$'}i i32) (local ${'$'}top i64)
+    (if (i64x2.all_true (i64x2.eq (local.get ${'$'}b) (v128.const i64x2 0 0))) (then unreachable))
+    (local.set ${'$'}q (v128.const i64x2 0 0))
+    (local.set ${'$'}r (v128.const i64x2 0 0))
+    (local.set ${'$'}i (i32.const 127))
+    (loop ${'$'}l
+      (local.set ${'$'}top (i64.shr_u (i64x2.extract_lane 1 (local.get ${'$'}r)) (i64.const 63)))
+      (local.set ${'$'}r (v128.or (call ${'$'}__w_shl (local.get ${'$'}r) (i32.const 1))
+        (call ${'$'}__w_make (call ${'$'}__w_bit (local.get ${'$'}a) (local.get ${'$'}i)) (i64.const 0))))
+      (if (i32.or (i32.wrap_i64 (local.get ${'$'}top)) (i32.eqz (call ${'$'}__w_lt_u (local.get ${'$'}r) (local.get ${'$'}b))))
+        (then
+          (local.set ${'$'}r (call ${'$'}__w_sub (local.get ${'$'}r) (local.get ${'$'}b)))
+          (local.set ${'$'}q (v128.or (local.get ${'$'}q) (call ${'$'}__w_shl (v128.const i64x2 1 0) (local.get ${'$'}i))))))
+      (local.set ${'$'}i (i32.sub (local.get ${'$'}i) (i32.const 1)))
+      (br_if ${'$'}l (i32.ge_s (local.get ${'$'}i) (i32.const 0))))
+    (if (result v128) (local.get ${'$'}rem) (then (local.get ${'$'}r)) (else (local.get ${'$'}q))))
+  ;; Signed division truncates toward zero; the remainder takes the dividend's sign.
+  (func ${'$'}__w_div (param ${'$'}a v128) (param ${'$'}b v128) (param ${'$'}signed i32) (param ${'$'}rem i32) (result v128)
+    (local ${'$'}na i32) (local ${'$'}nb i32) (local ${'$'}res v128)
+    (if (i32.eqz (local.get ${'$'}signed)) (then (return (call ${'$'}__w_divu (local.get ${'$'}a) (local.get ${'$'}b) (local.get ${'$'}rem)))))
+    (local.set ${'$'}na (i64.lt_s (i64x2.extract_lane 1 (local.get ${'$'}a)) (i64.const 0)))
+    (local.set ${'$'}nb (i64.lt_s (i64x2.extract_lane 1 (local.get ${'$'}b)) (i64.const 0)))
+    (local.set ${'$'}res (call ${'$'}__w_divu
+      (if (result v128) (local.get ${'$'}na) (then (call ${'$'}__w_sub (v128.const i64x2 0 0) (local.get ${'$'}a))) (else (local.get ${'$'}a)))
+      (if (result v128) (local.get ${'$'}nb) (then (call ${'$'}__w_sub (v128.const i64x2 0 0) (local.get ${'$'}b))) (else (local.get ${'$'}b)))
+      (local.get ${'$'}rem)))
+    (if (result v128)
+      (if (result i32) (local.get ${'$'}rem) (then (local.get ${'$'}na)) (else (i32.xor (local.get ${'$'}na) (local.get ${'$'}nb))))
+      (then (call ${'$'}__w_sub (v128.const i64x2 0 0) (local.get ${'$'}res)))
+      (else (local.get ${'$'}res))))
+  (func ${'$'}__w_from_i64 (param ${'$'}x i64) (param ${'$'}signed i32) (result v128)
+    (call ${'$'}__w_make (local.get ${'$'}x)
+      (if (result i64) (local.get ${'$'}signed) (then (i64.shr_s (local.get ${'$'}x) (i64.const 63))) (else (i64.const 0)))))
+  ;; A float truncated toward zero: the high half, then what is left below it.
+  (func ${'$'}__w_from_f64 (param ${'$'}x f64) (result v128)
+    (local ${'$'}t f64) (local ${'$'}hi f64)
+    (if (f64.ne (local.get ${'$'}x) (local.get ${'$'}x)) (then (return (v128.const i64x2 0 0))))
+    (local.set ${'$'}t (f64.trunc (local.get ${'$'}x)))
+    (local.set ${'$'}hi (f64.floor (f64.div (local.get ${'$'}t) (f64.const 0x1p64))))
+    (call ${'$'}__w_make
+      (i64.trunc_sat_f64_u (f64.sub (local.get ${'$'}t) (f64.mul (local.get ${'$'}hi) (f64.const 0x1p64))))
+      (i64.trunc_sat_f64_s (local.get ${'$'}hi))))
+  ;; The top 64 bits of a magnitude past 64 bits, the bits shifted out kept as one sticky
+  ;; bit, so the single rounding of the conversion is the correct one.
+  (func ${'$'}__w_top64 (param ${'$'}a v128) (param ${'$'}n i64) (result i64)
+    (local ${'$'}lo i64)
+    (local.set ${'$'}lo (i64x2.extract_lane 0 (local.get ${'$'}a)))
+    (i64.or (i64x2.extract_lane 0 (call ${'$'}__w_shr (local.get ${'$'}a) (i32.wrap_i64 (local.get ${'$'}n)) (i32.const 0)))
+      (if (result i64) (i64.eq (local.get ${'$'}n) (i64.const 64))
+        (then (i64.extend_i32_u (i64.ne (local.get ${'$'}lo) (i64.const 0))))
+        (else (i64.extend_i32_u (i64.ne (i64.and (local.get ${'$'}lo) (i64.sub (i64.shl (i64.const 1) (local.get ${'$'}n)) (i64.const 1))) (i64.const 0)))))))
+  (func ${'$'}__w_to_f64u (param ${'$'}a v128) (result f64)
+    (local ${'$'}hi i64) (local ${'$'}n i64)
+    (local.set ${'$'}hi (i64x2.extract_lane 1 (local.get ${'$'}a)))
+    (if (i64.eqz (local.get ${'$'}hi)) (then (return (f64.convert_i64_u (i64x2.extract_lane 0 (local.get ${'$'}a))))))
+    (local.set ${'$'}n (i64.sub (i64.const 64) (i64.clz (local.get ${'$'}hi))))
+    (f64.mul (f64.convert_i64_u (call ${'$'}__w_top64 (local.get ${'$'}a) (local.get ${'$'}n)))
+      (f64.reinterpret_i64 (i64.shl (i64.add (i64.const 1023) (local.get ${'$'}n)) (i64.const 52)))))
+  (func ${'$'}__w_to_f64 (param ${'$'}a v128) (param ${'$'}signed i32) (result f64)
+    (if (result f64) (i32.and (local.get ${'$'}signed) (i64.lt_s (i64x2.extract_lane 1 (local.get ${'$'}a)) (i64.const 0)))
+      (then (f64.neg (call ${'$'}__w_to_f64u (call ${'$'}__w_sub (v128.const i64x2 0 0) (local.get ${'$'}a)))))
+      (else (call ${'$'}__w_to_f64u (local.get ${'$'}a)))))
+  (func ${'$'}__w_to_f32u (param ${'$'}a v128) (result f32)
+    (local ${'$'}hi i64) (local ${'$'}n i64)
+    (local.set ${'$'}hi (i64x2.extract_lane 1 (local.get ${'$'}a)))
+    (if (i64.eqz (local.get ${'$'}hi)) (then (return (f32.convert_i64_u (i64x2.extract_lane 0 (local.get ${'$'}a))))))
+    (local.set ${'$'}n (i64.sub (i64.const 64) (i64.clz (local.get ${'$'}hi))))
+    (f32.mul (f32.convert_i64_u (call ${'$'}__w_top64 (local.get ${'$'}a) (local.get ${'$'}n)))
+      (f32.reinterpret_i32 (i32.shl (i32.add (i32.const 127) (i32.wrap_i64 (local.get ${'$'}n))) (i32.const 23)))))
+  (func ${'$'}__w_to_f32 (param ${'$'}a v128) (param ${'$'}signed i32) (result f32)
+    (if (result f32) (i32.and (local.get ${'$'}signed) (i64.lt_s (i64x2.extract_lane 1 (local.get ${'$'}a)) (i64.const 0)))
+      (then (f32.neg (call ${'$'}__w_to_f32u (call ${'$'}__w_sub (v128.const i64x2 0 0) (local.get ${'$'}a)))))
+      (else (call ${'$'}__w_to_f32u (local.get ${'$'}a)))))
+  ;; A magnitude divided by ten, by long division over its four 32-bit limbs.
+  (func ${'$'}__w_div10 (param ${'$'}a v128) (result v128)
+    (local ${'$'}lo i64) (local ${'$'}hi i64) (local ${'$'}cur i64) (local ${'$'}q3 i64) (local ${'$'}q2 i64) (local ${'$'}q1 i64) (local ${'$'}q0 i64)
+    (local.set ${'$'}lo (i64x2.extract_lane 0 (local.get ${'$'}a)))
+    (local.set ${'$'}hi (i64x2.extract_lane 1 (local.get ${'$'}a)))
+    (local.set ${'$'}cur (i64.shr_u (local.get ${'$'}hi) (i64.const 32)))
+    (local.set ${'$'}q3 (i64.div_u (local.get ${'$'}cur) (i64.const 10)))
+    (local.set ${'$'}cur (i64.or (i64.shl (i64.rem_u (local.get ${'$'}cur) (i64.const 10)) (i64.const 32)) (i64.and (local.get ${'$'}hi) (i64.const 0xFFFFFFFF))))
+    (local.set ${'$'}q2 (i64.div_u (local.get ${'$'}cur) (i64.const 10)))
+    (local.set ${'$'}cur (i64.or (i64.shl (i64.rem_u (local.get ${'$'}cur) (i64.const 10)) (i64.const 32)) (i64.shr_u (local.get ${'$'}lo) (i64.const 32))))
+    (local.set ${'$'}q1 (i64.div_u (local.get ${'$'}cur) (i64.const 10)))
+    (local.set ${'$'}cur (i64.or (i64.shl (i64.rem_u (local.get ${'$'}cur) (i64.const 10)) (i64.const 32)) (i64.and (local.get ${'$'}lo) (i64.const 0xFFFFFFFF))))
+    (local.set ${'$'}q0 (i64.div_u (local.get ${'$'}cur) (i64.const 10)))
+    (call ${'$'}__w_make (i64.or (i64.shl (local.get ${'$'}q1) (i64.const 32)) (local.get ${'$'}q0))
+      (i64.or (i64.shl (local.get ${'$'}q3) (i64.const 32)) (local.get ${'$'}q2))))
+  ;; Decimal text: the digits counted, then written right to left.
+  (func ${'$'}__w_to_str (param ${'$'}a v128) (param ${'$'}signed i32) (result i32)
+    (local ${'$'}neg i32) (local ${'$'}m v128) (local ${'$'}q v128) (local ${'$'}count i32) (local ${'$'}len i32) (local ${'$'}p i32) (local ${'$'}i i32)
+    (local.set ${'$'}neg (i32.and (local.get ${'$'}signed) (i64.lt_s (i64x2.extract_lane 1 (local.get ${'$'}a)) (i64.const 0))))
+    (local.set ${'$'}m (if (result v128) (local.get ${'$'}neg)
+      (then (call ${'$'}__w_sub (v128.const i64x2 0 0) (local.get ${'$'}a))) (else (local.get ${'$'}a))))
+    (local.set ${'$'}q (local.get ${'$'}m))
+    (local.set ${'$'}count (i32.const 0))
+    (loop ${'$'}c
+      (local.set ${'$'}q (call ${'$'}__w_div10 (local.get ${'$'}q)))
+      (local.set ${'$'}count (i32.add (local.get ${'$'}count) (i32.const 1)))
+      (br_if ${'$'}c (i32.eqz (i64x2.all_true (i64x2.eq (local.get ${'$'}q) (v128.const i64x2 0 0))))))
+    (local.set ${'$'}len (i32.add (local.get ${'$'}count) (local.get ${'$'}neg)))
+    (local.set ${'$'}p (call ${'$'}__alloc (i32.add (i32.const 4) (local.get ${'$'}len))))
+    (i32.store (local.get ${'$'}p) (local.get ${'$'}len))
+    (if (local.get ${'$'}neg) (then (i32.store8 offset=4 (local.get ${'$'}p) (i32.const 45))))
+    (local.set ${'$'}i (i32.add (i32.add (local.get ${'$'}p) (i32.const 4)) (local.get ${'$'}len)))
+    (local.set ${'$'}q (local.get ${'$'}m))
+    (loop ${'$'}w
+      (local.set ${'$'}i (i32.sub (local.get ${'$'}i) (i32.const 1)))
+      (local.set ${'$'}m (call ${'$'}__w_div10 (local.get ${'$'}q)))
+      (i32.store8 (local.get ${'$'}i) (i32.add (i32.const 48)
+        (i32.wrap_i64 (i64.sub (i64x2.extract_lane 0 (local.get ${'$'}q)) (i64.mul (i64x2.extract_lane 0 (local.get ${'$'}m)) (i64.const 10))))))
+      (local.set ${'$'}q (local.get ${'$'}m))
+      (br_if ${'$'}w (i32.eqz (i64x2.all_true (i64x2.eq (local.get ${'$'}q) (v128.const i64x2 0 0))))))
+    (local.get ${'$'}p))
+  ;; Sixteen bytes in a cell, for an erased slot or an optional to point at.
+  (func ${'$'}__w_box (param ${'$'}a v128) (result i32)
+    (local ${'$'}p i32)
+    (local.set ${'$'}p (call ${'$'}__alloc (i32.const 16)))
+    (v128.store (local.get ${'$'}p) (local.get ${'$'}a))
     (local.get ${'$'}p))
 """
 

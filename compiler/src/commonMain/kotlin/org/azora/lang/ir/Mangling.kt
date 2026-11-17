@@ -94,6 +94,15 @@ object Intrinsics {
      * spelling, because it does not say it is one.
      */
     const val INDEXED = "Indexed"
+
+    /**
+     * What `a..b`, `a..<b` and `a>..b` build (`std.range`, RANGE_DIP §3): the
+     * compiler types the literal as one, and walks one in `for`.
+     */
+    const val RANGE = "Range"
+
+    /** The spec a range is walked by (`std.range`, RANGE_DIP §5). */
+    const val STEP = "Step"
     const val CANCEL = "concurrency_cancel"
 
     /**

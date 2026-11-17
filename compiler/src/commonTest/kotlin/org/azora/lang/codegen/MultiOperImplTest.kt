@@ -4,15 +4,15 @@ import org.azora.lang.CompilationResult
 import org.azora.lang.Compiler
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.Parser
-import org.azora.lang.frontend.TopLevel
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * Covers `impl oper [spec, spec, ...] for Type` expansion and the oper.. range gate
- * introduced so range iteration works only where `impl oper .. for T` is declared.
+ * Covers how operators are declared - one declaration each, a bodyless one
+ * saying `bridge` - and that a range needs no operator declaration: `..` is
+ * not an operator a type declares (RANGE_DIP §4; `RangeValueTest` covers the
+ * refusal).
  */
 class MultiOperImplTest {
 
@@ -20,25 +20,9 @@ class MultiOperImplTest {
     fun aBodylessOperatorMustSayBridge() {
         // "The compiler implements this" is stated, not inferred from an omission.
         val failure = assertFailsWith<IllegalStateException> {
-            Parser(Lexer("oper.. Int&.(rhs: Int&) by 1\n").tokenize()).parse()
+            Parser(Lexer("oper+ Int&.(rhs: Int&): Int\n").tokenize()).parse()
         }
-        assertTrue("declare it 'bridge oper..'" in failure.message.orEmpty(), failure.message.orEmpty())
-    }
-
-    @Test
-    fun eachRangeOperatorIsDeclaredOnItsOwn() {
-        // Each direction is its own declaration, naming its receiver and trailing
-        // its default step. A compiler-provided one says `bridge` rather than
-        // leaving it to be inferred from the missing body.
-        val src = "bridge oper.. Int&.(rhs: Int&) by 1\n" +
-            "bridge oper >.. Int&.(rhs: Int&) by 1\n"
-        val program = Parser(Lexer(src).tokenize()).parse()
-        val operImpls = program.items.filterIsInstance<TopLevel.Impl>()
-        assertEquals(2, operImpls.size, "expected one impl per oper declaration")
-        val methodNames = operImpls.flatMap { it.methods.map { m -> m.name } }.toSet()
-        assertEquals(setOf("oper..", "oper>.."), methodNames)
-        assertTrue(operImpls.all { it.isBridge }, "a 'bridge oper' declaration is a bridge marker")
-        assertTrue(operImpls.all { it.typeName == "Int" })
+        assertTrue("declare it 'bridge oper+'" in failure.message.orEmpty(), failure.message.orEmpty())
     }
 
     @Test
@@ -51,7 +35,7 @@ class MultiOperImplTest {
 
     @Test
     fun rangeOverIntCompiles() {
-        // Int ranges compile because std/traits/core.az registers oper.. for Int.
+        // An Int range is the language's own counter loop: no declaration, no std.
         val result = Compiler().compile(
             """
             func main(): Int {
@@ -63,19 +47,5 @@ class MultiOperImplTest {
             release = false,
         )
         assertTrue(result is CompilationResult.Success, "Int range should compile: ${(result as? CompilationResult.Failure)?.errors}")
-    }
-
-    @Test
-    fun rangeIterationResolvesOperandKeyedOverloads() {
-        val result = Compiler().compile("""
-            bridge oper.. Int&.(rhs: Long&) by 1
-            func main(): Int {
-                var sum = 0
-                for i in 0..<4 { sum += i }
-                return sum
-            }
-        """.trimIndent(), release = false)
-        assertTrue(result is CompilationResult.Success,
-            "operand-keyed range should compile: ${(result as? CompilationResult.Failure)?.errors}")
     }
 }

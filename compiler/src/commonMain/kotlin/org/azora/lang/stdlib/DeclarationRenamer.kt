@@ -426,7 +426,11 @@ internal class DeclarationRenamer(
         is Expr.NullCoalesce -> e.copy(left = expr(e.left, scope), right = expr(e.right, scope))
         is Expr.SafeMember -> e.copy(target = expr(e.target, scope))
         is Expr.Cast -> e.copy(expr = expr(e.expr, scope), targetType = typeRef(e.targetType, scope))
-        is Expr.IsCheck -> e.copy(expr = expr(e.expr, scope), typeName = type(e.typeName, scope))
+        is Expr.IsCheck -> e.copy(
+            expr = expr(e.expr, scope),
+            typeName = type(e.typeName, scope),
+            typeArgs = e.typeArgs.map { typeRef(it, scope) },
+        )
         is Expr.InCheck -> e.copy(value = expr(e.value, scope), collection = expr(e.collection, scope))
         is Expr.Alloc -> e.copy(value = expr(e.value, scope))
         is Expr.Deref -> e.copy(target = expr(e.target, scope))

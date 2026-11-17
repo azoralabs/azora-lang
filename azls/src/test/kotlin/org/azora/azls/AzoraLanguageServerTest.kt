@@ -613,6 +613,24 @@ fin array = @collect_all(tuple)"""
         assertEquals("func add(a: Int, b: Int): Int", hover.signature)
     }
 
+    /** A range is a value of std's `Range<T>` (RANGE_DIP §3), and hover says so. */
+    @Test
+    fun hoverShowsARangesType() {
+        val source = """
+            import std.io
+            func main() {
+                fin digits = 0..<10
+                fin letters = 'a'..'z'
+                println(digits.size)
+                println(letters)
+            }
+        """.trimIndent()
+        val digits = hover(source, source.indexOf("digits.size"))!!
+        val letters = hover(source, source.indexOf("letters)"))!!
+        assertEquals("fin digits: Range<Int>", digits.signature)
+        assertEquals("fin letters: Range<Char>", letters.signature)
+    }
+
     @Test
     fun hoverReturnsNullForUnknown() {
         assertEquals("null", azls.hover("func main() {\n}", 0))

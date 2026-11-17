@@ -76,6 +76,17 @@ bridge spec Display {
 }
 
 /**
+ * The built-in types render themselves: a backend already prints an `Int`,
+ * so each states `Display` and writes no body. Generic code bounded by
+ * `T: Display` then takes them, and `"${'$'}x"` there renders the concrete
+ * type (RANGE_DIP §7).
+ */
+inline for Ty in [UByte, UShort, UInt, ULong, UCent, Byte, Short, Int, Long, Cent, Half, Float, Double, Quad, Bool, Char, String] {
+    @Since("0.1")
+    impl Display for Ty {}
+}
+
+/**
  * Renders [value] through its [Display] implementation.
  *
  * The one-shot form, for when a `String` really is what is wanted; a

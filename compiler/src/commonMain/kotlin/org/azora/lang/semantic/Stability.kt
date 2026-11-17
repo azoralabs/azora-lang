@@ -954,7 +954,11 @@ object WrittenUses {
                 is Expr.NullCoalesce -> { expr(e.left); expr(e.right) }
                 is Expr.SafeMember -> expr(e.target)
                 is Expr.Cast -> { expr(e.expr); type(e.targetType) }
-                is Expr.IsCheck -> { expr(e.expr); typeName(e.typeName, e.line, e.column) }
+                is Expr.IsCheck -> {
+                    expr(e.expr)
+                    typeName(e.typeName, e.line, e.column)
+                    e.typeArgs.forEach { type(it) }
+                }
                 is Expr.InCheck -> { expr(e.value); expr(e.collection) }
                 is Expr.MapLit -> e.entries.forEach { (k, v) -> expr(k); expr(v) }
                 is Expr.Alloc -> expr(e.value)

@@ -258,7 +258,7 @@ class IrOptimizer {
                 is IrStmt.VarDecl -> {
                     val propagated = propagateExpr(stmt.initializer, constants)
                     val folded = foldExpr(propagated)
-                    if (isConstant(folded) && stmt.reactiveLifetime == null) constants[stmt.name] = folded
+                    if (isConstant(folded) && stmt.reactiveLifetime == null && keepsItsType(stmt.type, folded)) constants[stmt.name] = folded
                     else constants.remove(stmt.name)
                     stmt.copy(initializer = folded)
                 }
@@ -266,7 +266,7 @@ class IrOptimizer {
                     val propagated = propagateExpr(stmt.initializer, constants)
                     val folded = foldExpr(propagated)
                     // fin is always constant-propagatable (never reassigned)
-                    if (isConstant(folded) && stmt.reactiveLifetime == null) constants[stmt.name] = folded
+                    if (isConstant(folded) && stmt.reactiveLifetime == null && keepsItsType(stmt.type, folded)) constants[stmt.name] = folded
                     else constants.remove(stmt.name)
                     stmt.copy(initializer = folded)
                 }
@@ -274,7 +274,7 @@ class IrOptimizer {
                     val propagated = propagateExpr(stmt.initializer, constants)
                     val folded = foldExpr(propagated)
                     // let is always constant-propagatable (never reassigned)
-                    if (isConstant(folded) && stmt.reactiveLifetime == null) constants[stmt.name] = folded
+                    if (isConstant(folded) && stmt.reactiveLifetime == null && keepsItsType(stmt.type, folded)) constants[stmt.name] = folded
                     else constants.remove(stmt.name)
                     stmt.copy(initializer = folded)
                 }
@@ -551,6 +551,16 @@ class IrOptimizer {
             incrementSink = saved
         }
     }
+
+    /**
+     * Whether [value] may stand in for a binding declared [declared]. An
+     * optional bound to a bare literal (`var held: Int? = 7`) is still an
+     * optional - its null check and its unwrap read it as one, and a bare
+     * `7` in their place is a different type to a backend that represents
+     * the two apart.
+     */
+    private fun keepsItsType(declared: IrType, value: IrExpr): Boolean =
+        declared !is IrType.Nullable || value.type is IrType.Nullable
 
     private fun propagateExpr(expr: IrExpr, constants: Map<String, IrExpr>): IrExpr = when (expr) {
         is IrExpr.Var -> constants[expr.name] ?: expr

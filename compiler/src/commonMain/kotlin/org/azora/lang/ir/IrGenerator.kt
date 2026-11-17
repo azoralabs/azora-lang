@@ -49,6 +49,7 @@ import org.azora.lang.semantic.indexedElementType
 import org.azora.lang.semantic.typeRefOf
 import org.azora.lang.semantic.VariadicMonomorphizer
 import org.azora.lang.semantic.MonoNames
+import org.azora.lang.semantic.stepText
 import org.azora.lang.semantic.literalFactoryTypes
 import org.azora.lang.semantic.instantiateSpecMember
 import org.azora.lang.semantic.StructType
@@ -89,6 +90,30 @@ private const val WITNESS_COMPARE = "__witness_compare"
 
 /** Copies an erased value as the concrete type its descriptor names; see [Witnesses]. */
 private const val WITNESS_CLONE = "__witness_clone"
+
+/** Orders two erased values (-1, 0, 1, or 2 when unordered) by the concrete type's own `<`; see [Witnesses]. */
+private const val WITNESS_PARTIAL_COMPARE = "__witness_partial_compare"
+
+/** Renders an erased value as `"${'$'}x"` does for the concrete type its descriptor names; see [Witnesses]. */
+private const val WITNESS_DISPLAY = "__witness_display"
+
+/** An erased value's `unit` - its type's step - by the concrete type its descriptor names; see [Witnesses]. */
+private const val WITNESS_STEP_UNIT = "__witness_step_unit"
+
+/** An erased value's `offset(step, count)` by the concrete type its descriptor names; see [Witnesses]. */
+private const val WITNESS_STEP_OFFSET = "__witness_step_offset"
+
+/** An erased value's `reaches(step, count)`; see [Witnesses]. */
+private const val WITNESS_STEP_REACHES = "__witness_step_reaches"
+
+/** An erased value's `moved(step, count)`; see [Witnesses]. */
+private const val WITNESS_STEP_MOVED = "__witness_step_moved"
+
+/** The message a walk fails with when a type's `offset` does not move past its previous row, by the row's concrete type. */
+private const val WITNESS_STEP_STUCK = "__witness_step_stuck"
+
+/** Marks the call a lowered walk makes for that message; never a function of its own. */
+private const val STEP_STUCK_TEXT = "__step_stuck_text"
 
 class IrGenerator(private val table: SymbolTable) {
     private var typeFunctions = emptyList<TypeFunctionDecl>()
@@ -367,7 +392,7 @@ class IrGenerator(private val table: SymbolTable) {
     /** The method-table key a primitive receiver uses (`impl Int { … }`). */
     private fun primitiveOwnerName(type: IrType): String? = when (type) {
         IrType.Int, IrType.UInt, IrType.Long, IrType.ULong, IrType.Byte, IrType.UByte,
-        IrType.Short, IrType.UShort, IrType.Float, IrType.Double, IrType.Quad,
+        IrType.Short, IrType.UShort, IrType.Cent, IrType.UCent, IrType.Half, IrType.Float, IrType.Double, IrType.Quad,
         IrType.String, IrType.Char, IrType.Bool -> type.toString()
         else -> null
     }
@@ -1181,9 +1206,13 @@ class IrGenerator(private val table: SymbolTable) {
                 prefersMembers = false,
             ),
         )
-        // A bounded pack's methods read its descriptors from the receiver.
+        // A bounded pack's methods read its descriptors from the receiver. A
+        // member's own clause about the pack's parameters (`where T: Step`)
+        // asks more of the same descriptor, which names the concrete type.
         val packParams = packTypeParams[typeName].orEmpty()
+        val memberBounds = Witnesses.bounds(method.whereClause, packParams)
         val bounds = packWitnessBounds[typeName].orEmpty()
+            .mapValues { (param, needs) -> needs + memberBounds[param].orEmpty() }
         val receiver = IrExpr.Var(resolveName(method.receiverName), IrType.Named(typeName))
         val sources = bounds.keys.associateWith { param -> IrExpr.Member(receiver, Witnesses.slot(param), IrType.Int) }
         val refs = method.params.associate { it.name to it.type } +
@@ -1227,6 +1256,9 @@ class IrGenerator(private val table: SymbolTable) {
     /** Writes a pending optional take needs after that statement. */
     private val pendingAfter = mutableListOf<IrStmt>()
 
+    /** Numbers the values a `return` holds while its pending writes run. */
+    private var returnHoldCounter = 0
+
     /**
      * Records what moving out of an optional owes the optional (§17).
      *
@@ -1246,6 +1278,31 @@ class IrGenerator(private val table: SymbolTable) {
             ),
         )
         pendingAfter.add(IrStmt.Assignment(resolveName(owner), intoNullable(IrExpr.Var("__null", IrType.Any), value.type)))
+    }
+
+    /**
+     * The value `take opt.require()` or `opt.take()` moves out of [value], the
+     * optional [target] names, typed as what it holds. An optional of a pack
+     * or an array holds a pointer, and the backends' own move - `__take`,
+     * which reads the place and leaves it null - empties it: emptying it
+     * afterwards by assignment would free, as a replaced owner, the value
+     * just handed on. Any other optional is emptied after the statement.
+     */
+    private fun takenFromOptional(target: Expr, value: IrExpr): IrExpr {
+        val inner = (value.type as IrType.Nullable).inner
+        val heldByPointer = value is IrExpr.Var && target is Expr.Identifier &&
+            ((inner is IrType.Named && table.lookupStruct(inner.name)?.isBridge == false) || inner is IrType.Array)
+        if (!heldByPointer) {
+            emptyAfterTake(target, value)
+            return IrExpr.NumCast(value, inner)
+        }
+        pendingBefore.add(
+            IrStmt.Assert(
+                IrExpr.Binary(value, IrBinaryOp.NEQ, IrExpr.Var("__null", IrType.Any), IrType.Bool),
+                IrExpr.StringLiteral("took a value out of a null optional"),
+            ),
+        )
+        return IrExpr.NumCast(IrExpr.Call("__take", listOf(value), value.type), inner)
     }
 
     /**
@@ -1296,8 +1353,20 @@ class IrGenerator(private val table: SymbolTable) {
                 pendingAfter.clear()
                 val lowered = lowerStmt(stmt)
                 result.addAll(pendingBefore)
-                result.add(lowered)
-                result.addAll(pendingAfter)
+                val returned = (lowered as? IrStmt.Return)?.value
+                if (returned != null && pendingAfter.isNotEmpty()) {
+                    // `return opt.take()` of a scalar: nothing runs after a
+                    // return, so the value is held, the optional emptied, then
+                    // the value returned - by the binding, which owns it.
+                    val held = "__returned_${returnHoldCounter++}"
+                    val owns = (stmt as? Stmt.Return)?.value?.let { ownsBinding(TypeAnnotation.Inferred, it, returned) } ?: false
+                    result.add(IrStmt.FinDecl(held, returned.type, returned, ownsValue = owns))
+                    result.addAll(pendingAfter)
+                    result.add(IrStmt.Return(IrExpr.Var(held, returned.type)))
+                } else {
+                    result.add(lowered)
+                    result.addAll(pendingAfter)
+                }
                 pendingBefore.clear()
                 pendingBefore.addAll(outerBefore)
                 pendingAfter.clear()
@@ -1763,18 +1832,44 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Stmt.For -> {
                 val range = stmt.iterable as? Expr.Range
+                // A range of any other `Step` type walks by row index (RANGE_DIP §6),
+                // and so does a `Range<T>` value.
+                val walked = table.lookupRangeBounds(stmt.iterable)?.let { resolveType(it, scopeTypeParams) }
+                if (range != null && walked != null && walked != IrType.Int) return lowerWalk(stmt, range)
+                if (range == null && walked != null) return lowerWalk(stmt, null)
                 if (range != null) {
                     val start = lowerExpr(range.from)
                     val end = lowerExpr(range.to)
-                    // Range iteration requires the bound type to declare the range operator
-                    // (e.g. `bridge impl oper .. for Int`); otherwise it is rejected.
-                    val rangeTypeName = start.type.toString()
-                    val operName = if (range.descending) "oper>.." else "oper.."
-                    if (table.lookupOperator(rangeTypeName, operName, end.type.toString()) == null) {
-                        val sym = if (range.descending) ">.." else ".."
-                        error("line ${stmt.line}: in '$currentTraceOwner': type '$rangeTypeName' does not support the range operator '$sym' (declare 'impl oper $sym for $rangeTypeName')")
+                    val writtenStep = stmt.step?.let { lowerExpr(it) }
+                    // The bounds and the step are evaluated once, in that order,
+                    // and the step must move forward even for an empty range.
+                    val prelude = mutableListOf<IrStmt>()
+                    val step = writtenStep?.let { lowered ->
+                        fun held(source: String, value: IrExpr): IrExpr {
+                            val name = registerName(source)
+                            table.defineVariable(VariableSymbol(source, value.type, mutable = false))
+                            prelude += IrStmt.FinDecl(name, value.type, value)
+                            return IrExpr.Var(name, value.type)
+                        }
+                        val n = walkCounter++
+                        val heldStart = held("__for${n}_start", start)
+                        val heldEnd = held("__for${n}_end", end)
+                        val heldStep = held("__for${n}_step", lowered)
+                        prelude += IrStmt.If(
+                            IrExpr.Binary(heldStep, IrBinaryOp.LTE, IrExpr.IntLiteral(0), IrType.Bool),
+                            listOf(
+                                IrStmt.ExprStmt(
+                                    IrExpr.Call(
+                                        "__panic",
+                                        listOf(IrExpr.StringLiteral("the step 'by ${stepText(stmt.step)}' does not move the range forward")),
+                                        IrType.Nothing,
+                                    ),
+                                ),
+                            ),
+                            null,
+                        )
+                        Triple(heldStart, heldEnd, heldStep)
                     }
-                    val step = stmt.step?.let { lowerExpr(it) }
                     table.pushScope()
                     pushNameScope()
                     val counter = registerName(stmt.name)
@@ -1787,17 +1882,18 @@ class IrGenerator(private val table: SymbolTable) {
                     val body = lowerBody(stmt.body)
                     popNameScope()
                     table.popScope()
-                    IrStmt.For(
+                    val loop = IrStmt.For(
                         counter,
-                        start,
-                        end,
+                        step?.first ?: start,
+                        step?.second ?: end,
                         range.inclusive,
                         body,
-                        step = step,
+                        step = step?.third,
                         descending = range.descending,
                         label = stmt.label,
                         indexName = index,
                     )
+                    if (prelude.isEmpty()) loop else IrStmt.Scope(prelude + loop)
                 } else {
                     // For-in over a non-range iterable (array, flow, channel): for-each.
                     val iterable = lowerExpr(stmt.iterable)
@@ -2093,7 +2189,8 @@ class IrGenerator(private val table: SymbolTable) {
      * used to print as its address and a tuple as `<value>`.
      */
     private fun rendered(value: IrExpr): IrExpr = when (val type = value.type) {
-        is IrType.Named -> stringifyEnum(displayed(value))
+        is IrType.Named -> renderRangeFunction(type)?.let { IrExpr.Call(it, listOf(value), IrType.String) }
+            ?: stringifyEnum(displayed(value))
         is IrType.Array -> IrExpr.Call(renderArrayFunction(type), listOf(value), IrType.String)
         is IrType.Tuple -> renderTuple(value, type)
         else -> value
@@ -2170,6 +2267,258 @@ class IrGenerator(private val table: SymbolTable) {
             IrStmt.Return(IrExpr.StringTemplate(listOf(IrExpr.IrTemplatePart.Expr(out), IrExpr.IrTemplatePart.Literal("]")))),
         )
         generatedRenderFunctions[name] = IrFunction(name, listOf("values" to unsized), IrType.String, body, refParams = setOf(0))
+        return name
+    }
+
+    /** Numbers the names a lowered walk declares, so nested walks do not share them. */
+    private var walkCounter = 0
+
+    /**
+     * `for x in a..b [by s]` over a `Step` type other than `Int`, or `for x in
+     * r [by s]` over a `Range<T>` value [range] is null for (RANGE_DIP §6),
+     * lowered as the loop it stands for:
+     *
+     *     fin start = a; fin end = b; fin step = s ?? start.unit
+     *     assert lower is NaN || !lower.reaches(step, 1) || lower.moved(step, 1) > lower
+     *     first = start, or start moved down one unit when it is left out (`a>..b`)
+     *     k = -1
+     *     loop {
+     *         k += 1
+     *         if !first.reaches(step, ±k) { break }
+     *         row = first.moved(step, ±k); if row is past the end { break }
+     *         assert k == 0 || row moved past the row before
+     *         x = row; body
+     *     }
+     *
+     * Row `k` is computed from the first, not from the row before, so a float
+     * walk carries two roundings however long it is, and `reaches` ends it at
+     * the type's limit instead of wrapping. A literal's direction is known
+     * here; a value's is read from it. An `offset` that does not move a row
+     * past the one before fails the walk instead of looping forever.
+     * `continue` comes back to the top, where `k` moves on.
+     */
+    private fun lowerWalk(stmt: Stmt.For, range: Expr.Range?): IrStmt {
+        val w = "__walk${walkCounter++}"
+        val line = stmt.line
+        val rowRef = table.lookupRangeBounds(stmt.iterable) ?: error("line $line: this walk was not typed")
+        val strideAnnotation = table.lookupWalkStride(stmt.iterable)
+            ?.let { TypeAnnotation.Explicit(it) } ?: TypeAnnotation.Inferred
+        val rowAnnotation = TypeAnnotation.Explicit(rowRef)
+        val boolAnnotation = TypeAnnotation.Explicit(TypeRef.Named("Bool"))
+        val longAnnotation = TypeAnnotation.Explicit(TypeRef.Named("Long"))
+        fun id(name: String) = Expr.Identifier(name, line)
+        fun member(target: Expr, name: String) = Expr.Member(target, name, line)
+        fun call(target: Expr, name: String, vararg args: Expr) = Expr.MethodCall(target, name, args.toList(), line)
+        fun long(value: Long) = Expr.Cast(Expr.IntLiteral(value, line), TypeRef.Named("Long"), line = line)
+        fun bool(value: Boolean) = Expr.BoolLiteral(value, line)
+        fun binary(left: Expr, op: TokenType, right: Expr) = Expr.Binary(left, op, right, line)
+        // A literal's direction is a constant here, and folds away.
+        fun not(expr: Expr): Expr = if (expr is Expr.BoolLiteral) bool(!expr.value) else Expr.Unary(TokenType.BANG, expr, line)
+        fun and(a: Expr, b: Expr): Expr = when {
+            a is Expr.BoolLiteral -> if (a.value) b else a
+            b is Expr.BoolLiteral -> if (b.value) a else b
+            else -> binary(a, TokenType.AND_AND, b)
+        }
+        fun pick(flag: Expr, ifSet: Expr, otherwise: Expr): Expr =
+            if (flag is Expr.BoolLiteral) (if (flag.value) ifSet else otherwise) else Expr.IfExpr(flag, ifSet, otherwise, line)
+        fun breakUnless(condition: Expr) = Stmt.If(not(condition), listOf(Stmt.Break(line = line)), null, line)
+        val start = "${w}_start"
+        val end = "${w}_end"
+        val step = "${w}_step"
+        val first = "${w}_first"
+        val go = "${w}_go"
+        val k = "${w}_k"
+        val previous = "${w}_previous"
+        val current = "${w}_row"
+        val stmts = mutableListOf<Stmt>()
+        val descending: Expr
+        val upperIncluded: Expr
+        val lower: Expr
+        if (range != null) {
+            stmts += Stmt.FinDecl(start, rowAnnotation, range.from, line)
+            stmts += Stmt.FinDecl(end, rowAnnotation, range.to, line)
+            descending = bool(range.descending)
+            // `a>..b` leaves `a` out; `a..b` keeps `b`, `a..<b` does not.
+            upperIncluded = bool(!range.descending && range.inclusive)
+            lower = id(if (range.descending) end else start)
+        } else {
+            val held = "${w}_range"
+            stmts += Stmt.FinDecl(held, TypeAnnotation.Inferred, stmt.iterable, line)
+            stmts += Stmt.FinDecl(start, rowAnnotation, member(id(held), "start"), line)
+            stmts += Stmt.FinDecl(end, rowAnnotation, member(id(held), "end"), line)
+            stmts += Stmt.FinDecl("${w}_descending", boolAnnotation, member(id(held), "descending"), line)
+            stmts += Stmt.FinDecl("${w}_upperIncluded", boolAnnotation, member(id(held), "upperIncluded"), line)
+            stmts += Stmt.FinDecl("${w}_lower", rowAnnotation, member(id(held), "lower"), line)
+            descending = id("${w}_descending")
+            upperIncluded = id("${w}_upperIncluded")
+            lower = id("${w}_lower")
+        }
+        val stepWord = stmt.step?.let { stepText(it) } ?: "unit"
+        stmts += Stmt.FinDecl(step, strideAnnotation, stmt.step ?: member(id(start), "unit"), line)
+        // The step must move forward, checked before any row. A NaN bound
+        // is ordered with nothing, the walk is empty, and there is nothing
+        // to check it against.
+        stmts += Stmt.Assert(
+            binary(
+                binary(not(binary(lower, TokenType.LESS_EQUAL, lower)), TokenType.OR_OR, not(call(lower, "reaches", id(step), long(1)))),
+                TokenType.OR_OR,
+                binary(call(lower, "moved", id(step), long(1)), TokenType.GREATER, lower),
+            ),
+            Expr.StringLiteral("the step 'by $stepWord' does not move the range forward", line),
+            line,
+        )
+        stmts += Stmt.VarDecl(first, rowAnnotation, id(start), line)
+        stmts += Stmt.VarDecl(go, boolAnnotation, bool(true), line)
+        // A range that leaves its start out - `a>..b` - begins one unit below it.
+        val startLeftOut = and(descending, not(upperIncluded))
+        if (!(startLeftOut is Expr.BoolLiteral && !startLeftOut.value)) {
+            val unit = "${w}_unit"
+            val moveDown = listOf(
+                Stmt.FinDecl(unit, strideAnnotation, member(id(start), "unit"), line),
+                Stmt.Assignment(go, call(id(start), "reaches", id(unit), long(-1)), line),
+                Stmt.If(id(go), listOf(Stmt.Assignment(first, call(id(start), "moved", id(unit), long(-1)), line)), null, line),
+            )
+            stmts += if (startLeftOut is Expr.BoolLiteral) moveDown else listOf(Stmt.If(startLeftOut, moveDown, null, line))
+        }
+        val direction = if (descending is Expr.BoolLiteral) {
+            long(if (descending.value) -1 else 1)
+        } else {
+            stmts += Stmt.FinDecl("${w}_direction", longAnnotation, pick(descending, long(-1), long(1)), line)
+            id("${w}_direction")
+        }
+        stmts += Stmt.VarDecl(k, longAnnotation, long(-1), line)
+        stmts += Stmt.VarDecl(previous, rowAnnotation, id(first), line)
+        val moves = binary(direction, TokenType.STAR, id(k))
+        // Descending, the end is the lower bound and always in; ascending, it
+        // is the upper one, in when the range keeps it.
+        val within = pick(
+            descending,
+            binary(id(current), TokenType.GREATER_EQUAL, id(end)),
+            pick(upperIncluded, binary(id(current), TokenType.LESS_EQUAL, id(end)), binary(id(current), TokenType.LESS, id(end))),
+        )
+        val advanced = pick(
+            descending,
+            binary(id(current), TokenType.LESS, id(previous)),
+            binary(id(current), TokenType.GREATER, id(previous)),
+        )
+        val loopBody = mutableListOf<Stmt>(
+            Stmt.Assignment(k, binary(id(k), TokenType.PLUS, long(1)), line),
+            breakUnless(call(id(first), "reaches", id(step), moves)),
+            Stmt.FinDecl(current, rowAnnotation, call(id(first), "moved", id(step), moves), line),
+            breakUnless(within),
+            // A row that does not move past the one before would be visited
+            // forever: the type's `offset` is wrong, and the walk says so.
+            Stmt.Assert(
+                binary(binary(id(k), TokenType.EQUAL_EQUAL, long(0)), TokenType.OR_OR, advanced),
+                Expr.Call(STEP_STUCK_TEXT, listOf(id(previous)), line),
+                line,
+            ),
+            Stmt.Assignment(previous, id(current), line),
+            Stmt.FinDecl(stmt.name, TypeAnnotation.Explicit(stmt.declaredType ?: rowRef), id(current), line),
+        )
+        stmt.indexName?.let { index ->
+            loopBody += Stmt.FinDecl(index, TypeAnnotation.Explicit(TypeRef.Named("Int")), Expr.Cast(id(k), TypeRef.Named("Int"), line = line), line)
+        }
+        loopBody += stmt.body
+        stmts += Stmt.If(id(go), listOf(Stmt.Loop(loopBody, line, label = stmt.label)), null, line)
+        return lowerStmt(Stmt.Scope(stmts, line))
+    }
+
+    /**
+     * `'offset' of 'Day' did not move past Day(n: 1)`: what a walk fails with
+     * when a type's `offset` hands back a row that is not past [previous] -
+     * through the witness in generic code, where the type is known only when
+     * the walk runs.
+     */
+    private fun stepStuckText(previous: Expr): IrExpr {
+        val param = witnessParamOf(previous)
+        if (param != null) {
+            return witnessCall(WITNESS_STEP_STUCK, listOf(witnessSources.getValue(param), lowerExpr(previous)), IrType.String)
+        }
+        val value = lowerExpr(previous)
+        val typeName = when (val type = value.type) {
+            is IrType.Named -> type.name.substringAfterLast("__")
+            else -> type.toString()
+        }
+        return lowerExpr(
+            Expr.StringTemplate(
+                listOf(
+                    Expr.StringTemplatePart.Literal("'offset' of '$typeName' did not move past "),
+                    Expr.StringTemplatePart.Expr(previous),
+                ),
+                previous.line,
+            ),
+        )
+    }
+
+    /**
+     * `a..b` as the `Range<T>` value the resolver typed it as (RANGE_DIP §3.1):
+     * `Range<T>(a, b, upperIncluded, descending)`, the bounds as written and so
+     * evaluated left to right. An unsuffixed literal bound is read at `T`.
+     */
+    private fun lowerRangeValue(expr: Expr.Range): IrExpr {
+        val bounds = table.lookupRangeBounds(expr)
+            ?: error("line ${expr.line}: this range was not typed as a value")
+        fun typed(bound: Expr): Expr = when {
+            bound is Expr.IntLiteral || bound is Expr.DoubleLiteral -> Expr.Cast(bound, bounds, line = bound.line)
+            bound is Expr.Unary && bound.op == TokenType.MINUS &&
+                (bound.operand is Expr.IntLiteral || bound.operand is Expr.DoubleLiteral) -> Expr.Cast(bound, bounds, line = bound.line)
+            else -> bound
+        }
+        val upperIncluded = !expr.descending && expr.inclusive
+        val call = Expr.Call(
+            Intrinsics.RANGE,
+            listOf(
+                typed(expr.from),
+                typed(expr.to),
+                Expr.BoolLiteral(upperIncluded, expr.line),
+                Expr.BoolLiteral(expr.descending, expr.line),
+            ),
+            expr.line,
+            expr.column,
+            typeArgs = listOf(bounds),
+        )
+        return lowerExpr(call)
+    }
+
+    /**
+     * The generated function writing a `Range<T>` out as it is written -
+     * `0..<10`, `'a'..'z'`, `10>..0` - or null for any other type. The bounds
+     * render as an aggregate's elements do (text quoted), read once from the
+     * range it is handed; std's `_text` puts the operator between them.
+     */
+    private fun renderRangeFunction(type: IrType.Named): String? {
+        if (type.name.substringAfterLast("__") != Intrinsics.RANGE || type.args.size != 1) return null
+        val text = table.lookupMethod(type.name, "_text") ?: return null
+        // Named by its element type: `IrType.Named` equality ignores arguments,
+        // and a `Range<Char>` and a `Range<String>` quote their bounds differently.
+        val name = "__render_range_" + MonoNames.mangleType(typeRefOf(type.args[0])).replace(Regex("[^A-Za-z0-9_]"), "_")
+        if (name in generatedRenderFunctions) return name
+        generatedRenderFunctions[name] = IrFunction(name, listOf("range" to type), IrType.String, emptyList(), refParams = setOf(0))
+        table.pushScope()
+        pushNameScope()
+        try {
+            val param = registerName("__range")
+            table.defineVariable(VariableSymbol("__range", type, mutable = false))
+            val self = Expr.Identifier("__range", 0)
+            val start = lowerExpr(Expr.Member(self, "start", 0))
+            val end = lowerExpr(Expr.Member(self, "end", 0))
+            val call = IrExpr.Call(
+                text,
+                listOf(
+                    IrExpr.Var(param, type),
+                    IrExpr.StringTemplate(listOf(renderedElement(start))),
+                    IrExpr.StringTemplate(listOf(renderedElement(end))),
+                ),
+                IrType.String,
+            )
+            generatedRenderFunctions[name] = IrFunction(
+                name, listOf(param to type), IrType.String, listOf(IrStmt.Return(call)), refParams = setOf(0),
+            )
+        } finally {
+            popNameScope()
+            table.popScope()
+        }
         return name
     }
 
@@ -2511,7 +2860,24 @@ class IrGenerator(private val table: SymbolTable) {
         is Expr.Member -> fieldRefOf(expr.target, expr.name)
         is Expr.Index -> elementRefOf(declaredRefOf(expr.target))
         is Expr.Call -> returnedRefOf(expr)
+        // `r.lower.offset(…)`: what a member declares it returns, read in its
+        // owner's arguments, as the resolver reads it.
+        is Expr.MethodCall -> memberRefOf(expr.target, expr.name)
         else -> null
+    }
+
+    /**
+     * The declared result of member [name] - a computed property or a method -
+     * of [target]'s declared type, in that type's arguments: `lower` of a
+     * `Range<T>` is a `T`.
+     */
+    private fun memberRefOf(target: Expr, name: String): TypeRef? {
+        val owner = stripRef(declaredRefOf(target)) as? TypeRef.Named ?: return null
+        val mangled = table.lookupMethod(owner.name, name) ?: return null
+        val returned = table.lookupFunction(mangled)?.returnTypeRef ?: return null
+        val params = packTypeParams[owner.name].orEmpty()
+        if (owner.args.size != params.size) return returned
+        return substituteTypeParams(returned, params.zip(owner.args).toMap())
     }
 
     /** What a call returns when it returns a value of one of its written type arguments: `get<T>(…)` holds a `T`. */
@@ -2528,7 +2894,7 @@ class IrGenerator(private val table: SymbolTable) {
 
     private fun fieldRefOf(target: Expr, field: String): TypeRef? {
         val owner = stripRef(declaredRefOf(target)) as? TypeRef.Named ?: return null
-        val ref = packFieldRefs[owner.name]?.get(field) ?: return null
+        val ref = packFieldRefs[owner.name]?.get(field) ?: return memberRefOf(target, field)
         val params = packTypeParams[owner.name].orEmpty()
         if (owner.args.size != params.size) return ref
         return substituteTypeParams(ref, params.zip(owner.args).toMap())
@@ -2723,8 +3089,11 @@ class IrGenerator(private val table: SymbolTable) {
                     table.defineVariable(VariableSymbol("__slot$i", IrType.Any, mutable = false))
                     mangled
                 }
-                val branches = witnessTypes.values.withIndex().filter { (id, _) ->
-                    need in witnessNeeds[id].orEmpty()
+                // A range's descriptor is made for its order where it is built;
+                // a walk asks the same descriptor for a step later, so `Step`
+                // covers every described type that steps.
+                val branches = witnessTypes.values.withIndex().filter { (id, type) ->
+                    need in witnessNeeds[id].orEmpty() || (need == Witnesses.STEP && strideOf(type) != null)
                 }.map { (id, type) ->
                     val locals = (0 until operands).map { i ->
                         val source = "__typed${id}_$i"
@@ -2768,7 +3137,98 @@ class IrGenerator(private val table: SymbolTable) {
                     IrStmt.Return(IrExpr.IntLiteral(0)),
                 )
             },
+            // -1, 0 or 1 from the type's own `<` and `<=`, and 2 when neither
+            // way holds (a NaN).
+            dispatch(WITNESS_PARTIAL_COMPARE, Witnesses.PARTIAL_ORDER, 2, IrType.Int) { (a, b) ->
+                listOf(
+                    IrStmt.If(lowerExpr(Expr.Binary(a, TokenType.LESS, b, 0)), listOf(IrStmt.Return(IrExpr.IntLiteral(-1))), null),
+                    IrStmt.If(lowerExpr(Expr.Binary(b, TokenType.LESS, a, 0)), listOf(IrStmt.Return(IrExpr.IntLiteral(1))), null),
+                    IrStmt.If(lowerExpr(Expr.Binary(a, TokenType.LESS_EQUAL, b, 0)), listOf(IrStmt.Return(IrExpr.IntLiteral(0))), null),
+                    IrStmt.Return(IrExpr.IntLiteral(2)),
+                )
+            },
+            dispatch(WITNESS_DISPLAY, Witnesses.DISPLAY, 1, IrType.String) { (v) ->
+                returning(Expr.StringTemplate(listOf(Expr.StringTemplatePart.Expr(v)), 0))
+            },
+            dispatch(WITNESS_STEP_UNIT, Witnesses.STEP, 1, IrType.Any) { (v) ->
+                returning(Expr.Member(v, "unit", 0))
+            },
+            stepMoveDispatch(WITNESS_STEP_OFFSET, "offset", IrType.Nullable(IrType.Any)),
+            stepMoveDispatch(WITNESS_STEP_REACHES, "reaches", IrType.Bool),
+            stepMoveDispatch(WITNESS_STEP_MOVED, "moved", IrType.Any),
+            dispatch(WITNESS_STEP_STUCK, Witnesses.STEP, 1, IrType.String) { (v) ->
+                returning(Expr.Call(STEP_STUCK_TEXT, listOf(v), 0))
+            },
         ).filter { it.function.name in witnessDispatchers }
+    }
+
+    /**
+     * `offset(step, count)` for an erased value, by the concrete type its
+     * descriptor names. Unlike the other dispatchers its operands have three
+     * types: the value's, the step's - the `S` of the type's `Step<S>` - and
+     * `Long`. Every type with a descriptor that implements `Step` gets a
+     * branch: a range's descriptor is made where it is built, for its order,
+     * before any walk asks it for a step.
+     */
+    private fun stepMoveDispatch(name: String, member: String, result: IrType): IrTopLevel.Func {
+        table.pushScope()
+        pushNameScope()
+        try {
+            val descriptor = registerName("__descriptor")
+            table.defineVariable(VariableSymbol("__descriptor", IrType.Int, mutable = false))
+            val value = registerName("__value")
+            table.defineVariable(VariableSymbol("__value", IrType.Any, mutable = false))
+            val step = registerName("__step")
+            table.defineVariable(VariableSymbol("__step", IrType.Any, mutable = false))
+            val count = registerName("__count")
+            table.defineVariable(VariableSymbol("__count", IrType.Long, mutable = false))
+            val branches = witnessTypes.values.withIndex().mapNotNull { (id, type) ->
+                val stride = strideOf(type) ?: return@mapNotNull null
+                val typedValue = registerName("__typed${id}_value")
+                table.defineVariable(VariableSymbol("__typed${id}_value", type, mutable = false))
+                val typedStep = registerName("__typed${id}_step")
+                table.defineVariable(VariableSymbol("__typed${id}_step", stride, mutable = false))
+                val call = lowerExpr(
+                    Expr.MethodCall(
+                        Expr.Identifier("__typed${id}_value", 0),
+                        member,
+                        listOf(Expr.Identifier("__typed${id}_step", 0), Expr.Identifier("__count", 0)),
+                        0,
+                    ),
+                )
+                IrStmt.If(
+                    IrExpr.Binary(IrExpr.Var(descriptor, IrType.Int), IrBinaryOp.EQ, IrExpr.IntLiteral(id.toLong()), IrType.Bool),
+                    listOf(
+                        IrStmt.FinDecl(typedValue, type, IrExpr.Var(value, IrType.Any)),
+                        IrStmt.FinDecl(typedStep, stride, IrExpr.Var(step, IrType.Any)),
+                        IrStmt.Return(call),
+                    ),
+                    null,
+                )
+            }
+            val missing = IrStmt.ExprStmt(
+                IrExpr.Call("__panic", listOf(IrExpr.StringLiteral("no Step witness for this generic value")), IrType.Nothing),
+            )
+            return IrTopLevel.Func(IrFunction(
+                name,
+                listOf(descriptor to IrType.Int, value to IrType.Any, step to IrType.Any, count to IrType.Long),
+                result,
+                branches + missing + IrStmt.Return(defaultValueForType(result)),
+            ))
+        } finally {
+            popNameScope()
+            table.popScope()
+        }
+    }
+
+    /** The `S` of [type]'s `Step<S>`, or null when it does not step. */
+    private fun strideOf(type: IrType): IrType? {
+        val name = type.toString()
+        val conformance = table.allConformances().firstOrNull {
+            it.typeName == name && it.contractName.substringAfterLast("__") == Witnesses.STEP
+        } ?: return null
+        val stride = conformance.typeArgs.firstOrNull() ?: return type
+        return resolveType(stride, emptySet())
     }
 
     /**
@@ -3269,10 +3729,10 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.InlineForArgs ->
                 error("'inline for' argument reached IR generation at line ${expr.line}")
             is Expr.InCheck -> {
-                // `x in xs` - membership, the same shape a `contains` call has.
-                val v = lowerExpr(expr.value)
-                val c = lowerExpr(expr.collection)
-                val call = IrExpr.MethodCall(c, "contains", listOf(v), IrType.Bool)
+                // `x in xs` is `xs.contains(x)`, lowered as that call is: a
+                // pack's own `contains` (a `Range`'s) is called as its member,
+                // a built-in collection's natively.
+                val call = lowerExpr(Expr.MethodCall(expr.collection, "contains", listOf(expr.value), expr.line, expr.column))
                 if (expr.negated) IrExpr.Unary(IrUnaryOp.NOT, call, IrType.Bool) else call
             }
             is Expr.NullCoalesce -> {
@@ -3404,6 +3864,23 @@ class IrGenerator(private val table: SymbolTable) {
                         )
                         return IrExpr.Binary(compare, ordering, IrExpr.IntLiteral(0), IrType.Bool)
                     }
+                    // A partial order answers 2 for "unordered" (a NaN), which
+                    // none of the four relations holds for.
+                    if (param != null && Witnesses.PARTIAL_ORDER in witnessBounds[param].orEmpty()) {
+                        val compare = witnessCall(
+                            WITNESS_PARTIAL_COMPARE,
+                            listOf(witnessSources.getValue(param), lowerExpr(expr.left), lowerExpr(expr.right)),
+                            IrType.Int,
+                        )
+                        fun holds(op: IrBinaryOp, value: Long) =
+                            IrExpr.Binary(compare, op, IrExpr.IntLiteral(value), IrType.Bool)
+                        return when (ordering) {
+                            IrBinaryOp.LT -> holds(IrBinaryOp.EQ, -1)
+                            IrBinaryOp.LTE -> holds(IrBinaryOp.LTE, 0)
+                            IrBinaryOp.GT -> holds(IrBinaryOp.EQ, 1)
+                            else -> IrExpr.Binary(holds(IrBinaryOp.GTE, 0), IrBinaryOp.AND, holds(IrBinaryOp.LT, 2), IrType.Bool)
+                        }
+                    }
                 }
                 var left = lowerExpr(expr.left)
                 var right = lowerExpr(expr.right)
@@ -3433,7 +3910,9 @@ class IrGenerator(private val table: SymbolTable) {
                         val key = operandKeyOf(right.type)
                         if (key != null && key != left.type.toString()) {
                             table.lookupMethod(left.type.toString(), "$operName@$key")?.let { mangled ->
-                                val func = table.lookupFunction(mangled)!!
+                                // A `bridge` operator registers its name and no
+                                // function: the backend's own arithmetic answers.
+                                val func = table.lookupFunction(mangled) ?: return@let
                                 return IrExpr.Call(mangled, listOf(left, right), func.returnType)
                             }
                         }
@@ -3532,6 +4011,18 @@ class IrGenerator(private val table: SymbolTable) {
                     )
                 }
                 val op = lowerBinaryOp(expr.op)
+                // `small - 2` with `small: Byte` is a `Byte`: an unsuffixed
+                // integer literal is read at the other operand's width, as the
+                // resolver reads it. Widening it to `Int` instead left the
+                // result labelled `Int` while LLVM computed it in eight bits.
+                val leftType = left.type
+                val rightType = right.type
+                if (leftType is IrType.Integer && rightType is IrType.Integer && leftType != rightType) {
+                    val r = right
+                    val l = left
+                    if (isUntypedIntegerLiteral(expr.right) && r is IrExpr.IntLiteral) right = r.copy(type = leftType)
+                    else if (isUntypedIntegerLiteral(expr.left) && l is IrExpr.IntLiteral) left = l.copy(type = rightType)
+                }
                 val type = when (op) {
                     IrBinaryOp.EQ, IrBinaryOp.NEQ,
                     IrBinaryOp.LT, IrBinaryOp.LTE,
@@ -3550,11 +4041,20 @@ class IrGenerator(private val table: SymbolTable) {
                     left = stringifyEnum(left)
                     right = stringifyEnum(right)
                 }
-                left = coerceToFloat(left, right.type)
-                right = coerceToFloat(right, left.type)
+                if (op in ARITHMETIC_OPS && type in IrType.floatTypes) {
+                    // `Int * Double` is a `Double` (the resolver's promotion):
+                    // the integer is converted, and a float literal is read
+                    // at the promoted type - never cast down to the integer's.
+                    left = promotedOperand(left, type)
+                    right = promotedOperand(right, type)
+                } else {
+                    left = coerceToFloat(left, right.type)
+                    right = coerceToFloat(right, left.type)
+                }
                 IrExpr.Binary(left, op, right, type)
             }
             is Expr.Call -> {
+                if (expr.callee == STEP_STUCK_TEXT && expr.receiver == null) return stepStuckText(expr.args.single())
                 // `Array(a, b, c)` - the compiler's own aggregate; see the
                 // resolver, which types it the same way and just as early.
                 if (expr.callee == Intrinsics.ARRAY && expr.receiver == null) {
@@ -3926,7 +4426,7 @@ class IrGenerator(private val table: SymbolTable) {
                 error("undefined function or variable '${expr.callee}'")
             }
             is Expr.Grouping -> lowerExpr(expr.expr)
-            is Expr.Range -> error("range expressions can only be used as for-loop iterables")
+            is Expr.Range -> lowerRangeValue(expr)
             is Expr.ArrayLiteral -> {
                 val factory = expr.literalFactory
                 if (factory != null) {
@@ -3991,7 +4491,11 @@ class IrGenerator(private val table: SymbolTable) {
                 if (expr.op == OwnershipOp.TAKE && unwrapped is Expr.MethodCall &&
                     unwrapped.name == "require" && unwrapped.args.isEmpty()
                 ) {
-                    emptyAfterTake(unwrapped.target, lowerExpr(unwrapped.target))
+                    val optional = lowerExpr(unwrapped.target)
+                    if (optional.type is IrType.Nullable) {
+                        val taken = takenFromOptional(unwrapped.target, optional)
+                        return IrExpr.Call("__take", listOf(taken), taken.type)
+                    }
                 }
                 // Every ownership operation moves or borrows; none duplicates,
                 // so the value passes through unchanged. Duplication is
@@ -4050,6 +4554,17 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Index(target, index, elemType)
             }
             is Expr.Member -> {
+                // `Step`'s unit, for a value of a type parameter bounded by it.
+                if (expr.name == "unit") {
+                    val param = witnessParamOf(expr.target)
+                    if (param != null && Witnesses.STEP in witnessBounds[param].orEmpty()) {
+                        return witnessCall(
+                            WITNESS_STEP_UNIT,
+                            listOf(witnessSources.getValue(param), lowerExpr(expr.target)),
+                            IrType.Any,
+                        )
+                    }
+                }
                 // `Hash`'s member on a value of a type parameter bounded by it
                 // hashes as the concrete type its descriptor names.
                 if (expr.name == "hash") {
@@ -4182,6 +4697,24 @@ class IrGenerator(private val table: SymbolTable) {
                 IrExpr.Member(target, expr.name, memberType)
             }
             is Expr.MethodCall -> {
+                // `Step`'s moves, for a value of a type parameter bounded by it.
+                val stepMove = when (expr.name) {
+                    "offset" -> WITNESS_STEP_OFFSET to IrType.Nullable(IrType.Any)
+                    "reaches" -> WITNESS_STEP_REACHES to IrType.Bool
+                    "moved" -> WITNESS_STEP_MOVED to IrType.Any
+                    else -> null
+                }
+                if (stepMove != null && expr.args.size == 2) {
+                    val param = witnessParamOf(expr.target)
+                    if (param != null && Witnesses.STEP in witnessBounds[param].orEmpty()) {
+                        val count = lowerExpr(expr.args[1]).let { if (it.type == IrType.Long) it else IrExpr.NumCast(it, IrType.Long) }
+                        return witnessCall(
+                            stepMove.first,
+                            listOf(witnessSources.getValue(param), lowerExpr(expr.target), lowerExpr(expr.args[0]), count),
+                            stepMove.second,
+                        )
+                    }
+                }
                 // `x.clone()` with no written member - the compiler-provided
                 // `Clone` default is an independent deep copy.
                 if (expr.name == "clone" && expr.args.isEmpty()) {
@@ -4222,7 +4755,7 @@ class IrGenerator(private val table: SymbolTable) {
                     if (inner != null) {
                         // The shorthand moves as well as reads, so it owes the
                         // optional the same emptying the keyword form does.
-                        if (expr.name == "take") emptyAfterTake(expr.target, target)
+                        if (expr.name == "take") return takenFromOptional(expr.target, target)
                         return IrExpr.NumCast(target, inner)
                     }
                 }
@@ -4312,8 +4845,22 @@ class IrGenerator(private val table: SymbolTable) {
                 val parts = expr.parts.map { p ->
                     when (p) {
                         is Expr.StringTemplatePart.Literal -> IrExpr.IrTemplatePart.Literal(p.text)
-                        is Expr.StringTemplatePart.Expr ->
-                            IrExpr.IrTemplatePart.Expr(rendered(lowerExpr(p.expr)))
+                        is Expr.StringTemplatePart.Expr -> {
+                            // A value of a parameter bounded by `Display` renders
+                            // as the concrete type its descriptor names would.
+                            val param = witnessParamOf(p.expr)
+                            if (param != null && Witnesses.DISPLAY in witnessBounds[param].orEmpty()) {
+                                IrExpr.IrTemplatePart.Expr(
+                                    witnessCall(
+                                        WITNESS_DISPLAY,
+                                        listOf(witnessSources.getValue(param), lowerExpr(p.expr)),
+                                        IrType.String,
+                                    ),
+                                )
+                            } else {
+                                IrExpr.IrTemplatePart.Expr(rendered(lowerExpr(p.expr)))
+                            }
+                        }
                     }
                 }
                 IrExpr.StringTemplate(parts)
@@ -4744,6 +5291,17 @@ class IrGenerator(private val table: SymbolTable) {
             IrExpr.TupleLit(value.elements, slot)
         else value
 
+    private val ARITHMETIC_OPS = setOf(IrBinaryOp.ADD, IrBinaryOp.SUB, IrBinaryOp.MUL, IrBinaryOp.DIV, IrBinaryOp.MOD)
+
+    /** [expr] as an operand of float arithmetic of type [target]: a literal read at it, any other number converted. */
+    private fun promotedOperand(expr: IrExpr, target: IrType): IrExpr = when {
+        expr.type == target || !IrType.isNumeric(expr.type) -> expr
+        expr is IrExpr.DoubleLiteral -> expr.copy(type = target)
+        expr is IrExpr.Unary && expr.op == IrUnaryOp.NEG && expr.operand is IrExpr.DoubleLiteral ->
+            expr.copy(operand = promotedOperand(expr.operand, target), type = target)
+        else -> IrExpr.NumCast(expr, target)
+    }
+
     private fun coerceToFloat(expr: IrExpr, target: IrType): IrExpr =
         if (IrType.isNumeric(target) && target != expr.type &&
             (IrType.isInteger(expr.type) || expr.type in IrType.floatTypes) &&
@@ -4774,6 +5332,14 @@ class IrGenerator(private val table: SymbolTable) {
         is IrExpr.DoubleLiteral -> expr.type == IrType.defaultFloat
         is IrExpr.IntLiteral -> expr.type == IrType.defaultInt
         is IrExpr.Unary -> expr.op == IrUnaryOp.NEG && isUntypedIntConstant(expr.operand)
+        else -> false
+    }
+
+    /** An integer literal written without a width (`2`, `-2`, `(2)`), which takes one from where it lands. */
+    private fun isUntypedIntegerLiteral(expr: Expr): Boolean = when (expr) {
+        is Expr.IntLiteral -> true
+        is Expr.Grouping -> isUntypedIntegerLiteral(expr.expr)
+        is Expr.Unary -> expr.op == TokenType.MINUS && isUntypedIntegerLiteral(expr.operand)
         else -> false
     }
 
@@ -4813,7 +5379,11 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun resolveTypeAnnotation(ann: TypeAnnotation, init: IrExpr): IrType = when (ann) {
-        is TypeAnnotation.Explicit -> resolveType(ann.ref)
+        // A binding declared as a type parameter (`fin a: T = …`) is an erased
+        // eight-byte slot, as a parameter of that type is - not a pointer to
+        // a type named `T`, which WebAssembly holds in 32 bits and so cut a
+        // `Double` it was handed in half.
+        is TypeAnnotation.Explicit -> resolveType(ann.ref, scopeTypeParams)
         is TypeAnnotation.Inferred -> init.type
     }
 

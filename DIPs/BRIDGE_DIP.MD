@@ -77,11 +77,13 @@ Four spellings, all equivalent:
 bridge { … }                        // no target named: Compiler
 bridge .C { … }                     // the member, leading dot
 bridge Target.C { … }               // qualified in full
-bridge [.C, .WebAssembly] { … }     // provided by several backends
+bridge (.C, .WebAssembly) { … }     // provided by several backends
 ```
 
-A bracketed list means more than one backend supplies the symbol; the targets
-are recorded comma-joined. `std/time.az` uses exactly this, because the clock
+A parenthesized list means more than one backend supplies the symbol; the targets
+are recorded comma-joined. Brackets (`bridge [.C, .WebAssembly]`), the earlier
+spelling, are refused with a diagnostic naming the parenthesized form (owner's
+decision, 2026-11-18). `std/time.az` uses exactly this, because the clock
 comes from the C runtime natively and from the host in the browser.
 
 A target may also be a compile-time constant already bound to a member, which
@@ -135,7 +137,7 @@ Backend symbol names are the backend's business and may not be legal Azora
 identifiers. `std.core` therefore provides a normal declaration-position macro:
 
 ```azora
-bridge [.C, .WebAssembly] {
+bridge (.C, .WebAssembly) {
     func @foreignName("clock_gettime")(): Long
     fin @foreignName("API_VERSION"): String = "1.2.3"
 }

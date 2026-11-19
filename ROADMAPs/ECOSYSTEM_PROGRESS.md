@@ -4985,3 +4985,132 @@ AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offlin
   unbounded `T`; it now prints without doing so. AZLS: **94, 0 failures**.
 - The Engine, scratch copy (`azora build`): 8 of 31 members, diagnostics
   identical to the last entry's.
+
+## 2026-11-18 — fixed enum case values; bridge target lists in parentheses
+
+The owner rewrote the Engine's input module around enums that carry their
+platform codes and asked the compiler to accept it as written: `enum KeyCode:
+Int { Backspace(8) … }`, `key.value`, and (their choice among three) `raw as?
+PointerKind ?? .Mouse` back. They also chose `bridge (.C, .WebAssembly)` over
+the bracketed list, and asked for no `scope engine::…` blocks in the Engine.
+
+### What changed
+
+- **`enum Name: Type { Case(value) }`** (ENUMS_DIP §6). A tuple type takes one
+  value per element (`enum Planet: (Int, String) { Venus(2, "Two") }`). The
+  checker requires every case's value, one literal per element, of the type and
+  fitting it, distinct across the enum (`W(87)` and `Up(0x57)` collide), and a
+  value type a literal is written in (a number type, `Bool`, `Char`, `String`
+  or a tuple of them). Without `: Type`, `Case(…)` is still a payload, and the
+  diagnostic now names both forms.
+- **`key.value`** is the case's value: written out where the case is named in
+  place (`KeyCode.W.value`), otherwise read through one generated
+  `__enum_value_N` function per enum.
+- **`raw as? Key`** is `Key?`, through a generated `__enum_case_N` that
+  compares `raw` with each case's value (tuples by the structural `==`).
+  `raw as Key` is refused (a value may name no case), and so is `Key.W as Int`
+  (an enum case is not a number; it printed the case name on the interpreter).
+- **`bridge (.C, .WebAssembly)`**; `bridge [ … ]` is refused naming the new
+  form. `std/time.az` and the Engine's `webgl.az` moved.
+- **The Engine** (outside this repo): the five `scope` blocks (`engine`,
+  `engine::physics`, `engine::audio`, `azora::engine`) are gone and their
+  callers use the plain names; the platform layer, render, UI, the templates and
+  Studio take `KeyCode`/`MouseButton`/`GamepadButton`/`GamepadAxis` instead of
+  the removed `fin key…` constants.
+
+### Found on the way, recorded in roadmap §1.1
+
+Real literal arithmetic in a `Double` function is typed `Float` (`(if a then
+1.0 else 0.0) - …`), the same shape as integer literal arithmetic; a `fin`
+optional does not narrow after `!= null`; `Long(53) ->` in a `when` is read as
+a payload pattern. From the investigation of the two §1.1 items the owner
+listed earlier today: generic code can store one `T` in two owners (a pack is
+then freed twice on LLVM), `b ?? 0` with `b: Cent?` gives `0` on LLVM, and a
+wide literal where nothing types it is not checked against `Int`.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler: **3,136 tests, 0 failures, 0 skipped** (3,121 at the last entry);
+  AZLS **94, 0 failures**. New: `EnumValueTest` (12), `EnumValueExecTest` (3: the
+  interpreter in debug and release, LLVM optimized and not, WebAssembly).
+- The Engine, scratch copy (`azora build`): 8 of 31 members (7 before this
+  work, which had refused `webgl.az`'s bracketed bridge). Every remaining
+  diagnostic was already reported before, by this or another member; the
+  input-constant and scope errors are gone. Templates checked with
+  `tools/build.sh … check`: `app`, `game`, `game-ecs` clean (they were not);
+  `game-runner`, `game-shapes`, `game-sidescroller-2d`, `game-tetris` now stop
+  at the physics package's existing `Float`/`Double` and ownership errors;
+  `game-racing`, `game-sidescroller-3d` (`scope "frame" {` in a function) and
+  `ui-compose` (the removed `[receivers; captures]` lambda form) fail as before.
+  Studio and the Launcher (`tools/build-window.sh`) compile and link.
+
+## 2026-11-18 — literal arithmetic takes the declared type; lent 16-byte cells are freed
+
+The owner asked for the two roadmap §1.1 items recorded after the RANGE_DIP
+fixes: literal-only arithmetic ignoring the declared type, and the heap cell
+that carries a 128-bit value through generic code never being freed.
+
+### What changed
+
+- **Arithmetic on literals alone is read as a lone literal is**: at the type of
+  the place it lands in, every literal in it included. Integer arithmetic
+  (`+ - * / %`, bitwise, shifts) takes an integer width (`fin x: Cent =
+  4_611_686_018_427_387_904 * 8`, `fin c: Byte = 100 + 27`); real arithmetic,
+  an `if` choosing between real literals included, takes a float type
+  (`func f(a: Bool, b: Bool): Double = (if a then 1.0 else 0.0) - (if b then
+  1.0 else 0.0)`). The resolver records the width where the expected type is
+  seeded (bindings, globals, defaults, arguments, returns, assignments, a
+  compound assignment's target, the other operand of a binary), checks every
+  literal against it, and the IR reads each literal and operation at it. Where
+  nothing names a type the literals are `Int`s, as before, so
+  `println(4_611_686_018_427_387_904 * 8)` is still refused; integer arithmetic
+  never becomes a float (`fin d: Double = 7 / 2` is refused, as before).
+- **Compile-time evaluation** folds integer arithmetic only while it is exact in
+  a `Long` (a `Cent` global of literal arithmetic folded to `0`), and a folded
+  call keeps its declared numeric return type, as an `inline fin` keeps its
+  own (`println(half())` with `half(): Long` was refused: the call folded into a
+  bare literal an `Int` had to hold - also for `return x * 3 / 2` with a `Long`
+  `x`, before this work).
+- **A global's initializer is lowered at its declared integer width**, as a
+  local's is: the interpreter held `fin big: Long = 3_000_000_000` as an `Int`,
+  so `big * 3` printed `-3884901888`.
+- **`b ?? 0` with `b: Cent?`** reads the fallback at `Cent`; LLVM printed `0`.
+- **A 16-byte value lent to an erased `T` is freed.** The ownership pass makes
+  the cell explicit (`__temporary((x as Any))`) for an argument the callee does
+  not keep, or `__temporaryUnlessReturned` for one it may hand back; LLVM frees
+  it after the call through its existing temporaries, after the result has been
+  read; WebAssembly, which frees no other temporary yet, frees these cells.
+  The interpreter's cast to `Any` kept only the low 64 bits; it keeps the value.
+- **Kept, for the call-site convention**: a parameter a closure names (a
+  lambda's `return x` had read as the function returning `x`, so the caller
+  would have freed what the closure holds) and one passed to a function value.
+
+### Found on the way, recorded in roadmap §1.1
+
+A closure with a 16-byte parameter or result called through a generic function
+type is wrong on LLVM and traps on WebAssembly; the backends print a `Double`
+differently (`0.30000000000000004`, `0.3`, `0.3`); a cell a callee keeps is
+still never freed (a pack, a closure, WebAssembly's `Cent?` - the cell lent to
+`func<T> maybe(x: T): T?` is the optional it returns).
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler: **3,146 tests, 0 failures, 0 skipped** (3,136 at the last entry);
+  AZLS **94, 0 failures**. New: `LiteralArithmeticExecTest` (2: the interpreter
+  in debug and release, LLVM optimized and not, WebAssembly),
+  `LiteralArithmeticTypingTest` (4), `WideCellOwnershipExecTest` (4: values on
+  every backend, which arguments are lent, LLVM under AddressSanitizer and
+  `leaks --atExit`, WebAssembly heap pages).
+- `leaks --atExit` on 1,000 iterations of `id`, `first` and an ignoring generic
+  function: 4,000 leaked cells before, 0 now. WebAssembly, 100,000 iterations
+  of five crossings: 16 pages, as at start.
+- The Engine, scratch copy (`azora build`): 8 of 31 members, as before; no
+  literal-width diagnostic among the remaining ones.

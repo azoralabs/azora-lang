@@ -21,6 +21,7 @@ import org.azora.lang.frontend.CaptureMode
 import org.azora.lang.frontend.MemberCallStyle
 import org.azora.lang.frontend.DecoTarget
 import org.azora.lang.frontend.TypeRef
+import org.azora.lang.frontend.Expr
 import org.azora.lang.ir.IrType
 
 /**
@@ -393,6 +394,23 @@ class SymbolTable {
      *  Accepts a scope-qualified name, like [lookupStruct]. */
     fun lookupEnum(name: String): List<String>? =
         enums[name] ?: if ("__" in name) enums[name.substringAfterLast("__")] else null
+
+    /**
+     * A valued enum's cases: `enum Key: Int { W(87) }` is [type] `Int` and the
+     * case `W` with the value `87` as written. A tuple type has one written
+     * value per element. The resolver checks the values; lowering reads them.
+     */
+    data class EnumValues(val type: IrType, val cases: List<Pair<String, List<Expr>>>)
+
+    private val enumValues = mutableMapOf<String, EnumValues>()
+
+    fun defineEnumValues(name: String, values: EnumValues) {
+        enumValues[name] = values
+    }
+
+    /** The fixed values of a valued enum, or null for an enum whose cases carry none. */
+    fun lookupEnumValues(name: String): EnumValues? =
+        enumValues[name] ?: if ("__" in name) enumValues[name.substringAfterLast("__")] else null
 
     // -- Fail (error-set) declarations -------------------------------------
 

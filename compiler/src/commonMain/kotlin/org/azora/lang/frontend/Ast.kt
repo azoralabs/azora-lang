@@ -2944,6 +2944,13 @@ sealed class TopLevel {
         val typeParams: List<String> = emptyList(),
         /** `enum Name<T: Spec>` - the bounds on [typeParams], as the clause `where T: Spec` is. */
         val whereClause: Expr? = null,
+        /**
+         * `enum Key: Int { W(87) }` - the type of the fixed value each case
+         * carries, read with `.value`; null for an enum whose cases carry none.
+         */
+        val valueType: TypeRef? = null,
+        /** Each case's value as written (`W(87)` → `[87]`), parallel to [variants]; empty without [valueType]. */
+        val caseValues: List<List<Expr>> = emptyList(),
     ) : TopLevel()
 
     /** `fail ErrSet { V1, V2 }` - an error set (a named set of error variants). */

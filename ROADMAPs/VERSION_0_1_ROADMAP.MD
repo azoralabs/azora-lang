@@ -187,13 +187,69 @@ Each lets a program be silently wrong. This list must be empty to ship.
     OPERATOR_OVERLOADING_DIP §5.2).
   Found and fixed on the way: LLVM's float `!=` was ordered (`NaN != NaN`
   false); the interpreter held a `Float` literal at `Double` precision.
-- ⬜ **Literal-only arithmetic does not take the declared type.** `fin x: Cent
-  = 4_611_686_018_427_387_904 * 8` is refused (`integer literal … does not fit
-  Int`): two unsuffixed literals are read as `Int` before the binding's type is
-  consulted. A typed operand works (`fin seed: Cent = …; seed * 8`).
-- ⬜ **A 16-byte value in an erased slot is never freed.** `Cent`, `UCent` and
-  `Quad` cross generic code in a heap cell (LLVM and WebAssembly) that nothing
-  frees: correct values, but a leak per crossing.
+- ✅ *(2026-11-18)* **Literal-only arithmetic takes the declared type.**
+  Arithmetic on literals alone is read as a lone literal is, at the type of the
+  place it lands in, every literal in it included: `fin x: Cent =
+  4_611_686_018_427_387_904 * 8`, `fin c: Byte = 100 + 27`, `fin mask: UCent =
+  (1 << 100) - 1`, an argument, a return (`func half(): Long = 3_000_000_000 *
+  3 / 2`), the other operand's width (`seed * (1 << 70)`), a compound
+  assignment, a global. Reals the same: `func f(a: Bool, b: Bool): Double = (if
+  a then 1.0 else 0.0) - (if b then 1.0 else 0.0)` is a `Double`, computed in
+  one. Each literal must fit (`fin c: Byte = 300 + 1` names `300`); where
+  nothing names a type the literals are `Int`s, as before; integer arithmetic
+  never becomes a float (`fin d: Double = 7 / 2` is still refused). Fixed on the
+  way, each on every backend: the compile-time evaluator folded literal
+  arithmetic in 64 bits (a `Cent` global of that form was `0`) and folded a
+  call into a bare literal an `Int` had to hold (`println(half())` refused a
+  `Long`); a global's initializer was lowered without its declared type (the
+  interpreter held `fin big: Long = 3_000_000_000` as an `Int`); `b ?? 0` with
+  `b: Cent?` was an `Int` on LLVM and gave `0`; a choice between real literals
+  landing in a `Double` was computed in a `Float` (`if a then 0.1 else 0.2`);
+  the interpreter cut a 128-bit value passed as `Any` to 64 bits
+  (`LiteralArithmeticExecTest`, `LiteralArithmeticTypingTest`).
+- ✅ *(2026-11-18)* **A 16-byte value lent to generic code is freed.** `Cent`,
+  `UCent` and `Quad` cross an erased `T` in a heap cell; the call site now
+  makes it explicitly (a cast to the erased type) and frees it as it frees any
+  allocation it lends: after the call, or, when the callee may hand the value
+  back, once the result has been read. `leaks --atExit`: 4,000 cells for 1,000
+  iterations before, 0 now; AddressSanitizer clean; WebAssembly's heap stays at
+  its first 16 pages through 100,000 iterations. A parameter a
+  closure names, or one passed to a function value, now counts as kept, so its
+  cell is not freed under the closure (`WideCellOwnershipExecTest`).
+- ⬜ **A 16-byte value kept by generic code is still never freed.** A cell a
+  callee stores (`Box<T>(x)`, a captured `x`, an argument a function value
+  keeps) belongs to its keeper, which cannot free it while one `T` can sit in
+  two owners (next item). WebAssembly's `Cent?` is the address of a cell, so
+  `func<T> maybe(x: T): T?` hands back the very cell it was lent, and no
+  optional's cell is freed. WebAssembly frees no other call temporary either
+  (packs and arrays lent to a call; LLVM frees them).
+- ⬜ **Generic code can put one `T` into two owners, and LLVM then frees it
+  twice.** `func<T> twice(x: T): Pair<T> { return Pair<T>(x, x) }` and
+  `dst.item = src.item` pass the checker; `twice(Pt(3))` crashes under
+  AddressSanitizer (double free when `Pair<Pt>` is dropped).
+- ✅ *(2026-11-18)* **LLVM: `b ?? 0` with `b: Cent?` gave `0`**: the
+  fallback literal is read at what `b` holds (with the literal-arithmetic fix
+  above).
+- ⬜ **A closure with a 16-byte parameter or result, called through a generic
+  function type, is wrong on LLVM and traps on WebAssembly.** `func<T> hand(x:
+  T, sink: (T) -> Unit) { sink(x) }` called with `{ v: Cent -> println(v) }`
+  prints the cell's address on LLVM; `func<T> later(x: T): () -> T = [x] { x }`
+  returns garbage there; WebAssembly stops with `function signature mismatch`.
+  The interpreter is right.
+- ⬜ **The backends print a `Double` differently.** `0.1 * 3.0` prints
+  `0.30000000000000004` on the interpreter, `0.3` on LLVM and WebAssembly;
+  `1.0 / 3.0` prints `0.3333333333333333`, `0.333333` and `0.333333333333333`.
+  The value is the same everywhere; only its text differs (§6.1).
+- ⬜ **A wide literal where nothing types it is not checked against `Int`.**
+  `println(4_611_686_018_427_387_904)` prints `0` on LLVM; a 128-bit literal
+  there fails on the interpreter (`wider than this backend evaluates`). And
+  `func<T: Display> show(v: T)` refuses `show(4_611_686_018_427_387_904)` with
+  `Int does not implement Display`.
+- ⬜ **A `fin` optional does not narrow after `!= null`.** `fin key = code as?
+  KeyCode; if key != null && pressed(key)` is refused (`expected KeyCode, got
+  KeyCode?`), and there is no optional binding; `?.` is still interpreter-only.
+- ⬜ **A `when` arm written `Long(53) ->` is read as a payload pattern**
+  (`cannot destructure a slot payload`); `53 ->` works against a `Long`.
 
 ### 1.2 Type system
 
@@ -247,6 +303,13 @@ lines).
   `Cent` `UCent` `Float` `Double` `Quad` `Bool` `Char` `String` `Unit`
 - ✅ `pack` (structs), empty packs without a body
 - ✅ `enum`, `variant enum`, `variant error`, `error` sets
+- ✅ *(2026-11-18, owner's design)* **Fixed case values**: `enum Key: Int
+  { W(87) }`, tuples too (`enum Y: (Int, String) { a(1, "One") }`), read
+  with `.value`, found with `raw as? Key` (`Key?`); values are literals of
+  the type, distinct, one per tuple element; `Key.W as Int` is refused
+  (ENUMS_DIP §6, CAST_DIP §1.2; `EnumValueTest`, `EnumValueExecTest` on the
+  interpreter, LLVM and WebAssembly). A bridge's several targets are written
+  `bridge (.C, .WebAssembly)`; brackets are refused (BRIDGE_DIP §2.1)
 - ✅ `unsafe union` - C-style overlapping storage
 - ✅ `typealias`
 - ✅ Tuples with positional access, variadic tuples

@@ -656,18 +656,18 @@ class IrGenerator(private val table: SymbolTable) {
                     else listOf(IrTopLevel.Func(lowerFunction(item.decl).ownedBy(library)))
                 }
                 is TopLevel.FinDecl -> {
-                    val init = lowerExpr(item.initializer)
+                    val init = lowerGlobalInitializer(item.initializer, item.type)
                     val type = if (item.type != null) resolveType(item.type) else init.type
                     val irName = if (item.threadlocal) "__tl__${item.name}" else item.name
                     listOf(IrTopLevel.Global(IrStmt.FinDecl(irName, type, init)))
                 }
                 is TopLevel.LetDecl -> {
-                    val init = lowerExpr(item.initializer)
+                    val init = lowerGlobalInitializer(item.initializer, item.type)
                     val type = if (item.type != null) resolveType(item.type) else init.type
                     listOf(IrTopLevel.Global(IrStmt.LetDecl(item.name, type, init)))
                 }
                 is TopLevel.VarDecl -> {
-                    val init = lowerExpr(item.initializer)
+                    val init = lowerGlobalInitializer(item.initializer, item.type)
                     val type = if (item.type != null) resolveType(item.type) else init.type
                     val irName = if (item.threadlocal) "__tl__${item.name}" else item.name
                     listOf(IrTopLevel.Global(IrStmt.VarDecl(irName, type, init)))
@@ -912,6 +912,8 @@ class IrGenerator(private val table: SymbolTable) {
         } +
         // Last, once every use has registered the types its descriptors name.
         witnessDispatchFunctions() +
+        // A valued enum's helpers, which may compare tuples.
+        enumValueFunctions() +
         // And after those, whose bodies may compare or hash a tuple too.
         structuralFunctions()
         // Source order, item for item. The IR is read as much as it is run -
@@ -2715,6 +2717,89 @@ class IrGenerator(private val table: SymbolTable) {
     /** Generated helpers by kind and type, in the order first asked for. */
     private val structuralHelpers = LinkedHashMap<String, StructuralHelper>()
 
+    /**
+     * A generated helper for a valued enum (`enum Key: Int { W(87) }`): the
+     * value of a case ([toCase] false, for `key.value`) or the case a value
+     * names ([toCase] true, for `raw as? Key`).
+     */
+    private class EnumValueHelper(val name: String, val enumName: String, val toCase: Boolean)
+
+    /** Generated valued-enum helpers by direction and enum, in the order first asked for. */
+    private val enumValueHelpers = LinkedHashMap<String, EnumValueHelper>()
+
+    /**
+     * `key.value`. A case named in place (`Key.W.value`) is its value, written
+     * out; any other reads it through the enum's generated helper.
+     */
+    private fun enumCaseValue(target: IrExpr, values: SymbolTable.EnumValues): IrExpr {
+        if (target is IrExpr.EnumLiteral) {
+            values.cases.firstOrNull { it.first == target.variant }?.let { return enumValueIr(it.second, values.type) }
+        }
+        val enumName = (target.type as IrType.Named).name
+        val helper = enumValueHelpers.getOrPut("value:$enumName") {
+            EnumValueHelper("__enum_value_${enumValueHelpers.size}", enumName, toCase = false)
+        }
+        return IrExpr.Call(helper.name, listOf(target), values.type)
+    }
+
+    /** `raw as? Key` - the case whose value is [raw], or null. */
+    private fun enumCaseOf(raw: IrExpr, enumType: IrType.Named): IrExpr {
+        val helper = enumValueHelpers.getOrPut("case:${enumType.name}") {
+            EnumValueHelper("__enum_case_${enumValueHelpers.size}", enumType.name, toCase = true)
+        }
+        return IrExpr.Call(helper.name, listOf(raw), IrType.Nullable(enumType))
+    }
+
+    /** A case's [written] value built at the enum's value [type]; a tuple takes one written value per element. */
+    private fun enumValueIr(written: List<Expr>, type: IrType): IrExpr {
+        fun at(expr: Expr, slot: IrType) = literalAtDeclaredType(expr, slot) ?: coerceToFloat(lowerExpr(expr), slot)
+        return if (type is IrType.Tuple) IrExpr.TupleLit(written.zip(type.elements).map { (expr, slot) -> at(expr, slot) }, type)
+        else at(written.single(), type)
+    }
+
+    /**
+     * The helpers [enumCaseValue] and [enumCaseOf] asked for: a test per case,
+     * each built from the same comparison ordinary code would write, so every
+     * backend runs the same thing. Emitted before the structural helpers,
+     * which a tuple-valued enum's comparisons ask for.
+     */
+    private fun enumValueFunctions(): List<IrTopLevel> = enumValueHelpers.values.toList().map { helper ->
+        val values = table.lookupEnumValues(helper.enumName) ?: error("'${helper.enumName}' carries no values")
+        val enumType = IrType.Named(helper.enumName)
+        table.pushScope()
+        pushNameScope()
+        try {
+            if (!helper.toCase) {
+                val case = registerName("__case")
+                table.defineVariable(VariableSymbol("__case", enumType, mutable = false))
+                val tests = values.cases.dropLast(1).map { (name, written) ->
+                    val same = lowerExpr(
+                        Expr.Binary(Expr.Identifier("__case", 0), TokenType.EQUAL_EQUAL, Expr.Member(Expr.Identifier(helper.enumName, 0), name, 0), 0),
+                    )
+                    IrStmt.If(same, listOf(IrStmt.Return(enumValueIr(written, values.type))), null)
+                }
+                // The last case is what is left: the enum has no other.
+                val last = values.cases.lastOrNull()?.let { IrStmt.Return(enumValueIr(it.second, values.type)) }
+                IrTopLevel.Func(IrFunction(helper.name, listOf(case to enumType), values.type, tests + listOfNotNull(last)))
+            } else {
+                val raw = registerName("__raw")
+                table.defineVariable(VariableSymbol("__raw", values.type, mutable = false))
+                val rawValue = IrExpr.Var(raw, values.type)
+                val tests = values.cases.map { (name, written) ->
+                    val value = enumValueIr(written, values.type)
+                    val same = if (values.type is IrType.Tuple) structuralCall(StructuralKind.EQUAL, values.type, listOf(rawValue, value), IrType.Bool)
+                        else IrExpr.Binary(rawValue, IrBinaryOp.EQ, value, IrType.Bool)
+                    IrStmt.If(same, listOf(IrStmt.Return(IrExpr.EnumLiteral(helper.enumName, name))), null)
+                }
+                val none = IrStmt.Return(lowerExpr(Expr.NullLiteral))
+                IrTopLevel.Func(IrFunction(helper.name, listOf(raw to values.type), IrType.Nullable(enumType), tests + none))
+            }
+        } finally {
+            popNameScope()
+            table.popScope()
+        }
+    }
+
     private fun isStructural(type: IrType): Boolean = type is IrType.Tuple || type is IrType.Array
 
     /**
@@ -3668,6 +3753,10 @@ class IrGenerator(private val table: SymbolTable) {
                     table.lookupMethod(it.name, "$castMember@$targetKey")
                         ?: table.lookupMethod(it.name, castMember)
                 }
+                // `raw as? Key` - the case of a valued enum whose value is `raw`.
+                if (expr.kind == CastKind.DYNAMIC && target is IrType.Named && innerType != target) {
+                    table.lookupEnumValues(target.name)?.let { return enumCaseOf(coerceToFloat(inner, it.type), target) }
+                }
                 if (userCast != null) {
                     val declared = table.lookupFunction(userCast)?.returnType
                     // The operator states what it returns; a checked cast that did not
@@ -3737,7 +3826,11 @@ class IrGenerator(private val table: SymbolTable) {
             }
             is Expr.NullCoalesce -> {
                 val left = lowerExpr(expr.left)
-                val right = lowerExpr(expr.right)
+                // `b ?? 0` with `b: Cent?` - a literal fallback is read at what
+                // `b` holds, as the resolver reads it; lowered as an `Int`, the
+                // whole coalesce was an `Int` and LLVM answered `0`.
+                val held = (left.type as? IrType.Nullable)?.inner
+                val right = lowerExpr(expr.right).let { if (held != null) coerceToFloat(it, held) else it }
                 IrExpr.Call(Intrinsics.NULL_COALESCE, listOf(left, right), right.type)
             }
             is Expr.SafeMember -> {
@@ -4018,10 +4111,8 @@ class IrGenerator(private val table: SymbolTable) {
                 val leftType = left.type
                 val rightType = right.type
                 if (leftType is IrType.Integer && rightType is IrType.Integer && leftType != rightType) {
-                    val r = right
-                    val l = left
-                    if (isUntypedIntegerLiteral(expr.right) && r is IrExpr.IntLiteral) right = r.copy(type = leftType)
-                    else if (isUntypedIntegerLiteral(expr.left) && l is IrExpr.IntLiteral) left = l.copy(type = rightType)
+                    if (isUntypedIntegerLiteral(expr.right)) integerConstantAt(right, leftType)?.let { right = it }
+                    else if (isUntypedIntegerLiteral(expr.left)) integerConstantAt(left, rightType)?.let { left = it }
                 }
                 val type = when (op) {
                     IrBinaryOp.EQ, IrBinaryOp.NEQ,
@@ -4599,6 +4690,10 @@ class IrGenerator(private val table: SymbolTable) {
                     return IrExpr.StringLiteral(expr.name)
                 }
                 val target = autoDerefMemberTarget(lowerExpr(expr.target), expr.name, method = false)
+                // `key.value` - a valued enum's case value.
+                if (expr.name == "value") {
+                    (target.type as? IrType.Named)?.let { named -> table.lookupEnumValues(named.name)?.let { return enumCaseValue(target, it) } }
+                }
                 val tt2 = target.type
                 // ...and hashes part by part, by each part's own `hash`.
                 if (expr.name == "hash" && isStructural(tt2)) {
@@ -5299,11 +5394,18 @@ class IrGenerator(private val table: SymbolTable) {
         expr is IrExpr.DoubleLiteral -> expr.copy(type = target)
         expr is IrExpr.Unary && expr.op == IrUnaryOp.NEG && expr.operand is IrExpr.DoubleLiteral ->
             expr.copy(operand = promotedOperand(expr.operand, target), type = target)
-        else -> IrExpr.NumCast(expr, target)
+        else -> realConstantAt(expr, target) ?: IrExpr.NumCast(expr, target)
     }
 
-    private fun coerceToFloat(expr: IrExpr, target: IrType): IrExpr =
-        if (IrType.isNumeric(target) && target != expr.type &&
+    private fun coerceToFloat(expr: IrExpr, target: IrType): IrExpr {
+        if (target == expr.type) return expr
+        // `2 * 3` landing in a `Cent` is computed in a `Cent`, as `6` would be read
+        // as one: converting the `Int` result instead loses what did not fit. The
+        // same for reals: `0.1 * 3` landing in a `Double` is not computed in a `Float`.
+        if (expr is IrExpr.Binary || expr is IrExpr.Unary || expr is IrExpr.IfExpr) {
+            (integerConstantAt(expr, target) ?: realConstantAt(expr, target))?.let { return it }
+        }
+        return if (IrType.isNumeric(target) &&
             (IrType.isInteger(expr.type) || expr.type in IrType.floatTypes) &&
             isUntypedIntConstant(expr)
         ) {
@@ -5320,6 +5422,64 @@ class IrGenerator(private val table: SymbolTable) {
         } else {
             expr
         }
+    }
+
+    /**
+     * [expr] read at the integer type [target] when it is integer literals
+     * alone still at the default width - `2`, `-2`, `2 * 3`, `(1 << 70) - 1` -
+     * and null otherwise. Every literal takes the width, and so does every
+     * operation on them, as the resolver typed them. Never a float's: `7 / 2`
+     * stays an integer division.
+     */
+    private fun integerConstantAt(expr: IrExpr, target: IrType): IrExpr? {
+        if (!IrType.isInteger(target)) return null
+        return when (expr) {
+            is IrExpr.IntLiteral -> if (expr.type == IrType.defaultInt) expr.copy(type = target) else null
+            is IrExpr.Unary -> if (expr.op != IrUnaryOp.NEG) null
+                else integerConstantAt(expr.operand, target)?.let { expr.copy(operand = it, type = target) }
+            is IrExpr.Binary -> if (expr.op !in INTEGER_CONSTANT_OPS || expr.type != IrType.defaultInt) null else {
+                val left = integerConstantAt(expr.left, target) ?: return null
+                val right = integerConstantAt(expr.right, target) ?: return null
+                expr.copy(left = left, right = right, type = target)
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * [expr] read at the floating-point type [target] when it is real literals
+     * still at the default real type - a choice between them
+     * (`if a then 0.1 else 0.2`), or arithmetic on them (`0.5 * 3`,
+     * `(if a then 1.0 else 0.0) - 1.0`) - and null otherwise, as the resolver
+     * typed it. An integer literal beside a real one is read at [target] too;
+     * integer arithmetic never is (`7 / 2` divides integers).
+     */
+    private fun realConstantAt(expr: IrExpr, target: IrType): IrExpr? {
+        if (target !in IrType.floatTypes) return null
+        fun choice(e: IrExpr): IrExpr? = when {
+            e is IrExpr.DoubleLiteral && e.type == IrType.defaultFloat -> e.copy(type = target)
+            e is IrExpr.Unary && e.op == IrUnaryOp.NEG -> choice(e.operand)?.let { e.copy(operand = it, type = target) }
+            e is IrExpr.IfExpr && e.type == IrType.defaultFloat -> {
+                val chosen = choice(e.thenExpr)
+                val otherwise = choice(e.elseExpr)
+                if (chosen != null && otherwise != null) e.copy(thenExpr = chosen, elseExpr = otherwise, type = target) else null
+            }
+            else -> null
+        }
+        fun arithmetic(e: IrExpr): IrExpr? = choice(e) ?: when {
+            // `3` beside a real is already promoted to the default real type.
+            e is IrExpr.NumCast && e.type == IrType.defaultFloat &&
+                (e.value as? IrExpr.IntLiteral)?.type == IrType.defaultInt -> e.copy(type = target)
+            e is IrExpr.Unary && e.op == IrUnaryOp.NEG -> arithmetic(e.operand)?.let { e.copy(operand = it, type = target) }
+            e is IrExpr.Binary && e.op in ARITHMETIC_OPS && e.type == IrType.defaultFloat -> {
+                val left = arithmetic(e.left)
+                val right = arithmetic(e.right)
+                if (left != null && right != null) e.copy(left = left, right = right, type = target) else null
+            }
+            else -> null
+        }
+        return arithmetic(expr)
+    }
 
     /**
      * True for a numeric constant the resolver would have let adopt another type.
@@ -5335,13 +5495,24 @@ class IrGenerator(private val table: SymbolTable) {
         else -> false
     }
 
-    /** An integer literal written without a width (`2`, `-2`, `(2)`), which takes one from where it lands. */
+    /**
+     * An integer literal written without a width (`2`, `-2`, `(2)`), or
+     * arithmetic on such literals alone (`2 * 3`), which takes one from where it lands.
+     */
     private fun isUntypedIntegerLiteral(expr: Expr): Boolean = when (expr) {
         is Expr.IntLiteral -> true
         is Expr.Grouping -> isUntypedIntegerLiteral(expr.expr)
         is Expr.Unary -> expr.op == TokenType.MINUS && isUntypedIntegerLiteral(expr.operand)
+        is Expr.Binary -> expr.op in LITERAL_ARITHMETIC && isUntypedIntegerLiteral(expr.left) && isUntypedIntegerLiteral(expr.right)
         else -> false
     }
+
+    /** The source operators of literal arithmetic, and what they lower to. */
+    private val LITERAL_ARITHMETIC = setOf(
+        TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT,
+        TokenType.AMP, TokenType.PIPE, TokenType.CARET, TokenType.SHIFT_LEFT, TokenType.SHIFT_RIGHT,
+    )
+    private val INTEGER_CONSTANT_OPS = LITERAL_ARITHMETIC.map(::lowerBinaryOp).toSet()
 
     private fun numericResultType(a: IrType, b: IrType): IrType {
         if (a == b) return a
@@ -5525,6 +5696,19 @@ class IrGenerator(private val table: SymbolTable) {
      * value wider than 64 bits it is not even the same number, because the
      * `Int` it went through cannot hold one.
      */
+    /**
+     * A global's initializer, read at the integer width the global declares
+     * as a local's is: `fin big: Long = 3_000_000_000` holds a `Long`, and
+     * `fin wide: Cent = 1 << 100` is computed in a `Cent`. Lowered as an `Int`,
+     * the interpreter wrapped the first to 32 bits and the optimizer folded the
+     * second to zero.
+     */
+    private fun lowerGlobalInitializer(initializer: Expr, declared: TypeRef?): IrExpr {
+        val width = declared?.let(::resolveType)?.takeIf { IrType.isInteger(it) }
+            ?: return lowerExpr(initializer)
+        return literalAtDeclaredType(initializer, width) ?: coerceToFloat(lowerExpr(initializer), width)
+    }
+
     private fun literalAtDeclaredType(expr: Expr, declared: IrType?): IrExpr? {
         val type = declared ?: return null
         return when {

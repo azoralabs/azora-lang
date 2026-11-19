@@ -150,6 +150,9 @@ object OwnershipCleanup {
     private fun keptByIntrinsic(name: String, index: Int): Boolean =
         name == "__take" || name == "__alloc" || (name == "__derefAssign" && index == 1)
 
+    /** A value wider than an erased slot's eight bytes, which crosses one in a heap cell. */
+    private fun crossesInCell(type: IrType): Boolean = (type is IrType.Integer && type.bits > 64) || type == IrType.Quad
+
     /** A type parameter's erased slot: its value's real type is known only at the call site. */
     private fun erased(type: IrType): Boolean = type == IrType.Any || (type is IrType.Nullable && type.inner == IrType.Any)
 
@@ -213,7 +216,10 @@ object OwnershipCleanup {
                         null -> {}
                         is IrExpr.Call -> {
                             val kept = retained[expr.name].orEmpty()
-                            expr.args.forEachIndexed { i, arg -> if (i in kept || keptByIntrinsic(expr.name, i)) keep(arg); visit(arg) }
+                            // A function value may keep whatever it is given: nothing
+                            // here says what it does with it.
+                            val indirect = expr.receiver != null
+                            expr.args.forEachIndexed { i, arg -> if (indirect || i in kept || keptByIntrinsic(expr.name, i)) keep(arg); visit(arg) }
                             visit(expr.receiver)
                         }
                         is IrExpr.MethodCall -> { if (stores(expr)) expr.args.forEach(::keep); visit(expr.target); expr.args.forEach(::visit) }
@@ -230,7 +236,13 @@ object OwnershipCleanup {
                         is IrExpr.CatchExpr -> { visit(expr.expr); visit(expr.fallback) }
                         is IrExpr.NumCast -> visit(expr.value)
                         is IrExpr.Await -> visit(expr.value)
-                        is IrExpr.Lambda -> expr.body.forEach { nested(it) }
+                        // A closure that names a parameter holds it for as long as
+                        // the closure lives, which may be past the call.
+                        is IrExpr.Lambda -> {
+                            (IrOptimizer().referencedNames(expr.body) + expr.byRefCaptures + expr.valueCaptures +
+                                expr.captureInitializers.keys).forEach { keep(IrExpr.Var(it, IrType.Any)) }
+                            expr.body.forEach { nested(it) }
+                        }
                         else -> {}
                     }
                 }
@@ -406,6 +418,20 @@ object OwnershipCleanup {
                     i in callee.refParams -> if (i !in callee.exclusiveParams && !context.returnsBorrow(expr.name) &&
                         freshArgument(argument)) IrExpr.Call("__temporary", listOf(argument), argument.type) else argument
                     parameter is IrType.Function -> copyCallablePlace(argument)
+                    // A 16-byte value (`Cent`, `UCent`, `Quad`) given to an erased
+                    // parameter crosses in a cell of its own: the slot holds eight
+                    // bytes. The cast says where the cell is made - here - and this
+                    // call site frees it as it frees any allocation it only lends:
+                    // after the call, or, when the callee may hand it back, once
+                    // the result has been read. A cell the callee keeps is its keeper's.
+                    parameter == IrType.Any && crossesInCell(argument.type) && expr.name != "async" && expr.name != "__launch" -> {
+                        val cell = IrExpr.NumCast(argument, parameter)
+                        when (i) {
+                            in context.returnedOnly[expr.name].orEmpty() -> IrExpr.Call("__temporaryUnlessReturned", listOf(cell), parameter)
+                            in context.retained[expr.name].orEmpty() -> argument
+                            else -> IrExpr.Call("__temporary", listOf(cell), parameter)
+                        }
+                    }
                     // The callee owns what it was given and destroys it.
                     context.ownsParameter(callee, i) -> argument
                     // A new allocation the callee may hand back - one of two

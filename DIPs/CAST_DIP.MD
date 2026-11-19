@@ -53,6 +53,11 @@ fin maybe: Circle? = shape as? Circle
 `as?` is **not** `as` with a null check bolted on. A type may be convertible one
 way and not the other, which is why §4 keeps them separate specs.
 
+A valued enum (`enum Key: Int { W(87) }`, ENUMS_DIP §6) is found from its value
+this way: `raw as? Key` is the case whose value is `raw`, or `null`. A plain
+`as` to such an enum is refused, since a value may name no case, and an enum
+case is not a number (`Key.W as Int` is refused; its value is `Key.W.value`).
+
 ### 1.3 `as*` - bit reinterpretation
 
 The bits, read as another type. `T.sizeOf == U.sizeOf` is required and checked

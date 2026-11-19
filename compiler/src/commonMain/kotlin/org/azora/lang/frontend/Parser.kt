@@ -1029,7 +1029,7 @@ class Parser(
             // `bridge <decl>` marks a declaration as compiler-provided. `bridge pack`
             // and `bridge func` are bodyless (no struct / no body emitted); `bridge`
             // on the compile-time kinds (enum/deco/spec/typealias) is an accepted
-            // marker that otherwise parses normally. Plain `bridge [.Target] { … }`
+            // marker that otherwise parses normally. Plain `bridge .Target { … }`
             // remains the FFI block form.
             check(TokenType.BRIDGE) && peekNext()?.type == TokenType.PACK -> {
                 advance()
@@ -2904,7 +2904,13 @@ class Parser(
         else -> null
     }
 
-    /** `enum Name { Var1; Var2; ... }` - variants one per line, each optionally with trailing annotations. */
+    /**
+     * `enum Name { Var1; Var2; ... }` - variants one per line, each optionally with trailing annotations.
+     *
+     * `enum Name: Type { Var1(value) … }` gives every case a fixed value of
+     * `Type` (a tuple type takes one value per element: `a(1, "One")`). The
+     * checker validates the values; the parser only collects them.
+     */
     private fun parseEnumDecl(annotations: List<Annotation> = emptyList()): TopLevel.Enum {
         val start = peek()
         consume(TokenType.ENUM, "Expected 'enum'")
@@ -2912,31 +2918,54 @@ class Parser(
         // `enum Name<T>` - parameters after the name they parametrize, as everywhere.
         val enumGenerics = parseTypeParams()
         val enumTypeParams = enumGenerics.names
+        val valueType = if (match(TokenType.COLON)) parseTypeName(allowReceiverCallable = false) else null
         consume(TokenType.L_BRACE, "Expected '{' after enum name")
         skipNewlines()
         val variants = mutableListOf<String>()
         val variantAnns = mutableListOf<List<Annotation>>()
+        val caseValues = mutableListOf<List<Expr>>()
         while (!check(TokenType.R_BRACE) && !isAtEnd()) {
             skipNewlines()
             if (check(TokenType.R_BRACE)) break
             do {
+                skipNewlines()
                 val variant = consume(TokenType.IDENTIFIER, "Expected variant name").lexeme
-                // A payload is what separates the two enum forms, so it is also
-                // where the right one can be named.
                 if (check(TokenType.L_PAREN)) {
-                    error(
-                        "case '$variant' of enum '$name' carries a payload; " +
-                            "write 'variant enum $name { … }' for a tagged union, at line ${peek().line}",
-                    )
+                    // Without a value type, parentheses are a payload - what separates
+                    // the two enum forms, so it is also where the right one is named.
+                    if (valueType == null) {
+                        error(
+                            "case '$variant' of enum '$name' carries a payload; write 'variant enum $name { … }' " +
+                                "for a tagged union, or 'enum $name: Type { $variant(value) }' for a fixed value, " +
+                                "at line ${peek().line}",
+                        )
+                    }
+                    advance()
+                    skipNewlines()
+                    val values = mutableListOf<Expr>()
+                    if (!check(TokenType.R_PAREN)) {
+                        do {
+                            skipNewlines()
+                            values.add(parseExpr())
+                            skipNewlines()
+                        } while (match(TokenType.COMMA))
+                    }
+                    consume(TokenType.R_PAREN, "Expected ')' after the value of case '$variant'")
+                    caseValues.add(values)
+                } else if (valueType != null) {
+                    caseValues.add(emptyList())
                 }
                 variants.add(variant)
                 variantAnns.add(parseAnnotations()) // trailing `@ann` on the same line
-            } while (match(TokenType.COMMA) && check(TokenType.IDENTIFIER))
+            } while (match(TokenType.COMMA) && (skipNewlines().let { check(TokenType.IDENTIFIER) }))
         }
         consume(TokenType.R_BRACE, "Expected '}' after enum variants")
         consumeNewline()
         declaredEnums[name] = variants
-        return TopLevel.Enum(name, variants, start.line, start.column, annotations, variantAnns, enumTypeParams, whereClause = enumGenerics.boundClause)
+        return TopLevel.Enum(
+            name, variants, start.line, start.column, annotations, variantAnns, enumTypeParams,
+            whereClause = enumGenerics.boundClause, valueType = valueType, caseValues = caseValues,
+        )
     }
 
     /** `fail ErrSet { V1, V2 }` - an error-set declaration (variants one per line, each optionally annotated). */
@@ -4364,7 +4393,7 @@ class Parser(
     }
 
     /**
-     * `bridge [.Target] func name(params): Ret` - a single bodyless extern function
+     * `bridge .Target func name(params): Ret` - a single bodyless extern function
      * (the compiler or a backend provides the implementation, keyed by name). It is
      * shorthand for a one-entry `bridge` block; the default target is `Compiler`.
      * Type parameters are accepted but not retained (externs are monomorphic).
@@ -4495,16 +4524,21 @@ class Parser(
         // Target forms after `bridge`:
         //   `bridge { … }`                       → default `Compiler`
         //   `bridge .C { … }` / `bridge Target.C { … }`
-        //   `bridge [.C, .WebAssembly] { … }` / `bridge [Target.C, .WebAssembly] { … }`
-        // A bracketed list means the declaration is provided by several backends;
-        // multiple targets are stored comma-joined.
+        //   `bridge (.C, .WebAssembly) { … }` / `bridge (Target.C, .WebAssembly) { … }`
+        // A parenthesized list means the declaration is provided by several
+        // backends; multiple targets are stored comma-joined.
         val target = when {
-            match(TokenType.L_BRACKET) -> {
+            match(TokenType.L_PAREN) -> {
                 val targets = mutableListOf<String>()
                 do { targets.add(parseBridgeTarget()) } while (match(TokenType.COMMA))
-                consume(TokenType.R_BRACKET, "Expected ']' after bridge targets")
+                consume(TokenType.R_PAREN, "Expected ')' after bridge targets")
                 targets.joinToString(",")
             }
+            // The owner chose one spelling (2026-11-18); brackets were the old one.
+            check(TokenType.L_BRACKET) -> error(
+                "bridge targets are listed in parentheses at line ${peek().line} - write " +
+                    "'bridge (.C, .WebAssembly) { … }', not 'bridge [.C, .WebAssembly]'",
+            )
             check(TokenType.L_BRACE) -> "Compiler" // bare `bridge { … }` → default target
             else -> parseBridgeTarget()
         }

@@ -1472,6 +1472,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 val allConst = newArgs.all { isConstant(it) }
                 if (allConst) {
                     val result = tryEvalCall(expr.callee, newArgs, program, expr.line, expr.typeArgs)
+                        ?.let { typedCallResult(expr.callee, it, program) }
                     if (result != null) {
                         table.semanticFacts.folded(result, expr)
                         return Pair(result, true)
@@ -1654,6 +1655,22 @@ class CtfeEvaluator(private val table: SymbolTable) {
         return Expr.Cast(value, declared, line = value.line)
     }
 
+    /**
+     * [value], what a call to [name] folded to, as run-time code reads it: a
+     * number keeps the type the function says it returns (`func half(): Long`
+     * folds to a `Long`, not to a literal an `Int` must hold), as an `inline
+     * fin` keeps its own. Compile-time code reads the bare number.
+     */
+    private fun typedCallResult(name: String, value: Expr, program: Program): Expr {
+        if (compileTimeDepth > 0) return value
+        val returned = program.functions.find { it.name == name }?.returnType as? TypeAnnotation.Explicit ?: return value
+        val declared = returned.ref as? TypeRef.Named ?: return value
+        if (declared.args.isNotEmpty() || declared.name !in NUMERIC_TYPES) return value
+        if (value is Expr.IntLiteral && declared.name == "Int") return value
+        if (value !is Expr.IntLiteral && value !is Expr.DoubleLiteral) return value
+        return Expr.Cast(value, declared, line = value.line)
+    }
+
     private val NUMERIC_TYPES = setOf(
         "Byte", "Short", "Int", "Long", "Cent", "UByte", "UShort", "UInt", "ULong", "UCent",
         "Half", "Float", "Double", "Quad",
@@ -1781,12 +1798,19 @@ class CtfeEvaluator(private val table: SymbolTable) {
         if (left is Expr.IntLiteral && right is Expr.IntLiteral) {
             // Neither operand states a width - a literal takes the width of
             // wherever the fold lands - so the folded value carries none either.
+            // That holds only while the value is exact: a literal wider than a
+            // `Long`, or a result that leaves one (`4_611_686_018_427_387_904 * 8`
+            // for a `Cent`), is left to the arithmetic of the width it lands in.
+            if (left.magnitude != null || left.text != null || right.magnitude != null || right.text != null) return null
+            val a = left.value
+            val b = right.value
             return when (op) {
-                TokenType.PLUS -> Expr.IntLiteral(left.value + right.value, line)
-                TokenType.MINUS -> Expr.IntLiteral(left.value - right.value, line)
-                TokenType.STAR -> Expr.IntLiteral(left.value * right.value, line)
-                TokenType.SLASH -> if (right.value != 0L) Expr.IntLiteral(left.value / right.value, line) else null
-                TokenType.PERCENT -> if (right.value != 0L) Expr.IntLiteral(left.value % right.value, line) else null
+                TokenType.PLUS -> (a + b).takeIf { ((a xor it) and (b xor it)) >= 0 }?.let { Expr.IntLiteral(it, line) }
+                TokenType.MINUS -> (a - b).takeIf { ((a xor b) and (a xor it)) >= 0 }?.let { Expr.IntLiteral(it, line) }
+                TokenType.STAR -> (a * b).takeIf { a == 0L || (it / a == b && !(a == -1L && b == Long.MIN_VALUE)) }
+                    ?.let { Expr.IntLiteral(it, line) }
+                TokenType.SLASH -> if (b != 0L && !(a == Long.MIN_VALUE && b == -1L)) Expr.IntLiteral(a / b, line) else null
+                TokenType.PERCENT -> if (b != 0L) Expr.IntLiteral(a % b, line) else null
                 TokenType.EQUAL_EQUAL -> Expr.BoolLiteral(left.value == right.value, line)
                 TokenType.BANG_EQUAL -> Expr.BoolLiteral(left.value != right.value, line)
                 TokenType.LESS -> Expr.BoolLiteral(left.value < right.value, line)

@@ -549,6 +549,15 @@ class SymbolCollector {
             if (item is TopLevel.Enum) {
                 try {
                     table.defineEnum(item.name, item.variants)
+                    // `enum Key: Int { W(87) }` - the resolver checks each value
+                    // against the type; recorded here so both it and lowering
+                    // read one table.
+                    item.valueType?.let { written ->
+                        table.defineEnumValues(
+                            item.name,
+                            SymbolTable.EnumValues(resolveType(written), item.variants.zip(item.caseValues)),
+                        )
+                    }
                 } catch (e: Exception) {
                     errors.add("line ${item.line}: ${e.message}")
                 }

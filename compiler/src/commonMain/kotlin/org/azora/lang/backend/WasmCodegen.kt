@@ -1588,7 +1588,8 @@ class WasmCodegen {
             "WebAssembly delay requires a host clock, which this target does not support yet"
         }
         // A call argument the LLVM target frees after the call. This target
-        // does not free it yet, so it is the value itself.
+        // frees only a 16-byte value's cell ([isLentCell]) so far; anything
+        // else is the value itself.
         // `a?.b` reaches only the interpreter so far; a call to a symbol that
         // does not exist would fail later, in the assembler, without a name.
         check(expr.name != "__safeMember") { "WebAssembly cannot lower '?.' (safe member access) yet" }
@@ -1673,8 +1674,14 @@ class WasmCodegen {
         // Arguments take the callee's declared parameter types and the result
         // leaves its physical return type: a generic callee's are erased.
         val declared = functionParams[expr.name]
+        val lentCells = mutableListOf<String>()
         val args = expr.args.withIndex().joinToString(" ") { (i, arg) ->
-            val emitted = emitExpr(arg)
+            var emitted = emitExpr(arg)
+            if (isLentCell(arg, expr.type)) {
+                val cell = newTemp("i64")
+                lentCells += cell
+                emitted = "(local.tee $cell $emitted)"
+            }
             declared?.getOrNull(i)?.let { param -> asArgument(expr.name, i) { coerceWasm(emitted, arg.type, param) } } ?: emitted
         }
         val called = "(call \$${expr.name}${if (args.isEmpty()) "" else " $args"})"
@@ -1685,8 +1692,31 @@ class WasmCodegen {
             externs[expr.name]?.let { wasmFloatOpFor(it) == null && wasmSoftwareMathFor(it) == null } == true
         if (hostString) { usesAlloc = true; usesOwnForeign = true }
         val call = if (hostString) "(call \$__str_own_foreign $called)" else called
-        val value = wrapCallResult(expr.type, callResult(call, functionResults[expr.name] ?: expr.type, expr.type))
+        val value = freeLentCells(wrapCallResult(expr.type, callResult(call, functionResults[expr.name] ?: expr.type, expr.type)), expr.type, lentCells)
         return if (expr.name in failableFunctions) checkedCall(value, expr.type) else value
+    }
+
+    /**
+     * Whether [arg] is a cell this call site makes for a 16-byte value given to
+     * an erased parameter (a cast to `Any` the ownership pass marked as lent),
+     * and frees after the call. One the callee may hand back is freed only when
+     * the call's [result] is read out of it as a 16-byte value; a `T?` result
+     * may be that very cell.
+     */
+    private fun isLentCell(arg: IrExpr, result: IrType): Boolean {
+        val call = arg as? IrExpr.Call ?: return false
+        if (call.name != "__temporary" && !(call.name == "__temporaryUnlessReturned" && isWide(result))) return false
+        val cast = call.args.singleOrNull() as? IrExpr.NumCast ?: return false
+        return cast.type == IrType.Any && isWide(cast.value.type)
+    }
+
+    /** [value], a call's, with the [cells] it was lent freed once it has been computed. */
+    private fun freeLentCells(value: String, type: IrType, cells: List<String>): String {
+        if (cells.isEmpty()) return value
+        val scalar = if (hasFunctionResult(type)) wasmType(type) else "i32"
+        val result = newTemp(scalar)
+        val frees = cells.joinToString(" ") { "(call \$__free (i32.wrap_i64 (local.get $it)))" }
+        return "(block (result $scalar) (local.set $result $value) $frees (local.get $result))"
     }
 
     /**

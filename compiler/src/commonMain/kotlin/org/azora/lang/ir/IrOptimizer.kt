@@ -937,6 +937,8 @@ class IrOptimizer {
     }
 
     /** Collects all names referenced in expressions (vars, calls, upper vars). */
+    internal fun referencedNames(body: List<IrStmt>): Set<String> = collectReferencedNames(body)
+
     private fun collectReferencedNames(body: List<IrStmt>): Set<String> {
         val names = mutableSetOf<String>()
         for (stmt in body) collectReferencedNamesFromStmt(stmt, names)

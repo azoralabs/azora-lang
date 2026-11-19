@@ -1561,6 +1561,9 @@ class IrInterpreter {
     /** `x as T` where either side is `Cent`/`UCent`: widened, truncated or read as a float. */
     private fun wideCast(value: Any?, from: IrType, to: IrType): Any? {
         if (value == null) return null
+        // Into an erased slot (`as Any`, where a native target makes a cell):
+        // the slot holds the value itself, all 128 bits of it.
+        if (to == IrType.Any || to == IrType.Nullable(IrType.Any)) return value
         if (isWide(to)) return widened(value, from, to)
         val wide = value as? WideInt ?: return value
         return when (to) {

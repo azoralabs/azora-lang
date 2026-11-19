@@ -68,6 +68,24 @@ import kotlin.collections.iterator
 /** What an associative literal builds when nothing says otherwise; see GTC §8.4. */
 private const val STANDARD_MAP = "LinkedHashMap"
 
+/** What a valued enum's case value is read through: `key.value`. */
+private const val ENUM_VALUE_MEMBER = "value"
+
+/** The operators that answer at their operands' width, which literal arithmetic is built from. */
+private val LITERAL_ARITHMETIC = setOf(
+    TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT,
+    TokenType.AMP, TokenType.PIPE, TokenType.CARET, TokenType.SHIFT_LEFT, TokenType.SHIFT_RIGHT,
+)
+
+/** The operators arithmetic on real literals is built from. */
+private val REAL_ARITHMETIC = setOf(TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT)
+
+/** An expression as itself, not as its spelling: two `2 * 3` may land at different widths. */
+private class LiteralSite(val expr: Expr) {
+    override fun equals(other: Any?) = other is LiteralSite && other.expr === expr
+    override fun hashCode() = expr.hashCode()
+}
+
 class TypeResolver(private val table: SymbolTable) {
     private var unsafeContext = false
     private var currentReceiverType: String? = null
@@ -85,6 +103,9 @@ class TypeResolver(private val table: SymbolTable) {
     private var inDecoratorFieldDefault = false
 
     private val errors = mutableListOf<String>()
+
+    /** Literal arithmetic and the integer width the place it lands in asked for ([seedLiteralWidth]). */
+    private val literalWidths = mutableMapOf<LiteralSite, IrType>()
     private val unresolved = mutableListOf<SemanticUnresolvedSymbol>()
     val unresolvedSymbols: List<SemanticUnresolvedSymbol> get() = unresolved.toList()
     private data class VariantQualifierKey(
@@ -253,6 +274,7 @@ class TypeResolver(private val table: SymbolTable) {
         typePropertyNames = program.typeFunctions.mapTo(mutableSetOf()) { it.name }
         packModules = program.items.filterIsInstance<TopLevel.Pack>()
             .associate { it.name to it.declaringModule }
+        program.items.filterIsInstance<TopLevel.Enum>().filter { it.valueType != null }.forEach(::checkEnumValues)
         // A typed top-level value supplies the same expected-value context as a
         // local binding (`fin kind: Kind = .Case`). A lambda additionally needs
         // its declared parameter and receiver types while its body is resolved;
@@ -1245,8 +1267,12 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Binary -> {
                 val repeated = asRepeatedConstruction(expr)
                 if (repeated != null) seedExpectedValue(repeated.first, expected)
+                else if (isLiteralArithmetic(expr) || isRealLiteralArithmetic(expr)) seedLiteralWidth(expr, expected)
                 else seedInferredReceiver(expr, expected)
             }
+            // `-(2 * 3)` - the sign is literal arithmetic too.
+            is Expr.Unary -> if (isLiteralArithmetic(expr) || isRealLiteralArithmetic(expr)) seedLiteralWidth(expr, expected)
+                else seedInferredReceiver(expr, expected)
             is Expr.NamedArg -> seedExpectedValue(expr.value, expected)
             is Expr.ArrayLiteral -> {
                 expr.contextualType = typeRefOf(expected)
@@ -1897,7 +1923,8 @@ class TypeResolver(private val table: SymbolTable) {
                 // an `oper+` the type is entitled not to have. The lowerer makes
                 // the same decision from the same table.
                 if (resolvesInPlace(stmt.compoundOp, stmt.value, varSym.type)) return
-                if (stmt.compoundOp == null) seedExpectedValue(stmt.value, varSym.type)
+                // `total += 1 << 70` - the operand meets the target's value, as in `total + (1 << 70)`.
+                if (stmt.compoundOp == null) seedExpectedValue(stmt.value, varSym.type) else seedLiteralWidth(stmt.value, varSym.type)
                 val valueType = resolveExpr(stmt.value) ?: return
                 // Replacing an owner's value hands it the new one. A borrow
                 // binding (`var x: T& = …`) is re-pointed instead: nothing moves.
@@ -2730,6 +2757,24 @@ class TypeResolver(private val table: SymbolTable) {
                 asRepeatedConstruction(expr)?.let { (construct, count) ->
                     resolveRepeatedConstruction(construct, count, expr.line)?.let { return it }
                 }
+                // `fin x: Cent = 4_611_686_018_427_387_904 * 8` - literals alone,
+                // landing where a width was asked for: each literal is read at it,
+                // and so is the result. With no width asked for they are `Int`s,
+                // as below.
+                if (isLiteralArithmetic(expr) || isRealLiteralArithmetic(expr)) literalWidths[LiteralSite(expr)]?.let { width ->
+                    seedLiteralWidth(expr.left, width)
+                    seedLiteralWidth(expr.right, width)
+                    val left = resolveExpr(expr.left) ?: return null
+                    val right = resolveExpr(expr.right) ?: return null
+                    return resolveBinaryType(
+                        expr.op,
+                        adoptLiteralType(expr.left, left, width),
+                        adoptLiteralType(expr.right, right, width),
+                        expr.line,
+                        operand = expr.right,
+                        receiverExpr = expr.left,
+                    )
+                }
                 // `c == .Red` - a comparison states the type of whichever side
                 // is written as a bare `.Name`, because the other side has one.
                 // This is also how a `when` expression's patterns are typed:
@@ -2738,16 +2783,20 @@ class TypeResolver(private val table: SymbolTable) {
                 val equality = expr.op == TokenType.EQUAL_EQUAL || expr.op == TokenType.BANG_EQUAL
                 // Only the side that needs telling waits for the other, so
                 // neither is resolved twice and no error is reported twice.
+                // Literal arithmetic on one side is read at the other side's
+                // width (`seed * (1 << 70)`), as a lone literal there would be.
+                val literalLeft = (isLiteralArithmetic(expr.left) || isRealLiteralArithmetic(expr.left)) && !isLiteralValue(expr.right)
                 val fromRight = equality && inferredHead(expr.left) != null && inferredHead(expr.right) == null
                 val leftType: IrType
                 val rightType: IrType
-                if (fromRight) {
+                if (fromRight || literalLeft) {
                     rightType = resolveExpr(expr.right) ?: return null
-                    seedExpectedValue(expr.left, rightType)
+                    if (fromRight) seedExpectedValue(expr.left, rightType) else seedLiteralWidth(expr.left, rightType)
                     leftType = resolveExpr(expr.left) ?: return null
                 } else {
                     leftType = resolveExpr(expr.left) ?: return null
                     if (equality) seedExpectedValue(expr.right, leftType)
+                    if (!isLiteralValue(expr.left)) seedLiteralWidth(expr.right, leftType)
                     rightType = resolveExpr(expr.right) ?: return null
                 }
                 if (equality && inferredHead(expr.right) == null && !isExplicitVariantReference(expr.right)) {
@@ -3590,6 +3639,10 @@ class TypeResolver(private val table: SymbolTable) {
                 val resolvedTarget = resolveExpr(expr.target) ?: return null
                 // Auto-deref: member access on a pointer reads through it (`p.v` == `(*p).v`).
                 val targetType = if (resolvedTarget is IrType.Pointer) resolvedTarget.inner else resolvedTarget
+                // `key.value` - the fixed value a valued enum's case carries.
+                if (expr.name == ENUM_VALUE_MEMBER && targetType is IrType.Named) {
+                    table.lookupEnumValues(targetType.name)?.let { return it.type }
+                }
                 // `pair.0` - a tuple's components are positional.
                 val position = expr.name.toIntOrNull()
                 if (targetType is IrType.Tuple && position != null) {
@@ -4233,10 +4286,11 @@ class TypeResolver(private val table: SymbolTable) {
                 resolveSpreadArray(expr)?.element
             }
             is Expr.Cast -> {
-                resolveExpr(expr.expr) ?: return null
+                val source = resolveExpr(expr.expr) ?: return null
                 if ((expr.targetType as? TypeRef.Reference)?.kind == TypeRef.RefKind.MUTABLE &&
                     !checkValueMutable(expr.expr, expr.line, "borrow mutably through a reference cast")) return null
                 val target = resolveDeclaredType(expr.targetType)
+                if (!enumCastAllowed(expr, source, target)) return null
                 // A dynamic cast (`x as? T`) may fail, so its result is `T?`.
                 if (expr.kind == CastKind.DYNAMIC && target !is IrType.Nullable) IrType.Nullable(target) else target
             }
@@ -6246,7 +6300,12 @@ class TypeResolver(private val table: SymbolTable) {
         // `1.0` is written the same whether it means a `Double` or a `Float`, so an
         // unsuffixed real literal takes the floating-point type asked for.
         if (own in IrType.floatTypes && wanted in IrType.floatTypes && isUntypedDoubleLiteral(expr)) return wanted
+        // So does arithmetic on real literals alone.
+        if (own in IrType.floatTypes && wanted in IrType.floatTypes && isRealLiteralArithmetic(expr)) return wanted
         if (!IrType.isInteger(own) || !IrType.isNumeric(wanted)) return own
+        // Arithmetic on literals alone takes an integer width the same way. Not
+        // a float's: `7 / 2` is integer division, whatever it lands in.
+        if (isLiteralArithmetic(expr)) return if (IrType.isInteger(wanted)) wanted else own
         if (!isUntypedIntLiteral(expr)) return own
         // `4` is an `IntLiteral` until something says which width to read it
         // at. A declared type, a parameter, a cast or a named width all say so;
@@ -6257,6 +6316,7 @@ class TypeResolver(private val table: SymbolTable) {
 
     private fun checkIntegerLiteral(expr: Expr, type: IrType) {
         val integer = type as? IrType.Integer ?: return
+        if (isLiteralArithmetic(expr)) return literalLeaves(expr).forEach { checkIntegerLiteral(it, type) }
         val text = integerLiteralText(expr) ?: return
         val negative = text.startsWith("-")
         val magnitude = text.removePrefix("-").trimStart('0').ifEmpty { "0" }
@@ -6330,6 +6390,64 @@ class TypeResolver(private val table: SymbolTable) {
             else -> null
         }
         else -> null
+    }
+
+    /**
+     * Whether [expr] is arithmetic on integer literals alone:
+     * `4_611_686_018_427_387_904 * 8`, `(1 << 100) - 1`, `-(2 + 3)`.
+     *
+     * Nothing in it states a width, so it is read as a lone literal is: at the
+     * integer type of the place it lands in, every literal in it included.
+     */
+    private fun isLiteralArithmetic(expr: Expr): Boolean = when (expr) {
+        is Expr.Grouping -> isLiteralArithmetic(expr.expr)
+        is Expr.Binary -> expr.op in LITERAL_ARITHMETIC && isLiteralOperand(expr.left) && isLiteralOperand(expr.right)
+        is Expr.Unary -> (expr.op == TokenType.MINUS || expr.op == TokenType.PLUS) && isLiteralArithmetic(expr.operand)
+        else -> false
+    }
+
+    /** A lone integer literal, or arithmetic on literals alone. */
+    private fun isLiteralOperand(expr: Expr): Boolean = untypedIntLiteral(expr) != null || isLiteralArithmetic(expr)
+
+    /**
+     * Whether [expr] is arithmetic on real literals: `0.5 * 3`,
+     * `(if a then 1.0 else 0.0) - (if b then 1.0 else 0.0)`. It is read at the
+     * floating-point type of the place it lands in, as a lone real literal is.
+     * An integer literal may stand beside a real one; integer arithmetic inside
+     * may not, since `(7 / 2) * 1.0` divides integers.
+     */
+    private fun isRealLiteralArithmetic(expr: Expr): Boolean = when (expr) {
+        is Expr.Grouping -> isRealLiteralArithmetic(expr.expr)
+        is Expr.Binary -> expr.op in REAL_ARITHMETIC && isRealOperand(expr.left) && isRealOperand(expr.right) &&
+            (untypedIntLiteral(expr.left) == null || untypedIntLiteral(expr.right) == null)
+        is Expr.Unary -> (expr.op == TokenType.MINUS || expr.op == TokenType.PLUS) && isRealLiteralArithmetic(expr.operand)
+        else -> false
+    }
+
+    private fun isRealOperand(expr: Expr): Boolean =
+        isUntypedDoubleLiteral(expr) || untypedIntLiteral(expr) != null || isRealLiteralArithmetic(expr)
+
+    /** Any literal, or arithmetic on literals alone: what takes its type from where it lands. */
+    private fun isLiteralValue(expr: Expr): Boolean = isLiteralOperand(expr) || isRealOperand(expr)
+
+    /** The literals literal arithmetic is built from; a lone literal is its own. */
+    private fun literalLeaves(expr: Expr): List<Expr> = when {
+        untypedIntLiteral(expr) != null -> listOf(expr)
+        expr is Expr.Grouping -> literalLeaves(expr.expr)
+        expr is Expr.Unary -> literalLeaves(expr.operand)
+        expr is Expr.Binary -> literalLeaves(expr.left) + literalLeaves(expr.right)
+        else -> emptyList()
+    }
+
+    /** Records [width] as what literal arithmetic [expr] is read at, before it is resolved. */
+    private fun seedLiteralWidth(expr: Expr, width: IrType) {
+        val integer = IrType.isInteger(width) && isLiteralArithmetic(expr)
+        if (!integer && !(width in IrType.floatTypes && isRealLiteralArithmetic(expr))) return
+        when (expr) {
+            is Expr.Grouping -> seedLiteralWidth(expr.expr, width)
+            is Expr.Unary -> seedLiteralWidth(expr.operand, width)
+            else -> literalWidths[LiteralSite(expr)] = width
+        }
     }
 
     /**
@@ -7447,5 +7565,134 @@ class TypeResolver(private val table: SymbolTable) {
         if (outcome is ConstraintEvaluator.Outcome.Violated) {
             errors.add("line $line: '$key' does not satisfy its 'where' clause: ${outcome.reason}")
         }
+    }
+    /**
+     * Checks `enum Key: Int { W(87) }`: the value type is one a literal is
+     * written in, every case writes exactly its value (one per tuple element),
+     * each value is a literal of its type that fits it, and no two cases share
+     * a value - so a value names one case, which `raw as? Key` relies on.
+     */
+    private fun checkEnumValues(item: TopLevel.Enum) {
+        val values = table.lookupEnumValues(item.name) ?: return
+        val shownType = values.type.shown()
+        val elements = (values.type as? IrType.Tuple)?.elements ?: listOf(values.type)
+        if (!elements.all(::writtenAsLiteral)) {
+            errors.add(
+                "line ${item.line}: enum '${item.name}' cannot carry '$shownType' values - a case's value is " +
+                    "written as a literal, so its type is a number, Bool, Char, String or a tuple of them",
+            )
+            return
+        }
+        val seen = mutableMapOf<List<String>, String>()
+        for ((case, written) in values.cases) {
+            if (written.isEmpty()) {
+                errors.add("line ${item.line}: case '$case' of enum '${item.name}' has no value - write '$case(…)' with its '$shownType'")
+                continue
+            }
+            if (written.size != elements.size) {
+                errors.add(
+                    "line ${written.first().line}: case '$case' of enum '${item.name}' has ${written.size} " +
+                        "value${if (written.size == 1) "" else "s"}; '$shownType' takes ${elements.size}",
+                )
+                continue
+            }
+            val key = written.zip(elements).map { (value, type) ->
+                val text = enumValueKey(value, type)
+                if (text == null) {
+                    errors.add(
+                        "line ${value.line}: the value of case '$case' of enum '${item.name}' must be " +
+                            "a '${type.shown()}' literal",
+                    )
+                    null
+                } else {
+                    checkIntegerLiteral(value, type)
+                    text
+                }
+            }
+            if (null in key) continue
+            val same = seen[key.filterNotNull()]
+            if (same != null) {
+                errors.add(
+                    "line ${written.first().line}: cases '$same' and '$case' of enum '${item.name}' have the same " +
+                        "value ${key.joinToString(", ")} - each case's value must be distinct",
+                )
+            } else {
+                seen[key.filterNotNull()] = case
+            }
+        }
+    }
+
+    /** A type whose values a case can be given as a literal. */
+    private fun writtenAsLiteral(type: IrType): Boolean =
+        IrType.isNumeric(type) || type == IrType.Bool || type == IrType.Char || type == IrType.String
+
+    /**
+     * [value] as a comparable key when it is a literal of [type], or null.
+     * Two spellings of one number (`87`, `0x57`; `1`, `1.0`) give one key.
+     */
+    private fun enumValueKey(value: Expr, type: IrType): String? = when {
+        // A literal past `Long` carries its decimal digits (`magnitude`); the
+        // `Long` beside them is only the low bits.
+        IrType.isInteger(type) -> if ((unsignedNumber(value) as? Expr.IntLiteral)?.magnitude != null)
+            integerLiteralText(value) else untypedIntLiteral(value)?.toString()
+        type in IrType.floatTypes -> when (val number = unsignedNumber(value)) {
+            is Expr.DoubleLiteral -> (number.value * numberSign(value)).toString()
+            is Expr.IntLiteral -> (number.value.toDouble() * numberSign(value)).toString()
+            else -> null
+        }
+        type == IrType.Bool -> (value as? Expr.BoolLiteral)?.value?.toString()
+        type == IrType.Char -> (value as? Expr.CharLiteral)?.value?.let { "'$it'" }
+        type == IrType.String -> (value as? Expr.StringLiteral)?.value?.let { "\"$it\"" }
+        else -> null
+    }
+
+    /** The number literal under any `-`/`+` and grouping. */
+    private fun unsignedNumber(value: Expr): Expr? = when (value) {
+        is Expr.IntLiteral, is Expr.DoubleLiteral -> value
+        is Expr.Grouping -> unsignedNumber(value.expr)
+        is Expr.Unary -> if (value.op == TokenType.MINUS || value.op == TokenType.PLUS) unsignedNumber(value.operand) else null
+        else -> null
+    }
+
+    private fun numberSign(value: Expr): Int = when (value) {
+        is Expr.Grouping -> numberSign(value.expr)
+        is Expr.Unary -> (if (value.op == TokenType.MINUS) -1 else 1) * numberSign(value.operand)
+        else -> 1
+    }
+
+    /**
+     * The casts an enum takes part in. `raw as? Key` looks a valued enum's case
+     * up by its value and is `Key?`; a plain `as` (or `as*`) could find no case,
+     * so it is refused. An enum case is not a number: `key as Int` is refused,
+     * pointing at `.value` where the enum has one.
+     */
+    private fun enumCastAllowed(expr: Expr.Cast, source: IrType, target: IrType): Boolean {
+        val targetEnum = (target as? IrType.Named)?.name?.takeIf { table.lookupEnum(it) != null }
+        val sourceEnum = (source as? IrType.Named)?.name?.takeIf { table.lookupEnum(it) != null }
+        if (targetEnum != null && targetEnum != sourceEnum) {
+            val values = table.lookupEnumValues(targetEnum) ?: return true
+            if (expr.kind != CastKind.DYNAMIC) {
+                errors.add(
+                    "line ${expr.line}: '${source.shown()}' cannot be cast to '$targetEnum' with 'as' - a value may " +
+                        "name no case; write 'as? $targetEnum', which is '$targetEnum?'",
+                )
+                return false
+            }
+            if (!isCompatible(values.type, adoptLiteralType(expr.expr, source, values.type))) {
+                errors.add(
+                    "line ${expr.line}: 'as? $targetEnum' finds a case by its '${values.type.shown()}' value, " +
+                        "got '${source.shown()}'",
+                )
+                return false
+            }
+            return true
+        }
+        if (sourceEnum != null && sourceEnum != targetEnum && IrType.isNumeric(target)) {
+            val hint = if (table.lookupEnumValues(sourceEnum) != null) "; read its value with '.$ENUM_VALUE_MEMBER'"
+                else "; give the enum values with 'enum $sourceEnum: ${target.shown()} { Case(value) }'"
+            errors.add("line ${expr.line}: an enum case is not a number - '$sourceEnum' cannot be cast to '${target.shown()}'$hint")
+            return false
+        }
+        return true
     }
 }

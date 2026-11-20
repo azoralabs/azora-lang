@@ -5951,6 +5951,11 @@ end:
             val raw = emitHeapAlloc(total)
             val lenPtr = nextTmp(); emit("  $lenPtr = bitcast i8* $raw to i64*")
             emit("  store i64 $count64, i64* $lenPtr")
+            // Every slot holds the element's default - zero, false, null - not
+            // whatever the allocator's last tenant left in the block.
+            usesMemset = true
+            val data = nextTmp(); emit("  $data = getelementptr i8, i8* $raw, i64 8")
+            val zeroed = nextTmp(); emit("  $zeroed = call i8* @memset(i8* $data, i32 0, i64 $bytes)")
             return raw
         }
         if (callDenotesBuiltin(expr.name, "println")) return emitPrintln(expr)

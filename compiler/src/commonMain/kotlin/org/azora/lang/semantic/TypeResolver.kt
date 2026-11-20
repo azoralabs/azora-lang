@@ -425,6 +425,7 @@ class TypeResolver(private val table: SymbolTable) {
                     val previousFactOwner = table.semanticFacts.enterOwner(func.name, method.line)
                     val stabilityOwner = table.stability.enterMethod(item, method)
                     table.pushScope()
+                    checkParameterDefaults(method.params, func.params)
                     for ((index, param) in func.params.withIndex()) {
                         val (name, type) = param
                         val mutable = name != "self" || method.receiverModifier != ParamModifier.SHARED
@@ -655,6 +656,7 @@ class TypeResolver(private val table: SymbolTable) {
         for (constParam in func.constParams) {
             table.defineVariable(VariableSymbol(constParam, IrType.Int, mutable = false))
         }
+        checkParameterDefaults(func.params, symbol.params)
 
         // Register parameters as local variables
         for (i in symbol.params.indices) {
@@ -724,6 +726,34 @@ class TypeResolver(private val table: SymbolTable) {
 
         table.popScope()
         table.semanticFacts.leaveOwner(previousFactOwner)
+    }
+
+    /**
+     * Each parameter default, resolved where it is written and against the
+     * parameter's type.
+     *
+     * A default is lowered at every call site that leaves it out, so nothing
+     * else ever checked one: an undefined name in it passed `azora check` and
+     * stopped code generation with "undefined function or variable" and no
+     * line (2026-11-20). It is resolved before the parameters are in scope,
+     * because the call site that evaluates it has none of them.
+     */
+    private fun checkParameterDefaults(params: List<Param>, resolved: List<Pair<String, IrType>>) {
+        // By name: a receiver, a contextual parameter or `self` may stand before the written ones.
+        val types = resolved.toMap()
+        params.forEach { param ->
+            val default = param.defaultValue ?: return@forEach
+            val declared = types[param.name] ?: return@forEach
+            seedExpectedValue(default, declared)
+            seedLiteralWidth(default, declared)
+            val actual = resolveExpr(default) ?: return@forEach
+            if (!isCompatible(declared, adoptLiteralType(default, actual, declared))) {
+                errors.add(
+                    "line ${default.line}: the default of '${param.name}' is ${actual.shown()}, " +
+                        "but the parameter is ${declared.shown()}",
+                )
+            }
+        }
     }
 
     /** Error sets declared by the function currently being resolved. */
@@ -5638,7 +5668,8 @@ class TypeResolver(private val table: SymbolTable) {
         val binary = desugared as? Expr.Binary ?: return false
         val member = compoundAssignMemberName(op) ?: return false
         val operandType = resolveExpr(binary.right) ?: return false
-        val mangled = table.lookupOperator(named.name, member, operandKeyOf(operandType)) ?: return false
+        val mangled = table.lookupOperator(named.name, member, operandKeyOf(operandType), literalOperandOf(binary.right))
+            ?: return false
         checkOperatorBound(member, mangled, operandType, binary.line, binary.right, named, binary.left)
         return true
     }
@@ -5701,6 +5732,15 @@ class TypeResolver(private val table: SymbolTable) {
                         checkOperatorBound(operName, mangled, right, line, operand)
                         return table.lookupFunction(mangled)?.returnType
                     }
+                    // `2.0 * v` with the operator on `Double`: the literal on the
+                    // left states no width, so it is read at the primitive that
+                    // declares the operator, as the lowerer reads it.
+                    literalOperandOf(receiverExpr)?.let { literal ->
+                        table.lookupLiteralReceiverOperator(operName, key, literal)?.let { (_, mangled) ->
+                            checkOperatorBound(operName, mangled, right, line, operand)
+                            return table.lookupFunction(mangled)?.returnType
+                        }
+                    }
                 }
             }
         }
@@ -5709,7 +5749,7 @@ class TypeResolver(private val table: SymbolTable) {
             // A declared operator wins; otherwise `<` `<=` `>` `>=` come from
             // `<=>` and `!=` from `==` (the comparison DIP, §5.4/§5.5). All the
             // rewrites answer Bool.
-            when (val plan = comparisonPlan(op, left.name, operandKeyOf(right), table)) {
+            when (val plan = comparisonPlan(op, left.name, operandKeyOf(right), table, literalOperandOf(operand))) {
                 is ComparisonPlan.Direct -> {
                     checkOperatorBound(operOverloadName(op) ?: "operator", plan.mangled, right, line, operand, left, receiverExpr)
                     return table.lookupFunction(plan.mangled)?.returnType

@@ -812,14 +812,40 @@ private class MonoContext(
                 typeParams = method.typeParams.filterNot { it in bindings },
                 constParams = method.constParams.filterNot { it in bindings }.toSet(),
                 body = expandReflectedFields(method.body, packs[mangled]?.fields.orEmpty()),
-                // Operand-keyed, so the copies coexist on the same receiver.
-                name = if (method.name.startsWith("oper")) "${method.name}@$mangled" else method.name,
             )
-            rewriteFuncDecl(bound, mangled)
+            // Operand-keyed, so the copies coexist on the same receiver.
+            rekeyOperator(rewriteFuncDecl(bound, mangled))
         } finally {
             constBindings = emptyMap()
             typeBindings = emptyMap()
         }
+    }
+
+    /**
+     * An operator member keyed by the operand it takes once specialized.
+     *
+     * The parser keys an overload by the operand as written - `oper+@Vec` for
+     * `(rhs: Self&)` in `impl Vec<T, N>`, `oper+@T` for `(rhs: T&)` - and a
+     * lookup keys it by the operand it is given: `__Vec_Double_3`, `Double`.
+     * A specialization binds both, so its members are keyed by what they bound
+     * to. Kept as the template wrote them, `p + q` on a `Vec<Double, 3>` matched
+     * neither key and fell back to the bare `oper+` - the unary one - and
+     * returned `p` (2026-11-20).
+     */
+    private fun rekeyOperator(method: FuncDecl): FuncDecl {
+        if (!method.name.startsWith("oper") || '@' !in method.name) return method
+        val operand = method.params.singleOrNull() ?: return method
+        val key = operandKey(operand.type) ?: return method
+        return method.copy(name = method.name.substringBefore('@') + "@" + key)
+    }
+
+    /** The key the parser gives an operand of this type (`Parser.operandTypeKey`). */
+    private fun operandKey(type: TypeRef): String? = when (type) {
+        is TypeRef.Named -> type.name
+        is TypeRef.Reference -> operandKey(type.inner)
+        is TypeRef.Pointer -> operandKey(type.inner)
+        is TypeRef.Nullable -> operandKey(type.inner)
+        else -> null
     }
 
     /** The pack a parser-mangled static member belongs to, or null. */
@@ -1017,7 +1043,7 @@ private class MonoContext(
                     },
                 )
                 try {
-                    rewriteFuncDecl(specialized, mangled)
+                    rekeyOperator(rewriteFuncDecl(specialized, mangled))
                 } finally {
                     constBindings = emptyMap()
                     typeBindings = emptyMap()
@@ -1413,13 +1439,19 @@ private class MonoContext(
     private fun rewriteParam(param: Param): Param {
         val rewritten = rewriteType(param.type)
         val reference = rewritten as? TypeRef.Reference
+        // A default is an expression like any in the body: `rotation: Vec3 =
+        // Vec3(0.0, 0.0, 0.0)` builds a specialization, and left as written it
+        // named a template - or an alias of one - that no longer exists by the
+        // time a call site lowered it (2026-11-20).
+        val default = param.defaultValue?.let(::rewriteExpr)
         return if (reference != null) {
             param.copy(
                 type = reference.inner,
                 modifier = if (param.modifier == ParamModifier.NONE) reference.kind.paramModifier else param.modifier,
+                defaultValue = default,
             )
         } else {
-            param.copy(type = rewritten)
+            param.copy(type = rewritten, defaultValue = default)
         }
     }
 

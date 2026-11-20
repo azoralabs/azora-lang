@@ -16,7 +16,26 @@
 
 package org.azora.lang.semantic
 
+import org.azora.lang.frontend.Expr
 import org.azora.lang.frontend.TokenType
+
+/** The kind of an untyped literal written as an operator's operand. */
+enum class LiteralOperand { INTEGER, REAL }
+
+/**
+ * [expr]'s literal kind when it is an untyped numeric literal - `2`, `-0.5`,
+ * `(3)` - and null otherwise. Such an operand states no width, so an operator
+ * overload may read it at the one its declaration asks for
+ * ([SymbolTable.lookupOperator]); the resolver and the lowerer ask the same
+ * question here so they choose the same overload.
+ */
+internal fun literalOperandOf(expr: Expr?): LiteralOperand? = when (expr) {
+    is Expr.IntLiteral -> LiteralOperand.INTEGER
+    is Expr.DoubleLiteral -> LiteralOperand.REAL
+    is Expr.Grouping -> literalOperandOf(expr.expr)
+    is Expr.Unary -> if (expr.op == TokenType.MINUS || expr.op == TokenType.PLUS) literalOperandOf(expr.operand) else null
+    else -> null
+}
 
 /**
  * How a comparison operator on a user type is answered.
@@ -72,8 +91,9 @@ internal fun comparisonPlan(
     typeName: String,
     operandKey: String?,
     table: SymbolTable,
+    literal: LiteralOperand? = null,
 ): ComparisonPlan? {
-    val direct = operOverloadMemberName(op)?.let { table.lookupOperator(typeName, it, operandKey) }
+    val direct = operOverloadMemberName(op)?.let { table.lookupOperator(typeName, it, operandKey, literal) }
     if (direct != null) return ComparisonPlan.Direct(direct)
 
     // `!=` from `==`.

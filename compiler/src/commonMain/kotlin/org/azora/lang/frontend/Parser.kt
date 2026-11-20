@@ -1422,6 +1422,19 @@ class Parser(
                     if (depth > 0) inner.add(tokens[j])
                     j += 1
                 }
+                // A splice that names none of this loop's variables belongs to an
+                // inner loop: `inline for Ty in Numbers { … inline for f in
+                // reflect<Vec<Ty, N>>.fields { self * rhs.${f.name} } }` must leave
+                // `${f.name}` for the field loop. Folded here it became `rhs.f.name`
+                // and every scalar-on-the-left vector operator read a member that
+                // does not exist (2026-11-20). A splice of constants alone is this
+                // loop's to fold.
+                val names = inner.filter { it.type == TokenType.IDENTIFIER && it.lexeme != "$" }
+                if (names.isNotEmpty() && names.none { token -> bindings.any { it.first == token.lexeme } }) {
+                    result.addAll(tokens.subList(k, minOf(j + 1, tokens.size)))
+                    k = j + 1
+                    continue
+                }
                 var folded: List<Token> = inner
                 for ((name, value) in bindings) folded = substituteBareIdentifier(folded, name, value)
                 folded = foldListIndexing(folded)

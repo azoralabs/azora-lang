@@ -1660,14 +1660,16 @@ class WasmCodegen {
             return wrapCallResult(expr.type, "(block $set (if $present (then ${printValue(operation, held, inner)}) (else $absent)))")
         }
         if (expr.name == "__isCheck") usesIsCheck = true
-        // `Array::fill<T>(count)` → `[ len, T×count ]` (all cells i32 in Wasm).
         if (expr.name == "__inject") return emitInject(expr)
+        // `Array::fill<T>(count)` → `[ len, T×count ]`, each slot as wide as an
+        // array literal's (a `Double` takes eight bytes); `__alloc` zeroes it.
         if (callDenotesBuiltin(expr.name, "Array_fill")) {
             usesAlloc = true
             val t = newTemp("i32")
             val count = emitExpr(expr.args[0])
+            val stride = wasmSize((expr.type as? IrType.Array)?.element ?: IrType.Any)
             return "(block (result i32)\n" +
-                "  (local.set $t (call \$__alloc (i32.add (i32.const 4) (i32.mul $count (i32.const 4)))))\n" +
+                "  (local.set $t (call \$__alloc (i32.add (i32.const 4) (i32.mul $count (i32.const $stride)))))\n" +
                 "  (i32.store (local.get $t) $count)\n" +
                 "  (local.get $t))"
         }

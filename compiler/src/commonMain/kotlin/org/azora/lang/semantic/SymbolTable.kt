@@ -494,11 +494,30 @@ class SymbolTable {
     fun lookupUnaryOperator(typeName: String, operName: String): String? =
         methods[typeName]?.get(operName)
 
-    fun lookupOperator(typeName: String, operName: String, operandKey: String?): String? {
+    /**
+     * [literal] says the operand is an untyped literal, which states no width:
+     * `v * 0.5` is a `Float` only until something asks for another real. When no
+     * overload names the literal's default type, the one overload a literal of
+     * that kind can be read at is chosen, and the caller reads the literal there.
+     *
+     * The bare name is a binary overload's only when its member takes an operand.
+     * `oper+ &.()` is registered bare too, and answering `p + q` with it returned
+     * `p` (2026-11-20).
+     */
+    fun lookupOperator(
+        typeName: String,
+        operName: String,
+        operandKey: String?,
+        literal: LiteralOperand? = null,
+    ): String? {
         val table = methods[typeName] ?: return null
         if (operandKey != null) table["$operName@$operandKey"]?.let { return it }
-        table[operName]?.let { return it }
         val prefix = "$operName@"
+        if (literal != null) {
+            literalReading(table.keys.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }, literal)
+                ?.let { return table[prefix + it] }
+        }
+        table[operName]?.takeUnless { isUnaryMember(it) }?.let { return it }
         val candidates = table.keys.filter { it.startsWith(prefix) }
         if (candidates.isEmpty()) return null
         val generic = candidates.filter { !isKnownType(it.removePrefix(prefix)) }
@@ -506,9 +525,56 @@ class SymbolTable {
         return table[chosen]
     }
 
-    /** True when [name] names a declared type rather than a type parameter. */
+    /**
+     * An operator declared on a primitive and applied to an untyped literal:
+     * `2.0 * v` where the operator lives on `Double`. [operandKey] is the right
+     * operand's key; the result is the primitive the literal is read at and the
+     * member, or null when no single primitive of the literal's kind has it.
+     */
+    fun lookupLiteralReceiverOperator(
+        operName: String,
+        operandKey: String,
+        literal: LiteralOperand,
+    ): Pair<String, String>? {
+        val member = "$operName@$operandKey"
+        val owners = methods.entries.filter { (owner, table) ->
+            member in table && IrType.isPrimitiveName(owner) && IrType.isNumeric(IrType.fromName(owner))
+        }.map { it.key }
+        val owner = literalReading(owners, literal) ?: return null
+        return owner to (methods[owner]?.get(member) ?: return null)
+    }
+
+    /**
+     * The one name among [typeNames] an untyped [literal] can be read at: its
+     * default type, else the single one of its kind. An integer literal prefers
+     * an integer and falls back to a real (`v * 2` on a vector of `Double`); a
+     * real is never read at an integer.
+     */
+    private fun literalReading(typeNames: List<String>, literal: LiteralOperand): String? {
+        val types = typeNames.filter { IrType.isPrimitiveName(it) }.associateWith { IrType.fromName(it) }
+        val default = if (literal == LiteralOperand.INTEGER) IrType.defaultInt else IrType.defaultFloat
+        types.entries.firstOrNull { it.value == default }?.let { return it.key }
+        val integers = types.filterValues { IrType.isInteger(it) }.keys
+        val reals = types.filterValues { it in IrType.floatTypes }.keys
+        val tier = when (literal) {
+            LiteralOperand.INTEGER -> integers.ifEmpty { reals }
+            LiteralOperand.REAL -> reals
+        }
+        return tier.singleOrNull()
+    }
+
+    /** True for a member that takes no operand besides its receiver. */
+    private fun isUnaryMember(mangled: String): Boolean = functions[mangled]?.params?.size == 1
+
+    /**
+     * True when [name] names a declared type rather than a type parameter.
+     *
+     * A primitive is a declared type too: `oper*@Double` on a vector of `Double`
+     * is that operand's overload, not an erased `T` that matches any operand.
+     */
     private fun isKnownType(name: String): Boolean =
-        name in structs || name in enums || name in specs || name == "Self"
+        name in structs || name in enums || name in specs || name == "Self" ||
+            IrType.isPrimitiveName(name)
 
     // -- Universal infix calls (`macro $a @to $b`) ------------------------
     /** Infix method name → the generic free function it desugars to (`self` first). */

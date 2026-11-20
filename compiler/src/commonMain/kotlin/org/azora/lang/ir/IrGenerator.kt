@@ -59,6 +59,8 @@ import org.azora.lang.semantic.StructType
 import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.semantic.TypeFunctionEvaluator
 import org.azora.lang.semantic.comparisonPlan
+import org.azora.lang.semantic.literalOperandOf
+import org.azora.lang.semantic.FunctionSymbol
 import org.azora.lang.semantic.unaryOverloadName
 import org.azora.lang.semantic.VariableSymbol
 import org.azora.lang.semantic.Witnesses
@@ -213,6 +215,32 @@ class IrGenerator(private val table: SymbolTable) {
             name.startsWith("__") -> "${name}_${mangledCounter++}"
             else -> "__${name}${mangledCounter++}"
         }
+        nameScopes.last()[name] = mangled
+        return mangled
+    }
+
+    /**
+     * The type each local of the function being lowered was first declared at,
+     * by its source name. See [registerLocal].
+     */
+    private var localTypes = mutableMapOf<String, IrType>()
+
+    /**
+     * Register a local binding of [type].
+     *
+     * A name may be declared again once its first binding's scope has ended -
+     * `fin needed: Double` in one block, `fin needed = Vec3(…)` after it - and
+     * nothing here mangled it, because nothing it shadows is still live. The
+     * backends keep one local per name and function, though: WebAssembly gave
+     * both one `i32` local, and LLVM, emitting every `defer` at every exit,
+     * resolved the vector's `purge` to the `Double` slot ("cannot empty owned
+     * storage of double", 2026-11-20). A name already declared in this function
+     * at another type therefore gets a name of its own, as a shadowing one does.
+     */
+    private fun registerLocal(name: String, type: IrType): String {
+        val earlier = localTypes.getOrPut(name) { type }
+        if (earlier == type || nameScopes.any { name in it }) return registerName(name)
+        val mangled = if (name.startsWith("__")) "${name}_${mangledCounter++}" else "__${name}${mangledCounter++}"
         nameScopes.last()[name] = mangled
         return mangled
     }
@@ -597,6 +625,7 @@ class IrGenerator(private val table: SymbolTable) {
         currentTraceOwner = null
         contextualValues.clear()
         nameScopes.clear()
+        localTypes = mutableMapOf()
         mangledCounter = 0
         pushNameScope() // global scope
 
@@ -1035,6 +1064,8 @@ class IrGenerator(private val table: SymbolTable) {
         currentTraceOwner = func.name
         currentGenericTypeParams = func.typeParams.toSet()
         knownEnumValues.clear()
+        val savedLocalTypes = localTypes
+        localTypes = mutableMapOf()
         // Borrowed parameters are passed by reference.
         val refParams = func.params.indices.filter {
             func.params[it].modifier != ParamModifier.NONE
@@ -1098,6 +1129,7 @@ class IrGenerator(private val table: SymbolTable) {
             table.popScope()
             currentTraceOwner = previousOwner
             currentGenericTypeParams = previousTypeParams
+            localTypes = savedLocalTypes
         }
 
         return IrFunction(
@@ -1171,6 +1203,8 @@ class IrGenerator(private val table: SymbolTable) {
         val previousOwner = currentTraceOwner
         currentTraceOwner = mangled
         knownEnumValues.clear()
+        val savedLocalTypes = localTypes
+        localTypes = mutableMapOf()
         table.pushScope()
         pushNameScope()
         val savedReactiveNames = reactiveNames.toSet()
@@ -1254,6 +1288,7 @@ class IrGenerator(private val table: SymbolTable) {
             popNameScope()
             table.popScope()
             currentTraceOwner = previousOwner
+            localTypes = savedLocalTypes
         }
         return IrFunction(
             mangled,
@@ -1539,9 +1574,23 @@ class IrGenerator(private val table: SymbolTable) {
         val member = compoundAssignName(op) ?: return null
         val receiver = lowerExpr(binary.left)
         val operand = lowerExpr(binary.right)
-        val mangled = table.lookupOperator(named.name, member, operandKeyOf(operand.type)) ?: return null
+        val mangled = table.lookupOperator(named.name, member, operandKeyOf(operand.type), literalOperandOf(binary.right))
+            ?: return null
         val func = table.lookupFunction(mangled) ?: return null
-        return IrStmt.ExprStmt(IrExpr.Call(mangled, listOf(receiver, operand), func.returnType))
+        return IrStmt.ExprStmt(IrExpr.Call(mangled, listOf(receiver, operandAt(func = func, operand = operand)), func.returnType))
+    }
+
+    /**
+     * An operator's operand read at the type its member declares, when it is an
+     * untyped literal still at its default width: `v * 0.5` on a vector of
+     * `Double` passes a `Double`, which is the overload the lookup chose for it.
+     * Any other operand is passed as it is.
+     */
+    private fun operandAt(operand: IrExpr, func: FunctionSymbol): IrExpr {
+        val wanted = func.params.getOrNull(1)?.second ?: return operand
+        if (wanted == operand.type || !IrType.isNumeric(wanted) || !IrType.isNumeric(operand.type)) return operand
+        if (!isUntypedIntConstant(operand)) return operand
+        return coerceToFloat(operand, wanted)
     }
 
     /** `PLUS` → `oper+=`, and the rest of the compound-assignment family. */
@@ -1760,7 +1809,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 declareRef(stmt.name, stmt.type, stmt.initializer)
                 val type = resolveTypeAnnotation(stmt.type, init)
-                val mangled = registerName(stmt.name)
+                val mangled = registerLocal(stmt.name, type)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = true))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
                 IrStmt.VarDecl(mangled, type, init, valueMutable = stmt.valueMutable, lazy = stmt.lazy, ownsValue = ownsBinding(stmt.type, stmt.initializer, init))
@@ -1776,7 +1825,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 declareRef(stmt.name, stmt.type, stmt.initializer)
                 val type = resolveTypeAnnotation(stmt.type, init)
-                val mangled = registerName(stmt.name)
+                val mangled = registerLocal(stmt.name, type)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
                 if (stmt.lazy) registerLazyReactiveDependencies(mangled, init)
@@ -1793,7 +1842,7 @@ class IrGenerator(private val table: SymbolTable) {
                 }
                 declareRef(stmt.name, stmt.type, stmt.initializer)
                 val type = resolveTypeAnnotation(stmt.type, init)
-                val mangled = registerName(stmt.name)
+                val mangled = registerLocal(stmt.name, type)
                 table.defineVariable(VariableSymbol(stmt.name, type, mutable = false))
                 if (init is IrExpr.EnumLiteral) knownEnumValues[mangled] = init else knownEnumValues.remove(mangled)
                 if (stmt.lazy) registerLazyReactiveDependencies(mangled, init)
@@ -2108,7 +2157,7 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.RemDecl -> {
                 val init = lowerExpr(stmt.initializer)
                 val type = resolveTypeAnnotation(stmt.type, init)
-                val mangled = registerName(stmt.name)
+                val mangled = registerLocal(stmt.name, type)
                 table.defineVariable(
                     VariableSymbol(
                         stmt.name,
@@ -4245,6 +4294,15 @@ class IrGenerator(private val table: SymbolTable) {
                                 val func = table.lookupFunction(mangled) ?: return@let
                                 return IrExpr.Call(mangled, listOf(left, right), func.returnType)
                             }
+                            // `2.0 * v`: the literal is read at the primitive that
+                            // declares the operator - the resolver's choice.
+                            literalOperandOf(expr.left)?.let { literal ->
+                                table.lookupLiteralReceiverOperator(operName, key, literal)?.let { (owner, mangled) ->
+                                    val func = table.lookupFunction(mangled) ?: return@let
+                                    val receiver = coerceToFloat(left, IrType.fromName(owner))
+                                    return IrExpr.Call(mangled, listOf(receiver, right), func.returnType)
+                                }
+                            }
                         }
                     }
                 }
@@ -4254,10 +4312,10 @@ class IrGenerator(private val table: SymbolTable) {
                     // A declared operator wins; otherwise the comparison family
                     // rewrites (the DIP, §5.4/§5.5). The same decision the
                     // resolver made, from the same routine.
-                    when (val plan = comparisonPlan(expr.op, lt.name, operandKeyOf(right.type), table)) {
+                    when (val plan = comparisonPlan(expr.op, lt.name, operandKeyOf(right.type), table, literalOperandOf(expr.right))) {
                         is ComparisonPlan.Direct -> {
                             val func = table.lookupFunction(plan.mangled)!!
-                            return IrExpr.Call(plan.mangled, listOf(left, right), func.returnType)
+                            return IrExpr.Call(plan.mangled, listOf(left, operandAt(right, func)), func.returnType)
                         }
                         // `a < b` → `(a <=> b).isLess`. The `<=>` call is the
                         // receiver, so it happens once, and which of `Compare` or

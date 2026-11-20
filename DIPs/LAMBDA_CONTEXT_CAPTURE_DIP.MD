@@ -682,6 +682,13 @@ using 5 {
 }
 ```
 
+A body of one statement may follow `then` instead of braces, as a one-statement
+`if` does:
+
+```azora
+using anchor.inside(node) then children()
+```
+
 Several receivers are supplied through a lexical context:
 
 ```azora

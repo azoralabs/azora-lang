@@ -62,7 +62,7 @@ class KeywordReservationTest {
             }
             """,
         )
-        assertTrue(errors.any { "Expected '{' after contextual values" in it }, errors.toString())
+        assertTrue(errors.any { "Expected '{' or 'then' after contextual values" in it }, errors.toString())
     }
 
     @Test fun usingIsNotADeclarationHead() {

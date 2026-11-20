@@ -114,11 +114,10 @@ impl Guard<T> {
      * @return The current value.
      */
     @Experimental(since: "0.1")
-    func &.get(): T {
+    func &.get(): T where T: Clone {
         self._mutex.lock()
         defer { self._mutex.unlock() }
-        fin v = self._value
-        return v
+        return self._value.clone()
     }
 }
 

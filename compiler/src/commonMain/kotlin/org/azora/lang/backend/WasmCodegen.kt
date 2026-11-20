@@ -1603,6 +1603,12 @@ class WasmCodegen {
         // copy generated once per type ([renderIsolatedCopy]).
         if (expr.name == "__isolated") {
             val value = expr.args.single()
+            // A scalar is its own copy (a clone reached through a descriptor
+            // asks every described type, numbers included).
+            val type = value.type
+            if (type is IrType.Integer || type in IrType.floatTypes || type == IrType.Bool || type == IrType.Char) {
+                return emitExpr(value)
+            }
             check(copiesInIsolation(value.type)) { "WebAssembly cannot copy a ${value.type} for 'clone' yet" }
             usesAlloc = true
             return "(call \$${isolatedCopyName(value.type)} ${emitExpr(value)})"
@@ -1926,7 +1932,7 @@ class WasmCodegen {
 
     /** A pack, an array or a closure: what `clone` copies rather than shares. */
     private fun copiesInIsolation(type: IrType): Boolean =
-        type is IrType.Function || type is IrType.Array || (type is IrType.Named && type.name in structs)
+        type == IrType.String || type is IrType.Function || type is IrType.Array || (type is IrType.Named && type.name in structs)
 
     private fun isolatedCopyName(type: IrType): String = isolatedCopies.getOrPut(type.shown()) {
         "__azora_clone_${isolatedCopies.size}" to type
@@ -1984,6 +1990,12 @@ class WasmCodegen {
                     val copied = coerceWasm("(call \$${isolatedCopyName(inner)} (local.get \$value))", inner, field.type)
                     body.append("    (${wasmStore(field.type)} $address $copied)\n")
                 }
+            }
+            // A String is its byte length, then its UTF-8 bytes: one block.
+            IrType.String -> {
+                body.append("    (local.set \$size (i32.add (i32.const 4) (i32.load (local.get \$self))))\n")
+                body.append("    (local.set \$copy (call \$__alloc (local.get \$size)))\n")
+                body.append("    (memory.copy (local.get \$copy) (local.get \$self) (local.get \$size))\n")
             }
             else -> error("WebAssembly cannot copy a ${type.shown()} for 'clone' yet")
         }

@@ -231,7 +231,7 @@ internal fun allocatedConstruction(table: SymbolTable, value: Expr): Expr {
     // A bridge pack cannot be constructed, so `.()` into one is not a
     // construction: `T*` erases to `Any*`, and what the pointer holds is the
     // run of values, not one `Any`.
-    val owner = table.lookupInferredMember(member.line, member.column)
+    val owner = table.lookupInferredMember(member.line, member.column, member.name)
     if (owner != null && table.lookupStruct(owner)?.isBridge == false) return value
     val element = owner?.takeIf { args.isEmpty() }?.let { TypeRef.Named(Intrinsics.ARRAY, listOf(TypeRef.Named(it))) }
     return Expr.ArrayLiteral(args, member.line, member.column, member.length, contextualType = element)

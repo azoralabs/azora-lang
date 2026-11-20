@@ -63,10 +63,10 @@ spec Set<T> : Indexed<T> {
     prop &.isNotEmpty: Bool
 
     /** Returns the element at `index` in iteration order. Asserts out of bounds. */
-    func &.get(index: Int): T
+    func &.get(index: Int): T&|self|
 
     /** Returns whether `element` is present. */
-    func &.contains(element: T): Bool
+    func &.contains(element: T&): Bool
 
     /** Invokes `action` once for every element in iteration order. */
     func &.forEach(action: (T) -> Unit)
@@ -156,7 +156,7 @@ impl LinkedHashSet<T> {
     /** `.(a, b, c)`, and `[a, b, c]` where a `LinkedHashSet<T>` is expected: in order, without repeats. */
     ctor .(...elements: T) {
         for i in 0..<elements.size {
-            self.add(elements[i])
+            self.add(take elements[i])
         }
     }
 
@@ -176,7 +176,7 @@ impl LinkedHashSet<T> {
 
     /** Returns whether `element` is already stored. */
     @Experimental(since: "0.1")
-    func &.has(element: T): Bool {
+    func &.has(element: T&): Bool {
         for i in 0..<self.size {
             if self.data[i] == element { return true }
         }
@@ -189,13 +189,13 @@ impl Set<T> for LinkedHashSet<T> {
     prop &.isEmpty: Bool = self.size == 0
     prop &.isNotEmpty: Bool = self.size > 0
 
-    func &.get(index: Int): T {
+    func &.get(index: Int): T&|self| {
         assert index >= 0 panic "Set index must be non-negative"
         assert index < self.size panic "Set index out of bounds"
-        return self.data[index]
+        return self.data[index].&
     }
 
-    func &.contains(element: T): Bool {
+    func &.contains(element: T&): Bool {
         return self.has(element)
     }
 
@@ -300,7 +300,7 @@ impl MutableSet<T> for LinkedHashSet<T> {
 func<T> _linkedHashSetOf(elements: Array<T>): LinkedHashSet<T> where T: Equal {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -319,7 +319,7 @@ func<T> emptyMutableSet(): MutableSet<T> where T: Equal {
 func<T> setOf(...elements: T): Set<T> where T: Equal {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -328,7 +328,7 @@ func<T> setOf(...elements: T): Set<T> where T: Equal {
 func<T> mutableSetOf(...elements: T): MutableSet<T> where T: Equal {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -337,7 +337,7 @@ func<T> mutableSetOf(...elements: T): MutableSet<T> where T: Equal {
 func<T> linkedHashSetOf(...elements: T): LinkedHashSet<T> where T: Equal {
     var result = LinkedHashSet<T>()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -361,7 +361,7 @@ pack HashSet<T> where T: Hash {
 func<T> hashSetOf(...elements: T): HashSet<T> where T: Hash {
     var result = HashSet<T>()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -391,7 +391,7 @@ impl HashSet<T> {
     /** `.(a, b, c)`, and `[a, b, c]` where a `HashSet<T>` is expected. A repeated element is kept once. */
     ctor .(...elements: T) {
         for i in 0..<elements.size {
-            self.add(elements[i])
+            self.add(take elements[i])
         }
     }
 
@@ -409,7 +409,7 @@ impl HashSet<T> {
     }
 
     @Experimental(since: "0.1")
-    func &.has(element: T): Bool {
+    func &.has(element: T&): Bool {
         for i in 0..<self.size {
             if self.data[i] == element { return true }
         }
@@ -422,13 +422,13 @@ impl Set<T> for HashSet<T> {
     prop &.isEmpty: Bool = self.size == 0
     prop &.isNotEmpty: Bool = self.size > 0
 
-    func &.get(index: Int): T {
+    func &.get(index: Int): T&|self| {
         assert index >= 0 panic "Set index must be non-negative"
         assert index < self.size panic "Set index out of bounds"
-        return self.data[index]
+        return self.data[index].&
     }
 
-    func &.contains(element: T): Bool {
+    func &.contains(element: T&): Bool {
         return self.has(element)
     }
 
@@ -530,9 +530,9 @@ impl MutableSet<T> for HashSet<T> {
 }
 
 @Experimental(since: "0.1")
-oper[] HashSet<T>&.(index: Int): T {
+oper[] HashSet<T>&.(index: Int): T&|self| {
     assert index >= 0 && index < self.size panic "Set index out of bounds"
-    return self.data[index]
+    return self.data[index].&
 }
 
 @Experimental(since: "0.1")
@@ -578,7 +578,7 @@ pack TreeSet<T> where T: Order {
 func<T> treeSetOf(...elements: T): TreeSet<T> where T: Order {
     var result = TreeSet<T>()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -587,7 +587,7 @@ impl TreeSet<T> {
     /** `.(a, b, c)`, and `[a, b, c]` where a `TreeSet<T>` is expected. A repeated element is kept once. */
     ctor .(...elements: T) {
         for i in 0..<elements.size {
-            self.add(elements[i])
+            self.add(take elements[i])
         }
     }
 
@@ -605,7 +605,7 @@ impl TreeSet<T> {
     }
 
     @Experimental(since: "0.1")
-    func &.has(element: T): Bool {
+    func &.has(element: T&): Bool {
         for i in 0..<self.size {
             if self.data[i] == element { return true }
         }
@@ -618,13 +618,13 @@ impl Set<T> for TreeSet<T> {
     prop &.isEmpty: Bool = self.size == 0
     prop &.isNotEmpty: Bool = self.size > 0
 
-    func &.get(index: Int): T {
+    func &.get(index: Int): T&|self| {
         assert index >= 0 panic "Set index must be non-negative"
         assert index < self.size panic "Set index out of bounds"
-        return self.data[index]
+        return self.data[index].&
     }
 
-    func &.contains(element: T): Bool {
+    func &.contains(element: T&): Bool {
         return self.has(element)
     }
 
@@ -726,9 +726,9 @@ impl MutableSet<T> for TreeSet<T> {
 }
 
 @Experimental(since: "0.1")
-oper[] TreeSet<T>&.(index: Int): T {
+oper[] TreeSet<T>&.(index: Int): T&|self| {
     assert index >= 0 && index < self.size panic "Set index out of bounds"
-    return self.data[index]
+    return self.data[index].&
 }
 
 @Experimental(since: "0.1")
@@ -765,9 +765,9 @@ oper!= TreeSet<T>&.(rhs: Set<T>): Bool {
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-oper[] LinkedHashSet<T>&.(index: Int): T {
+oper[] LinkedHashSet<T>&.(index: Int): T&|self| {
     assert index >= 0 && index < self.size panic "Set index out of bounds"
-    return self.data[index]
+    return self.data[index].&
 }
 
 @Experimental(since: "0.1")

@@ -74,6 +74,158 @@ class Feature003SyntaxTest {
         """.trimIndent()))
     }
 
+    @Test fun implPackDeclaresAStatelessPackWithItsAnnotations() {
+        assertEquals("3\n6\nstatus", run("""
+            import std.io
+            import std.reflection
+            annot @Tag for .Pack { fin name: String = "" }
+            @Tag(name: "status")
+            impl pack StatusBar {
+                func hello(): Int = 3
+                func &.twice(): Int = 6
+            }
+            func main() {
+                println(StatusBar::hello())
+                println(StatusBar().twice())
+                inline for C in reflect<*>.withAnnot<Tag> {
+                    println(reflect<C>.annotMeta<Tag>.name)
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aStaticOfTheExpectedTypeIsCalledWithoutItsName() {
+        assertEquals("11.0\n10.0\n10.0\n8", run("""
+            import std.io
+            pack Style { var width: Double = 0.0 }
+            impl Style {
+                func wide(): Style = Style(10.0)
+                func &.taller(): Style = Style(self.width + 1.0)
+            }
+            func show(style: Style) { println(style.width) }
+            func pick(): Style = ::wide()
+            func main() {
+                show(::wide().taller())
+                fin chosen: Style = ::wide()
+                println(chosen.width)
+                println(pick().width)
+                fin twice = { x: Int -> x * 2 }
+                scope {
+                    fin twice = 0
+                    println(::twice(4))
+                }
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun leadingDotsAtTheSamePositionInTwoFilesKeepTheirOwnTypes() {
+        // Every file numbers its lines from 1: `.(…)` in the library and `.High`
+        // in the program are both written at 3:20, and each means its own type.
+        val library = org.azora.lang.LibrarySource("shapes/marks.az", """
+            module shapes.marks
+            pack Mark { var size: Int = 0 }
+            func mark(): Mark { fin m: Mark = .(7)
+                return m }
+        """.trimIndent())
+        val program = """
+            import std.io
+            import shapes.marks
+            fin levelxxxxxxxxxxxxxxx: Level = .High
+            enum Level { Low High }
+            func main() {
+                println(mark().size)
+                println(levelxxxxxxxxxxxxxxx == Level.High)
+            }
+        """.trimIndent()
+        val result = Compiler(listOf(library)).compile(program, release = false)
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("7\ntrue", IrInterpreter().interpret(result.ir).trim())
+    }
+
+    @Test fun aStringBuilderTakesAnyNumberOfParts() {
+        assertEquals("100", run("""
+            import std.io
+            import std.string
+            func main() {
+                var text = StringBuilder()
+                var i = 0
+                while i < 50 {
+                    text.append("ab")
+                    i = i + 1
+                }
+                println(stringLength(text.build()))
+            }
+        """.trimIndent()))
+    }
+
+    @Test fun aSiblingModuleStoresACopyOfACopyPlace() {
+        // The store into a field copies the `fin` it reads: the binding is freed
+        // at the end of each iteration, and the field must not share it.
+        val library = org.azora.lang.LibrarySource("demo/aiming.az", """
+            module demo.aiming
+            import std.traits
+            pack Point derives Clone { var y: Double = 0.0 }
+            pack Hit derives Clone { var point: Point = .() }
+            pack Aim derives Clone { var hit: Hit = .() }
+            func cast(at: Double): Hit {
+                var hit: Hit = .()
+                hit.point = .(at * 2.0)
+                return hit
+            }
+            func aim(): Aim {
+                var best: Aim = .()
+                var index = 0
+                while index < 3 {
+                    fin hit = cast(index as Double + 1.0)
+                    best.hit = hit
+                    index = index + 1
+                }
+                return best
+            }
+        """.trimIndent())
+        val result = Compiler(listOf(library)).compile("import std.io\nimport demo.aiming\nfunc main() { println(aim().hit.point.y) }", release = false)
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertTrue("best.hit = __isolated(hit)" in result.ir.prettyPrint(), result.ir.prettyPrint())
+        assertEquals("6.0", IrInterpreter().interpret(result.ir).trim())
+    }
+
+    @Test fun aSiblingModulesMethodNamedLikeAStringIntrinsicIsItself() {
+        val library = org.azora.lang.LibrarySource("demo/region.az", """
+            module demo.region
+            pack Region { var size: Double = 1.0 }
+            impl Region {
+                func &.contains(x: Double, y: Double): Bool = x >= 0.0 && y >= 0.0 && x <= self.size && y <= self.size
+            }
+        """.trimIndent())
+        val result = Compiler(listOf(library)).compile(
+            "import std.io\nimport demo.region\nfunc main() { println(Region(2.0).contains(1.0, 1.5)) }",
+        )
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        val definitions = Regex("define [^@]*@(\\S*Region_contains)\\(").findAll(result.llvm).map { it.groupValues[1] }.toList()
+        assertEquals(1, definitions.size, "one definition, not the method and a string intrinsic: $definitions")
+    }
+
+    @Test fun aThreadLocalPackTakesAWholeValue() {
+        assertEquals("0.0\n6.0\n10.0", run("""
+            import std.io
+            import std.traits
+            pack Point derives Clone {
+                var x: Double = 0.0
+                var y: Double = 0.0
+            }
+            threadlocal var plane: Point = .()
+            func make(v: Double): Point = .(v, v * 2.0)
+            func main() {
+                println(plane.y)
+                fin p = make(3.0)
+                plane = p
+                println(plane.y)
+                plane = make(5.0)
+                println(plane.y)
+            }
+        """.trimIndent()))
+    }
+
     @Test fun implPackCannotTargetImportedStdlibPack() {
         val result = compile("""
             import std.io

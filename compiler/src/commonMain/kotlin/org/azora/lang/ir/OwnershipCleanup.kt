@@ -34,7 +34,7 @@ object OwnershipCleanup {
         when (item) {
             is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(context, returnsBorrow(item.function.name)).lower(
                 item.function.body, root = true, initialOwners = item.function.params.mapIndexedNotNull { i, (name, type) ->
-                    if ((type is IrType.Function || context.ownsParameter(item.function, i)) && i !in item.function.refParams)
+                    if ((type.isClosure || context.ownsParameter(item.function, i)) && i !in item.function.refParams)
                         IrExpr.Var(name, type) else null
                 },
             )))
@@ -313,7 +313,7 @@ object OwnershipCleanup {
                     is IrStmt.FinDecl -> if (stmt.ownsValue && !stmt.lazy && stmt.reactiveLifetime == null) IrExpr.Var(stmt.name, stmt.type) else null
                     is IrStmt.LetDecl -> if (stmt.ownsValue && !stmt.lazy && stmt.reactiveLifetime == null) IrExpr.Var(stmt.name, stmt.type) else null
                     else -> null
-                }
+                }?.takeUnless { (it.type as? IrType.Function)?.isForeign == true } // an address owns nothing
                 if (declaration != null) {
                     result += stmt
                     frame.owners += declaration
@@ -417,7 +417,7 @@ object OwnershipCleanup {
                     // itself a borrow, which may point into it.
                     i in callee.refParams -> if (i !in callee.exclusiveParams && !context.returnsBorrow(expr.name) &&
                         freshArgument(argument)) IrExpr.Call("__temporary", listOf(argument), argument.type) else argument
-                    parameter is IrType.Function -> copyCallablePlace(argument)
+                    parameter?.isClosure == true -> copyCallablePlace(argument)
                     // A 16-byte value (`Cent`, `UCent`, `Quad`) given to an erased
                     // parameter crosses in a cell of its own: the slot holds eight
                     // bytes. The cast says where the cell is made - here - and this
@@ -470,7 +470,7 @@ object OwnershipCleanup {
                     if (value.type is IrType.Named || value.type is IrType.Pointer || value.type is IrType.Nullable) IrExpr.Var(name, value.type) else null
                 } else emptyList()
                 val parameters = expr.params.take((expr.type as IrType.Function).params.size).mapNotNull { (name, type) ->
-                    if (type is IrType.Function) IrExpr.Var(name, type) else null
+                    if (type.isClosure) IrExpr.Var(name, type) else null
                 }
                 expr.copy(body = Body(context).lower(expr.body, root = true, initialOwners = captures + parameters))
             }
@@ -553,7 +553,7 @@ object OwnershipCleanup {
         }
 
         private fun copyCallablePlace(value: IrExpr): IrExpr =
-            if (value.type is IrType.Function && (value is IrExpr.Var || value is IrExpr.Member || value is IrExpr.Index))
+            if (value.type.isClosure && (value is IrExpr.Var || value is IrExpr.Member || value is IrExpr.Index))
                 IrExpr.Call("__isolated", listOf(value), value.type) else value
     }
 }

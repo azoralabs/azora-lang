@@ -86,6 +86,28 @@ class DisplaySpecTest {
         }
     }
 
+    /**
+     * A function value has no text. Printed or interpolated, the interpreter
+     * showed its Kotlin object, LLVM `<value>` or a raw address, and
+     * WebAssembly a table index - three outputs for one program.
+     */
+    @Test fun showingAFunctionValueIsAnError() {
+        val bodies = listOf(
+            "println(f)",
+            "println(\"f is ${'$'}f\")",
+            "println([f, f])",
+            "println((1, f))",
+        )
+        for (body in bodies) {
+            val result = compile("import std.io\nfunc main() {\n    var n = 1\n    n = n + 1\n    fin f = [n] { x: Int -> x + n }\n    $body\n}")
+            assertIs<CompilationResult.Failure>(result, "a function value must not be shown: $body")
+            assertTrue(
+                result.errors.any { "a function value - a function has no text; call it and show what it returns" in it },
+                "the error should name the fix, got: ${result.errors}",
+            )
+        }
+    }
+
     @Test fun aDisplayBoundedTypeParameterShowsItself() {
         assertEquals("<42> <hi> <true> [1, 2]", run("""
             import std.io

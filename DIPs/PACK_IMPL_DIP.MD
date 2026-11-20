@@ -12,6 +12,7 @@ DECORATORS* VISIBILITY (opaque)? pack NAME <...GENERICS> [where CLAUSE] {
 }
 
 impl NAME <...GENERICS>? { METHODS }                     // inherent methods
+impl pack NAME { METHODS }                               // same-file pack; declares an empty one when absent
 impl SPEC <ARGS>? for NAME { METHODS }                   // spec conformance
 impl DECO(args)? for NAME { … }                          // decorator application
 impl oper SYMBOL [by SPEC] for NAME { self&, rhs -> … }  // operator overload
@@ -57,6 +58,19 @@ var p = Point(3, 4)
 p.x = 10
 println("${p.x}, ${p.y}")
 ```
+
+Where the position already states the type - a declared binding, a parameter,
+a return - the type is not written again, as an enum member is `.Member`:
+`.(args)` constructs it and `::name(args)` calls one of its statics. Either may
+start a chain:
+
+```azora
+fin origin: Point = .(0, 0)                           // Point(0, 0)
+Row(modifier: ::fillMaxWidth().height(26.0)) { … }    // Modifier::fillMaxWidth()…
+```
+
+`::name(args)` means the enclosing scope's `name` (BASE_SYNTAX_DIP §8) when the
+expected type has no static of that name, or when nothing states a type.
 
 ### 1.1 Generic packs
 
@@ -202,6 +216,21 @@ not execute user code. Reference-specific behavior belongs in `func &.name()` /
 
 `impl pack Type { … }` may mutate `confine` fields of a pack declared in
 the same file.
+
+When the file declares no `Type`, `impl pack Type { … }` declares it: a pack
+with no fields, and its members, written once. Annotations on the impl belong to
+that pack, so a stateless type needs no empty `pack Type { }` beside its impl:
+
+```azora
+@Panel(title: "Scene", icon: "box", area: .Center, order: 0, closable: false)
+@Canvas
+impl pack ScenePanel {
+    react ctor (anchor: Anchor!).(studio: Studio&, app: App&): Entity { … }
+}
+```
+
+It never stands in for a type another module provides: naming one the file
+imports (or every unit sees) is still an error.
 
 ## 3. Specs (traits)
 

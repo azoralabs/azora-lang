@@ -281,7 +281,7 @@ private fun handleCheck(args: List<String>) {
 
 private fun handleCompile(args: List<String>) {
     if (args.size < 2) {
-        exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [-o <file>] <file.az>")
+        exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [--export=a,b] [-o <file>] <file.az>")
     }
 
     val target = args[0]
@@ -296,12 +296,16 @@ private fun handleCompile(args: List<String>) {
     val outPath = if (outIndex >= 0) args.getOrNull(outIndex + 1) ?: exitWith(ExitStatus.USAGE, "-o needs a file") else null
     val filePath = args.withIndex().drop(1)
         .firstOrNull { (i, arg) -> !arg.startsWith("-") && (outIndex < 0 || i != outIndex + 1) }?.value
-        ?: exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [-o <file>] <file.az>")
+        ?: exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [--export=a,b] [-o <file>] <file.az>")
     val file = File(filePath)
     if (!file.exists()) exitWith(ExitStatus.USAGE, "File not found: $filePath")
 
+    // `--export=a,b` builds a library: those functions keep their names for a
+    // foreign host that loads the result, and nothing needs a `main`.
+    val exports = args.filter { it.startsWith("--export=") }.flatMap { it.substringAfter('=').split(',') }
+        .map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     val unit = resolveCompilation(file)
-    val result = Compiler(unit.libraries).compile(unit.source, release = !debug, defines = parseDefines(args))
+    val result = Compiler(unit.libraries, exports = exports).compile(unit.source, release = !debug, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> {
             // In debug mode emit code from the un-optimized IR so backend output
@@ -317,7 +321,7 @@ private fun handleCompile(args: List<String>) {
             }
             val output = when (target) {
                 "wasm", "wat" -> if (debug) org.azora.lang.backend.WasmCodegen().generate(backendIr) else result.wasm
-                "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen().generate(backendIr) else result.llvm
+                "llvm", "ll" -> if (debug) org.azora.lang.backend.LlvmCodegen(library = exports.isNotEmpty()).generate(backendIr) else result.llvm
                 "ir" -> backendIr.prettyPrint(if (fileOnly) declaredNames(result.ast, unit.source) else emptySet())
                 "ast" -> result.ast.dumpTree()
                 else -> exitWith(ExitStatus.USAGE, "Unknown target: $target (use wasm, llvm, ir, or ast)")
@@ -615,7 +619,9 @@ private fun printUsage() {
                                         stderr (--experimental also reports uses of
                                         @Experimental declarations)
           compile <target> <file.az>    Output generated code (-o <file>; for wasm,
-                                        a .wasm file is the binary, with <name>.host.js)
+                                        a .wasm file is the binary, with <name>.host.js;
+                                        --export=a,b builds a library exporting those
+                                        functions under their own names)
           test <file.az | dir>          Run `test` blocks (file or directory)
           repl                          Interactive REPL
           version                       Show version

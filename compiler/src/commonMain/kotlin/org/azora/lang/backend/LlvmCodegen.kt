@@ -68,7 +68,16 @@ import org.azora.lang.ir.IrUnaryOp
  * - Unnamed temporaries are numbered consecutively (`%0`, `%1`, …) as LLVM
  *   requires; the terminator-aware emission guarantees no gaps.
  */
-class LlvmCodegen {
+class LlvmCodegen(
+    /**
+     * A shared library for a foreign host (`compile --export`): there is no
+     * `main` to run the global initializers, so the loader runs them, through
+     * `llvm.global_ctors`, before the host can call an export.
+     */
+    private val library: Boolean = false,
+    /** Export name → the IR function it names, when the two differ an alias carries the export name. */
+    private val exports: Map<String, String> = emptyMap(),
+) {
 
     private var out = StringBuilder()
     private var tmpCounter = 0
@@ -136,6 +145,14 @@ class LlvmCodegen {
      * the builtin's symbol a second time.
      */
     private val programFunctions = mutableSetOf<String>()
+    /**
+     * Every function this module defines with a body - a sibling module's
+     * included, whose functions are library ones. A call to one of these is a
+     * call to it, never a string intrinsic that happens to share its last
+     * segment (`Field.contains` is not `contains`): lowering it as the
+     * intrinsic defined the same symbol twice.
+     */
+    private val emittedFunctions = mutableSetOf<String>()
 
     /** True when a call to [name] is the compiler's builtin [local]. */
     private fun callDenotesBuiltin(name: String, local: String): Boolean =
@@ -351,6 +368,7 @@ class LlvmCodegen {
         funcReturnTypes.clear()
         nativeExterns.clear()
         programFunctions.clear()
+        emittedFunctions.clear()
         failableFunctions.clear()
         errorHandlers.clear()
         usesErrorSlot = false
@@ -393,6 +411,9 @@ class LlvmCodegen {
                 is IrTopLevel.Func -> {
                     funcParamTypes[item.function.name] = item.function.params.map { it.second }
                     if (!item.function.isLibrary) programFunctions += item.function.name
+                    if (!(item.function.isLibrary && item.function.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS)) {
+                        emittedFunctions += item.function.name
+                    }
                     if (!item.function.isTask && item.function.name !in dispatched && item.function.name != "main") {
                         item.function.exclusiveParams
                             .filter { it < item.function.params.size && passesBySlot(item.function.params[it].second) }
@@ -492,6 +513,25 @@ class LlvmCodegen {
             out.clear()
             emitGlobalInitializerFunction("__azora_init_threadlocals", threadLocalInitializers)
             body.append(out)
+            body.appendLine()
+        }
+        // An export declared in a sibling module keeps its qualified name inside
+        // the module and is given the plain one the host asks for.
+        for ((name, function) in exports) {
+            if (name == function) continue
+            val target = program.items.filterIsInstance<IrTopLevel.Func>().firstOrNull { it.function.name == function }?.function ?: continue
+            val signature = "${abiReturnType(target.returnType)} (${target.params.joinToString(", ") { mapType(it.second) }})"
+            body.appendLine("@$name = alias $signature, $signature* @$function")
+        }
+        val hasMain = program.items.any { it is IrTopLevel.Func && it.function.name == "main" }
+        if (library && !hasMain && dynamicGlobalInitializers.isNotEmpty()) {
+            body.appendLine("define internal void @__azora_library_init() {")
+            body.appendLine("entry:")
+            if (normalGlobalInitializers.isNotEmpty()) body.appendLine("  call void @__azora_init_globals()")
+            if (threadLocalInitializers.isNotEmpty()) body.appendLine("  call void @__azora_init_threadlocals()")
+            body.appendLine("  ret void")
+            body.appendLine("}")
+            body.appendLine("@llvm.global_ctors = appending global [1 x { i32, void ()*, i8* }] [{ i32, void ()*, i8* } { i32 65535, void ()* @__azora_library_init, i8* null }]")
             body.appendLine()
         }
 
@@ -2326,7 +2366,7 @@ end:
     /** [value], loaded from a binding, as a copy the closure environment can own. */
     private fun copiedCapture(value: String, capture: Capture): String {
         val type = capture.type
-        val copies = type is IrType.Function || type is IrType.Array || (type is IrType.Named && type.name in structDefs)
+        val copies = type.isClosure || type is IrType.Array || (type is IrType.Named && type.name in structDefs)
         if (!copies || !capture.llvmType.endsWith("*")) return value
         val raw = if (capture.llvmType == mapType(type)) value else nextTmp().also {
             emit("  $it = bitcast ${capture.llvmType} $value to ${mapType(type)}")
@@ -2348,7 +2388,7 @@ end:
                 val capture = captures[i]
                 if (capture.byRef) continue
                 val inner = (capture.type as? IrType.Nullable)?.inner ?: capture.type
-                val owned = inner is IrType.Function || inner is IrType.Array || inner is IrType.Pointer ||
+                val owned = inner.isClosure || inner is IrType.Array || inner is IrType.Pointer ||
                     (inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots))
                 if (!owned || !capture.llvmType.endsWith("*")) continue
                 body.appendLine("  %field.$i = getelementptr $contextType, $contextType* %context, i32 0, i32 $i")
@@ -2546,7 +2586,7 @@ entry:
      * (OWNERSHIP_BORROWING_DIP: both values "own independent state").
      */
     private fun isolatedCopy(value: String, type: IrType): String {
-        if (type is IrType.Function) return isolatedClosureCopy(value)
+        if (type.isClosure) return isolatedClosureCopy(value)
         if (type is IrType.Array) return isolatedArrayCopy(value, type.element)
         val named = type as? IrType.Named ?: return value
         if (named.name !in structDefs) return value
@@ -2567,7 +2607,7 @@ entry:
         registerNamedDrop(raw, named)
         for ((i, field) in structDefs.getValue(named.name).fields.withIndex()) {
             val concrete = concreteFieldType(structDefs.getValue(named.name), i, named)
-            val duplicated = concrete is IrType.Array || concrete is IrType.Function ||
+            val duplicated = concrete is IrType.Array || concrete.isClosure ||
                 (concrete is IrType.Named && concrete.name in structDefs)
             if (field.ownsValue && duplicated && mapType(field.type).endsWith("*")) {
                 val address = nextTmp()
@@ -2713,7 +2753,7 @@ entry:
                 val inner = (field as? IrType.Nullable)?.inner ?: field
                 // Pointer fields managed by a custom dtor include Shared's
                 // common control block and container capacities, not per-pack owners.
-                inner is IrType.Array || inner is IrType.Function || (inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots)) ||
+                inner is IrType.Array || inner.isClosure || (inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots)) ||
                     (inner is IrType.Pointer && dtor !in funcParamTypes && !type.name.contains("Weak"))
             }
             val body = StringBuilder()
@@ -2742,7 +2782,7 @@ entry:
 
     private fun registerPointerDrop(raw: String, element: IrType, count: String) {
         val inner = (element as? IrType.Nullable)?.inner ?: element
-        if (inner !is IrType.Function && inner !is IrType.Array && (inner !is IrType.Named || (inner.name !in structDefs && inner.name !in ownedSlots && inner.name !in specDispatch))) {
+        if (!inner.isClosure && inner !is IrType.Array && (inner !is IrType.Named || (inner.name !in structDefs && inner.name !in ownedSlots && inner.name !in specDispatch))) {
             emit("  call void @__azora_set_drop(i8* $raw, void (i8*, i64)* null, i64 $count)")
             return
         }
@@ -2779,7 +2819,7 @@ end:
     /** Arrays retain their active length; removed tail slots must never drop twice. */
     private fun registerArrayDrop(raw: String, element: IrType) {
         val inner = (element as? IrType.Nullable)?.inner ?: element
-        if (inner !is IrType.Array && inner !is IrType.Function && !(inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots))) return
+        if (inner !is IrType.Array && !inner.isClosure && !(inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots))) return
         val name = ownershipDrops.getOrPut("owned-array") {
             val symbol = "__azora_drop_array_${ownershipDrops.size}"
             deferredFunctions += """
@@ -5801,10 +5841,40 @@ end:
         }
     }
 
+    /**
+     * A call through a `foreign (…) -> R` address: the C ABI, no environment.
+     * Only what a C function can take crosses: integers, floating point, Bool,
+     * String (a borrowed C string) and raw pointers.
+     */
+    private fun emitForeignCall(expr: IrExpr.Call, type: IrType.Function): String {
+        fun foreign(t: IrType): Boolean = IrType.isInteger(t) || t in IrType.floatTypes || t == IrType.Bool ||
+            t == IrType.String || t is IrType.Pointer || (t is IrType.Function && t.isForeign)
+        type.params.firstOrNull { !foreign(it) }?.let { error("a foreign function cannot take $it; pass integers, floating point, Bool, String or pointers") }
+        if (type.ret != IrType.Unit && !foreign(type.ret)) error("a foreign function cannot return ${type.ret}")
+        val address = emitExpr(expr.receiver!!)
+        val returns = if (type.ret == IrType.Unit) "void" else mapType(type.ret)
+        val signature = "$returns (${type.params.joinToString(", ") { mapType(it) }})"
+        val function = nextTmp()
+        emit("  $function = bitcast i8* $address to $signature*")
+        val args = expr.args.mapIndexed { index, argument ->
+            val expected = type.params[index]
+            "${mapType(expected)} ${coerceNumeric(emitExpr(argument), argument.type, expected)}"
+        }.joinToString(", ")
+        return if (returns == "void") {
+            emit("  call void $function($args)")
+            "void"
+        } else {
+            val result = nextTmp()
+            emit("  $result = call $returns $function($args)")
+            result
+        }
+    }
+
     private fun emitCallValue(expr: IrExpr.Call): String {
         if (expr.receiver != null) {
             val functionType = expr.receiver.type as? IrType.Function
                 ?: error("indirect call receiver is not a callable type")
+            if (functionType.isForeign) return emitForeignCall(expr, functionType)
             val closure = emitExpr(expr.receiver)
             val fnField = nextTmp()
             val envField = nextTmp()
@@ -5839,7 +5909,7 @@ end:
         // Compiler string/array intrinsics are defined as runtime helpers.
         // Keyed by the bare name, remembering the mangled symbol the call used,
         // so the definition is emitted under the name the caller asks for.
-        if (expr.name !in programFunctions) stringIntrinsicOf(expr.name)?.let { neededIntrinsics[it] = expr.name }
+        if (expr.name !in emittedFunctions) stringIntrinsicOf(expr.name)?.let { neededIntrinsics[it] = expr.name }
         val atomic = listOf("_atomicLoad", "_atomicStore", "_atomicAdd", "_atomicCas")
             .firstOrNull { callDenotesBuiltin(expr.name, it) }
         if (atomic != null) {
@@ -5958,7 +6028,7 @@ end:
             val value = expr.args.single()
             val type = value.type
             val inner = (type as? IrType.Nullable)?.inner ?: type
-            check(inner is IrType.Pointer || inner is IrType.Array || inner is IrType.Function || (inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots))) {
+            check(inner is IrType.Pointer || inner is IrType.Array || inner.isClosure || (inner is IrType.Named && (inner.name in structDefs || inner.name in specDispatch || inner.name in ownedSlots))) {
                 "purge of $type is not supported by the LLVM target"
             }
             val emitted = emitOwnershipTake(value)
@@ -5999,7 +6069,7 @@ end:
         val writeBacks = mutableListOf<() -> Unit>()
         val args = expr.args.mapIndexed { i, arg ->
             val paramType = declared?.getOrNull(i) ?: arg.type
-            if (native != null && paramType is IrType.Function) {
+            if (native != null && paramType is IrType.Function && paramType.isClosure) {
                 return@mapIndexed "${nativeType(paramType)} ${emitNativeCallback(arg, paramType)}"
             }
             if (i in bySlot) {
@@ -7108,39 +7178,38 @@ allocate:
         }
 
         if (usesArrayGrow) {
+            // The buffer grows in place by `realloc`, to a power-of-two size, so
+            // appending n elements copies O(n) bytes in all rather than O(n²):
+            // while the next element still fits the rounded block, `realloc`
+            // keeps the block where it is. The 16-byte header (drop function
+            // and count) moves with it.
             sb.appendLine("; runtime: append one element to a packed array buffer")
+            sb.appendLine("declare i8* @realloc(i8*, i64)")
+            sb.appendLine("declare i64 @llvm.ctlz.i64(i64, i1)")
             sb.appendLine("define i8* @__azora_array_grow(i8* %old, i64 %elemSize) {")
             sb.appendLine("entry:")
             sb.appendLine("  %lenPtr = bitcast i8* %old to i64*")
             sb.appendLine("  %len = load i64, i64* %lenPtr")
             sb.appendLine("  %newLen = add i64 %len, 1")
-            sb.appendLine("  %oldBytes = mul i64 %len, %elemSize")
             sb.appendLine("  %newBytes = mul i64 %newLen, %elemSize")
-            sb.appendLine("  %newSize = add i64 %newBytes, 8")
-            sb.appendLine("  %newRaw = call i8* @__azora_alloc(i64 %newSize)")
+            sb.appendLine("  %needed = add i64 %newBytes, 24")
+            sb.appendLine("  %minus = sub i64 %needed, 1")
+            sb.appendLine("  %zeros = call i64 @llvm.ctlz.i64(i64 %minus, i1 false)")
+            sb.appendLine("  %shift = sub i64 64, %zeros")
+            sb.appendLine("  %rounded = shl i64 1, %shift")
+            sb.appendLine("  %small = icmp ult i64 %rounded, 64")
+            sb.appendLine("  %capacity = select i1 %small, i64 64, i64 %rounded")
+            sb.appendLine("  %base = getelementptr i8, i8* %old, i64 -16")
+            sb.appendLine("  %newBase = call i8* @realloc(i8* %base, i64 %capacity)")
+            sb.appendLine("  %failed = icmp eq i8* %newBase, null")
+            sb.appendLine("  br i1 %failed, label %oom, label %ok")
+            sb.appendLine("oom:")
+            sb.appendLine("  call void @__azora_abort()")
+            sb.appendLine("  unreachable")
+            sb.appendLine("ok:")
+            sb.appendLine("  %newRaw = getelementptr i8, i8* %newBase, i64 16")
             sb.appendLine("  %newLenPtr = bitcast i8* %newRaw to i64*")
             sb.appendLine("  store i64 %newLen, i64* %newLenPtr")
-            sb.appendLine("  %oldData = getelementptr i8, i8* %old, i64 8")
-            sb.appendLine("  %newData = getelementptr i8, i8* %newRaw, i64 8")
-            sb.appendLine("  br label %copy.cond")
-            sb.appendLine("copy.cond:")
-            sb.appendLine("  %i = phi i64 [ 0, %entry ], [ %next, %copy.body ]")
-            sb.appendLine("  %done = icmp uge i64 %i, %oldBytes")
-            sb.appendLine("  br i1 %done, label %copy.end, label %copy.body")
-            sb.appendLine("copy.body:")
-            sb.appendLine("  %src = getelementptr i8, i8* %oldData, i64 %i")
-            sb.appendLine("  %byte = load i8, i8* %src")
-            sb.appendLine("  %dst = getelementptr i8, i8* %newData, i64 %i")
-            sb.appendLine("  store i8 %byte, i8* %dst")
-            sb.appendLine("  %next = add i64 %i, 1")
-            sb.appendLine("  br label %copy.cond")
-            sb.appendLine("copy.end:")
-            sb.appendLine("  %oldHeader = getelementptr i8, i8* %old, i64 -16")
-            sb.appendLine("  %oldDropSlot = bitcast i8* %oldHeader to void (i8*, i64)**")
-            sb.appendLine("  %drop = load void (i8*, i64)*, void (i8*, i64)** %oldDropSlot")
-            sb.appendLine("  call void @__azora_set_drop(i8* %newRaw, void (i8*, i64)* %drop, i64 1)")
-            sb.appendLine("  store void (i8*, i64)* null, void (i8*, i64)** %oldDropSlot")
-            sb.appendLine("  call void @__azora_free(i8* %old)")
             sb.appendLine("  ret i8* %newRaw")
             sb.appendLine("}")
             sb.appendLine()
@@ -7444,7 +7513,8 @@ allocate:
         IrType.Any -> "i8*"
         is IrType.Array -> "i8*"
         is IrType.Map, is IrType.Set -> "i8*"
-        is IrType.Function -> {
+        // A foreign function is the address `dlsym` answered, nothing more.
+        is IrType.Function -> if (type.isForeign) "i8*" else {
             // Declaring the type here, rather than only where a lambda is
             // emitted, is what keeps a *struct field* of function type valid:
             // the field spells `%azora.closure*` without any closure ever being

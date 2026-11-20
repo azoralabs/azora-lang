@@ -346,6 +346,17 @@ class SymbolTable {
 
     fun lookupFunction(name: String): FunctionSymbol? = functions[name]
 
+    /**
+     * The static `name` of type [owner] - `Owner::name` - by the function name a
+     * call uses, or null. A type declared in a scope is keyed by its qualified
+     * name, which [owner] may or may not carry.
+     */
+    fun inferredStatic(owner: String, name: String): String? {
+        val direct = "${owner}__$name"
+        if (direct in functions) return direct
+        return functions.keys.firstOrNull { it.endsWith("__${owner.substringAfterLast("__")}__$name") }
+    }
+
     fun markFunctionReactive(name: String) {
         val canonical = functions[name]?.name ?: name
         functions.entries.forEach { entry ->
@@ -647,14 +658,17 @@ class SymbolTable {
      * reads what the resolver decided - so the two cannot disagree about which
      * type a leading dot meant.
      */
-    private val inferredMembers = mutableMapOf<Pair<Int, Int>, String>()
+    // The name is part of the key: every module of a program numbers its lines
+    // from 1, so a position alone names a dot in each of them - `.Digit5` in
+    // one file and `.(key)` in another may both be written at 262:50.
+    private val inferredMembers = mutableMapOf<Triple<Int, Int, String>, String>()
 
-    fun defineInferredMember(line: Int, column: Int, typeName: String) {
-        inferredMembers[line to column] = typeName
+    fun defineInferredMember(line: Int, column: Int, name: String, typeName: String) {
+        inferredMembers[Triple(line, column, name)] = typeName
     }
 
-    fun lookupInferredMember(line: Int, column: Int): String? =
-        inferredMembers[line to column]
+    fun lookupInferredMember(line: Int, column: Int, name: String): String? =
+        inferredMembers[Triple(line, column, name)]
 
     /**
      * The whole type a `.(…)` builds, arguments included - `Array<Int>` where the
@@ -706,7 +720,7 @@ class SymbolTable {
     fun inferredConstructionCall(expr: org.azora.lang.frontend.Expr.InferredMember): org.azora.lang.frontend.Expr.Call? {
         if (expr.name.isNotEmpty()) return null
         val args = expr.ctorArgs ?: return null
-        val owner = lookupInferredMember(expr.line, expr.column) ?: return null
+        val owner = lookupInferredMember(expr.line, expr.column, expr.name) ?: return null
         val typeArgs = (lookupInferredConstruction(expr.line, expr.column) as? org.azora.lang.frontend.TypeRef.Named)
             ?.args.orEmpty()
         return org.azora.lang.frontend.Expr.Call(owner, args, expr.line, expr.column, owner.length, typeArgs)

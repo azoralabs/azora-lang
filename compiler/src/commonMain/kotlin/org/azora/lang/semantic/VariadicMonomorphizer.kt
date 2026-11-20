@@ -1457,12 +1457,11 @@ private class MonoContext(
             ret = rewriteType(ref.ret),
             receivers = spreadPacks(ref.receivers).map(::rewriteType),
         )
-        // `(A, B)` in type position was grammar supplied by a `.Type` macro, and
-        // `.Type` is gone. The type itself is not: write `Tuple<A, B>`.
-        is TypeRef.Tuple -> error(
-            "parenthesized tuple types were removed with 'macro .Type'; " +
-                "write 'Tuple<${ref.elements.joinToString(", ") { it.displayName() }}>'",
-        )
+        // `(K, V)` is a tuple type (an associative constructor's `...entries:
+        // (K, V)`, `HashSet<(Int, Int)>`): its elements are rewritten like any
+        // other argument. This used to refuse it, naming a `Tuple<…>` that does
+        // not exist, whenever a declaration holding one was rewritten.
+        is TypeRef.Tuple -> ref.copy(elements = ref.elements.map(::rewriteType))
         is TypeRef.Nullable -> ref.copy(inner = rewriteType(ref.inner))
         is TypeRef.Failable -> ref.copy(ok = rewriteType(ref.ok))
         is TypeRef.Pointer -> ref.copy(inner = rewriteType(ref.inner))

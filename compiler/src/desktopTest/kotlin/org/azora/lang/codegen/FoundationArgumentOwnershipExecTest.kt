@@ -46,6 +46,42 @@ class FoundationArgumentOwnershipExecTest {
         }
     """, "3.0 2.0")
 
+    /**
+     * `where T: Copy` lets generic code use a `T` twice (OWNERSHIP_BORROWING_DIP
+     * §20). The erased slot may point at a pack, so each implicit copy is the
+     * concrete type's clone through the descriptor: `Pair<T>(x, x)` with a
+     * `Pt` crashed with a double free when the pair was dropped.
+     */
+    @Test fun aCopyBoundTypeParameterDuplicatesThroughItsClone() {
+        val program = """
+            import std.io
+            import std.traits
+            pack Pt { var x: Int }
+            pack Pair<T> {
+                var a: T
+                var b: T
+            }
+            func<T> twice(x: T): Pair<T> where T: Copy { return Pair<T>(x, x) }
+            func<T> keepBoth(x: T): Pair<T> where T: Copy {
+                fin y = x
+                return Pair<T>(x, y)
+            }
+            func main() {
+                var i = 0
+                var total = 0
+                while i < 100 {
+                    fin q = twice(Pt(i))
+                    fin r = keepBoth(Pt(1))
+                    total = total + q.a.x + q.b.x + r.a.x + r.b.x
+                    i = i + 1
+                }
+                println(total)
+            }
+        """
+        sanitized(program, "10100")
+        if (WasmExec.available) assertEquals("10100", WasmExec.run(program.trimIndent()).trimEnd(), "WebAssembly")
+    }
+
     @Test fun genericForwardingKeepsTheCopyAtTheConcreteCallSite() = sanitized("""
         import std.io
         import std.traits

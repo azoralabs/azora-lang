@@ -5114,3 +5114,317 @@ AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offlin
   of five crossings: 16 pages, as at start.
 - The Engine, scratch copy (`azora build`): 8 of 31 members, as before; no
   literal-width diagnostic among the remaining ones.
+
+## 2026-11-19 — 0.1 status re-measured; the release plan; value patterns; narrowing
+
+The owner asked for the 0.1 roadmap brought up to date, a plan for the rest of
+0.1, and work to continue on it.
+
+### Status, measured
+
+- The suite: 3,146 compiler tests and 94 AZLS tests, none failing (the
+  2026-11-18 run; Gradle found both test tasks up to date with the sources).
+  `VERSION_0_1_ROADMAP.MD`'s table said 1,519 tests with 75 failing; §9.1 is
+  closed with the evidence, and the exit gate "zero failing tests" is marked
+  met, held only while it holds on every platform (CI, §9.2).
+- Every entry that looked stale was checked against the code and with probe
+  programs on the interpreter, LLVM (`lli`) and WebAssembly (node), and marked
+  *(re-checked 2026-11-19)*. Stale and now corrected: WebAssembly's `ForEach`
+  runs; a variant or method WebAssembly cannot lower is a target error, not
+  `(i32.const 0)` or the receiver; LLVM runs closures, `defer`, tuples and
+  pointers; `Mutex`/`Atomic` exist (interpreter and LLVM; WebAssembly refuses
+  them); one channel is left (std's `Channel<T>`, whose `receive` still
+  asserts); `azora new` exists; AZLS has no `../Internal/Std` and no failing
+  test; `AZLS_DIP.MD` is 1,899 lines. Still true: `launch { }` does not parse,
+  `thread.az` only sleeps, `build-tool` reads TOML.
+- New, found by the probes: the interpreter computes `Float` at `Double`
+  precision (an untyped real literal is a `Float`); LLVM prints a real with
+  `%g` in `println(x)` and `%.17g` in `"$x"`; WebAssembly's real text drops a
+  small exponent (`0.1 / 1e10` prints `0.1`) and traps on an infinity; LLVM
+  prints `<value>` for a type its printer does not know; `as?` from `Any` to an
+  enum is `null` on the interpreter and does not assemble on LLVM or
+  WebAssembly (`__dynCast` undefined); `Int? + Int` type-checks.
+- §1.2's "generics: erasure or monomorphisation" was already decided (§12.2,
+  A6). The three §1.1 items blamed on it are its consequences, and the first is
+  OWNERSHIP_BORROWING_DIP §20's move rule, which the checker never applied to a
+  type parameter.
+
+### The release plan
+
+§13 of the roadmap is now the plan: M1 no known miscompiles (eight ordered
+items), M2 backend parity (a conformance suite, every degradation a target
+error), M3 memory and ownership, M4 concurrency scope, M5 packages, M6 tooling
+and documentation, M7 release mechanics (CI, the Engine 31 of 31, a release
+candidate with the stable surface frozen), each with an exit check, and the
+decisions it needs (R-1 to R-9). The owner decided R-8 and R-9 the same day.
+
+### What changed
+
+- **A plain call in a `when` expression is a value**, as it always was in a
+  statement `when` (`SlotPatterns`): `Long(53) ->` and `UByte(255) ->` compare
+  the converted literal. The parser had decided that any call with arguments
+  destructures a payload. `Slot.Variant(x)` and `.Variant(x)` still
+  destructure, and stay refused in an expression.
+- **A function value has no text**: printing or interpolating one is refused
+  (`cannot print a function value - a function has no text; call it and show
+  what it returns`). It showed a Kotlin object on the interpreter, `<value>` or
+  an address on LLVM, a table index on WebAssembly.
+- **Optional narrowing (R-9, TYPE_DIP §2.1).** A `fin` or `let` local, or a
+  parameter that is not an exclusive borrow, of type `T?` reads as `T` where a
+  test proved it non-null: `if`/`else` branches, `&&`/`||` right operands, `if`
+  expressions (and so guard `when`s), `while` bodies, and the rest of a block
+  after an `if` one of whose branches cannot fall through. Tests are `x != null`
+  / `x == null` under `&&`, `||`, `!`, parentheses. `var` and `val` (rebindable
+  names) never narrow; a lambda body starts unnarrowed. One rule,
+  `semantic/OptionalNarrowing.kt`, applied by `TypeResolver` and `IrGenerator`
+  at the same places; a narrowed read lowers as `.require()` does, without the
+  guard; `take x` on a narrowed `x` empties the optional as `take
+  x.require()` does; `x.require()`/`x.take()` still ask the optional itself
+  (`KnownOptionalExecTest` keeps passing). A write through a narrowed copy (an
+  `Int` lent as `a!`) is refused, since it would be lost; through a narrowed
+  pack it reaches the optional's value. No optional narrowed before: an `Int?`
+  only seemed to because compile-time evaluation had folded its producer into
+  a literal.
+- **Measured, then reverted:** enforcing §20 on type parameters stops 179
+  std sites compiling (190 reports; some are one site seen from several
+  importers). See R-8 below.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler **3,151 tests, 0 failures, 0 skipped**; AZLS **94, 0 failures**.
+  New: `WhenValuePatternExecTest` (interpreter debug and release, LLVM
+  optimized and not, WebAssembly), `DisplaySpecTest.showingAFunctionValueIsAnError`,
+  `OptionalNarrowingExecTest` (every backend: enum, pack, `String`, `Int`,
+  early return, `||`, `else`, `!`, `if` expression, `while`, shadowing,
+  `take`, a parameter, a write through a narrowed pack; refused: `var`, `val`,
+  a capture, a fall-through `if`, a write through a narrowed `Int`).
+- `azora test std`: 16 passed, 0 failed.
+
+### R-8: started, then blocked on R-10
+
+The owner chose the std policy for §20 (R-8): `take` where a value is
+consumed, a `Clone` bound and `.clone()` where a new collection is made from a
+borrowed one, `where T: Copy` only where a copy must be implicit.
+
+- Done and kept: `where T: Copy` gives the `Clone` witness
+  (`Witnesses.COPY`), and `IrGenerator.withImplicitCopy` clones an erased `T`
+  that has it, so `Pair<T>(x, x)` under `where T: Copy` holds two values
+  (`FoundationArgumentOwnershipExecTest.aCopyBoundTypeParameterDuplicatesThroughItsClone`:
+  interpreter, LLVM under AddressSanitizer, WebAssembly). List and set
+  literals and variadic constructors move their elements (`take
+  elements[i]`); `Set`'s `has`/`contains` borrow (`T&`), as `Map`'s lookups
+  already did (both experimental, so the stable listing is unchanged).
+- Reverted again: the check itself. `Map.keys()`, `values()`, `entries()`,
+  `putAll`, `getOrPut` and the sorted views copy out of a borrowed map, so
+  they need `where K: Clone` / `V: Clone` - and they are spec members, which
+  take no `where` clause, while an impl member may not demand more than its
+  spec member. That is decision R-10 (roadmap §13).
+- Found: the check cannot see a `T` reached through `self.field[i]`
+  (`_entrySnapshot` builds entries that alias the map's keys and values,
+  unflagged), and a `return` of a place the function does not own is not
+  checked at all (`getOrPut` hands back `self.values[index]`). The 179 sites
+  are a lower bound.
+- WebAssembly cannot clone a `String` through the witness yet (a target
+  error), so `where T: Copy` code given a `String` does not build there.
+
+### Evidence (final)
+
+- Compiler **3,152 tests, 0 failures, 0 skipped**; AZLS **94, 0 failures**;
+  `azora test std` 16 passed.
+
+## 2026-11-20 — R-10: a spec member may bound its spec's parameters; R-8's real size
+
+The owner chose R-10: a spec member may carry a `where` clause.
+
+### What changed
+
+- **The parser reads a `where` clause on a spec member** (after its return
+  type, before a provided body), joined with inline bounds on the member's own
+  parameters: `spec Bag<E> { func &.firstArea(): Int where E: Shape }`.
+- **An implementation may restate it and rely on it.** `boundMismatch`
+  (`SymbolCollector`) counts the spec member's clause about the spec parameter
+  an owner parameter is passed as, so `func &.firstArea(): Int where T: Shape`
+  in `impl Bag<T> for Pile<T>` is accepted; demanding more is still refused,
+  and the message now names bounding the spec member as a fix.
+- **A call through a spec-typed value is decided for the receiver**
+  (`checkSpecOwnerBound`, the spec counterpart of `checkOwnerBound`):
+  `b.firstArea()` with `b: Bag<NoShape>&` is refused (`'E is Shape': NoShape
+  does not implement Shape`), and generic code holding a `Bag<U>` must declare
+  `U: Shape`.
+- GENERICS_DIP §5.3 states the rule.
+
+### R-8, re-measured with R-10
+
+Re-applying §20's check shows R-8 is a std ownership redesign rather than a
+sweep. Beyond the 179 hand-offs, about 90 accessors return a place they do not
+own (`Map.get`, `getOrDefault`, `getOrPut`, list indexing, `first()`) - each
+aliases a `T` as `Pair<T>(x, x)` did - and reads through `self.field[i]` are
+not seen by the check (`_entrySnapshot` builds entries that alias the map's
+keys and values). The accessors need decision R-11 (a borrow of the stored
+value, or a clone under `Clone`). The check is reverted again; std is
+unchanged from 2026-11-19.
+
+Probing R-11: a borrowed accessor (`func &.at(i: Int): T&|self| =
+self.items[i].&`) runs on the interpreter and LLVM. Found: on LLVM a generic
+pack holding an array of a pack narrower than a slot (`Store<Pt>`, `Array<T>`
+field) crashes under `lli` when read by value or through a borrowed optional
+(`T&|self|?`); WebAssembly refuses the same program with GENERICS_DIP §21.2's
+diagnostic (021.3). Recorded in roadmap §1.1.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler **3,153 tests, 0 failures, 0 skipped**; AZLS **94, 0 failures**.
+  New: `BoundPlacementTest.aSpecMemberMayBoundItsSpecsParameters` (a restated
+  bound relied on; a concrete receiver, a spec-typed receiver and generic code
+  refused). `anImplementationMayNotBoundItsTypesParameterBeyondTheSpec` expects
+  the new message.
+
+## 2026-11-20 (continued) — R-11: container accessors return borrows
+
+The owner chose R-11: an accessor of a generic container returns a borrow of
+the value it stores.
+
+### What changed
+
+- **Accessors borrow** (std): `Map.get` (`V&|self|?`), map `[]` (`V&|self|`),
+  `SortedMap`'s `firstKey`, `lastKey`, `lowerKey`, `floorKey`, `ceilingKey`,
+  `higherKey` (`K&|self|?`), `List` and `Set` `get` and `[]`, `Indexed.get`,
+  `Deque.peekFront`/`peekBack`, `Slice` `[]` (`T&|self|`) - specs and every
+  implementation. A borrowed `Int` or `String` reads as one in arithmetic,
+  calls, bindings, `+=` and `??`, on every backend.
+- **A borrowed optional result is a borrow** (`IrGenerator.borrowedRef`): a
+  declared `V&|self|?` (as `T&` and `T& ?! E` already were) is not owned by
+  the binding that receives it, for calls, spec method calls and
+  `OwnershipCleanup`'s fresh-result analysis.
+- **Fixed on the way, found by the first probe:** `HashMap<String, Pt>.get`
+  crashed on LLVM. `get` returned the map's own `Pt` as a value the caller's
+  binding owned, and the binding freed it (`__azora_free` read a drop function
+  from a pointer into the map's storage). Both changes above are needed.
+
+### Not done, and why
+
+`getOrDefault`, `getOrPut` and `Guard.get` copy a stored value, so they need
+`where V: Clone` (or `K: Clone`) on the member. Tried and restored: a member's
+bound on its type's parameter gets no witness descriptor - a pack carries
+descriptors only for its own declaration's bounds - so the clone panics `no
+Clone witness` for a `K` and is refused on WebAssembly for a `V`. The
+descriptor has to be passed at the member's call site from the receiver's
+type (and through spec dispatch), as a function's own bounds are. That is the
+next step of R-8, with the `Clone` copy-outs (`keys()`, `values()`,
+`entries()`, `putAll`) after it. `getOrPut` still both stores and returns its
+value until then.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler **3,154 tests, 0 failures, 0 skipped**; AZLS **94, 0 failures**;
+  `azora test std` 16 passed. New: `ContainerBorrowExecTest` (every backend,
+  and LLVM under AddressSanitizer: `HashMap`/`LinkedHashMap`/`TreeMap` `get`
+  of a pack, a borrowed `Int` in arithmetic and calls, `??`, `ArrayList`
+  `get`/`[]` of a pack, map `[]`, `firstKey`, `floorKey`, `LinkedHashSet`
+  `get`/`[]`, `Deque` peeks).
+
+## 2026-11-20 (continued) — a member's bound on its type's parameter is described at the call site
+
+The owner asked for the call-site witness descriptors R-8's `Clone`
+copy-outs need.
+
+### What changed
+
+- **A member's bound on its type's parameter takes its descriptor from the
+  call** (`IrGenerator.initMemberWitnesses`, `memberDescriptorArgs`,
+  `specDescriptorArgs`). A pack carries descriptor fields only for its own
+  declaration's bounds; a member asking more of a parameter the pack does not
+  describe (`HashMap`'s `V`) now takes one hidden `Int` per such bound after
+  its written parameters, read at each call from the receiver's declared type
+  (generic code passes its own descriptors) or its resolved one. A bound on a
+  parameter the pack does describe (`K: Hash`) keeps the pack's field, and the
+  call records the extra need for the concrete type, so the dispatch has its
+  operation. A member that implements a spec member with bounds on the spec's
+  parameters (R-10) takes exactly the descriptors a call through the spec
+  passes, in the spec's order, whether or not it restates them; the spec
+  tables' signatures carry them, so the interpreter, LLVM and WebAssembly
+  dispatchers forward them unchanged.
+- **std:** `getOrDefault` (`where V: Clone`: a clone of the stored value or the
+  default moved in), `getOrPut` (`where K: Clone`: stores, then returns a
+  borrow of what it stored - it used to store and return the same value) and
+  `Guard.get` (`where T: Clone`: a clone under the lock).
+- **WebAssembly copies a `String` and a scalar through a clone**: a string is
+  one block (its length, then its bytes); a number or `Bool` or `Char` is its
+  own copy.
+- **Found and fixed:** a generic function bounded `V: Clone` taking a
+  `HashMap<K, V>` failed with `parenthesized tuple types were removed with
+  'macro .Type'; write 'Tuple<K, V>'` - the variadic monomorphizer refused
+  the maps' `(K, V)` constructor type (a valid tuple type) and named a type
+  that does not exist; it rewrites the elements now.
+- **Found, recorded (roadmap §1.1, the closure item):** on WebAssembly a
+  generic member calling a `() -> T` closure given one with a pack result
+  traps (`function signature mismatch`) - broader than the 16-byte case. It
+  keeps `getOrPut` off WebAssembly.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler **3,161 tests, 0 failures, 0 skipped** (with another session's
+  `--export` library mode and its tests in the same tree); AZLS **94, 0
+  failures**. New: `MemberWitnessExecTest` (`getOrDefault` of a pack and of
+  `Int`/`String` values, through a `Map` value and from generic code, on every
+  backend; `getOrPut` on the interpreter and LLVM).
+- A run in between failed with dozens of `NoClassDefFoundError`s: the other
+  session ran Gradle during it. Coordinated; not a defect.
+
+## 2026-11-20 — Studio plugins: library builds, foreign function values, syntax
+
+Studio loads plugins while it runs (no restart): a plugin is a package of
+Azora sources that Studio compiles into a shared library and calls through
+the address the loader gives - all in Azora, the OS's own `dlopen` and
+`posix_spawn` included. The language work it needed, and what the owner asked
+for along the way:
+
+- `azora compile llvm --export=a,b` builds a library: no `main`, the exports
+  keep their names (an alias when one comes from a sibling module), the
+  loader runs the global initializers (`llvm.global_ctors`). Exports must have
+  C signatures (`LibraryExportTest`). The native CLI's `compile` takes `-o`.
+- `foreign (String) -> Int`: a C function at an address, made with
+  `address as* foreign (…) -> R` and called like any function - the C ABI, no
+  environment, never owned (`ForeignFunctionValueTest`).
+- `scope = expr` after contracts; `using value then statement`; `impl pack Name`
+  in a file with no `Name` declares the empty pack, its annotations on it
+  (refused for an imported name); `::name(args)` calls a static of the expected
+  type, as `.Name` names its member (PACK_IMPL_DIP §1, §2.4;
+  LAMBDA_CONTEXT_CAPTURE_DIP §11; `Feature003SyntaxTest`, `UsingContextTest`).
+  `:name` passes the binding of the same name (FUNCTIONS_DIP §1.3).
+- **Found and fixed:** a library global only ever assigned was not injected
+  (the injector ignored assignment targets); a `.Name` in one module and one at
+  the same line and column in another shared their resolved type (roadmap §6.3);
+  `if c then 0 else address` joined at the literal's `Int` and truncated a
+  `Long`; `Array.add` copied the whole array each time (O(n²) - now `realloc`
+  to power-of-two sizes: 200k appends 4.6 s → 0.3 s); std's `StringBuilder`
+  held 16 parts at most and joined quadratically.
+- **Found and fixed (roadmap §1.1):** a `Copy` place stored into a field or an
+  element in a sibling module was not copied, and dangled - which is also what
+  made assigning a pack-typed `threadlocal` look like a crash; a sibling
+  module's method named like a string intrinsic was lowered as the intrinsic.
+
+### Evidence
+
+```sh
+AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test --offline --continue
+```
+
+- Compiler **3,178 tests, 0 failures, 0 skipped**; AZLS **94, 0 failures**.
+

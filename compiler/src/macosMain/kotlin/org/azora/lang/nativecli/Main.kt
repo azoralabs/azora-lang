@@ -75,8 +75,13 @@ private fun defines(args: List<String>): Map<String, String> = buildMap {
     }
 }
 
+/** `--export=a,b`: the functions a library build keeps for a foreign host. */
+private fun exports(args: List<String>): Set<String> =
+    args.filter { it.startsWith("--export=") }.flatMap { it.substringAfter('=').split(',') }
+        .map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
 private fun compile(unit: UnitSources, args: List<String>): CompilationResult.Success {
-    val result = Compiler(unit.libraries).compile(
+    val result = Compiler(unit.libraries, exports = exports(args)).compile(
         unit.text,
         release = "--debug" !in args,
         defines = defines(args),
@@ -94,7 +99,7 @@ private fun compile(unit: UnitSources, args: List<String>): CompilationResult.Su
 private fun llvm(unit: UnitSources, args: List<String>): String {
     val result = compile(unit, args)
     result.backendErrors["llvm"]?.let { error("llvm target is unsupported for this program: $it") }
-    return if ("--debug" in args) LlvmCodegen().generate(result.ir) else result.llvm
+    return if ("--debug" in args) LlvmCodegen(library = exports(args).isNotEmpty()).generate(result.ir) else result.llvm
 }
 
 private fun json(value: String): String = buildString {
@@ -213,12 +218,19 @@ fun main(arguments: Array<String>) {
             }
             "compile" -> {
                 require(args.getOrNull(1) in setOf("llvm", "ll")) { "native CLI currently accepts the llvm target" }
-                val path = args.drop(2).firstOrNull { !it.startsWith('-') } ?: error("compile requires a file")
-                println(llvm(sources(path), args))
+                // `-o <file>` writes the module there instead of to stdout.
+                val outIndex = args.indexOf("-o")
+                val outPath = if (outIndex >= 0) args.getOrNull(outIndex + 1) ?: error("-o needs a file") else null
+                val path = args.withIndex().drop(2)
+                    .firstOrNull { (i, arg) -> !arg.startsWith('-') && (outIndex < 0 || i != outIndex + 1) }?.value
+                    ?: error("compile requires a file")
+                val output = llvm(sources(path), args)
+                if (outPath == null) println(output)
+                else fsWriteText(outPath, output + "\n", false)?.let { error("cannot write '$outPath': $it") }
             }
             "analyze" -> analyze(sources(args.getOrNull(1) ?: error("analyze requires a file")), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0)
             "hover", "definition", "complete" -> analyze(sources(args.getOrNull(1) ?: error("${args[0]} requires a file"), engine = true), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0, args[0], args)
-            null, "help", "--help" -> println("azora native: check <file> | compile llvm <file> [--debug] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
+            null, "help", "--help" -> println("azora native: check <file> | compile llvm <file> [--debug] [--export=a,b] [-o <file>] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
             else -> error("unknown native compiler command '${args[0]}'")
         }
     } catch (failure: Exception) {

@@ -139,6 +139,8 @@ sealed class IrType {
          * in, so it reaches the bindings around it the way a loop body does.
          */
         val isInline: Boolean = false,
+        /** `foreign (…) -> R` - a C function address; called by the C ABI, never a closure. */
+        val isForeign: Boolean = false,
     ) : IrType() {
         override fun toString(): kotlin.String {
             val context = when (receivers.size) {
@@ -147,10 +149,13 @@ sealed class IrType {
                 else -> receivers.joinToString(", ", "(", ").")
             }
             val arguments = params.joinToString(", ", "(", ")")
-            val prefix = if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
+            val prefix = (if (isForeign) "foreign " else "") + if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
             return "$prefix$context$arguments -> $ret"
         }
     }
+
+    /** A callable that owns an environment: any function value but a `foreign` address. */
+    val isClosure: kotlin.Boolean get() = this is Function && !isForeign
 
     /** Handle returned by an asynchronous `task` invocation. */
     data class Task(val result: IrType) : IrType() { override fun toString() = "Task<$result>" }
@@ -424,6 +429,7 @@ sealed class IrType {
                 kind = ref.kind,
                 isEscaping = ref.isEscaping,
                 isInline = ref.isInline,
+                isForeign = ref.isForeign,
             )
             is TypeRef.Tuple -> Tuple(ref.elements.map { resolve(it, typeParams) })
             is TypeRef.Nullable -> Nullable(resolve(ref.inner, typeParams))

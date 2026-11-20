@@ -193,10 +193,12 @@ class SymbolCollector {
             val demanded = Bounds.required(written.whereClause, param)
             if (demanded.isEmpty()) continue
             // The spec's bound on the parameter it is given this one as:
-            // `spec Bag<E: Shape>` and `impl Bag<T> for Pile<T>` promise `T: Shape`.
+            // `spec Bag<E: Shape>` and `impl Bag<T> for Pile<T>` promise `T: Shape`,
+            // and so does the spec member's own clause about it (`func &.keys():
+            // List<K> where K: Clone`, R-10): a caller through the spec satisfies it.
             val throughSpec = spec?.typeParams.orEmpty().zip(impl.traitArgs).flatMap { (specParam, arg) ->
                 if ((arg as? TypeRef.Named)?.takeIf { it.args.isEmpty() }?.name == param) {
-                    Bounds.required(spec?.whereClause, specParam)
+                    Bounds.required(spec?.whereClause, specParam) + Bounds.required(requirement.whereClause, specParam)
                 } else {
                     emptySet()
                 }
@@ -206,8 +208,9 @@ class SymbolCollector {
             if (extra.isEmpty()) continue
             val spelled = extra.joinToString(", ") { Bounds.shown(it) }
             return "line ${written.line}: '${impl.typeName}.${written.name}' requires '$param: $spelled', which " +
-                "'${impl.traitName}.${requirement.name}' cannot promise; a caller through '${impl.traitName}' may hold " +
-                "a '${impl.typeName}' of any '$param' - bound the type ('pack ${impl.typeName}<$param: $spelled>'), " +
+                "'${impl.traitName}.${requirement.name}' does not promise; a caller through '${impl.traitName}' may hold " +
+                "a '${impl.typeName}' of any '$param' - bound the spec member (a 'where' clause on " +
+                "'${impl.traitName}.${requirement.name}'), bound the type ('pack ${impl.typeName}<$param: $spelled>'), " +
                 "or drop the bound here"
         }
         return null
@@ -600,11 +603,16 @@ class SymbolCollector {
 
         // Register impl methods as functions `Type_method(self, ...)`
         val localPackNames = program.localPackNames
+        // A library module's own packs count as local to its own impls: the file
+        // that declares the pack is the module that declares it.
+        val packModules = program.items.filterIsInstance<TopLevel.Pack>()
+            .mapTo(mutableSetOf()) { it.name to it.declaringModule }
         for (item in program.items) {
             if (item is TopLevel.Impl) {
                 if (item in secondSteps) continue
                 val struct = table.lookupStruct(item.typeName)
-                if (item.isPackImpl && item.typeName !in localPackNames) {
+                if (item.isPackImpl && item.typeName !in localPackNames &&
+                    (item.declaringModule == null || (item.typeName to item.declaringModule) !in packModules)) {
                     errors.add("line ${item.line}: 'impl pack ${item.typeName}' is only allowed in the file that declares pack ${item.typeName}")
                     continue
                 }

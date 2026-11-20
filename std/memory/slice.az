@@ -22,9 +22,9 @@ pack Slice<T> {
 }
 
 @Experimental(since: "0.1")
-oper[] Slice<T>&.(index: Int): T {
+oper[] Slice<T>&.(index: Int): T&|self| {
     assert index >= 0 && index < self.count panic "Slice index out of bounds"
-    return self._raw[index]
+    return self._raw[index].&
 }
 
 @Experimental(since: "0.1")

@@ -481,6 +481,22 @@ impl Fold for Sq { func<U: Shape> &.fold(x: U&): Int = … }
 // rejected: 'Sq.fold' requires 'U: Shape', which 'Fold.fold' does not promise
 ```
 
+**A spec member may bound its spec's parameters** *(owner's decision R-10,
+2026-11-19, `BoundPlacementTest`)*. What a member needs of the spec's type
+parameters is written on the member, as on a type's member:
+
+```azora
+spec Bag<E> { func &.firstArea(): Int where E: Shape }
+impl Bag<T> for Pile<T> { func &.firstArea(): Int where T: Shape = self.item.area() }
+```
+
+The implementation may restate the bound and rely on it (it may still demand
+nothing more). A call through a spec-typed value is decided for the receiver's
+arguments - a `Bag<NoShape>` has no `firstArea` - and generic code holding a
+`Bag<U>` declares `U: Shape` itself. This is how a collection spec offers
+members that copy out of a borrowed value (`keys()` under `K: Clone`) while
+still holding values that cannot be copied.
+
 A lambda's, a bridge declaration's and a member alias's type parameters take no
 bound, and neither do a property's own (`prop<U: Shape> &.pick`, or `where U:
 Shape` on it): no use binds them to a type a check could be made for - a

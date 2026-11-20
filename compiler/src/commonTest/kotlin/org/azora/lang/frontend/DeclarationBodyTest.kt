@@ -24,6 +24,16 @@ class DeclarationBodyTest {
         assertIs<Stmt.Return>(exit.last())
     }
 
+    @Test fun scopeTakesAnExpressionBodyAfterContracts() {
+        val function = parse("""
+            func identity(n: Int): Int
+            in assert n >= 0 panic "negative"
+            scope = n + 0
+        """).functions.single()
+        assertIs<Stmt.Assert>(function.body.first())
+        assertIs<Stmt.Return>(function.body.last())
+    }
+
     @Test fun memberBodiesShareTheSingleStatementScopeForm() {
         val methods = parse("""
             impl Counter {

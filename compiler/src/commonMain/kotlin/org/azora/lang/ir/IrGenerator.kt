@@ -41,6 +41,7 @@ import org.azora.lang.frontend.TokenType
 import org.azora.lang.frontend.TopLevel
 import org.azora.lang.frontend.TypeAnnotation
 import org.azora.lang.semantic.SlotPatterns
+import org.azora.lang.semantic.OptionalNarrowing
 import org.azora.lang.semantic.ComparisonPlan
 import org.azora.lang.semantic.instantiateMember
 import org.azora.lang.semantic.instantiateField
@@ -52,6 +53,8 @@ import org.azora.lang.semantic.MonoNames
 import org.azora.lang.semantic.stepText
 import org.azora.lang.semantic.literalFactoryTypes
 import org.azora.lang.semantic.instantiateSpecMember
+import org.azora.lang.semantic.asAncestorSpec
+import org.azora.lang.semantic.substituteMemberType
 import org.azora.lang.semantic.StructType
 import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.semantic.TypeFunctionEvaluator
@@ -946,7 +949,7 @@ class IrGenerator(private val table: SymbolTable) {
         }
         return OwnershipCleanup.lower(
             IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces),
-            returnsBorrow = { name -> table.lookupFunction(name)?.returnTypeRef is TypeRef.Reference },
+            returnsBorrow = { name -> borrowedRef(table.lookupFunction(name)?.returnTypeRef) },
             transferredByValue = transferred,
             copied = copied,
             variadic = { name -> table.lookupFunction(name)?.isVariadic == true },
@@ -983,7 +986,10 @@ class IrGenerator(private val table: SymbolTable) {
                     if (sig.isProperty) {
                         propertyByName[methodName] = IrSpecMethod(methodName, emptyList(), sig.returnType)
                     } else {
-                        callableByName[methodName] = IrSpecMethod(methodName, sig.paramTypes, sig.returnType)
+                        // Descriptors for the member's bounds on its spec's parameters
+                        // follow the written arguments, as each implementation takes them.
+                        val descriptors = specMemberWitnesses[sig.owner.ifEmpty { ancestorName } to methodName].orEmpty()
+                        callableByName[methodName] = IrSpecMethod(methodName, sig.paramTypes + descriptors.map { IrType.Int }, sig.returnType)
                     }
                 }
             }
@@ -1177,6 +1183,7 @@ class IrGenerator(private val table: SymbolTable) {
             table.defineVariable(VariableSymbol(name, type, mutable = mutable))
             m to type
         }
+        val memberWitnessParams = mutableListOf<Pair<String, IrType>>()
         val unnamedReceiverTuple = method.contextualParams > 0 && method.receiverName == "__receiver0"
         val receiverTupleType = if (unnamedReceiverTuple) {
             IrType.Tuple(symbol.params.take(1 + method.contextualParams).map { it.second })
@@ -1213,10 +1220,21 @@ class IrGenerator(private val table: SymbolTable) {
         // asks more of the same descriptor, which names the concrete type.
         val packParams = packTypeParams[typeName].orEmpty()
         val memberBounds = Witnesses.bounds(method.whereClause, packParams)
-        val bounds = packWitnessBounds[typeName].orEmpty()
-            .mapValues { (param, needs) -> needs + memberBounds[param].orEmpty() }
+        val bounds = LinkedHashMap(packWitnessBounds[typeName].orEmpty()
+            .mapValues { (param, needs) -> needs + memberBounds[param].orEmpty() })
         val receiver = IrExpr.Var(resolveName(method.receiverName), IrType.Named(typeName))
-        val sources = bounds.keys.associateWith { param -> IrExpr.Member(receiver, Witnesses.slot(param), IrType.Int) }
+        val sources = LinkedHashMap<String, IrExpr>(bounds.keys.associateWith { param -> IrExpr.Member(receiver, Witnesses.slot(param), IrType.Int) })
+        // A bound on the type's parameter the pack carries no descriptor for
+        // arrives after the written parameters, from the call site.
+        for ((i, witness) in memberWitnesses[typeName to method.name].orEmpty().filter { it.passed }.withIndex()) {
+            val slot = "__member_witness_$i"
+            val mangled = registerName(slot)
+            table.defineVariable(VariableSymbol(slot, IrType.Int, mutable = false))
+            memberWitnessParams += mangled to IrType.Int
+            val param = witness.param ?: continue
+            sources[param] = IrExpr.Var(mangled, IrType.Int)
+            bounds[param] = bounds[param].orEmpty() + witness.needs
+        }
         val refs = method.params.associate { it.name to it.type } +
             (method.receiverName to TypeRef.Named(typeName, packParams.map { TypeRef.Named(it) }))
         val body = try {
@@ -1239,7 +1257,7 @@ class IrGenerator(private val table: SymbolTable) {
         }
         return IrFunction(
             mangled,
-            mangledParams,
+            mangledParams + memberWitnessParams,
             symbol.returnType,
             body,
             refParams = symbol.sharedParams + symbol.exclusiveParams + symbol.returnedParams + 0,
@@ -1416,7 +1434,7 @@ class IrGenerator(private val table: SymbolTable) {
         if (lowered is IrExpr.IfExpr && (leavesPlace(lowered.thenExpr) || leavesPlace(lowered.elseExpr))) return false
         if (borrowsResult(lowered)) return false
         if (lowered is IrExpr.MethodCall && (lowered.target.type as? IrType.Named)?.let {
-                table.lookupSpecMethod(it.name, lowered.name)?.returnTypeRef is TypeRef.Reference
+                borrowedRef(table.lookupSpecMethod(it.name, lowered.name)?.returnTypeRef)
             } == true) return false
         return when (lowered.type) {
             is IrType.Named -> {
@@ -1454,17 +1472,24 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun borrowsResult(expr: IrExpr): Boolean {
-        fun borrowed(ref: TypeRef?): Boolean = when (ref) {
-            is TypeRef.Reference -> true
-            is TypeRef.Failable -> borrowed(ref.ok)
-            else -> false
-        }
         return when (expr) {
-            is IrExpr.Call -> borrowed(table.lookupFunction(expr.name)?.returnTypeRef)
+            is IrExpr.Call -> borrowedRef(table.lookupFunction(expr.name)?.returnTypeRef)
             is IrExpr.CatchExpr -> borrowsResult(expr.expr)
             is IrExpr.NumCast -> borrowsResult(expr.value)
             else -> false
         }
+    }
+
+    /**
+     * Whether a declared result type hands back a borrow rather than a value
+     * the caller owns: `T&`, a failable `T& ?! E`, or an optional borrow
+     * `V&|self|?` (R-11's accessors) - nothing of which the caller may free.
+     */
+    private fun borrowedRef(ref: TypeRef?): Boolean = when (ref) {
+        is TypeRef.Reference -> true
+        is TypeRef.Failable -> borrowedRef(ref.ok)
+        is TypeRef.Nullable -> borrowedRef(ref.inner)
+        else -> false
     }
 
     private fun withImplicitCopy(source: Expr, lowered: IrExpr): IrExpr {
@@ -1479,6 +1504,16 @@ class IrGenerator(private val table: SymbolTable) {
         }
         if (source !is Expr.Identifier && source !is Expr.Member && source !is Expr.Index && source !is Expr.Deref) return lowered
         if (lowered.type is IrType.Function) return IrExpr.Call("__isolated", listOf(lowered), lowered.type)
+        // A value of a type parameter is an erased slot that may point at a
+        // pack. Where it is used by value, the checker has required `T: Copy`
+        // (OWNERSHIP_BORROWING_DIP §20), or the place is one this code does not
+        // own; either way the copy is the concrete type's clone, through the
+        // descriptor, so the two owners never share one allocation.
+        witnessParamOf(source)?.let { param ->
+            if (Witnesses.CLONE in witnessBounds[param].orEmpty()) {
+                return witnessCall(WITNESS_CLONE, listOf(witnessSources.getValue(param), lowered), lowered.type)
+            }
+        }
         val name = (lowered.type as? IrType.Named)?.name ?: return lowered
         if (table.lookupEnum(name) != null || table.lookupFail(name) != null) return lowered
         if (!table.conformsTo(name, "Copy")) return lowered
@@ -1641,7 +1676,76 @@ class IrGenerator(private val table: SymbolTable) {
         }
     }
 
+    /**
+     * The optional bindings a test has proven non-null here, each with the
+     * binding it was proven for - kept exactly as `TypeResolver` keeps them
+     * ([OptionalNarrowing], TYPE_DIP §2.1), so a read it typed as `T` is
+     * lowered as one.
+     */
+    private var narrowed: Map<String, VariableSymbol> = emptyMap()
+
+    private fun narrowedBy(condition: Expr, outcome: Boolean): Map<String, VariableSymbol> =
+        OptionalNarrowing.proven(condition, outcome).mapNotNull { name ->
+            table.lookupVariable(name)?.takeIf(OptionalNarrowing::narrowable)?.let { name to it }
+        }.toMap()
+
+    private inline fun <R> narrowing(condition: Expr, outcome: Boolean, block: () -> R): R {
+        val saved = narrowed
+        narrowed = saved + narrowedBy(condition, outcome)
+        try {
+            return block()
+        } finally {
+            narrowed = saved
+        }
+    }
+
+    /** A lambda's body starts with nothing narrowed and proves nothing outside it. */
+    private inline fun <R> unnarrowed(block: () -> R): R {
+        val saved = narrowed
+        narrowed = emptyMap()
+        try {
+            return block()
+        } finally {
+            narrowed = saved
+        }
+    }
+
+    /** The optional `.require()` / `.take()` asks: its receiver, read without narrowing. */
+    private fun lowerUnwrapReceiver(target: Expr): IrExpr {
+        val name = (target as? Expr.Identifier)?.name ?: return lowerExpr(target)
+        val saved = narrowed
+        narrowed = saved - name
+        try {
+            return lowerExpr(target)
+        } finally {
+            narrowed = saved
+        }
+    }
+
+    /** The binding [name] names, if a test proved it non-null here. */
+    private fun narrowedBinding(name: String): VariableSymbol? =
+        narrowed[name]?.takeIf { it === table.lookupVariable(name) }
+
     private fun lowerStmt(stmt: Stmt): IrStmt {
+        val saved = narrowed
+        val lowered = lowerStmtInner(stmt)
+        // Only an `if` that cannot fall through one way proves something for
+        // the rest of the block.
+        narrowed = saved + ((stmt as? Stmt.If)?.let { narrowedAfter(it) } ?: emptyMap())
+        return lowered
+    }
+
+    private fun narrowedAfter(stmt: Stmt.If): Map<String, VariableSymbol> {
+        val thenExits = OptionalNarrowing.exits(stmt.thenBranch)
+        val elseExits = stmt.elseBranch?.let(OptionalNarrowing::exits) ?: false
+        return when {
+            thenExits && !elseExits -> narrowedBy(stmt.condition, false)
+            elseExits && !thenExits -> narrowedBy(stmt.condition, true)
+            else -> emptyMap()
+        }
+    }
+
+    private fun lowerStmtInner(stmt: Stmt): IrStmt {
         return when (stmt) {
             // Injection removes every body import; the validator rejects any left.
             is Stmt.Import -> IrStmt.Scope(emptyList())
@@ -1752,7 +1856,10 @@ class IrGenerator(private val table: SymbolTable) {
                     is IrType.Map -> tt.value
                     else -> IrType.Any
                 }
-                val value = coerceToFloat(lowerExpr(stmt.value), element)
+                // Storing a place of a `Copy` type stores a copy of it, as binding
+                // one does: otherwise the slot and the place share one value, and
+                // whichever is freed first leaves the other dangling.
+                val value = withImplicitCopy(stmt.value, coerceToFloat(lowerExpr(stmt.value), element))
                 IrStmt.IndexAssign(target, index, value)
             }
             is Stmt.DerefAssign -> {
@@ -1768,7 +1875,10 @@ class IrGenerator(private val table: SymbolTable) {
                 // A field declared as a type parameter holds the target's argument
                 // for it, as the matching member read is typed.
                 val fieldType = field?.let { instantiateField(struct, owner, it) }
-                val value = coerceToFloat(lowerExpr(stmt.value), fieldType ?: IrType.Any)
+                // As for an element: a field given a place of a `Copy` type gets
+                // a copy. The checker inserts it in the entry file; a sibling
+                // module compiles as a library, and relied on it in vain.
+                val value = withImplicitCopy(stmt.value, coerceToFloat(lowerExpr(stmt.value), fieldType ?: IrType.Any))
                 IrStmt.MemberAssign(target, stmt.name, value)
             }
             is Stmt.Return -> IrStmt.Return(
@@ -1784,8 +1894,8 @@ class IrGenerator(private val table: SymbolTable) {
             is Stmt.ExprStmt -> IrStmt.ExprStmt(lowerExpr(stmt.expr))
             is Stmt.If -> {
                 val cond = lowerExpr(stmt.condition)
-                val thenBranch = lowerScopedBody(stmt.thenBranch)
-                val elseBranch = stmt.elseBranch?.let { lowerScopedBody(it) }
+                val thenBranch = narrowing(stmt.condition, true) { lowerScopedBody(stmt.thenBranch) }
+                val elseBranch = stmt.elseBranch?.let { narrowing(stmt.condition, false) { lowerScopedBody(it) } }
                 IrStmt.If(cond, thenBranch, elseBranch)
             }
             is Stmt.InlineIf -> error(
@@ -1827,7 +1937,7 @@ class IrGenerator(private val table: SymbolTable) {
                 val cond = lowerExpr(stmt.condition)
                 table.pushScope()
                 pushNameScope()
-                val body = lowerBody(stmt.body)
+                val body = narrowing(stmt.condition, true) { lowerBody(stmt.body) }
                 popNameScope()
                 table.popScope()
                 IrStmt.While(cond, body, stmt.label)
@@ -2699,6 +2809,26 @@ class IrGenerator(private val table: SymbolTable) {
     /** Function name → the witness bounds it takes a descriptor for, in parameter order. */
     private val functionWitnessBounds = HashMap<String, Map<String, Set<String>>>()
 
+    /**
+     * One descriptor a member takes for a bound on its type's parameter
+     * (`func &.keys(): List<K> where K: Clone` in `impl Map<K, V> for
+     * HashMap<K, V>`): [param] is the pack parameter it describes - null for
+     * one a call through the spec passes that this member does not read -
+     * and [needs] what is asked of it. When [passed] is false the pack's own
+     * descriptor field already carries [param]; the call site only records
+     * [needs] for the concrete type, so the dispatch has its operation.
+     */
+    private data class MemberWitness(val param: String?, val needs: Set<String>, val passed: Boolean = true)
+
+    /** (pack, member) → the descriptors the member takes after its written parameters, or records. */
+    private val memberWitnesses = HashMap<Pair<String, String>, List<MemberWitness>>()
+
+    /**
+     * (spec, member) → what a call through that spec passes for the member's
+     * bounds on the spec's own parameters (R-10), in the spec's parameter order.
+     */
+    private val specMemberWitnesses = HashMap<Pair<String, String>, List<Pair<String, Set<String>>>>()
+
     /** The concrete type each descriptor names, in descriptor order. */
     private val witnessTypes = LinkedHashMap<String, IrType>()
 
@@ -2840,6 +2970,7 @@ class IrGenerator(private val table: SymbolTable) {
     private fun initWitnesses(program: Program) {
         packWitnessBounds.clear(); packTypeParams.clear(); packFieldRefs.clear()
         functionWitnessBounds.clear(); witnessTypes.clear(); witnessNeeds.clear(); witnessDispatchers.clear()
+        memberWitnesses.clear(); specMemberWitnesses.clear()
         structuralHelpers.clear()
         witnessBounds = emptyMap(); witnessSources = emptyMap(); scopeTypeParams = emptySet()
         declaredRefs = mutableMapOf(); expectedRef = null; currentReturnRef = null
@@ -2867,6 +2998,109 @@ class IrGenerator(private val table: SymbolTable) {
             }
             if (merged.isNotEmpty()) functionWitnessBounds[decl.name] = merged
         }
+        initMemberWitnesses(program)
+    }
+
+    /**
+     * The descriptors members take for bounds on their type's parameters,
+     * which the pack's own descriptor fields do not carry: a `HashMap` holds
+     * any `V`, and only `getOrDefault` needs to clone one. A member that
+     * implements a spec member with such bounds takes exactly what a call
+     * through the spec passes, in the spec's parameter order, whether or not
+     * it restates them; any other member takes its own, in its pack's order.
+     */
+    private fun initMemberWitnesses(program: Program) {
+        for (item in program.items) {
+            if (item !is TopLevel.Spec) continue
+            for (member in item.methods) {
+                val bounds = Witnesses.bounds(member.whereClause, item.typeParams - member.typeParams.toSet())
+                val list = item.typeParams.mapNotNull { param -> bounds[param]?.let { param to it } }
+                if (list.isNotEmpty()) specMemberWitnesses[item.name to member.name] = list
+            }
+        }
+        for (item in program.items) {
+            if (item !is TopLevel.Impl) continue
+            val packParams = packTypeParams[item.typeName] ?: continue
+            val implParams = item.typeParams.ifEmpty { packParams }
+            fun packParamOf(name: String): String? = packParams.getOrNull(implParams.indexOf(name))
+            val fields = packWitnessBounds[item.typeName].orEmpty()
+            val specParams = item.traitName?.let { table.lookupSpec(it)?.typeParams }.orEmpty()
+            for (member in item.methods) {
+                val own = Witnesses.bounds(member.whereClause, implParams - member.typeParams.toSet())
+                val throughSpec = item.traitName?.let { specMemberWitnesses[it to member.name] }
+                val list = if (throughSpec != null) {
+                    throughSpec.map { (specParam, needs) ->
+                        val implParam = (item.traitArgs.getOrNull(specParams.indexOf(specParam)) as? TypeRef.Named)
+                            ?.takeIf { it.args.isEmpty() && it.name in implParams }?.name
+                        MemberWitness(implParam?.let(::packParamOf), needs + own[implParam].orEmpty())
+                    }
+                } else {
+                    implParams.mapNotNull { implParam ->
+                        val needs = own[implParam] ?: return@mapNotNull null
+                        val param = packParamOf(implParam) ?: return@mapNotNull null
+                        MemberWitness(param, needs, passed = param !in fields)
+                    }
+                }
+                if (list.isNotEmpty()) memberWitnesses[item.typeName to member.name] = list
+            }
+        }
+    }
+
+    /**
+     * The descriptors a call to [member] of [receiver] passes for the member's
+     * bounds on the type's parameters, read from the receiver's declared type
+     * (generic code passes its own descriptors) or its resolved one; and, for
+     * a bound the pack's field already carries, the record that the concrete
+     * type is asked for it.
+     */
+    private fun memberDescriptorArgs(receiver: IrType.Named, member: String, target: Expr, line: Int): List<IrExpr> {
+        val entries = memberWitnesses[receiver.name to member] ?: return emptyList()
+        val packParams = packTypeParams[receiver.name].orEmpty()
+        val declared = (stripRef(declaredRefOf(target)) as? TypeRef.Named)?.takeIf { it.args.size == packParams.size }
+        return entries.mapNotNull { witness ->
+            val param = witness.param
+            val descriptor = if (param == null) {
+                IrExpr.IntLiteral(-1, IrType.Int)
+            } else {
+                val index = packParams.indexOf(param)
+                val what = "'$param' of '${receiver.name}.$member'"
+                declared?.args?.getOrNull(index)?.let { descriptorOf(it, witness.needs, what, line) }
+                    ?: descriptorOf(receiver.args.getOrNull(index) ?: IrType.Any, witness.needs, what, line)
+            }
+            descriptor.takeIf { witness.passed }
+        }
+    }
+
+    /**
+     * What a call through a spec-typed value passes for the member's bounds
+     * on the declaring spec's parameters, read through the receiver's spec
+     * (`MutableMap<String, Pt>` is `Map<String, Pt>` to `Map`'s `keys`).
+     */
+    private fun specDescriptorArgs(receiver: IrType.Named, owner: String, member: String, target: Expr, line: Int): List<IrExpr> {
+        val entries = specMemberWitnesses[owner to member] ?: return emptyList()
+        val ownerParams = table.lookupSpec(owner)?.typeParams.orEmpty()
+        val declared = (stripRef(declaredRefOf(target)) as? TypeRef.Named)?.let { specArgsAs(it, owner, mutableSetOf()) }
+        val resolved = asAncestorSpec(table, receiver, owner, mutableSetOf())?.args
+        return entries.map { (param, needs) ->
+            val index = ownerParams.indexOf(param)
+            val what = "'$param' of '$owner.$member'"
+            declared?.getOrNull(index)?.let { descriptorOf(it, needs, what, line) }
+                ?: descriptorOf(resolved?.getOrNull(index) ?: IrType.Any, needs, what, line)
+        }
+    }
+
+    /** [ref]'s arguments seen as its ancestor spec [owner]'s, or null when it is not one. */
+    private fun specArgsAs(ref: TypeRef.Named, owner: String, seen: MutableSet<String>): List<TypeRef>? {
+        if (ref.name == owner) return ref.args
+        if (!seen.add(ref.name)) return null
+        val spec = table.lookupSpec(ref.name) ?: return null
+        if (ref.args.size != spec.typeParams.size) return null
+        val bindings = spec.typeParams.zip(ref.args).toMap()
+        for (parent in spec.parents) {
+            val passed = substituteMemberType(parent, bindings) as? TypeRef.Named ?: continue
+            specArgsAs(passed, owner, seen)?.let { return it }
+        }
+        return null
     }
 
     /** Runs [lower] with the witness scope of one function or method, restoring the enclosing one. */
@@ -3511,7 +3745,7 @@ class IrGenerator(private val table: SymbolTable) {
     /** What one slot of an allocated repetition holds; see the resolver's twin. */
     private fun repeatedElementType(construct: Expr): IrType? {
         val name = when (construct) {
-            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column)
+            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column, construct.name)
             is Expr.Call -> construct.callee
             else -> null
         } ?: return null
@@ -3706,11 +3940,7 @@ class IrGenerator(private val table: SymbolTable) {
             // The resolver already decided which type the dot meant; lowering
             // reads that answer rather than deriving it again from a context it
             // no longer has.
-            is Expr.InferredMember -> lowerInferredMember(
-                expr,
-                table.lookupInferredMember(expr.line, expr.column)
-                    ?: error("line ${expr.line}: '.${expr.name}' was never resolved to a type"),
-            )
+            is Expr.InferredMember -> lowerInferredMember(expr, table.lookupInferredMember(expr.line, expr.column, expr.name))
             // Only a macro arm taking `[...${key: value}]` can consume one, and the
             // expander does so before lowering. Reaching here means no arm matched.
             is Expr.MapEntryArg -> error(
@@ -3734,7 +3964,8 @@ class IrGenerator(private val table: SymbolTable) {
                 fun isNumericish(t: IrType) = IrType.isNumeric(t) || t == IrType.Char
                 fun isPointerish(t: IrType) =
                     t == IrType.String || t == IrType.Any || t is IrType.Array || t is IrType.Map || t is IrType.Set ||
-                        t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple
+                        t is IrType.Named || t is IrType.Pointer || t is IrType.Nullable || t is IrType.Tuple ||
+                        (t is IrType.Function && t.isForeign)
                 val innerType = inner.type
                 // A user-declared `oper as<U> T&.(): U` takes precedence over the
                 // built-in conversions: a type that says how it converts should be
@@ -3863,7 +4094,10 @@ class IrGenerator(private val table: SymbolTable) {
                 val aliased = if (sym == null) throughTypeAlias(expr.name) else null
                 val aliasedSym = aliased?.let { table.lookupVariable(it) }
                 if (sym != null) {
-                    IrExpr.Var(resolveName(expr.name), sym.type)
+                    val read = IrExpr.Var(resolveName(expr.name), sym.type)
+                    // Proven non-null here: the read is the value the optional
+                    // holds, as `.require()` lowers, with the test as its guard.
+                    if (narrowedBinding(expr.name) === sym) IrExpr.NumCast(read, (sym.type as IrType.Nullable).inner) else read
                 } else if (aliasedSym != null) {
                     IrExpr.Var(resolveName(aliased), aliasedSym.type)
                 } else if (expr.name == "Unit") {
@@ -3976,7 +4210,10 @@ class IrGenerator(private val table: SymbolTable) {
                     }
                 }
                 var left = lowerExpr(expr.left)
-                var right = lowerExpr(expr.right)
+                // `x != null && use(x)` - as the resolver typed it (TYPE_DIP §2.1).
+                val outcome = OptionalNarrowing.rightOperandOutcome(expr)
+                var right = if (outcome == null) lowerExpr(expr.right)
+                    else narrowing(expr.left, outcome) { lowerExpr(expr.right) }
                 // A tuple or an array compares part by part, by each part's own `==`.
                 if ((expr.op == TokenType.EQUAL_EQUAL || expr.op == TokenType.BANG_EQUAL) &&
                     isStructural(left.type) && isStructural(right.type)
@@ -4582,9 +4819,17 @@ class IrGenerator(private val table: SymbolTable) {
                 if (expr.op == OwnershipOp.TAKE && unwrapped is Expr.MethodCall &&
                     unwrapped.name == "require" && unwrapped.args.isEmpty()
                 ) {
-                    val optional = lowerExpr(unwrapped.target)
+                    val optional = lowerUnwrapReceiver(unwrapped.target)
                     if (optional.type is IrType.Nullable) {
                         val taken = takenFromOptional(unwrapped.target, optional)
+                        return IrExpr.Call("__take", listOf(taken), taken.type)
+                    }
+                }
+                // `take x` where a test proved `x` non-null moves the value out
+                // of the optional, as `take x.require()` does, emptying it.
+                if (expr.op == OwnershipOp.TAKE && unwrapped is Expr.Identifier) {
+                    narrowedBinding(unwrapped.name)?.let { binding ->
+                        val taken = takenFromOptional(unwrapped, IrExpr.Var(resolveName(unwrapped.name), binding.type))
                         return IrExpr.Call("__take", listOf(taken), taken.type)
                     }
                 }
@@ -4845,7 +5090,7 @@ class IrGenerator(private val table: SymbolTable) {
                 // to the value itself. What makes the read safe is the guard the
                 // parser puts in front of it.
                 if (expr.name in OPTIONAL_UNWRAP && expr.args.isEmpty()) {
-                    val target = lowerExpr(expr.target)
+                    val target = lowerUnwrapReceiver(expr.target)
                     val inner = (target.type as? IrType.Nullable)?.inner
                     if (inner != null) {
                         // The shorthand moves as well as reads, so it owes the
@@ -4878,7 +5123,8 @@ class IrGenerator(private val table: SymbolTable) {
                             error("property '${expr.name}' must be accessed without parentheses")
                         }
                         val args = lowerMethodArguments(expr, func, mangled)
-                        return IrExpr.Call(mangled, listOf(target) + args, func.returnType)
+                        val descriptors = memberDescriptorArgs(tt, expr.name, expr.target, expr.line)
+                        return IrExpr.Call(mangled, listOf(target) + args + descriptors, func.returnType)
                     }
                     val callableField = table.lookupStruct(tt.name)?.field(expr.name)?.type as? IrType.Function
                     if (callableField != null) {
@@ -4909,7 +5155,8 @@ class IrGenerator(private val table: SymbolTable) {
                         val args = expr.args.mapIndexed { i, arg ->
                             sig.paramTypes.getOrNull(i)?.let { coerceToFloat(lowerExpr(arg), it) } ?: lowerExpr(arg)
                         }
-                        return IrExpr.MethodCall(target, expr.name, args, sig.returnType)
+                        val descriptors = specDescriptorArgs(tt, sig.owner.ifEmpty { tt.name }, expr.name, expr.target, expr.line)
+                        return IrExpr.MethodCall(target, expr.name, args + descriptors, sig.returnType)
                     }
                 }
                 // `2.scale(7)` - the receiver call. `scale` is a callable whose one
@@ -4993,8 +5240,8 @@ class IrGenerator(private val table: SymbolTable) {
             is Expr.Seal -> lowerExpr(expr.value)
             is Expr.IfExpr -> {
                 val condition = lowerExpr(expr.condition)
-                val thenExpr = lowerExpr(expr.thenExpr)
-                val elseExpr = lowerExpr(expr.elseExpr)
+                val thenExpr = narrowing(expr.condition, true) { lowerExpr(expr.thenExpr) }
+                val elseExpr = narrowing(expr.condition, false) { lowerExpr(expr.elseExpr) }
                 IrExpr.IfExpr(condition, thenExpr, elseExpr, branchJoin(thenExpr, elseExpr))
             }
             is Expr.CatchExpr -> {
@@ -5145,7 +5392,7 @@ class IrGenerator(private val table: SymbolTable) {
                     if (stmt is Stmt.Return && stmt.implicit && stmt.value != null)
                         Stmt.ExprStmt(stmt.value, stmt.line, stmt.column, stmt.length) else stmt
                 } else expr.body
-                val loweredBody = lowerBody(sourceBody)
+                val loweredBody = unnarrowed { lowerBody(sourceBody) }
                 val body = if (positionalSelf == null) loweredBody else listOf(positionalSelf) + loweredBody
                 if (receiverParams.isNotEmpty()) contextualValues.removeLast()
                 popNameScope()
@@ -5369,9 +5616,16 @@ class IrGenerator(private val table: SymbolTable) {
             isNull(thenExpr) && !isNull(elseExpr) -> nullable(b)
             isNull(elseExpr) && !isNull(thenExpr) -> nullable(a)
             a !is IrType.Nullable && b is IrType.Nullable && b.inner == a -> b
+            // A literal has no width of its own to insist on: `if c then 0 else
+            // address` is the address's `Long`, not the `Int` a bare `0` reads
+            // as - joining at the literal's type would truncate the other branch.
+            isNumberLiteral(thenExpr) && !isNumberLiteral(elseExpr) && IrType.isNumeric(b) -> b
+            isNumberLiteral(elseExpr) && !isNumberLiteral(thenExpr) && IrType.isNumeric(a) -> a
             else -> a
         }
     }
+
+    private fun isNumberLiteral(e: IrExpr): Boolean = e is IrExpr.IntLiteral || e is IrExpr.DoubleLiteral
 
     /**
      * A tuple written in place, built at the type of the [slot] it is passed
@@ -5621,7 +5875,13 @@ class IrGenerator(private val table: SymbolTable) {
      * `.Name`, `.name(…)` or `.(…)` once [owner] is known to be the type the dot
      * meant: a member of it, a call of that member, or a construction of it.
      */
-    private fun lowerInferredMember(expr: Expr.InferredMember, owner: String): IrExpr {
+    private fun lowerInferredMember(expr: Expr.InferredMember, owner: String?): IrExpr {
+        // `::name(args)`: the static the resolver found, or the call as written.
+        expr.scopeCall?.let { written ->
+            val static = owner?.let { table.inferredStatic(it, expr.name) } ?: return lowerExpr(written)
+            return lowerExpr(Expr.Call(static, expr.ctorArgs.orEmpty(), expr.line, expr.column, expr.length))
+        }
+        owner ?: error("line ${expr.line}: '.${expr.name}' was never resolved to a type")
         val ownerRef = Expr.Identifier(owner, expr.line, expr.column, owner.length)
         val args = expr.ctorArgs
         return when {

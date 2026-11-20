@@ -39,6 +39,9 @@ internal object Witnesses {
     const val ORDER = "Order"
     const val CLONE = "Clone"
 
+    /** Implicit duplication: an erased `Copy` value is copied by its concrete type's `clone` (Copy requires Clone). */
+    const val COPY = "Copy"
+
     /** `<` and its kin where a NaN relates to nothing (RANGE_DIP §7). */
     const val PARTIAL_ORDER = "PartialOrder"
 
@@ -87,6 +90,10 @@ internal object Witnesses {
                         // An erased slot is a shared pointer; only the concrete
                         // type knows how to make an independent copy of it.
                         CLONE -> found.getOrPut(param) { linkedSetOf() }.add(CLONE)
+                        // `where T: Copy` duplicates implicitly, so erased code
+                        // needs the same copy `.clone()` makes
+                        // (OWNERSHIP_BORROWING_DIP §20).
+                        COPY -> found.getOrPut(param) { linkedSetOf() }.add(CLONE)
                         PARTIAL_ORDER -> found.getOrPut(param) { linkedSetOf() }.add(PARTIAL_ORDER)
                         DISPLAY -> found.getOrPut(param) { linkedSetOf() }.add(DISPLAY)
                         // A walk compares its rows as well as moving them.

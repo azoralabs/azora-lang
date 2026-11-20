@@ -129,7 +129,7 @@ class PurgeListTest {
             body("func release(self: Buffers!) {\n    using self\n    purge self.keys\n}")
         }.exceptionOrNull()
         assertTrue(failure != null, "a `using` without braces is an error")
-        assertTrue("Expected '{' after contextual values" in failure.message.orEmpty(), failure?.message.orEmpty())
+        assertTrue("Expected '{' or 'then' after contextual values" in failure.message.orEmpty(), failure?.message.orEmpty())
     }
 
     @Test fun oldWithContextSyntaxNamesItsReplacement() {

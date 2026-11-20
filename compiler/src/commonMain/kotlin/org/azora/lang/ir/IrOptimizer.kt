@@ -28,7 +28,14 @@ package org.azora.lang.ir
  *  2. [deadCodeElimination] - Remove unreachable code after return statements.
  *  3. [constantPropagation] - Replace variable reads with known constant values.
  */
-class IrOptimizer {
+class IrOptimizer(
+    /**
+     * Functions a library build keeps for a foreign caller (`compile --export`):
+     * they are entry points like `main`, so a release build roots its shaking
+     * at them as well.
+     */
+    private val exportRoots: Set<String> = emptySet(),
+) {
 
     /**
      * Applies all optimization passes to the given IR program.
@@ -652,7 +659,7 @@ class IrOptimizer {
                 else -> null
             }
         }
-        val reached = reach(program, own).functions
+        val reached = reach(program, own + exportRoots).functions
         val items = program.items.filter { item ->
             item !is IrTopLevel.Func || !item.function.isLibrary || item.function.name in reached
         }
@@ -838,7 +845,7 @@ class IrOptimizer {
      * `main` is always kept as the entry point.
      */
     private fun unusedSymbolElimination(program: IrProgram): IrProgram {
-        val reached = reach(program, emptyList())
+        val reached = reach(program, exportRoots)
         val reachableFuncs = reached.functions
         val usedNames = reached.names
 

@@ -31,6 +31,7 @@ import org.azora.lang.ir.IrGenerator
 import org.azora.lang.ir.WitnessError
 import org.azora.lang.ir.IrOptimizer
 import org.azora.lang.ir.IrProgram
+import org.azora.lang.ir.IrTopLevel
 import org.azora.lang.ir.IrType
 import org.azora.lang.semantic.EffectChecker
 import org.azora.lang.semantic.InferredTypeArgs
@@ -184,6 +185,14 @@ data class LibrarySource(
 class Compiler(
     private val librarySources: List<LibrarySource> = emptyList(),
     private val analysisSources: List<SourceUnit> = emptyList(),
+    /**
+     * The program's own functions a library build exports under their own
+     * names (`azora compile llvm --export a,b`), for a foreign caller that loads
+     * the result as a shared library. They are reachability roots like `main`,
+     * and each must have a C signature: integers, floating point, `Bool` and
+     * `String` (a borrowed C string) in, one of those or nothing out.
+     */
+    private val exports: Set<String> = emptySet(),
 ) {
 
     private fun sourceSpan(
@@ -467,6 +476,42 @@ class Compiler(
         }
     }
 
+    /**
+     * Each requested export's IR function: the program's own by its name, or a
+     * sibling module's, whose IR name is qualified (`studio__plugins__reply`)
+     * and which the library is then given under the plain name. Also why any
+     * cannot be called through the C ABI.
+     */
+    private fun resolveExports(ir: IrProgram): Pair<Map<String, String>, List<String>> {
+        if (exports.isEmpty()) return emptyMap<String, String>() to emptyList()
+        val functions = ir.items.filterIsInstance<IrTopLevel.Func>().map { it.function }.associateBy { it.name }
+        fun foreign(type: IrType): Boolean = when (type) {
+            is IrType.Integer, IrType.Long, IrType.ULong, IrType.Double, IrType.Float,
+            IrType.Bool, IrType.String -> true
+            else -> false
+        }
+        val resolved = linkedMapOf<String, String>()
+        val errors = exports.mapNotNull { name ->
+            val candidates = functions[name]?.let { listOf(it) } ?: functions.values.filter { it.name.endsWith("__$name") }
+            val function = candidates.singleOrNull()
+            when {
+                name == "main" -> "export 'main': a library has no entry point; export the functions a host calls"
+                candidates.size > 1 -> "export '$name': more than one module declares it (${candidates.joinToString { it.name }})"
+                function == null -> "export '$name': the program declares no top-level function by that name"
+                function.isTask -> "export '$name': a task cannot be called through the C ABI"
+                function.isFailable -> "export '$name': a failable function cannot be called through the C ABI; return a status"
+                function.refParams.isNotEmpty() || function.exclusiveParams.isNotEmpty() || function.variadicParam != null ->
+                    "export '$name': parameters must be plain values"
+                function.params.any { !foreign(it.second) } ->
+                    "export '$name': parameter '${function.params.first { !foreign(it.second) }.first}' is not an integer, floating point, Bool or String"
+                function.returnType != IrType.Unit && !foreign(function.returnType) ->
+                    "export '$name': the result must be an integer, floating point, Bool, String or nothing"
+                else -> { resolved[name] = function.name; null }
+            }
+        }
+        return resolved to errors
+    }
+
     private fun compileLegacy(
         sourceUnit: SourceUnit,
         warningsAsErrors: Boolean,
@@ -577,6 +622,7 @@ class Compiler(
 
         // 2a-ter. A leading underscore keeps a declaration inside its owning
         // module or type.
+        libraries.validateImplPackDeclarations(parsed).takeIf { it.isNotEmpty() }?.let { return CompilationResult.Failure(it) }
         val privateAccessErrors = libraries.validatePrivateAccess(parsed)
         if (privateAccessErrors.isNotEmpty()) {
             return CompilationResult.Failure(privateAccessErrors)
@@ -585,7 +631,7 @@ class Compiler(
         // 2b. Standard library: append the stdlib declarations the program
         // actually references (transitively); user definitions shadow stdlib.
         val initiallyInjected = ScopeQualifiedImplTargets.resolve(
-            SpecDefaults.apply(CallbackImplNormalizer.normalize(libraries.inject(parsed))),
+            SpecDefaults.apply(CallbackImplNormalizer.normalize(libraries.inject(parsed, exports))),
         )
         // Uses written by name are read now, while every call is still the call
         // that was written: later passes expand macros, specialize variadic
@@ -616,7 +662,7 @@ class Compiler(
         val displayed = DisplayDeriver.derive(casts)
         // Applied again: this injection may pull in a module whose implementations
         // have not seen their specs' provided members yet.
-        val injected = SpecDefaults.apply(CallbackImplNormalizer.normalize(libraries.inject(displayed)))
+        val injected = SpecDefaults.apply(CallbackImplNormalizer.normalize(libraries.inject(displayed, exports)))
 
         // 2b-bis. Unroll `inline for X in reflect<*>.withAnnot<D>` loops now that the
         // whole program (all modules' decorated types) is visible. Generic: the
@@ -641,7 +687,7 @@ class Compiler(
         // stdlib symbols not pulled in by the pre-expansion injection (the macro
         // template's own dependencies). A second injection pass over the expanded
         // program picks those up transitively.
-        var macroReInjected = CallbackImplNormalizer.normalize(libraries.inject(macroExpanded))
+        var macroReInjected = CallbackImplNormalizer.normalize(libraries.inject(macroExpanded, exports))
         // The re-injection can re-add `meta .Infix("op")` markers (encoded as
         // `__infix__op` metas) from the stdlib. Collect their operator names and
         // strip the markers so no `TopLevel.Meta` survives into semantic analysis.
@@ -671,7 +717,7 @@ class Compiler(
             // `@arr[…]`, and nothing downstream expands one.
             val typeReInjected = SpecDefaults.apply(
                 MacroExpander.expand(
-                    CallbackImplNormalizer.normalize(libraries.inject(typeExpanded)),
+                    CallbackImplNormalizer.normalize(libraries.inject(typeExpanded, exports)),
                 ),
             )
             VariadicMonomorphizer.monomorphize(typeReInjected)
@@ -715,7 +761,7 @@ class Compiler(
                 VariadicMonomorphizer.monomorphize(
                     SpecDefaults.apply(
                         CallbackImplNormalizer.normalize(
-                            libraries.inject(VariadicMonomorphizer.specializeTuples(ast, semantic.tupleDemands)),
+                            libraries.inject(VariadicMonomorphizer.specializeTuples(ast, semantic.tupleDemands), exports),
                         ),
                     ),
                 ),
@@ -833,10 +879,12 @@ class Compiler(
         }
         // The library members the program never reaches leave in every mode; the
         // program's own code stays as written until a release build shakes it.
-        val ir = IrOptimizer().shakeLibrary(generated)
+        val (exported, exportErrors) = resolveExports(generated)
+        if (exportErrors.isNotEmpty()) return CompilationResult.Failure(exportErrors)
+        val ir = IrOptimizer(exported.values.toSet()).shakeLibrary(generated)
 
         // 10. IR optimization passes (release mode only)
-        val optimizedIr = if (release) IrOptimizer().optimize(ir) else ir
+        val optimizedIr = if (release) IrOptimizer(exported.values.toSet()).optimize(ir) else ir
 
         // ===============================================================
         // Phase 4 - Backend (uses optimized IR in release, raw IR in debug)
@@ -853,7 +901,7 @@ class Compiler(
             catch (e: IllegalStateException) { backendErrors["wasm"] = e.message ?: "unsupported operation"; "" }
 
         // 12. IR → LLVM IR
-        val llvm = if (!generateBackends) "" else try { LlvmCodegen().generate(backendIr) }
+        val llvm = if (!generateBackends) "" else try { LlvmCodegen(library = exports.isNotEmpty(), exports = exported).generate(backendIr) }
             catch (e: IllegalStateException) { backendErrors["llvm"] = e.message ?: "unsupported operation"; "" }
 
         return CompilationResult.Success(

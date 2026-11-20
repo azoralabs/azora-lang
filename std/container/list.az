@@ -67,11 +67,11 @@ spec List<T> : Indexed<T> {
     /** A new list with the elements of this one in reverse order. */
     prop &.reversed: List<T>
 
-    /** Returns the element at `index`. Asserts on an out-of-bounds index. */
-    func &.get(index: Int): T
+    /** A borrow of the element at `index`. Asserts on an out-of-bounds index. */
+    func &.get(index: Int): T&|self|
 
-    /** The element at `index`, read as `list[index]`. Asserts on an out-of-bounds index. */
-    oper[] &.(index: Int): T
+    /** A borrow of the element at `index`, read as `list[index]`. Asserts on an out-of-bounds index. */
+    oper[] &.(index: Int): T&|self|
 
     /** Returns whether `element` is present. */
     func &.contains(element: T): Bool
@@ -268,12 +268,12 @@ impl List<T> for ArrayList<T> {
         return result
     }
 
-    func &.get(index: Int): T
+    func &.get(index: Int): T&|self|
     in {
         assert index >= 0 panic "List index must be non-negative"
         assert index < self._size panic "List index out of bounds"
     } scope {
-        return self._data[index]
+        return self._data[index].&
     }
 
     func &.contains(element: T): Bool {
@@ -455,7 +455,7 @@ impl MutableList<T> for ArrayList<T> {
 func<T> _arrayListOf(elements: Array<T>): ArrayList<T> {
     var result: ArrayList<T> = .()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -464,7 +464,7 @@ func<T> _arrayListOf(elements: Array<T>): ArrayList<T> {
 func<T> listOf(...elements: T): List<T> {
     var result: ArrayList<T> = .()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -473,7 +473,7 @@ func<T> listOf(...elements: T): List<T> {
 func<T> mutableListOf(...elements: T): MutableList<T> {
     var result: ArrayList<T> = .()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -482,7 +482,7 @@ func<T> mutableListOf(...elements: T): MutableList<T> {
 func<T> arrayListOf(...elements: T): ArrayList<T> {
     var result: ArrayList<T> = .()
     for i in 0..<elements.size {
-        result.add(elements[i])
+        result.add(take elements[i])
     }
     return result
 }
@@ -492,9 +492,9 @@ func<T> arrayListOf(...elements: T): ArrayList<T> {
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-oper[] ArrayList<T>&.(index: Int): T {
+oper[] ArrayList<T>&.(index: Int): T&|self| {
     assert index >= 0 && index < self._size panic "List index out of bounds"
-    return self._data[index]
+    return self._data[index].&
 }
 
 @Experimental(since: "0.1")

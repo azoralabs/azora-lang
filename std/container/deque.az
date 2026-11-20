@@ -102,15 +102,15 @@ impl Deque<T> {
 
     /** Returns the front element without removing it. */
     @Experimental(since: "0.1")
-    func &.peekFront(): T {
-        return self.data[self.head]
+    func &.peekFront(): T&|self| {
+        return self.data[self.head].&
     }
 
     /** Returns the back element without removing it. */
     @Experimental(since: "0.1")
-    func &.peekBack(): T {
+    func &.peekBack(): T&|self| {
         var idx: Int = (self.tail - 1 + self.capacity) % self.capacity
-        return self.data[idx]
+        return self.data[idx].&
     }
 
     /** Removes all elements (capacity is retained). */

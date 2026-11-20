@@ -353,7 +353,7 @@ func strParseReal(s: String): Double ?! ParseError {
 @Since("0.1")
 pack StringBuilder {
     @Experimental(since: "0.1")
-    var parts: Array<String> = .() * 16
+    var parts: Array<String> = []
     @Experimental(since: "0.1")
     var count: Int = 0
 }
@@ -364,7 +364,7 @@ impl StringBuilder {
      */
     @Experimental(since: "0.1")
     func !.append(s: String): Unit {
-        self.parts[self.count] = s
+        self.parts.add(s)
         self.count += 1
     }
 
@@ -373,10 +373,9 @@ impl StringBuilder {
      */
     @Experimental(since: "0.1")
     func !.appendLine(s: String): Unit {
-        self.parts[self.count] = s
-        self.count += 1
-        self.parts[self.count] = "\n"
-        self.count += 1
+        self.parts.add(s)
+        self.parts.add("\n")
+        self.count += 2
     }
 
     /**
@@ -384,11 +383,20 @@ impl StringBuilder {
      */
     @Experimental(since: "0.1")
     func &.build(): String {
-        var result: String = ""
-        for i in 0..<self.count {
-            result += self.parts[i]
+        if self.count == 0 then return ""
+        // Neighbours join pairwise, level by level, so each character is copied
+        // once per level - log(parts) times - rather than once per later part.
+        var level: Array<String> = self.parts.clone()
+        while level.size > 1 {
+            var next: Array<String> = []
+            var i = 0
+            while i < level.size {
+                if i + 1 < level.size then next.add("${level[i]}${level[i + 1]}") else next.add(level[i])
+                i += 2
+            }
+            level = take next
         }
-        return result
+        return level[0]
     }
 
     /**
@@ -402,7 +410,7 @@ impl StringBuilder {
      */
     @Since("0.1")
     func !.clear(): Unit {
-        self.parts = .() * 16
+        self.parts.clear()
         self.count = 0
     }
 }

@@ -368,6 +368,29 @@ class Parser(
                 pendingTopLevels.clear()
             }
         }
+        // `impl pack Name { … }` in a file that declares no `Name` declares it: a
+        // pack with no fields, carrying the annotations written on the impl, so a
+        // stateless type is said once (PACK_IMPL_DIP §2.4).
+        run {
+            val declared = items.mapNotNullTo(mutableSetOf()) { item ->
+                when (item) {
+                    is TopLevel.Pack -> item.name
+                    is TopLevel.Enum -> item.name
+                    else -> null
+                }
+            }
+            var index = 0
+            while (index < items.size) {
+                val item = items[index]
+                if (item is TopLevel.Impl && item.isPackImpl && item.traitName == null && declared.add(item.typeName)) {
+                    items[index] = item.copy(annotations = emptyList())
+                    items.add(index, TopLevel.Pack(item.typeName, emptyList(), item.typeParams, item.line, item.column,
+                        annotations = item.annotations, declaredByImpl = true))
+                    index++
+                }
+                index++
+            }
+        }
         // Stamp each pack and impl with the module it was written in. A private
         // member is reachable only from its own module, and that is the only
         // place the two sides can be compared later.
@@ -5738,6 +5761,11 @@ class Parser(
             } else {
                 TypeAnnotation.Inferred
             }
+            // `func &.keys(): List<K> where K: Clone` - what the member needs of
+            // its own and its spec's type parameters (GENERICS_DIP §5.3, owner's
+            // decision R-10): an implementation may rely on it, a caller must
+            // satisfy it.
+            val memberWhere = withInlineBounds(mtypeParams.boundClause, parseWhereClause(), start.line)
             // `func into[self: Self&](): T use as "to${T.typeName}"` - the
             // member's call-site alias. The member keeps its own name; the
             // template only adds a second one.
@@ -5766,7 +5794,7 @@ class Parser(
                 useAsTemplate = memberUseAs,
                 contextualParams = mScopeReceivers.size,
                 annotations = memberAnnotations,
-                whereClause = mtypeParams.boundClause,
+                whereClause = memberWhere,
             ))
         }
         consume(TokenType.R_BRACE, "Expected '}' after spec methods")
@@ -6158,7 +6186,16 @@ class Parser(
                 skipNewlines()
                 !check(TokenType.L_BRACE)
             } else false
-            if (singleScopeBody) {
+            if (singleScopeBody && match(TokenType.EQUAL)) {
+                // `scope = expr`: the expression body of a declaration with
+                // contracts, as `= expr` is of one without.
+                rejectInBraceReceiver("the function", "func $name(…) scope = …")
+                body = if (currentFailSets.isNotEmpty()) listOf(parseReturnTail(peek())) else {
+                    val expr = parseExpr()
+                    consumeNewline()
+                    listOf(Stmt.Return(expr, expr.line, expr.column))
+                }
+            } else if (singleScopeBody) {
                 rejectInBraceReceiver("the function", "func $name(…) scope …")
                 body = listOf(parseSingleStmt("scope body"))
                 consumeNewline()
@@ -7346,6 +7383,16 @@ class Parser(
                     parseCallableType(CallableKind.REACT)
                 }
             }
+            // `foreign (String) -> Int` - a C function address (see
+            // TypeRef.Function.isForeign). Contextual: `foreign` stays an
+            // ordinary name unless a parameter list follows it in a type.
+            check(TokenType.IDENTIFIER) && peek().lexeme == "foreign" && peekNext()?.type == TokenType.L_PAREN -> {
+                advance() // 'foreign'
+                val callable = parseTypeName() as? TypeRef.Function
+                    ?: error("'foreign' must be followed by a callable type at line ${peek().line}")
+                if (callable.receivers.isNotEmpty()) error("a foreign function has no receiver at line ${peek().line}")
+                callable.copy(isForeign = true)
+            }
             // `escaping (Event) -> Unit` - contextual, exactly as `async` is above:
             // it only reads as a prefix when a callable type actually follows.
             check(TokenType.ESCAPING) &&
@@ -8386,7 +8433,14 @@ class Parser(
             values.add(parseExpr())
             allowTrailingLambda = savedTrailing
         }
-        consume(TokenType.L_BRACE, "Expected '{' after contextual values")
+        // `using value then statement` - one statement, as `if c then s` takes.
+        if (match(TokenType.THEN)) {
+            skipNewlines()
+            val body = listOf(parseSingleStmt("using body"))
+            consumeNewline()
+            return Stmt.UsingContext(values, body, start.line, start.column)
+        }
+        consume(TokenType.L_BRACE, "Expected '{' or 'then' after contextual values")
         skipNewlines()
         val body = parseBlock()
         consume(TokenType.R_BRACE, "Expected '}' after using body")
@@ -10625,12 +10679,12 @@ class Parser(
         if (pattern is Expr.IsCheck) {
             return pattern
         }
-        // `Shape.Circle(r)` parses as a method call on the slot, and a plain
-        // `Circle(r)` as a call; either shape with arguments is a destructuring
-        // pattern rather than a value to compare against.
+        // `Shape.Circle(r)` parses as a method call on the slot; with arguments
+        // it is a destructuring pattern rather than a value to compare against.
+        // A plain call is a value, as in a statement `when` (SlotPatterns):
+        // `Long(53) ->` compares against the converted literal.
         val destructures = when (pattern) {
             is Expr.MethodCall -> pattern.args.isNotEmpty()
-            is Expr.Call -> pattern.args.isNotEmpty()
             // `.Circle(r)` - the same pattern with the type left to the scrutinee.
             is Expr.InferredMember -> pattern.name.isNotEmpty() && !pattern.ctorArgs.isNullOrEmpty()
             else -> false
@@ -10788,7 +10842,7 @@ class Parser(
      *
      *  - `inline for x in xs { expr }` - one argument per iteration
      *  - `...arr` - the array's elements, spread
-     *  - `name: value` - a named argument
+     *  - `name: value` or `:name` - a named argument
      *
      * Arguments are separated by a comma or by a line break. A `(` suppresses
      * newline tokens, so a line break leaves nothing between two arguments: the
@@ -10806,21 +10860,41 @@ class Parser(
                 continue
             }
             args.add(
-                if (match(TokenType.ELLIPSIS)) {
-                    val spread = parseExpr()
-                    Expr.Spread(spread, spread.line, spread.column, spread.length)
-                } else {
-                    val first = parseExpr()
-                    if (first is Expr.Identifier && check(TokenType.COLON)) {
-                        advance()
-                        Expr.NamedArg(first.name, parseExpr(), first.line, first.column, first.length)
-                    } else first
+                when {
+                    match(TokenType.ELLIPSIS) -> {
+                        val spread = parseExpr()
+                        Expr.Spread(spread, spread.line, spread.column, spread.length)
+                    }
+                    check(TokenType.COLON) -> {
+                        val colon = advance()
+                        val name = consume(TokenType.IDENTIFIER, "Expected a binding name after ':' in an argument list")
+                        if (name.line != colon.line || name.column != colon.column + 1) {
+                            error("Write a shorthand named argument as ':${name.lexeme}' at line ${colon.line}")
+                        }
+                        val value = Expr.Identifier(name.lexeme, name.line, name.column, name.lexeme.length)
+                        Expr.NamedArg(value.name, value, value.line, value.column, value.length)
+                    }
+                    else -> {
+                        val first = parseExpr()
+                        if (first is Expr.Identifier && check(TokenType.COLON) && !isNextLineNamedArgument(first)) {
+                            advance()
+                            Expr.NamedArg(first.name, parseExpr(), first.line, first.column, first.length)
+                        } else first
+                    }
                 },
             )
             match(TokenType.COMMA)
             skipNewlines()
         }
         return args
+    }
+
+    /** With comma-free arguments, a new line starting with `:name` starts a new argument. */
+    private fun isNextLineNamedArgument(previous: Expr.Identifier): Boolean {
+        val colon = peek()
+        val name = peekNext() ?: return false
+        return colon.line > previous.line && name.type == TokenType.IDENTIFIER &&
+            name.line == colon.line && name.column == colon.column + 1
     }
 
     /**
@@ -11631,6 +11705,12 @@ class Parser(
                         // with its payload. The arguments join the node so the
                         // resolver still sees one thing to give a type to.
                         is Expr.InferredMember -> expr.copy(ctorArgs = args)
+                        // `::fillMaxWidth()` - a static of the expected type, or
+                        // the enclosing scope's function when that type has none.
+                        is Expr.UpperScopeAccess -> if (expr.depth == 1) Expr.InferredMember(
+                            expr.name, expr.line, expr.column, expr.length, ctorArgs = args,
+                            scopeCall = Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr),
+                        ) else Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr)
                         is Expr.Member -> Expr.MethodCall(expr.target, expr.name, args, expr.line, expr.column)
                         // Calling an arbitrary expression value, e.g. `fs[0](x)` or
                         // `(getFn())(x)` - the receiver must be a function value.

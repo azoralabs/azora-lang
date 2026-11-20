@@ -354,6 +354,13 @@ sealed class Expr {
          * the type's constructor instead of one of its members.
          */
         val ctorArgs: List<Expr>? = null,
+        /**
+         * `::name(args)` - a static of the expected type: `modifier:
+         * ::fillMaxWidth()` is `Modifier::fillMaxWidth()`, as `.Name` is
+         * `Type.Name`. Holds the call as written, which is what it means when
+         * the expected type has no such static: the enclosing scope's `name`.
+         */
+        val scopeCall: Expr.Call? = null,
     ) : Expr()
 
     data class Member(
@@ -1555,9 +1562,16 @@ sealed class TypeRef {
          * satisfy - a callable that is not a literal block cannot be inlined.
          */
         val isInline: Boolean = false,
+        /**
+         * `foreign (String) -> Int` - a C function at an address, not a closure:
+         * what `dlsym` answers, reinterpreted with `as*`. A call passes the
+         * arguments by the C ABI and nothing else, so only C-representable
+         * types may appear in it.
+         */
+        val isForeign: Boolean = false,
     ) : TypeRef() {
         override fun toString(): String {
-            val prefix = if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
+            val prefix = (if (isForeign) "foreign " else "") + if (kind == CallableKind.FUNC) "" else "${kind.surfaceName} "
             val context = when (receivers.size) {
                 0 -> ""
                 1 -> "${receivers.single()}."
@@ -2769,6 +2783,8 @@ sealed class TopLevel {
          * A private member is reachable only from its own declaring module, so
          * the check needs to know where each side was written.
          */
+        /** Declared by `impl pack Name { … }` in a file with no `pack Name` (PACK_IMPL_DIP §2.4). */
+        val declaredByImpl: Boolean = false,
         val declaringModule: String? = null,
         /** Exact backend type name when it differs from [name]. */
         val foreignName: String? = null,

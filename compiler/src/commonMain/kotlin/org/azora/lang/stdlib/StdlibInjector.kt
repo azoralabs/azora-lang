@@ -1726,7 +1726,11 @@ class StdlibInjector private constructor(
      * references never match a mangled name, so bare access to library symbols
      * is rejected. Returns the program unchanged when nothing is referenced.
      */
-    fun inject(program: Program): Program {
+    /**
+     * [roots] are names a library build exports (`compile --export`): nothing
+     * in the program may call them, yet they belong in it.
+     */
+    fun inject(program: Program, roots: Set<String> = emptySet()): Program {
         if (
             index.items.isEmpty() &&
             index.externs.isEmpty() &&
@@ -1761,6 +1765,7 @@ class StdlibInjector private constructor(
         // Exported/core blocks are always injected; pull in whatever they reference.
         val alwaysInjected = index.alwaysInjectedFor(program.moduleName)
         for (item in alwaysInjected) collectNamesFromItem(item, referenced)
+        referenced += roots
         val implicitReferenced = referenced.filterTo(mutableSetOf()) {
             it in implicitCollectionTypes || it in implicitLiteralTargets
         }
@@ -2372,6 +2377,22 @@ class StdlibInjector private constructor(
      * withheld is the right to name it from outside, which is what privacy
      * actually means here.
      */
+    /**
+     * `impl pack Name` declares `Name` only where no other `Name` is in sight:
+     * one the file imports, or one every unit sees, stays that module's, and
+     * `impl pack` may not stand in for it (PACK_IMPL_DIP §2.4).
+     */
+    fun validateImplPackDeclarations(program: Program): List<String> {
+        val declared = program.items.filterIsInstance<TopLevel.Pack>().filter { it.declaredByImpl }
+        if (declared.isEmpty()) return emptyList()
+        val visible = index.implicitRootItems.keys + importedItems(program).keys
+        return declared.filter { it.name in visible }.map {
+            val owner = index.moduleOfName[it.name]
+            "line ${it.line}: 'impl pack ${it.name}' is only allowed in the file that declares pack ${it.name}; " +
+                "'${it.name}' already comes from ${owner?.let { module -> "module '$module'" } ?: "an imported module"}"
+        }
+    }
+
     fun validatePrivateAccess(program: Program): List<String> {
         val imported = importedItems(program)
         val privateNames = imported.keys.filterTo(mutableSetOf()) { isPrivateName(it) }
@@ -2584,7 +2605,13 @@ class StdlibInjector private constructor(
                 collectNamesFromTypeAnnotation(stmt.type, names)
                 collectNamesFromExpr(stmt.initializer, names)
             }
-            is Stmt.Assignment -> collectNamesFromExpr(stmt.value, names)
+            // The target is a reference too: a library global that is only ever
+            // written must still be injected for the write to resolve. As for a
+            // read, only a value is meant: a local may share a function's name.
+            is Stmt.Assignment -> {
+                if (index.items[stmt.name].let { it != null && it !is TopLevel.Func }) names += stmt.name
+                collectNamesFromExpr(stmt.value, names)
+            }
             is Stmt.InlineAssignment -> collectNamesFromExpr(stmt.value, names)
             is Stmt.Exchange -> { collectNamesFromExpr(stmt.left, names); collectNamesFromExpr(stmt.right, names) }
             is Stmt.IndexAssign -> {

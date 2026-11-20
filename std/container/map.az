@@ -85,16 +85,16 @@ spec Map<K, V> {
     func &.containsValue(value: V&): Bool
 
     /** Returns the value associated with `key`, or `null` when absent. */
-    func &.get(key: K&): V?
+    func &.get(key: K&): V&|self|?
 
     /**
      * The value associated with `key`, read as `map[key]`. Panics when `key`
      * is absent; `get` answers `null` instead.
      */
-    oper[] &.(key: K): V
+    oper[] &.(key: K): V&|self|
 
     /** Returns the associated value, or `defaultValue` when absent. */
-    func &.getOrDefault(key: K&, defaultValue: V): V
+    func &.getOrDefault(key: K&, defaultValue: V): V where V: Clone
 
     /** Returns an iteration-order snapshot of all entries. */
     func &.entries(): Array<MapEntry<K, V>>
@@ -152,7 +152,7 @@ spec MutableMap<K, V> : Map<K, V> {
     func !.clear()
 
     /** Returns the existing value or inserts and returns `defaultValue()`. */
-    func !.getOrPut(key: K, defaultValue: () -> V): V
+    func !.getOrPut(key: K, defaultValue: () -> V): V&|self| where K: Clone
 
     /** `[k: v, …]` where a `MutableMap<K, V>` is expected: a `LinkedHashMap<K, V>`, as for `Map<K, V>`. */
     ctor .(...entries: (K, V)): Self where K: Hash {
@@ -173,22 +173,22 @@ spec MutableMap<K, V> : Map<K, V> {
 @Experimental(since: "0.1")
 spec SortedMap<K, V> {
     /** Returns the smallest key, or `null` when empty. */
-    func &.firstKey(): K?
+    func &.firstKey(): K&|self|?
 
     /** Returns the greatest key, or `null` when empty. */
-    func &.lastKey(): K?
+    func &.lastKey(): K&|self|?
 
     /** Returns the greatest key strictly below `key`. */
-    func &.lowerKey(key: K&): K?
+    func &.lowerKey(key: K&): K&|self|?
 
     /** Returns the greatest key below or equivalent to `key`. */
-    func &.floorKey(key: K&): K?
+    func &.floorKey(key: K&): K&|self|?
 
     /** Returns the smallest key equivalent to or above `key`. */
-    func &.ceilingKey(key: K&): K?
+    func &.ceilingKey(key: K&): K&|self|?
 
     /** Returns the smallest key strictly above `key`. */
-    func &.higherKey(key: K&): K?
+    func &.higherKey(key: K&): K&|self|?
 
     /** Returns the entry with the smallest key, or `null` when empty. */
     func &.firstEntry(): MapEntry<K, V>?
@@ -446,20 +446,20 @@ impl Map<K, V> for HashMap<K, V> {
         return false
     }
 
-    func &.get(key: K&): V? {
+    func &.get(key: K&): V&|self|? {
         fin index = self._findIndex(key)
         if index < 0 {
             return null
         }
-        return self.values[index]
+        return self.values[index].&
     }
 
-    func &.getOrDefault(key: K&, defaultValue: V): V {
+    func &.getOrDefault(key: K&, defaultValue: V): V where V: Clone {
         fin index = self._findIndex(key)
         if index < 0 {
-            return defaultValue
+            return take defaultValue
         }
-        return self.values[index]
+        return self.values[index].clone()
     }
 
     func &.entries(): Array<MapEntry<K, V>> { return self._entrySnapshot() }
@@ -514,14 +514,13 @@ impl MutableMap<K, V> for HashMap<K, V> {
         self._size = 0
     }
 
-    func !.getOrPut(key: K, defaultValue: () -> V): V {
+    func !.getOrPut(key: K, defaultValue: () -> V): V&|self| where K: Clone {
         fin index = self._findIndex(key)
         if index >= 0 {
-            return self.values[index]
+            return self.values[index].&
         }
-        fin value = defaultValue()
-        self._putValue(key, value)
-        return value
+        self._putValue(key.clone(), defaultValue())
+        return self.values[self._findIndex(key)].&
     }
 }
 
@@ -678,20 +677,20 @@ impl Map<K, V> for LinkedHashMap<K, V> {
         return false
     }
 
-    func &.get(key: K&): V? {
+    func &.get(key: K&): V&|self|? {
         fin index = self._findIndex(key)
         if index < 0 {
             return null
         }
-        return self.values[index]
+        return self.values[index].&
     }
 
-    func &.getOrDefault(key: K&, defaultValue: V): V {
+    func &.getOrDefault(key: K&, defaultValue: V): V where V: Clone {
         fin index = self._findIndex(key)
         if index < 0 {
-            return defaultValue
+            return take defaultValue
         }
-        return self.values[index]
+        return self.values[index].clone()
     }
 
     func &.entries(): Array<MapEntry<K, V>> {
@@ -744,14 +743,13 @@ impl MutableMap<K, V> for LinkedHashMap<K, V> {
         }
     }
 
-    func !.getOrPut(key: K, defaultValue: () -> V): V {
+    func !.getOrPut(key: K, defaultValue: () -> V): V&|self| where K: Clone {
         fin index = self._findIndex(key)
         if index >= 0 {
-            return self.values[index]
+            return self.values[index].&
         }
-        fin value = defaultValue()
-        self._putValue(key, value)
-        return value
+        self._putValue(key.clone(), defaultValue())
+        return self.values[self._findIndex(key)].&
     }
 }
 
@@ -1049,20 +1047,20 @@ impl Map<K, V> for TreeMap<K, V> {
         return false
     }
 
-    func &.get(key: K&): V? {
+    func &.get(key: K&): V&|self|? {
         fin elem = self._findNode(key)
         if elem < 0 {
             return null
         }
-        return self.values[elem]
+        return self.values[elem].&
     }
 
-    func &.getOrDefault(key: K&, defaultValue: V): V {
+    func &.getOrDefault(key: K&, defaultValue: V): V where V: Clone {
         fin elem = self._findNode(key)
         if elem < 0 {
-            return defaultValue
+            return take defaultValue
         }
-        return self.values[elem]
+        return self.values[elem].clone()
     }
 
     func &.entries(): Array<MapEntry<K, V>> { return self._entrySnapshot() }
@@ -1114,35 +1112,34 @@ impl MutableMap<K, V> for TreeMap<K, V> {
         self._size = 0
     }
 
-    func !.getOrPut(key: K, defaultValue: () -> V): V {
+    func !.getOrPut(key: K, defaultValue: () -> V): V&|self| where K: Clone {
         fin elem = self._findNode(key)
         if elem >= 0 {
-            return self.values[elem]
+            return self.values[elem].&
         }
-        fin value = defaultValue()
-        self._putValue(key, value)
-        return value
+        self._putValue(key.clone(), defaultValue())
+        return self.values[self._findNode(key)].&
     }
 }
 
 impl SortedMap<K, V> for TreeMap<K, V> {
-    func &.firstKey(): K? {
+    func &.firstKey(): K&|self|? {
         fin elem = self._minimumNode(self.root)
         if elem < 0 {
             return null
         }
-        return self.keys[elem]
+        return self.keys[elem].&
     }
 
-    func &.lastKey(): K? {
+    func &.lastKey(): K&|self|? {
         fin elem = self._maximumNode(self.root)
         if elem < 0 {
             return null
         }
-        return self.keys[elem]
+        return self.keys[elem].&
     }
 
-    func &.lowerKey(key: K&): K? {
+    func &.lowerKey(key: K&): K&|self|? {
         var elem = self.root
         var candidate = -1
         while elem >= 0 {
@@ -1156,26 +1153,26 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         if candidate < 0 {
             return null
         }
-        return self.keys[candidate]
+        return self.keys[candidate].&
     }
 
-    func &.floorKey(key: K&): K? {
+    func &.floorKey(key: K&): K&|self|? {
         fin exact = self._findNode(key)
         if exact >= 0 {
-            return self.keys[exact]
+            return self.keys[exact].&
         }
         return self.lowerKey(key)
     }
 
-    func &.ceilingKey(key: K&): K? {
+    func &.ceilingKey(key: K&): K&|self|? {
         fin exact = self._findNode(key)
         if exact >= 0 {
-            return self.keys[exact]
+            return self.keys[exact].&
         }
         return self.higherKey(key)
     }
 
-    func &.higherKey(key: K&): K? {
+    func &.higherKey(key: K&): K&|self|? {
         var elem = self.root
         var candidate = -1
         while elem >= 0 {
@@ -1190,7 +1187,7 @@ impl SortedMap<K, V> for TreeMap<K, V> {
         if candidate < 0 {
             return null
         }
-        return self.keys[candidate]
+        return self.keys[candidate].&
     }
 
     func &.firstEntry(): MapEntry<K, V>? {
@@ -1366,10 +1363,10 @@ func<K, V> mutableMapOf(...entries: MapEntry<K, V>): MutableMap<K, V> where K: H
 // ---------------------------------------------------------------------
 
 @Experimental(since: "0.1")
-oper[] HashMap<K, V>&.(key: K): V {
+oper[] HashMap<K, V>&.(key: K): V&|self| {
     fin index = self._findIndex(key)
     assert index >= 0 panic "key not found in map"
-    return self.values[index]
+    return self.values[index].&
 }
 
 @Experimental(since: "0.1")
@@ -1378,10 +1375,10 @@ oper[]= HashMap<K, V>!.(key: K, value: V) {
 }
 
 @Experimental(since: "0.1")
-oper[] LinkedHashMap<K, V>&.(key: K): V {
+oper[] LinkedHashMap<K, V>&.(key: K): V&|self| {
     fin index = self._findIndex(key)
     assert index >= 0 panic "key not found in map"
-    return self.values[index]
+    return self.values[index].&
 }
 
 @Experimental(since: "0.1")
@@ -1390,10 +1387,10 @@ oper[]= LinkedHashMap<K, V>!.(key: K, value: V) {
 }
 
 @Experimental(since: "0.1")
-oper[] TreeMap<K, V>&.(key: K): V {
+oper[] TreeMap<K, V>&.(key: K): V&|self| {
     fin node = self._findNode(key)
     assert node >= 0 panic "key not found in map"
-    return self.values[node]
+    return self.values[node].&
 }
 
 @Experimental(since: "0.1")

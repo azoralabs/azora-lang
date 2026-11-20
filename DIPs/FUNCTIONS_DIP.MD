@@ -112,6 +112,16 @@ Three rules, holding identically for free functions and for methods (a method's
    f(b: 5)   // 15 - a defaults to 1. NOT 52.
    ```
 
+   A named argument whose value is the binding of the same name is written
+   once, as `:name` - the colon stays on the name's left:
+
+   ```azora
+   fin key = "row-1"
+   Text(text, modifier: styled, :key)   // Text(text, modifier: styled, key: key)
+   ```
+
+   Without commas, a new line starting with `:name` starts a new argument.
+
 2. **A defaulted parameter may be omitted**, positionally or by name.
 
 3. **A block written after the parentheses is the last parameter's argument**,

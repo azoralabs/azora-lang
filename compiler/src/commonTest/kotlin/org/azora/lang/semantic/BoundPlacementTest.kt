@@ -208,8 +208,9 @@ class BoundPlacementTest {
         """)
         assertRejected(
             required,
-            "line 4: 'Pile.firstArea' requires 'T: Shape', which 'Bag.firstArea' cannot promise; a caller through " +
-                "'Bag' may hold a 'Pile' of any 'T' - bound the type ('pack Pile<T: Shape>'), or drop the bound here",
+            "line 4: 'Pile.firstArea' requires 'T: Shape', which 'Bag.firstArea' does not promise; a caller through " +
+                "'Bag' may hold a 'Pile' of any 'T' - bound the spec member (a 'where' clause on 'Bag.firstArea'), " +
+                "bound the type ('pack Pile<T: Shape>'), or drop the bound here",
         )
         val provided = rejected("""
             spec Bag<E> { func &.firstArea(): Int { return 0 } }
@@ -219,7 +220,7 @@ class BoundPlacementTest {
             }
             func main() {}
         """)
-        assertRejected(provided, "line 4: 'Pile.firstArea' requires 'T: Shape', which 'Bag.firstArea' cannot promise")
+        assertRejected(provided, "line 4: 'Pile.firstArea' requires 'T: Shape', which 'Bag.firstArea' does not promise")
         // What the type or the spec already requires of the parameter is promised.
         assertEquals(
             "9 4",
@@ -240,6 +241,50 @@ class BoundPlacementTest {
                     print(Heap(Sq(2)).firstArea())
                 }
             """),
+        )
+    }
+
+    /**
+     * A spec member states what it needs of its spec's parameters (R-10): an
+     * implementation may restate the bound and rely on it, a call through a
+     * spec-typed value is decided for the receiver's arguments, and generic
+     * code holding one declares the bound itself.
+     */
+    @Test fun aSpecMemberMayBoundItsSpecsParameters() {
+        val spec = """
+            spec Bag<E> {
+                func &.firstArea(): Int where E: Shape
+                func &.count(): Int
+            }
+            pack Pile<T> { var item: T }
+            impl Bag<T> for Pile<T> {
+                func &.firstArea(): Int where T: Shape = self.item.area()
+                func &.count(): Int = 1
+            }
+        """
+        assertEquals(
+            "9\n9\n1",
+            output(spec + """
+                func through(b: Bag<Sq>&): Int = b.firstArea()
+                func main() {
+                    fin p = Pile<Sq>(Sq(3))
+                    println(p.firstArea())
+                    println(through(p))
+                    println(Pile<NoShape>(NoShape(1)).count())
+                }
+            """),
+        )
+        assertRejected(
+            rejected(spec + "func through(b: Bag<NoShape>&): Int = b.firstArea()\nfunc main() {}"),
+            "'firstArea' does not satisfy its 'where' clause here: 'E is Shape': NoShape does not implement Shape",
+        )
+        assertRejected(
+            rejected(spec + "func<U> through(b: Bag<U>&): Int = b.firstArea()\nfunc main() {}"),
+            "add 'where U: Shape'",
+        )
+        assertRejected(
+            rejected(spec + "func main() { println(Pile<NoShape>(NoShape(1)).firstArea()) }"),
+            "'firstArea' does not satisfy its 'where' clause here: 'T is Shape': NoShape does not implement Shape",
         )
     }
 

@@ -1,7 +1,10 @@
 # Azora 0.1 - Road to Production
 
-The test counts and item statuses below include older snapshots. For current
-measured status, see [the delivery plan](ECOSYSTEM_DELIVERY_PLAN.md) and
+Status re-measured 2026-11-19: the table and exit gates below, and every entry
+marked *(re-checked 2026-11-19)*, were checked against the code and by running
+probe programs on the interpreter, LLVM (`lli`) and WebAssembly (node). Entries
+without a date may still describe an older snapshot. The ordered work that
+remains is §13, the release plan. Evidence for each change is in
 [the progress log](ECOSYSTEM_PROGRESS.md).
 
 > The complete list of what has to be true before `0.1` ships, and what is
@@ -33,10 +36,15 @@ on and expect it to keep working. Four promises, and every section serves one:
 
 Hard blockers. `0.1` does not ship with any of these open.
 
-- ⬜ **Zero failing tests** - 75 fail today (§9.1)
-- ⬜ **No known miscompiles** - §1.1 is empty
+- ✅ **Zero failing tests** *(met 2026-11-06, held since; 2026-11-18: 3,146
+  compiler tests and 94 AZLS tests, none failing, none skipped, with the
+  native backends required)*. It has to keep holding on every platform
+  §12.5 names, which needs CI (§9.2); today it is measured on one Mac
+- ⬜ **No known miscompiles** - §1.1 is empty. *(2026-11-20: 9 open)*
 - ⬜ **Backend parity** - every construct behaves identically on every backend,
-  or is a compile error on the ones that cannot express it (§6)
+  or is a compile error on the ones that cannot express it (§6). *(2026-11-19:
+  no conformance suite yet; float text, `?.`, variants and synchronization
+  still differ or are missing on LLVM or WebAssembly)*
 - ✅ **Every shipped feature has a written DIP**
 - ✅ **A published stability policy** (§11; STABILITY_DIP.MD, 2026-11-07)
 - ✅ **A package manager**, with `new` → `build` → `test` working (§7.4;
@@ -46,12 +54,16 @@ Hard blockers. `0.1` does not ship with any of these open.
 
 ### Where the project stands
 
-|                  |                                     |
-|------------------|-------------------------------------|
-| Tests            | 1519 total, **75 failing**          |
-| Standard library | 48 `.az` modules                    |
-| DIPs             | 34, all written                     |
-| Backends         | interpreter ✅, LLVM 🟨, Wasm 🟨    |
+*(re-checked 2026-11-19)*
+
+|                  |                                                        |
+|------------------|--------------------------------------------------------|
+| Tests            | compiler 3,146, AZLS 94 - **0 failing**, 0 skipped     |
+| Standard library | 50 `.az` files                                         |
+| DIPs             | 51 files in `DIPs/`                                    |
+| Backends         | interpreter ✅, LLVM 🟨 (runs under `lli`; links no executable), Wasm 🟨 (refuses variants, `?.`, synchronization) |
+| Engine smoke     | 8 of 31 packages build (§13, M7)                       |
+| Open in §1.1     | 9                                                      |
 
 ---
 
@@ -60,6 +72,23 @@ Hard blockers. `0.1` does not ship with any of these open.
 ### 1.1 Known miscompiles and unsound acceptances
 
 Each lets a program be silently wrong. This list must be empty to ship.
+
+- ✅ *(found and fixed 2026-11-20)* **A `Copy` place stored into a field or an element
+  in a sibling module was not copied.** `best.hit = hit` (`fin hit: Hit`,
+  `Hit` all `Copy` fields) stored the binding itself, which was freed at the
+  end of its scope, leaving the field dangling. The checker inserts the copy in
+  the entry file; a sibling module compiles as a library and relied on it in
+  vain. Lowering now copies a `Copy` place stored into a field or an element,
+  as it does one bound to a name; a non-`Copy` one is refused in both, as it
+  was (`Feature003SyntaxTest.aSiblingModuleStoresACopyOfACopyPlace`).
+- ✅ *(2026-11-20, not a defect of its own)* Assigning a pack-typed
+  `threadlocal` looked like a crash; it was the dangling field above, read
+  through it (`Feature003SyntaxTest.aThreadLocalPackTakesAWholeValue`).
+- ✅ *(found and fixed 2026-11-20)* **A method in a sibling module named like a string
+  intrinsic was lowered as that intrinsic** - `Field.contains(x, y, z)` gave
+  LLVM two definitions of one symbol. The intrinsic test now skips every
+  function the module defines with a body, a library module's included
+  (`Feature003SyntaxTest.aSiblingModulesMethodNamedLikeAStringIntrinsicIsItself`).
 
 - ✅ *(2026-11-07: refused with the field named, OPERATOR_OVERLOADING_DIP §7.2)* **Derivation is not checked against field capabilities.**
   `pack Sample { var value: Double }` with `derive Order for Sample` is
@@ -227,6 +256,82 @@ Each lets a program be silently wrong. This list must be empty to ship.
   twice.** `func<T> twice(x: T): Pair<T> { return Pair<T>(x, x) }` and
   `dst.item = src.item` pass the checker; `twice(Pt(3))` crashes under
   AddressSanitizer (double free when `Pair<Pt>` is dropped).
+  *(re-checked 2026-11-19)* This needs no new decision. OWNERSHIP_BORROWING_DIP
+  §20 already gives the rule: a type parameter with no capability is moved by
+  a by-value use (`return take value`), and duplicating one needs `where T:
+  Copy` (or `.clone()` under `where T: Clone`). The checker does not apply it
+  to type parameters. Enforcing it is the fix, and the item above depends on
+  it (a keeper may free what it keeps only once a `T` cannot have two owners).
+  *(Measured 2026-11-19, then reverted.)* The check is one line in
+  `TypeResolver.checkByValueTransfer`, which returns early for any type
+  parameter; it can read the declared parameter with `typeParamOf` and accept
+  it only under a `Copy` bound. With it, `twice` is refused as it should be,
+  and **190 sites in std** stop compiling: sorts, searches and merges that
+  copy array elements, `Map` rebuilds, the variadic list constructors,
+  `random`'s shuffle, `reactive`, `range`. `String`, the numbers and
+  field-wise packs are `Copy`; `ArrayList` and anything with a destructor are
+  not. Each site needs `where T: Copy`, a `Clone` bound with `.clone()`, or a
+  `take` - a std API choice, so it waits for decision R-8 (§13). The
+  matching IR half: an implicit copy of a `Copy`-bounded `T` has to clone
+  through the descriptor (`Witnesses.bounds` gives `Copy` the `Clone`
+  witness; `IrGenerator.withImplicitCopy` calls it), or `where T: Copy` code
+  still aliases a pack (`twice` crashes under AddressSanitizer with `Pt`, which
+  is `Copy`).
+  *(2026-11-19, R-8 decided and started.)* Done: the IR half - `where T:
+  Copy` gives the `Clone` witness, and an implicit copy of a `T` that has it
+  clones (`twice` with `where T: Copy` runs clean under AddressSanitizer and
+  on WebAssembly, `FoundationArgumentOwnershipExecTest`); list and set
+  literals and variadic constructors move their elements (`take
+  elements[i]`); `Set`'s `has`/`contains` borrow (`T&`), as `Map`'s lookups
+  do. The check itself is reverted again: the sweep is **blocked** on R-10.
+  Copies out of a borrowed collection (`Map.keys()`, `values()`, `entries()`,
+  `putAll`, `getOrPut`, the sorted-map views) need a `Clone` bound, and they
+  are spec members - a spec member takes no `where` clause, and an impl
+  member may not demand more than its spec member (GENERICS_DIP §5.3).
+  Two more gaps found: the check cannot see a `T` reached through
+  `self.field[i]` (`_entrySnapshot` builds `MapEntry(self.keys[i],
+  self.values[i])` - aliases - unflagged), and a `return` of a place the
+  function does not own is never checked (`getOrPut` returns
+  `self.values[index]`, which the map keeps). So the 179 sites (list, set,
+  map 60, functional 25, algorithm 21, sort 14, math 12, reactive, random,
+  search, range, generators, thread, sync, channel, convert) are a lower
+  bound.
+  *(2026-11-20)* R-10 is implemented (GENERICS_DIP §5.3: a spec member may
+  bound its spec's parameters; `BoundPlacementTest`). Re-measuring with it,
+  R-8 is a std ownership redesign rather than a sweep: besides the 179
+  hand-offs, about **90 accessors** return a place they do not own (`Map.get`,
+  `getOrDefault`, `getOrPut`, list indexing, `first()`…), which aliases a `T`
+  exactly as `Pair<T>(x, x)` does, and reads through `self.field[i]` are not
+  seen by the check. The accessors need decision R-11; the check stays
+  reverted until std is swept with it.
+  *(2026-11-20, R-11 decided: borrows.)* Done: `Map.get`, map `[]`,
+  `firstKey`/`lastKey`/`lowerKey`/`floorKey`/`ceilingKey`/`higherKey`, `List`
+  and `Set` `get` and `[]`, `Indexed.get`, `Deque.peekFront`/`peekBack` and
+  `Slice` `[]` return a borrow of the stored value (`V&|self|`, `K&|self|?`);
+  a borrowed `Int` or `String` reads as one in arithmetic, calls and
+  bindings, on every backend (`ContainerBorrowExecTest`, also under
+  AddressSanitizer). Next, and blocking the `Clone` copy-outs (`keys()`,
+  `values()`, `entries()`, `getOrDefault`, `getOrPut`, `Guard.get`): **a
+  member's bound on its type's parameter gets no witness descriptor.** A pack
+  carries descriptors only for its own declaration's bounds, so `where V:
+  Clone` on a `HashMap` member cannot clone a `V` on WebAssembly and panics
+  `no Clone witness` for a `K` on the others. The descriptor has to be passed
+  at the member's call site from the receiver's type, as a function's own
+  bounds are (and through spec dispatch); giving `HashMap` a `V` descriptor
+  instead would make every generic constructor of a map declare `V: Clone`.
+  *(2026-11-20, built.)* A member's bound on its type's parameter now takes
+  its descriptor from the call site, read off the receiver's declared type
+  (generic code passes its own), and a call through a spec-typed value passes
+  the spec member's (R-10) through the dispatch tables, so every
+  implementation of such a member takes the same descriptors in the spec's
+  order (`IrGenerator.initMemberWitnesses`). `getOrDefault` (`where V:
+  Clone`), `getOrPut` (a borrow of what it stored, `where K: Clone`) and
+  `Guard.get` (`where T: Clone`) are back on that footing
+  (`MemberWitnessExecTest`). WebAssembly copies a `String` and a scalar
+  through a clone now. Found and fixed on the way: a generic function bounded
+  `V: Clone` that took a `HashMap<K, V>` failed with `parenthesized tuple
+  types were removed` - the variadic monomorphizer refused the maps' `(K, V)`
+  constructor type, naming a `Tuple<…>` that does not exist.
 - ✅ *(2026-11-18)* **LLVM: `b ?? 0` with `b: Cent?` gave `0`**: the
   fallback literal is read at what `b` holds (with the literal-arithmetic fix
   above).
@@ -235,21 +340,93 @@ Each lets a program be silently wrong. This list must be empty to ship.
   T, sink: (T) -> Unit) { sink(x) }` called with `{ v: Cent -> println(v) }`
   prints the cell's address on LLVM; `func<T> later(x: T): () -> T = [x] { x }`
   returns garbage there; WebAssembly stops with `function signature mismatch`.
-  The interpreter is right.
+  The interpreter is right. *(2026-11-20: broader than 16 bytes on
+  WebAssembly - a generic member calling a `() -> T` closure given `{ Pt(11)
+  }`, a pack result, traps with `function signature mismatch`; it is what
+  keeps `getOrPut` off WebAssembly.)* Under the generics decision (§12.2, GENERICS_DIP
+  §21.2: "calling convention differs by argument" requires specialization),
+  the fix is an adapter where a closure over a 16-byte type becomes an erased
+  function value, the way `dyn` thunks already convert operands.
 - ⬜ **The backends print a `Double` differently.** `0.1 * 3.0` prints
   `0.30000000000000004` on the interpreter, `0.3` on LLVM and WebAssembly;
   `1.0 / 3.0` prints `0.3333333333333333`, `0.333333` and `0.333333333333333`.
   The value is the same everywhere; only its text differs (§6.1).
+  *(re-checked 2026-11-19: worse than text.)* LLVM disagrees with itself:
+  `println(x)` uses `%g` (six digits) and `"$x"` uses `%.17g` (`0.1` reads
+  `0.10000000000000001`). WebAssembly's `__double_to_str` drops a small
+  exponent (`0.1 / 1e10` prints `0.1`) and **traps** on an infinity (`float
+  unrepresentable in integer range`). Infinities and NaN read `Infinity`/`NaN`,
+  `inf`/`nan`, or trap; `1e19` reads `1.0E19` or `10000000000000000000.0`.
+  The interpreter's text comes from the host's `Double.toString`, which is
+  the shortest round-trip form only on JDK 19 and later, and Kotlin/Native
+  has its own. The fix is one written rule (shortest decimal that reads back
+  as the same value, in one notation) implemented exactly on every backend
+  and checked against an oracle on a large random set.
+- ⬜ *(found 2026-11-19)* **The interpreter computes `Float` at `Double`
+  precision.** An unannotated real literal is a `Float`, so `var u = 0.1;
+  println(u * 3.0)` prints `0.30000000000000004` on the interpreter, a 64-bit
+  result, while WebAssembly computes in `f32` (and prints
+  `0.300000011920929`). Every `Float` operation has to round to 32 bits on
+  every backend.
 - ⬜ **A wide literal where nothing types it is not checked against `Int`.**
   `println(4_611_686_018_427_387_904)` prints `0` on LLVM; a 128-bit literal
   there fails on the interpreter (`wider than this backend evaluates`). And
   `func<T: Display> show(v: T)` refuses `show(4_611_686_018_427_387_904)` with
   `Int does not implement Display`.
-- ⬜ **A `fin` optional does not narrow after `!= null`.** `fin key = code as?
+- ✅ *(2026-11-19: narrowing, TYPE_DIP §2.1, owner's decision R-9; `OptionalNarrowingExecTest` on every backend)* **A `fin` optional does not narrow after `!= null`.** `fin key = code as?
   KeyCode; if key != null && pressed(key)` is refused (`expected KeyCode, got
   KeyCode?`), and there is no optional binding; `?.` is still interpreter-only.
-- ⬜ **A `when` arm written `Long(53) ->` is read as a payload pattern**
+  *(re-checked 2026-11-19: both still so; LLVM and WebAssembly refuse `?.`
+  with a target error, so that half is missing, not miscompiled.)* No
+  optional narrows anywhere, of any binding kind: the resolver has no
+  narrowing, and TYPE_DIP §2 specifies none (only `??`, `?.`, `as?` and the
+  guarded `.require()`). An `Int?` *seemed* to narrow only because
+  compile-time evaluation folded the call that produced it into a literal.
+  So this was a missing rule, not a miscompile. The rule, as decided (R-9)
+  and implemented: a `fin`, `val` or `let` local, or a parameter, of type `T?` reads as
+  `T` where a condition proves it non-null - the `then` branch of `if x !=
+  null`, the right operand of `x != null && …`, the `else` branch of `if x ==
+  null`, the right operand of `x == null || …`, and the rest of a block after
+  `if x == null { return | throw | break | continue }`. A `var` or `val`
+  (whose name can be rebound) does not narrow; `val` was in the proposal by
+  mistake. The resolver and the IR generator apply one rule
+  (`OptionalNarrowing`), and a narrowed read lowers as `.require()` does,
+  without the guard. A write through a narrowed copy (an `Int` lent as `a!`)
+  is refused; through a narrowed pack it reaches the optional's value.
+  Still open from this item: `?.` on LLVM and WebAssembly.
+  Found on the way: `Int? + Int` type-checks (`unwrapNullableNumeric` in the
+  resolver's binary operators) - the §1.2 "`T?` silently treated as `T`" item.
+- ✅ *(2026-11-19: a plain call is a value in a `when` expression, as in a
+  statement `when`; `WhenValuePatternExecTest` on every backend)* **A `when`
+  arm written `Long(53) ->` is read as a payload pattern**
   (`cannot destructure a slot payload`); `53 ->` works against a `Long`.
+  *(re-checked 2026-11-19)* Only in a `when` *expression*: a statement `when`
+  takes `Long(53) ->` on every backend. The expression form decides in the
+  parser, before names are known, that a call with arguments is a payload
+  pattern.
+
+- ⬜ *(found 2026-11-19)* **`as?` from `Any` to an enum.** `fin code: Any =
+  KeyCode.A; code as? KeyCode` is `null` on the interpreter (a pack works).
+  LLVM emits a call to an undefined `@__dynCast` and WebAssembly to an unknown
+  `$__dynCast`, so the output does not assemble instead of being a target
+  error; with a pack the program is refused (`purge of Any is not supported`).
+
+- ⬜ *(found 2026-11-20)* **LLVM crashes on a generic pack holding an array
+  of a pack narrower than a slot.** `pack Store<T> { var items: Array<T> }`
+  with `func &.at(i: Int): T = self.items[i]`, used as `Store<Pt>` (`pack Pt
+  { var x: Int }`), crashes under `lli`; so does a borrowed optional return
+  (`func &.find(i: Int): T&|self|?`). WebAssembly refuses the same program
+  with GENERICS_DIP §21.2's diagnostic (item 021.3, arrays narrower than a
+  slot); LLVM has to refuse it too until 021.3 specializes it. A borrowed
+  return (`func &.at(i: Int): T&|self| = self.items[i].&`) runs on LLVM.
+
+- ✅ *(found and fixed 2026-11-20)* **LLVM freed a map's value through
+  `get`.** `HashMap<String, Pt>.get` returned the map's own `Pt` as a value
+  the caller's binding owned, and LLVM freed it at the end of the scope (a
+  crash in `__azora_free` - any pack value, any map). `get` returns a borrow
+  now (R-11), and a declared borrowed optional (`V&|self|?`) is no longer
+  read as an owned result (`IrGenerator.borrowedRef`).
+  `ContainerBorrowExecTest`.
 
 ### 1.2 Type system
 
@@ -263,11 +440,20 @@ Each lets a program be silently wrong. This list must be empty to ship.
 - 🟨 `where` constraints - evaluated, but four cases are unimplemented:
   element-wise conformance for variadic packs, membership in array/set
   literals, unary operators in constraint position, calls in constraints
-- ⬜ **Generic erasure is the biggest open question.** Field types are `Any` at
-  runtime and operators dispatch on the runtime type as a patch. Decide:
-  monomorphisation, reified generics, or documented erasure with dictionaries
+- ✅ *(decided 2026-11-07, §12.2; re-checked 2026-11-19)* **Generic erasure.**
+  The owner chose erasure plus specialization where erasure cannot represent
+  a call (GENERICS_DIP §21, A6). The three §1.1 items blamed on erasure need
+  that decision applied, not a new one: one `T` in two owners is
+  OWNERSHIP_BORROWING_DIP §20's move rule left unenforced; a kept 16-byte cell
+  and a closure over a 16-byte type are §21.2's "destruction or calling
+  convention differs by argument" cases
 - ⬜ Variance rules stated, checked, documented
-- ⬜ Integer overflow semantics defined and identical across backends
+- 🟨 Integer overflow semantics defined and identical across backends.
+  *(re-checked 2026-11-19)* Defined: fixed-width arithmetic wraps modulo
+  2^width on every execution path (TYPE_DIP; `IntegerSemantics.kt`). Not yet
+  qualified on every backend, as TYPE_DIP itself says: division edge cases
+  (`Int::minValue / -1`, division by zero), shift counts at or past the width,
+  and 128-bit execution. These go into the conformance suite (§13, M2)
 - ⬜ No path where `T?` is silently treated as `T`
 
 ### 1.3 Memory and ownership
@@ -518,17 +704,24 @@ generation. Every form the parser accepts:
   that same eager list - not asynchronous, no suspension points. The names
   promise laziness and asynchrony, and the implementation is a list builder
 - ✅ `async { }` / `await`, real parallelism on a thread pool
-- ⬜ **`launch { }` does not parse** - `undefined variable 'launch'`. The
-  `__launch` intrinsic behind it is implemented in the interpreter and LLVM but
-  nothing produces it. Give it syntax or delete it; a discarded `async { }`
-  handle already covers the intent
-- ✅ `channel()` with send/receive/close (a compiler builtin)
+- ⬜ **`launch { }` does not parse**. *(re-checked 2026-11-19: still so, and
+  the name now resolves to `std.gpu::launch`, so the error suggests importing
+  a GPU dispatch.)* The `__launch` intrinsic behind it is implemented in the
+  interpreter and LLVM but nothing produces it. Give it syntax or delete it;
+  a discarded `async { }` handle already covers the intent
+- ✅ `channel()` with send/receive/close. *(re-checked 2026-11-19: it is no
+  longer a compiler builtin but `std.parallelism.channel::channel<T>()`,
+  returning the library `Channel<T>`; runs on the interpreter and LLVM.)*
 - ✅ `delay`
-- ⬜ **`Mutex` and `Atomic` do not exist**, so `std.parallelism.sync` and
-  `std.parallelism.channel` **do not compile when used**: `SpinLock`,
-  `Guard`, `CountDownLatch` and `Channel` all fail with
-  `undefined function 'Mutex'` / `'Atomic'`. Importing the module is fine, which
-  is what hides it
+- 🟨 *(re-checked 2026-11-19)* **`Mutex` and `Atomic` exist** in
+  `std.parallelism.sync`: `Atomic` is an `Int` word behind four bridges
+  (`_atomicLoad`, `_atomicStore`, `_atomicAdd`, `_atomicCas`), `Mutex` spins
+  on an `Atomic`, and `withMutex` runs a closure under one. They run on the
+  interpreter and LLVM; WebAssembly refuses them with a target error (no
+  shared memory or atomic instructions). Missing for 0.1: a lock that waits
+  instead of spinning, atomics wider or narrower than `Int`, and any
+  statement of ordering (they are sequentially consistent by implementation,
+  not by rule)
 - ⬜ `Send` / `Sync` capabilities
 - ⬜ Real OS threads, `JoinHandle`, scoped threads
 - ⬜ `Channel<T>` moved out of the compiler into std
@@ -536,9 +729,10 @@ generation. Every form the parser accepts:
   `sleep` is `delay` renamed, `spawnAsync` spawns then sleeps a caller-supplied
   duration, and `joinAll(count)` **joins nothing** - it sleeps for `count` ms.
   Delete the module or implement it
-- ⬜ **Two unrelated channels**: the working compiler builtin `channel()` and
-  the library `Channel<T>` that does not compile and whose `receive`
-  asserts rather than waiting. Decide which survives
+- 🟨 **Two unrelated channels**. *(re-checked 2026-11-19: one is left, the
+  library `Channel<T>`. Its `receive` still asserts (`Channel is empty`)
+  rather than waiting, so a consumer that runs ahead of its producer stops
+  the program.)*
 - ⬜ A memory model - ordering, visibility, and what a data race *is* in Azora
   terms. Every atomic operation's meaning depends on it
 - ✅ Fix `module std.pareallelism.sync` (typo - unimportable under its own path)
@@ -910,7 +1104,9 @@ unspellable, so the fixes reach every scope-scoped type in the language.
   - ⬜ `await` under Wasm lowers to its operand; tasks run inline (§3.3)
   - ⬜ `delay` under Wasm degrades - no host clock (§6.4)
   - ⬜ A failed `assert` under Wasm loses its message (§3.2)
-  - ⬜ `hash` for pointer-backed values disagrees between LLVM and the
+  - ✅ `hash` for pointer-backed values disagrees between LLVM and the
+    interpreter (§1.1; closed 2026-11-07)
+  - ⬜ *(2026-11-19)* Float and Double text, and `Float` precision on the
     interpreter (§1.1)
 
 ### 6.2 Interpreter
@@ -932,10 +1128,32 @@ unspellable, so the fixes reach every scope-scoped type in the language.
   `__azora_arena_begin` / `_alloc` / `_free_all` / `_detach_current`, and the
   branching `__azora_alloc`. The interpreter's matching `regionAllocations`
   deque, also never pushed to, went with it
-- 🟨 Placeholders remain for **closures, `defer`, compound types, pointers**
-- ⬜ `hash` for pointer-backed values (§1.1)
+- ✅ *(re-checked 2026-11-19)* ~~Placeholders remain for closures, `defer`,
+  compound types, pointers~~: a closure with a capture list, `defer`, tuples
+  and `alloc`/`purge` through a pointer print the same on `lli` as on the
+  interpreter and WebAssembly. What is left of the placeholder shape is the
+  next two items and the 16-byte closure crossing (§1.1)
+- ✅ `hash` for pointer-backed values (§1.1; closed 2026-11-07)
 - ⬜ Unsupported global statements emit a comment
-  (`; unsupported global statement`) - must be an error
+  (`; unsupported global statement`) - must be an error. *(re-checked
+  2026-11-19: still in `emitGlobal`.)*
+- 🟨 *(found 2026-11-19)* `println` of a type the LLVM printer does not know
+  prints the text `<value>` (`LlvmCodegen` print fallback, twice) - must be
+  an error, or unreachable and asserted so. The reachable case is closed:
+  printing or interpolating a **function value** showed a Kotlin object on
+  the interpreter, `<value>` or an address on LLVM and a table index on
+  WebAssembly; it is refused now (`cannot print a function value - a
+  function has no text; …`, `DisplaySpecTest`). The fallback itself stays
+  until a sweep shows nothing else reaches it
+- ✅ *(reported and fixed 2026-11-20)* Adding a new module that declares one
+  trivial annotated pack (an `@Panel` pack) and importing it from the entry
+  made a multi-file program that built on LLVM fail with `LLVM cannot read
+  member '.Digit5' of Any yet`. Cause: the type a leading dot (`.Name`,
+  `.(…)`) resolved to was recorded by line and column alone, and every module
+  numbers its lines from 1 - a library's `.(key)` at 262:50 overwrote a
+  program's `.Digit5` at 262:50 whenever it resolved later, which one more
+  module made it do. The record is keyed by the member's name too
+  (`Feature003SyntaxTest.leadingDotsAtTheSamePositionInTwoFilesKeepTheirOwnTypes`)
 - ⬜ Debug info (DWARF)
 - ⬜ Optimisation pipeline and `--release`
 - ⬜ Native linking - produce an executable, not just `.ll`
@@ -946,9 +1164,21 @@ Several constructs degrade silently; each is a potential miscompile.
 
 - ✅ Emits WAT with linear memory and host imports
 - ✅ Value-returning `when`/`if` (fixed - was rejected by the validator)
-- ⬜ `ForEach` is a **no-op**
-- ⬜ Unsupported methods "degrade to the receiver"
-- ⬜ `VariantLit` / `SlotPattern` emit `(i32.const 0)`
+- ✅ *(re-checked 2026-11-19)* ~~`ForEach` is a no-op~~: `for` over an array
+  literal, an `ArrayList` and a range prints the same as on the interpreter
+- ✅ *(re-checked 2026-11-19)* ~~Unsupported methods "degrade to the
+  receiver"~~: a method WebAssembly cannot lower is a target error
+  (`emitMethodCall`)
+- 🟨 *(re-checked 2026-11-19)* `VariantLit` / `SlotPattern` no longer emit
+  `(i32.const 0)`: a variant is a target error (`no WebAssembly layout for
+  pack 'Shape'`, `cannot lower an anonymous variant value yet`). Explicit, but
+  a `variant enum` does not run on WebAssembly at all - including std's
+  `Option<T>`
+- ⬜ `?.` and `Set`/`Map` literals are target errors (explicit; to implement)
+- ⬜ Call temporaries (packs and arrays lent to a call) are never freed (§1.1)
+- ⬜ Synchronization (`Atomic`, `Mutex`, `Channel<T>`) is a target error -
+  needs the threads proposal's shared memory, or a single-threaded meaning
+  stated (§3.3)
 - ⬜ `delay` degrades - no host clock
 - ⬜ Strings and memory management beyond the MVP
 - ⬜ Host interop story - imports and exports across the Wasm boundary
@@ -964,7 +1194,10 @@ Several constructs degrade silently; each is a potential miscompile.
 - ✅ Targets `wasm`/`wat`, `llvm`/`ll`, `ir`, `ast`
 - ✅ `--debug` / `--release` / `--test` flags
 - ✅ Multi-file projects auto-discovered
-- ⬜ `azora test` - first-class runner with reporting
+- 🟨 `azora test` - first-class runner with reporting. *(re-checked
+  2026-11-19: runs a file's, a directory's or a project's `test` blocks,
+  `--llvm` for a project; no `--wasm`, no filtering, no machine-readable
+  report.)*
 - ⬜ `azora fmt` - **no formatter exists**
 - ⬜ `azora doc` - **documentation generator: nothing exists, not even
   partially.** There is no `doc` command and no doc-comment pipeline: the lexer
@@ -980,7 +1213,8 @@ Several constructs degrade silently; each is a potential miscompile.
   - ⬜ Output format decided, and whether it renders the scope/module tree
   - ⬜ `azls` hover reads the same comments, so the editor and the generated
     docs cannot disagree
-- ⬜ `azora new` - project scaffolding
+- ✅ `azora new` - project scaffolding *(re-checked 2026-11-19; with `build`,
+  `run`, `test`, `add`, `remove` - PACKAGES_DIP)*
 - ⬜ Consistent exit codes; `--json` diagnostics for tooling
 - ⬜ Diagnostics output format is `--json`; it should be AZON, like every other
   structured format the project emits
@@ -988,12 +1222,12 @@ Several constructs degrade silently; each is a potential miscompile.
 ### 7.2 Language server
 
 - 🟨 Error-tolerant highlighting, diagnostics, completion, hover, document
-  symbols - **16 of 42 tests fail**
+  symbols. *(re-checked 2026-11-19: 94 tests, none failing; it was 16 of 42
+  failing.)* Still 🟨 for the open items below
 - ✅ Reflective loading for Azora Studio, optional prelude
 - ✅ `AZLS_DIP.MD` written
-- ⬜ **The server points at `../Internal/Std`**, a stdlib layout that no longer
-  exists. Five completion tests report an empty list because the index behind
-  them is empty; point it at `std/`
+- ✅ *(re-checked 2026-11-19)* ~~The server points at `../Internal/Std`~~: no
+  reference to that layout is left in `azls/src`
 - ⬜ **Hover reads `///` and `//`, not `/** */`.** `std/math.az` has 65 `/** */`
   blocks and zero `///` lines, so every doc comment the standard library carries
   is invisible in the editor
@@ -1017,7 +1251,7 @@ Several constructs degrade silently; each is a potential miscompile.
 - ⬜ Semantic tokens
 - ⬜ Formatter integration
 - ⬜ LSP conformance tested against a real client
-- ⬜ `AZLS_DIP.MD` is empty
+- ✅ ~~`AZLS_DIP.MD` is empty~~ *(re-checked 2026-11-19: 1,899 lines)*
 
 ### 7.3 Debugger
 
@@ -1111,26 +1345,22 @@ Architectural rather than an optimisation bolted on late.
 
 ### 9.1 The 75 failing tests - a release gate
 
-Every one fixed, or deleted with a stated reason.
-
-- ⬜ `TypeRefTest` (11)
-- ⬜ `LlvmAggregateExecTest` (8)
-- ⬜ `StdlibInjectionTest` (6)
-- ⬜ `ArrayStdlibTest` (5)
-- ⬜ `WebsiteExamplesTest` (4)
-- ⬜ `ArrayTest`, `CollectionCtorTest`, `Feature003SyntaxTest`,
-  `Tier1PolishTest` (3 each)
-- ⬜ `ArrayStdlibExecTest`, `ConstGenericArrayTest`, `ContainerStdlibTest`,
-  `LlvmRegressionExecTest`, `MacroTest`, `MetaprogrammingTest`,
-  `StdlibMethodsTest` (2 each)
-- ⬜ 15 single failures across `CodegenGolden`, `ImplMethod`, `LlvmStdlibExec`,
-  `Loop`, `Modules`, `Pack`, `PlaygroundExamples`, `StabilityAnnotrator`,
-  `TestAssertTrace`, `Tier4Concurrency`, `TimeStdlib`, `Traits`, `Tuple`,
-  `VariadicLambda`, `SerializationDeriver`
+✅ *(closed 2026-11-06, delivery-plan step A1, "the suite has no failures" in
+the progress log; re-checked 2026-11-19.)* Every one of the 75 (in
+`TypeRefTest`, `LlvmAggregateExecTest`, `StdlibInjectionTest`,
+`ArrayStdlibTest`, `WebsiteExamplesTest` and 25 other classes) was fixed or
+deleted with a stated reason, and the suite has had no failure at any
+recorded run since. Last run 2026-11-18, with the native backends required
+(`AZORA_REQUIRE_NATIVE_TESTS=1 ./gradlew :compiler:desktopTest :azls:test
+--offline --continue`): compiler **3,146 tests, 0 failures, 0 skipped**; AZLS
+**94, 0 failures**. On 2026-11-19 Gradle reported both test tasks up to date
+with the sources, so that result stands. What keeps this gate shut is CI on
+every platform (§9.2).
 
 ### 9.2 Infrastructure
 
-- ✅ 1527 tests covering language, stdlib and codegen
+- ✅ 3,146 compiler tests and 94 AZLS tests covering language, stdlib and
+  codegen *(2026-11-18)*
 - ✅ Execution tests through the interpreter, LLVM (`lli`) and Wasm (`wat2wasm`)
 - ✅ Golden-file codegen tests
 - ✅ `ReadmeSnippetTest` compiles every `azora` block in `README.md`, so the
@@ -1240,27 +1470,131 @@ Settle these early; each reshapes the schedule.
 
 ---
 
-## 13. Sequencing
+## 13. Release plan
 
-**Stop the bleeding**
-§1.1 miscompiles (derivation validation first - the only one that makes a
-correct-looking program wrong today) · §9.1 the 75 failures · §12.1–12.3
-decisions
+*(Written 2026-11-19, replacing the earlier "stop the bleeding → hardening"
+outline, whose first stage - §9.1 and the §12.1–12.3 decisions - is done.)*
 
-**Foundations**
-§1.2 type-system soundness and the generics decision · §1.3 ownership
-completeness · §6.1 parity suite · §6.4 Wasm silent degradations
+Milestones run roughly in this order; within one, items are independent
+unless a line says otherwise. A milestone is done when its exit check holds,
+not when its items are ticked. Each change goes through every stage it
+touches (parser → semantics → IR → interpreter, LLVM, WebAssembly), with
+tests on each backend, and the full suite stays at zero failures.
 
-**Missing systems**
-§3.3 `Mutex`, `Atomic`, real threads · §7.4 package manager
+**M1 - No known miscompiles (§1.1 empty).** In order:
 
-**Surface**
-§4 stdlib completeness and docs · §5 diagnostics · §7.1–7.3 CLI, `azls`,
-debugger
+1. One `T` in two owners: apply OWNERSHIP_BORROWING_DIP §20 to type
+   parameters (a by-value use of an unbounded `T` moves it; a second use is
+   use-after-move unless `where T: Copy`). Then sweep std and the Engine for
+   code that duplicated a `T`.
+2. Kept 16-byte cells: once (1) holds, the keeper frees its cell (drop glue
+   per GENERICS_DIP §21.2); WebAssembly's `Cent?` gets its own cell.
+3. Closures over 16-byte types through a generic function type: an adapter
+   at the conversion (§21.2).
+4. Reals: `Float` rounds to 32 bits on the interpreter; one text rule for
+   `Float` and `Double` on every backend (shortest decimal that reads back as
+   the same value), implemented exactly once per backend and checked against
+   an oracle on a large random set; WebAssembly's exponent and infinity bugs
+   go with it.
+5. A wide literal where nothing types it is checked against `Int`.
+6. ~~Optionals narrow after `!= null`~~ *(done 2026-11-19, R-9)*; `?.` on
+   LLVM and WebAssembly; `Int? + Int` refused; `as?` from `Any` to an enum.
+7. ~~`Long(53) ->` in a `when` expression~~ *(done 2026-11-19)*.
+8. The parsed-and-dropped remainder: an `inline prop` alias's written type,
+   a type function's visibility, `@name[…]` whatever `name` is.
 
-**Hardening**
-§8 performance baselines · §9.2 CI, fuzzing, conformance · §10.1–10.2
-reference and tutorial · §11 stability policy · release-candidate cycle
+Exit: §1.1 has no ⬜, and each closed item has a test on every backend.
+
+**M2 - Backend parity (§6 gate).**
+
+- A conformance suite: one directory of programs, each with its expected
+  output, run on the interpreter, LLVM and WebAssembly by one test. A program
+  a backend cannot express names the target error it must produce, so a
+  missing feature is visible as an expectation, not a skip.
+- Integer overflow qualified on it: division edge cases, shift counts, 128-bit
+  arithmetic (§1.2).
+- Every remaining silent degradation becomes a target error: LLVM's
+  `; unsupported global statement` and `<value>` print fallbacks; WebAssembly's
+  `await`, `delay`, `inject` and lost `assert` messages (§6.1).
+- WebAssembly: variants (and with them std's `Option<T>`), `?.`, `Set`/`Map`
+  literals, freeing call temporaries.
+- LLVM: linking an executable, not only `.ll` under `lli` (toolchain per
+  decision D-1).
+
+Exit: the conformance suite passes on all three backends, and a grep of both
+code generators finds no placeholder output.
+
+**M3 - Memory and ownership (§1.3).** Native `String`s freed; destructor order
+written down and identical on every backend; the borrow-check matrix
+(closures, generators, `defer`, contracts, `async`, pattern bindings) and the
+use-after-move matrix per binding kind, each as tests; leak checking for test
+runs (LLVM under `leaks`/AddressSanitizer in the suite, as
+`WideCellOwnershipExecTest` does).
+
+Exit: the matrices are in the suite, and the conformance programs run clean
+under AddressSanitizer.
+
+**M4 - Concurrency scope (§3.3). Owner's decision first.** Proposed for 0.1:
+`async`/`await`, `delay`, `Channel<T>` whose `receive` waits, `Atomic` and a
+`Mutex` that blocks, with a one-page memory model (sequentially consistent
+atomics; a data race is a program error). WebAssembly keeps refusing them. Out
+of 0.1: OS threads and `JoinHandle`, `Send`/`Sync`, structured cancellation.
+`launch` gets syntax or is deleted; `std/parallelism/thread.az`'s three
+functions that only sleep are deleted or made real.
+
+Exit: what 0.1 promises is written in CONCURRENCY_DIP, and everything else is
+listed in §14.
+
+**M5 - Packages (§7.4).** Retire `build-tool` and its `TomlParser` (the
+`azora` CLI already does its job with AZON); a semantic-versioning policy in
+PACKAGES_DIP; a test that a lockfile reproduces a build byte for byte.
+**Owner's decision:** a registry in 0.1, or only path and git dependencies
+(proposed: path and git only; the registry after 0.1).
+
+Exit: `new` → `add --git` → `build` → `test` on a clean machine, twice, with
+identical lockfiles.
+
+**M6 - Tooling and documentation.** `azls` (the open items in §7.2, the
+decision whether to speak LSP first); debugger variable inspection and call
+stack (§7.3); `azora test` filtering and a machine-readable report; the std
+quality bar (§4.2); diagnostics (§5: no internal exception reaches a user,
+spans and carets, error codes); a language reference assembled from the DIPs
+and a tutorial from install to first package (§10).
+
+Exit: a newcomer can follow the tutorial on 0.1 without help, and every
+diagnostic class has a test asserting its text.
+
+**M7 - Release mechanics.**
+
+- CI on every platform in §12.5. *(2026-11-20: the one online Gradle run the
+  native CLI needed has been done - Kotlin/Native's prebuilt is cached, and
+  the release `azora.kexe` builds offline again. A CI machine needs the same
+  first online run.)*
+- The Engine as the smoke test: today 8 of its 31 packages build; 0.1 needs
+  31 of 31 on the release compiler.
+- The compatibility suite (STABILITY_DIP §5) runs as a job.
+- A release-candidate cycle with `std/STABLE_SURFACE.txt` enforced
+  (`StdSurfaceTest` already fails on drift; the RC freezes it), a changelog,
+  and the owner's review of the stable listing.
+
+Exit: an RC built by CI on every platform, the Engine building on it, and two
+weeks without a change to the stable surface.
+
+**Decisions waiting for the owner**
+
+| # | Decision | Proposed |
+|---|---|---|
+| R-1 | Float text notation (M1.4): keep today's interpreter form (`0.30000000000000004`, `1.0E19`, `Infinity`, `NaN`) or another | keep it; only the digits are fixed by the rule |
+| R-2 | Concurrency in 0.1 (M4) | as proposed under M4 |
+| R-3 | Registry in 0.1 (M5) | path and git only |
+| R-4 | `launch { }`: syntax or delete | delete; `async { }` covers it |
+| R-5 | `azls`: speak LSP or keep the bespoke interface (§7.2) | LSP |
+| R-6 | Experimental features: opt-in to use, or only to report (§11) | report only for 0.1 |
+| R-7 | ABI stability in or out of 0.1 (§12.4) | out |
+| R-8 ✅ decided 2026-11-19 | How std's generic code duplicates a `T` once §20 is enforced (M1.1; 190 sites) | `take` where the value is consumed (constructors, rebuilds, swaps); `where T: Clone` and `.clone()` where a new collection is made from a borrowed one (sorts, merges, slices), so containers and resources stay sortable; `where T: Copy` only where a copy must be implicit |
+| R-9 ✅ decided and implemented 2026-11-19 | Optional narrowing (M1.6): which bindings and which conditions | the rule written under §1.1's narrowing item: immutable locals and parameters; `!=`/`==` null in `if`, `&&`, `\|\|` and early exits; never a `var` |
+| R-10 ✅ decided 2026-11-19, implemented 2026-11-20 | How a spec member states what it needs of its type's parameters (R-8 is blocked on it) | allow a `where` clause on a spec member (`func &.keys(): List<K> where K: Clone`); an implementation may then rely on it, and a caller must satisfy it - the same rule members of a type already follow |
+| R-11 ✅ decided 2026-11-20 (borrows), accessors done | What an accessor of a generic container returns once §20 holds (`get`, `getOrDefault`, `first`, `list[i]`; ~90 sites) | a borrow of the stored value (`func &.get(key: K&): V&?\|self\|`), so reading never copies and works for any `V`; an owned copy stays available as `.clone()` under `V: Clone` |
 
 ---
 

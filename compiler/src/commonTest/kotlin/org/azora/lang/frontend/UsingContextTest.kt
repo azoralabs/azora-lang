@@ -39,6 +39,13 @@ class UsingContextTest {
     }
 
     @Test
+    fun oneStatementFollowsThen() {
+        val context = assertIs<Stmt.UsingContext>(statement("using anchor.inside(node) then children()"))
+        assertEquals(1, context.values.size)
+        assertIs<Stmt.ExprStmt>(context.body.single())
+    }
+
+    @Test
     fun severalReceiversUseParentheses() {
         val context = assertIs<Stmt.UsingContext>(statement("using (left, right) { run() }"))
         assertEquals(listOf("left", "right"), context.values.map { assertIs<Expr.Identifier>(it).name })

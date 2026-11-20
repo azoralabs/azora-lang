@@ -940,6 +940,48 @@ class TypeResolver(private val table: SymbolTable) {
      */
     private var currentTypeParamBounds: Map<String, Set<Bounds.Bound>> = emptyMap()
 
+    /**
+     * The optional bindings a test has proven non-null where resolution is now,
+     * by name, each with the binding it was proven for (TYPE_DIP §2.1,
+     * [OptionalNarrowing]). A read of that same binding is its inner type.
+     */
+    private var narrowed: Map<String, VariableSymbol> = emptyMap()
+
+    /** Receivers of `.require()` / `.take()`: they name the optional itself, so they are never narrowed. */
+    private val unwrapReceivers = mutableListOf<Expr.Identifier>()
+
+    /** The bindings [condition] proves non-null when it evaluates to [outcome]. */
+    private fun narrowedBy(condition: Expr, outcome: Boolean): Map<String, VariableSymbol> =
+        OptionalNarrowing.proven(condition, outcome).mapNotNull { name ->
+            table.lookupVariable(name)?.takeIf(OptionalNarrowing::narrowable)?.let { name to it }
+        }.toMap()
+
+    /** Runs [block] with what [condition] proves when it is [outcome] added to [narrowed]. */
+    private inline fun <R> narrowing(condition: Expr, outcome: Boolean, block: () -> R): R {
+        val saved = narrowed
+        narrowed = saved + narrowedBy(condition, outcome)
+        try {
+            return block()
+        } finally {
+            narrowed = saved
+        }
+    }
+
+    /**
+     * Runs [block] with nothing narrowed - a lambda's body. Its bindings are
+     * its own (a capture is a new one), and a `return` in it leaves the
+     * lambda, so what it proves must not leak out either.
+     */
+    private inline fun <R> unnarrowed(block: () -> R): R {
+        val saved = narrowed
+        narrowed = emptyMap()
+        try {
+            return block()
+        } finally {
+            narrowed = saved
+        }
+    }
+
     private fun declaredBounds(typeParams: Collection<String>, clause: Expr?): Map<String, Set<Bounds.Bound>> =
         Bounds.declared(typeParams, clause).mapValues { (param, specs) -> Bounds.implied(specs, table, subject = param) }
 
@@ -1211,7 +1253,7 @@ class TypeResolver(private val table: SymbolTable) {
             else -> null
         } ?: return
         inferredHead(argument)?.let { head ->
-            table.defineInferredMember(head.line, head.column, owner)
+            table.defineInferredMember(head.line, head.column, head.name, owner)
             constructionTypeOf(stated)?.let { table.defineInferredConstruction(head.line, head.column, it) }
         }
     }
@@ -1254,7 +1296,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Alloc -> {
                 val pointee = (expected as? IrType.Pointer)?.inner ?: expected
                 elementOwnerName(pointee)?.let { owner ->
-                    inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, owner) }
+                    inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, it.name, owner) }
                 }
                 // `alloc [10, 20, 30]` - the literal is the run of slots the
                 // pointer points at, as `alloc .(…)`'s arguments are, not one
@@ -1398,7 +1440,14 @@ class TypeResolver(private val table: SymbolTable) {
             is IrType.Array -> Intrinsics.ARRAY
             // An annotation argument was matched to its field before this pass,
             // so the type it chose is already recorded.
-            else -> table.lookupInferredMember(expr.line, expr.column)
+            else -> table.lookupInferredMember(expr.line, expr.column, expr.name)
+        }
+        // `::name(args)` - the expected type's static, else the enclosing scope's.
+        expr.scopeCall?.let { written ->
+            val static = owner?.let { inferredStatic(it, expr.name) }
+                ?: return resolveExpr(written)
+            table.defineInferredMember(expr.line, expr.column, expr.name, owner)
+            return resolveExpr(Expr.Call(static, expr.ctorArgs.orEmpty(), expr.line, expr.column, expr.length))
         }
         // The arguments the position states go with the construction, so a
         // `.()` returned as an `Array<Int>` builds one of `Int`s.
@@ -1410,7 +1459,7 @@ class TypeResolver(private val table: SymbolTable) {
             )
             return null
         }
-        table.defineInferredMember(expr.line, expr.column, owner)
+        table.defineInferredMember(expr.line, expr.column, expr.name, owner)
         if (expr.name.isNotEmpty()) table.stability.inferred(owner, expr.name, expr.line, expr.column)
         expr.ctorArgs?.let { args ->
             // The name a type is registered under, which is not always the one it
@@ -1446,6 +1495,9 @@ class TypeResolver(private val table: SymbolTable) {
             ),
         )
     }
+
+    /** The static `name` declared on [owner] (`Owner::name`), by the name a call uses, or null. */
+    private fun inferredStatic(owner: String, name: String): String? = table.inferredStatic(owner, name)
 
     /** The type a `.(…)` builds where [type] is expected, with its arguments, or null. */
     private fun constructionTypeOf(type: IrType?): TypeRef? = when (type) {
@@ -1845,8 +1897,27 @@ class TypeResolver(private val table: SymbolTable) {
         // A borrow passed straight to a call ends when the statement does.
         // Bindings claim theirs first, in resolveBinding.
         pendingBorrows.clear()
+        // What a statement's own blocks proved ends with it; only an `if`
+        // that cannot fall through one way proves something for the rest of
+        // the block (TYPE_DIP §2.1).
+        val saved = narrowed
         resolveStmtInner(stmt, returnType)
+        narrowed = saved + ((stmt as? Stmt.If)?.let(::narrowedAfter) ?: emptyMap())
         pendingBorrows.clear()
+    }
+
+    /**
+     * What is proven after `if c { … } else { … }` when one branch cannot
+     * fall through: the outcome of `c` the other branch runs under.
+     */
+    private fun narrowedAfter(stmt: Stmt.If): Map<String, VariableSymbol> {
+        val thenExits = OptionalNarrowing.exits(stmt.thenBranch)
+        val elseExits = stmt.elseBranch?.let(OptionalNarrowing::exits) ?: false
+        return when {
+            thenExits && !elseExits -> narrowedBy(stmt.condition, false)
+            elseExits && !thenExits -> narrowedBy(stmt.condition, true)
+            else -> emptyMap()
+        }
     }
 
     private fun resolveStmtInner(stmt: Stmt, returnType: IrType) {
@@ -1993,11 +2064,15 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: if condition must be Bool, got $condType")
                 }
                 table.pushScope()
-                val thenMoves = inBranch { for (s in stmt.thenBranch) resolveStmt(s, returnType) }
+                val thenMoves = narrowing(stmt.condition, true) {
+                    inBranch { for (s in stmt.thenBranch) resolveStmt(s, returnType) }
+                }
                 table.popScope()
                 if (stmt.elseBranch != null) {
                     table.pushScope()
-                    val elseMoves = inBranch { for (s in stmt.elseBranch) resolveStmt(s, returnType) }
+                    val elseMoves = narrowing(stmt.condition, false) {
+                        inBranch { for (s in stmt.elseBranch) resolveStmt(s, returnType) }
+                    }
                     table.popScope()
                     // A value every path gives away is gone whichever path ran,
                     // so unlike a one-sided move this one outlives the branch.
@@ -2042,7 +2117,7 @@ class TypeResolver(private val table: SymbolTable) {
                     errors.add("line ${stmt.line}: while condition must be Bool, got $condType")
                 }
                 table.pushScope()
-                inLoop { resolveBody(stmt.body, returnType) }
+                narrowing(stmt.condition, true) { inLoop { resolveBody(stmt.body, returnType) } }
                 table.popScope()
             }
             is Stmt.For -> {
@@ -2564,7 +2639,7 @@ class TypeResolver(private val table: SymbolTable) {
     /** What one slot of an allocated repetition holds, or null if nothing said. */
     private fun repeatedElementType(construct: Expr): IrType? {
         val name = when (construct) {
-            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column)
+            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column, construct.name)
             is Expr.Call -> construct.callee
             else -> null
         } ?: return null
@@ -2672,7 +2747,11 @@ class TypeResolver(private val table: SymbolTable) {
                     }
                 } else {
                     table.semanticFacts.reference(expr, sym)
-                    sym.type
+                    // A test proved this binding non-null here (TYPE_DIP §2.1),
+                    // unless the read is the optional `.require()` asks.
+                    if (narrowed[expr.name] === sym && unwrapReceivers.none { it === expr }) {
+                        (sym.type as IrType.Nullable).inner
+                    } else sym.type
                 }
             }
             is Expr.UpperScopeAccess -> {
@@ -2797,7 +2876,11 @@ class TypeResolver(private val table: SymbolTable) {
                     leftType = resolveExpr(expr.left) ?: return null
                     if (equality) seedExpectedValue(expr.right, leftType)
                     if (!isLiteralValue(expr.left)) seedLiteralWidth(expr.right, leftType)
-                    rightType = resolveExpr(expr.right) ?: return null
+                    // `x != null && use(x)`: the right operand runs only when
+                    // the left one came out as the operator needs.
+                    val outcome = OptionalNarrowing.rightOperandOutcome(expr)
+                    rightType = (if (outcome == null) resolveExpr(expr.right)
+                        else narrowing(expr.left, outcome) { resolveExpr(expr.right) }) ?: return null
                 }
                 if (equality && inferredHead(expr.right) == null && !isExplicitVariantReference(expr.right)) {
                     // Either operand can supply the other's enum type. The
@@ -3808,6 +3891,10 @@ class TypeResolver(private val table: SymbolTable) {
                 }
             }
             is Expr.MethodCall -> {
+                // `y.require()` / `y.take()` ask the optional itself, narrowed or not.
+                if (expr.name in OPTIONAL_UNWRAP && expr.args.isEmpty()) {
+                    (expr.target as? Expr.Identifier)?.let { unwrapReceivers += it }
+                }
                 // `#expr` (oper#) - hash; returns ULong regardless of operand type
                 // (the operand may be a generic K erased to Any, whose concrete type
                 // supplies oper# at runtime).
@@ -4049,6 +4136,8 @@ class TypeResolver(private val table: SymbolTable) {
                                 expr.name, specMethod.typeParams, specMethod.whereClause, specBindings, expr.line,
                             )
                         }
+                        // ...and its bounds on the spec's own parameters, for the receiver.
+                        checkSpecOwnerBound(expr.name, targetType, specMethod.whereClause, expr.target, expr.line)
                         return specMethod.returnType
                     }
                 }
@@ -4207,8 +4296,8 @@ class TypeResolver(private val table: SymbolTable) {
                 if (conditionType != IrType.Bool) {
                     errors.add("line ${expr.line}: if condition must be Bool, got $conditionType")
                 }
-                val t1 = resolveExpr(expr.thenExpr) ?: return null
-                val t2 = resolveExpr(expr.elseExpr) ?: return null
+                val t1 = narrowing(expr.condition, true) { resolveExpr(expr.thenExpr) } ?: return null
+                val t2 = narrowing(expr.condition, false) { resolveExpr(expr.elseExpr) } ?: return null
                 // A literal branch states no width: it reads at the other
                 // branch's, so `if first { 0.0 } else { distance }` is a Double.
                 val then = literalAdopting(expr.thenExpr, t1, t2)
@@ -4520,7 +4609,7 @@ class TypeResolver(private val table: SymbolTable) {
                         Stmt.ExprStmt(statement.value, statement.line, statement.column, statement.length)
                     else statement
                 } else expr.body
-                resolveBody(resolvedBody, IrType.Unit)
+                unnarrowed { resolveBody(resolvedBody, IrType.Unit) }
                 reactiveContext = savedReactive
                 val frame = lambdaFrames.removeAt(lambdaFrames.size - 1)
                 if (bodyContexts.isNotEmpty()) contextualValues.removeLast()
@@ -4811,6 +4900,31 @@ class TypeResolver(private val table: SymbolTable) {
      * [func] is the member as registered: its parameter 0 is the receiver,
      * written over the owner's own parameters (`Box<T>`).
      */
+    /**
+     * A spec member's `where` clause about its spec's type parameters - `func
+     * &.keys(): List<K> where K: Clone` in `spec Map<K, V>` (GENERICS_DIP §5.3,
+     * R-10) - decided for a spec-typed receiver, as [checkOwnerBound] decides a
+     * type's member for its receiver: `Map<String, Res>` has no `keys` when
+     * `Res` is not `Clone`, and generic code holding a `Map<K2, V2>` declares
+     * `K2: Clone` itself.
+     */
+    private fun checkSpecOwnerBound(name: String, receiver: IrType.Named, clause: Expr?, receiverExpr: Expr?, line: Int) {
+        clause ?: return
+        val specParams = table.lookupSpec(receiver.name)?.typeParams ?: return
+        val params = specParams.filter { clauseMentions(clause, it) }
+        if (params.isEmpty()) return
+        val pattern = TypeRef.Named(receiver.name, specParams.map { TypeRef.Named(it) })
+        val bindings = mutableMapOf<String, List<TypeRef>>()
+        unifyTypeArguments(pattern, receiver, params.toSet(), bindings)
+        if (bindings.isNotEmpty()) checkMemberConstraints(name, params, clause, bindings, line)
+        if (receiverExpr != null) {
+            checkPassedOn(
+                name, params, clause, listOf(PassedArgument(pattern, receiverExpr, receiver)),
+                decided = concretelyBound(params, bindings), line = line, writable = false,
+            )
+        }
+    }
+
     private fun checkOwnerBound(name: String, receiver: IrType.Named, func: FunctionSymbol, receiverExpr: Expr?, line: Int) {
         val clause = func.whereClause ?: return
         val ownerParams = table.lookupStruct(receiver.name)?.typeParams ?: return
@@ -6583,6 +6697,21 @@ class TypeResolver(private val table: SymbolTable) {
             errors.add("line $line: cannot $what through '${root.name}' - $reason")
             return false
         }
+        // A narrowed read of a pack or an array is the pointer the optional
+        // holds, so a write through it reaches the optional's value; any other
+        // narrowed read is a copy, and a write to it would be lost.
+        if (narrowed[root.name] === root) {
+            val inner = (root.type as IrType.Nullable).inner
+            val heldByPointer = (inner is IrType.Named && table.lookupStruct(inner.name)?.isBridge == false) || inner is IrType.Array
+            if (!heldByPointer) {
+                errors.add(
+                    "line $line: cannot $what through '${root.name}' - it reads as '${inner.shown()}' here because " +
+                        "a test proved it non-null, and that reading is a copy; write through it where it is " +
+                        "still '${root.type.shown()}'",
+                )
+                return false
+            }
+        }
         if (root.valueMutable) return true
         errors.add(
             "line $line: cannot $what through '${root.name}' - its value is immutable; " +
@@ -7080,7 +7209,9 @@ class TypeResolver(private val table: SymbolTable) {
      * Packs need the capability lattice to answer "is it `Copy`"; arrays, sets
      * and maps never are. A temporary is not a place, so it is never reported.
      * A type parameter of the enclosing function is left alone: it may be
-     * instantiated with a `Copy` type.
+     * instantiated with a `Copy` type. (OWNERSHIP_BORROWING_DIP §20 says it
+     * should be `Copy` only when declared so; enforcing that waits on std's
+     * ownership sweep, roadmap §1.1, R-8 and R-11.)
      */
     private fun checkByValueTransfer(
         arg: Expr,
@@ -7244,6 +7375,9 @@ class TypeResolver(private val table: SymbolTable) {
         }
         is IrType.Array -> undisplayable(type.element)
         is IrType.Tuple -> type.elements.firstNotNullOfOrNull(::undisplayable)
+        // A function value has no text: each backend would show its own
+        // representation (an object, an address, a table index).
+        is IrType.Function -> "a function value - a function has no text; call it and show what it returns"
         else -> null
     }
 

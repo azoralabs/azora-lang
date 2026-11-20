@@ -79,7 +79,7 @@ spec Indexed<T> {
     prop &.size: Int
 
     /** The element at `index`, `0 <= index < size`. */
-    func &.get(index: Int): T
+    func &.get(index: Int): T&|self|
 }
 
 inline for Ty in Numbers {

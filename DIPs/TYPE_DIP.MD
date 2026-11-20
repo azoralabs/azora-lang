@@ -52,6 +52,42 @@ fin v = maybe ?? 0            // null-coalescing
 fin x = obj?.field           // safe access → T?
 ```
 
+### 2.1 Narrowing
+
+*(Decided by the owner 2026-11-19, roadmap R-9; implemented on every backend.)*
+
+A binding of type `T?` whose name cannot be rebound - a `fin` or `let` local,
+or a parameter that is not an exclusive borrow - reads as `T` wherever a test
+has proven it is not null:
+
+```azora
+fin key = keyFor(code)
+if key != null && pressed(key) { … }      // right operand of `&&`
+if key == null || !pressed(key) { … }     // right operand of `||`
+if key != null { use(key) } else { … }    // the branch the test selects
+fin n = if key != null then rank(key) else 0
+while key != null && n < 3 { … }          // a loop body
+if key == null { return }                 // the rest of the block, after an
+use(key)                                  // `if` whose other branch cannot
+                                          // fall through (return, throw,
+                                          // break, continue)
+```
+
+The tests are `x != null` and `x == null` (either side may be `null`),
+combined with `&&`, `||`, `!` and parentheses.
+
+- A `var` or `val` never narrows: its name can be rebound, so anything between
+  the test and the read could set it back to null.
+- A lambda's body starts with nothing narrowed; a capture is a binding of its
+  own.
+- A nested declaration of the same name is a new binding and is not narrowed.
+- `take x` on a narrowed `x` moves the value out and leaves the optional
+  empty, as `take x.require()` does. `x.require()` and `x.take()` still ask
+  the optional itself, so code written before narrowing keeps its meaning.
+- A narrowed pack or array reads as the value the optional holds, so writing
+  through it (`b.v = 1`, lending it as `b!`) reaches that value. Any other
+  narrowed read is a copy, and writing through it is refused.
+
 ## 3. Borrows
 
 ```azora

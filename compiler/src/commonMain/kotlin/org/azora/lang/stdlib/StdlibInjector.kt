@@ -225,10 +225,16 @@ class StdlibInjector private constructor(
          */
         fun checkFileMatchesModule(path: String, moduleName: String?) {
             if (moduleName == null) return
-            val segments = path.replace('\\', '/').removeSuffix(".azora").removeSuffix(".az")
+            val parts = path.replace('\\', '/').removeSuffix(".azora").removeSuffix(".az")
                 .split('/')
                 .filter { it.isNotEmpty() && it != "." && it != SOURCE_ROOT }
-            if (segments.isEmpty()) return
+            if (parts.isEmpty()) return
+            // A snake_case source file may implement the corresponding camelCase
+            // module. Directory names and the language's identifier rules stay exact.
+            val stem = parts.last()
+            val segments = if (snakeCaseStem.matches(stem)) {
+                parts.dropLast(1) + snakeCaseBoundary.replace(stem) { it.groupValues[1].uppercase() }
+            } else parts
             val moduleSegments = moduleName.split('.')
 
             // IDE/build integrations commonly keep the canonical absolute path
@@ -282,6 +288,8 @@ class StdlibInjector private constructor(
 
         /** The directory name that starts a package's own module namespace. */
         private const val SOURCE_ROOT = "src"
+        private val snakeCaseStem = Regex("[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)+")
+        private val snakeCaseBoundary = Regex("_([a-z])")
     }
 
     private val implicitCollectionTypes = setOf("List", "MutableList", "Set", "MutableSet", "Map", "MutableMap")

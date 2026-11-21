@@ -207,6 +207,13 @@ class StdlibInjectionTest {
         }
     }
 
+    @Test fun snakeCaseFileMatchesItsCamelCaseModule() {
+        StdlibInjector.checkFileMatchesModule("pause_menu.az", "game.pauseMenu")
+        assertFailsWith<IllegalArgumentException> {
+            StdlibInjector.checkFileMatchesModule("pause_menu.az", "game.pauseScreen")
+        }
+    }
+
     @Test fun serializerImportSelectsDecoratorMarker() {
         val result = Compiler().compile("""
             module serializerMarkerTest

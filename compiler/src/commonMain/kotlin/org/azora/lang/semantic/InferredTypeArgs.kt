@@ -73,47 +73,18 @@ object InferredTypeArgs {
         )
     }
 
-    private class Rewriter(private val generic: Map<String, FuncDecl>) {
+    /**
+     * Walks every statement and expression - inside `if` values, lambdas (a UI
+     * builder's block), `when` arms and the rest - so a nested call is filled
+     * wherever it is written.
+     */
+    private class Rewriter(private val generic: Map<String, FuncDecl>) : org.azora.lang.frontend.AstMapper() {
 
-        fun decl(d: FuncDecl): FuncDecl = d.copy(body = d.body.map(::stmt))
+        fun decl(d: FuncDecl): FuncDecl = d.copy(body = stmts(d.body))
 
-        private fun stmt(s: Stmt): Stmt = when (s) {
-            is Stmt.FinDecl -> s.copy(initializer = expr(s.initializer))
-            is Stmt.VarDecl -> s.copy(initializer = expr(s.initializer))
-            is Stmt.ExprStmt -> s.copy(expr = expr(s.expr))
-            is Stmt.Return -> s.copy(value = s.value?.let(::expr))
-            is Stmt.If -> s.copy(
-                condition = expr(s.condition),
-                thenBranch = s.thenBranch.map(::stmt),
-                elseBranch = s.elseBranch?.map(::stmt),
-            )
-            is Stmt.While -> s.copy(condition = expr(s.condition), body = s.body.map(::stmt))
-            is Stmt.For -> s.copy(body = s.body.map(::stmt))
-            is Stmt.Loop -> s.copy(body = s.body.map(::stmt))
-            is Stmt.Scope -> s.copy(body = s.body.map(::stmt))
-            is Stmt.UsingContext -> s.copy(body = s.body.map(::stmt))
-            is Stmt.When -> s.copy(
-                branches = s.branches.map { it.copy(body = it.body.map(::stmt)) },
-                elseBranch = s.elseBranch?.map(::stmt),
-            )
-            else -> s
-        }
-
-        private fun expr(e: Expr): Expr = when (e) {
-            is Expr.Call -> filled(
-                e.copy(
-                    args = e.args.map(::expr),
-                    receiver = e.receiver?.let(::expr),
-                ),
-            )
-            is Expr.MethodCall -> e.copy(target = expr(e.target), args = e.args.map(::expr))
-            is Expr.Member -> e.copy(target = expr(e.target))
-            is Expr.Binary -> e.copy(left = expr(e.left), right = expr(e.right))
-            is Expr.Unary -> e.copy(operand = expr(e.operand))
-            is Expr.IncDec -> e.copy(target = expr(e.target))
-            is Expr.Grouping -> e.copy(expr = expr(e.expr))
-            is Expr.NamedArg -> e.copy(value = expr(e.value))
-            else -> e
+        override fun expr(e: Expr): Expr {
+            val mapped = super.expr(e)
+            return if (mapped is Expr.Call) filled(mapped) else mapped
         }
 
         /** [call] with each argument's own type arguments inferred from this one's. */

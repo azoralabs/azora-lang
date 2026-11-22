@@ -1515,7 +1515,11 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     Pair(expr.copy(condition = condition, thenExpr = thenExpr, elseExpr = elseExpr), cc || tc || ec)
                 }
             }
-            is Expr.CatchExpr -> Pair(expr, false)
+            is Expr.CatchExpr -> {
+                val (inner, ic) = foldExpr(expr.expr, program)
+                val (fallback, fc) = foldExpr(expr.fallback, program)
+                if (ic || fc) Pair(expr.copy(expr = inner, fallback = fallback), true) else Pair(expr, false)
+            }
             // A lambda body is a block like any other: `inline for`, `inline if`
             // and their kin unroll inside it, and an `inline func` it calls is
             // expanded there as it would be in a function body.
@@ -1558,7 +1562,26 @@ class CtfeEvaluator(private val table: SymbolTable) {
                     Pair(expr, false)
                 }
             }
-            is Expr.NamedArg, is Expr.NullLiteral, is Expr.MapLit, is Expr.Alloc, is Expr.Deref, is Expr.Isolated, is Expr.Await, is Expr.Inject, is Expr.Spread -> Pair(expr, false)
+            // `Box(size: defaultSize)` - a named argument's value folds as a
+            // positional one does; an `inline fin` read there has no other binding.
+            is Expr.NamedArg -> {
+                val (value, changed) = foldExpr(expr.value, program)
+                if (changed) Pair(expr.copy(value = value), true) else Pair(expr, false)
+            }
+            // What these wrap folds as any operand does: an `inline fin` read
+            // inside them has no other binding.
+            is Expr.MapLit -> {
+                val folded = expr.entries.map { (k, v) -> foldExpr(k, program) to foldExpr(v, program) }
+                if (folded.any { it.first.second || it.second.second }) {
+                    Pair(expr.copy(entries = folded.map { it.first.first to it.second.first }), true)
+                } else Pair(expr, false)
+            }
+            is Expr.Alloc -> foldExpr(expr.value, program).let { (v, c) -> if (c) Pair(expr.copy(value = v), true) else Pair(expr, false) }
+            is Expr.Deref -> foldExpr(expr.target, program).let { (v, c) -> if (c) Pair(expr.copy(target = v), true) else Pair(expr, false) }
+            is Expr.Isolated -> foldExpr(expr.value, program).let { (v, c) -> if (c) Pair(expr.copy(value = v), true) else Pair(expr, false) }
+            is Expr.Await -> foldExpr(expr.value, program).let { (v, c) -> if (c) Pair(expr.copy(value = v), true) else Pair(expr, false) }
+            is Expr.Spread -> foldExpr(expr.array, program).let { (v, c) -> if (c) Pair(expr.copy(array = v), true) else Pair(expr, false) }
+            is Expr.NullLiteral, is Expr.Inject -> Pair(expr, false)
             is Expr.TryPropagate -> {
                 val (inner, changed) = foldExpr(expr.expr, program)
                 Pair(if (changed) expr.copy(expr = inner) else expr, changed)
@@ -2096,7 +2119,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     private fun evalExpr(expr: Expr, env: Map<String, Expr>, program: Program): Expr? {
         return when (expr) {
-            is Expr.InferredMember -> null
+            is Expr.InferredMember -> expr.scopeRead?.let { env[it.name] }
             is Expr.MapEntryArg -> null
             is Expr.IntLiteral, is Expr.DoubleLiteral,
             is Expr.StringLiteral, is Expr.BoolLiteral,

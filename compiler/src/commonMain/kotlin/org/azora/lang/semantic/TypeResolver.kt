@@ -1283,8 +1283,8 @@ class TypeResolver(private val table: SymbolTable) {
             else -> null
         } ?: return
         inferredHead(argument)?.let { head ->
-            table.defineInferredMember(head.line, head.column, head.name, owner)
-            constructionTypeOf(stated)?.let { table.defineInferredConstruction(head.line, head.column, it) }
+            table.defineInferredMember(head, owner)
+            constructionTypeOf(stated)?.let { table.defineInferredConstruction(head, it) }
         }
     }
 
@@ -1326,7 +1326,7 @@ class TypeResolver(private val table: SymbolTable) {
             is Expr.Alloc -> {
                 val pointee = (expected as? IrType.Pointer)?.inner ?: expected
                 elementOwnerName(pointee)?.let { owner ->
-                    inferredHead(expr.value)?.let { table.defineInferredMember(it.line, it.column, it.name, owner) }
+                    inferredHead(expr.value)?.let { table.defineInferredMember(it, owner) }
                 }
                 // `alloc [10, 20, 30]` - the literal is the run of slots the
                 // pointer points at, as `alloc .(…)`'s arguments are, not one
@@ -1470,18 +1470,25 @@ class TypeResolver(private val table: SymbolTable) {
             is IrType.Array -> Intrinsics.ARRAY
             // An annotation argument was matched to its field before this pass,
             // so the type it chose is already recorded.
-            else -> table.lookupInferredMember(expr.line, expr.column, expr.name)
+            else -> table.lookupInferredMember(expr)
         }
         // `::name(args)` - the expected type's static, else the enclosing scope's.
         expr.scopeCall?.let { written ->
             val static = owner?.let { inferredStatic(it, expr.name) }
                 ?: return resolveExpr(written)
-            table.defineInferredMember(expr.line, expr.column, expr.name, owner)
+            table.defineInferredMember(expr, owner)
             return resolveExpr(Expr.Call(static, expr.ctorArgs.orEmpty(), expr.line, expr.column, expr.length))
+        }
+        // `::name` - the expected type's static value, else the enclosing scope's.
+        expr.scopeRead?.let { written ->
+            val static = owner?.let { table.inferredStaticValue(it, expr.name) }
+                ?: return resolveExpr(written)
+            table.defineInferredMember(expr, owner)
+            return resolveExpr(Expr.Identifier(static, expr.line, expr.column, expr.length))
         }
         // The arguments the position states go with the construction, so a
         // `.()` returned as an `Array<Int>` builds one of `Int`s.
-        constructionTypeOf(stated)?.let { table.defineInferredConstruction(expr.line, expr.column, it) }
+        constructionTypeOf(stated)?.let { table.defineInferredConstruction(expr, it) }
         if (owner == null) {
             errors.add(
                 "line ${expr.line}: cannot tell what '.${expr.name}' belongs to here - " +
@@ -1489,7 +1496,7 @@ class TypeResolver(private val table: SymbolTable) {
             )
             return null
         }
-        table.defineInferredMember(expr.line, expr.column, expr.name, owner)
+        table.defineInferredMember(expr, owner)
         if (expr.name.isNotEmpty()) table.stability.inferred(owner, expr.name, expr.line, expr.column)
         expr.ctorArgs?.let { args ->
             // The name a type is registered under, which is not always the one it
@@ -1504,7 +1511,7 @@ class TypeResolver(private val table: SymbolTable) {
             }
             // `.(a, b)` builds the type; `.Variant(a)` builds one of its variants.
             return if (expr.name.isEmpty()) {
-                val typeArgs = (table.lookupInferredConstruction(expr.line, expr.column) as? TypeRef.Named)?.args.orEmpty()
+                val typeArgs = (table.lookupInferredConstruction(expr) as? TypeRef.Named)?.args.orEmpty()
                 resolveExpr(Expr.Call(declared, args, expr.line, expr.column, declared.length, typeArgs))
             } else {
                 resolveExpr(
@@ -2058,15 +2065,14 @@ class TypeResolver(private val table: SymbolTable) {
                     // `return .()` / `return .Name` - the function's declared
                     // return type is what the dot means, and it is already
                     // written above the body.
-                    if (stmt.value is Expr.InferredMember) {
-                        resolveInferredMember(stmt.value as Expr.InferredMember, returnType)
-                    } else {
-                        seedExpectedValue(stmt.value!!, returnType)
-                    }
+                    // Resolved once: `return .(…, take items)` reads its arguments,
+                    // and reading them twice would read a taken value.
+                    val inferred = (stmt.value as? Expr.InferredMember)?.let { resolveInferredMember(it, returnType) ?: return }
+                    if (inferred == null) seedExpectedValue(stmt.value!!, returnType)
                     checkReturnedOrigin(stmt.value!!, stmt.line)
                     // Returning a closure is one of the four ways it escapes: the
                     // scope it captured from is gone by the time it is called.
-                    val valueType = resolveExpr(stmt.value) ?: return
+                    val valueType = inferred ?: resolveExpr(stmt.value) ?: return
                     checkEscapingValue(stmt.value!!, "is returned")
                     val capturing = lambdaReturnTypes
                     if (capturing != null) {
@@ -2669,7 +2675,7 @@ class TypeResolver(private val table: SymbolTable) {
     /** What one slot of an allocated repetition holds, or null if nothing said. */
     private fun repeatedElementType(construct: Expr): IrType? {
         val name = when (construct) {
-            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column, construct.name)
+            is Expr.InferredMember -> table.lookupInferredMember(construct)
             is Expr.Call -> construct.callee
             else -> null
         } ?: return null

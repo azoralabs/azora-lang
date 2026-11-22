@@ -924,7 +924,10 @@ object WrittenUses {
                 is Expr.SetLiteral -> e.elements.forEach(::expr)
                 is Expr.Index -> { expr(e.target); expr(e.index) }
                 // The type a `.Case` belongs to is the position's; the resolver names it.
-                is Expr.InferredMember -> e.ctorArgs?.forEach(::expr)
+                is Expr.InferredMember -> {
+                    e.ctorArgs?.forEach(::expr)
+                    e.scopeRead?.let(::expr)
+                }
                 is Expr.Member -> {
                     expr(e.target)
                     e.nameExpr?.let(::expr)

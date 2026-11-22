@@ -298,7 +298,12 @@ class AllocDropAnalyzer {
 
     private fun collectUsedVars(expr: Expr, used: MutableSet<String>) {
         when (expr) {
-            is Expr.InferredMember -> {}
+            // `.(a, b)` / `.Name(a)` / `::name(a)` read their arguments; `::x`
+            // with no static `x` on the expected type reads the enclosing scope's.
+            is Expr.InferredMember -> {
+                expr.ctorArgs?.forEach { collectUsedVars(it, used) }
+                expr.scopeRead?.let { used.add(it.name) }
+            }
             is Expr.MapEntryArg -> {
                 collectUsedVars(expr.key, used)
                 collectUsedVars(expr.value, used)
@@ -329,8 +334,13 @@ class AllocDropAnalyzer {
             is Expr.Seal -> collectUsedVars(expr.value, used)
             is Expr.IfExpr -> { collectUsedVars(expr.condition, used); collectUsedVars(expr.thenExpr, used); collectUsedVars(expr.elseExpr, used) }
             is Expr.Lambda -> {
-                // Lambda bodies are analyzed by the enclosing statement analysis;
-                // here we only note the bound parameters so they are not flagged unused.
+                // What a lambda reads, it reads from the scope around it: a local
+                // read only inside `compose(pass) { Text(status) }` is used. The
+                // lambda's own declarations are its business, so what checking
+                // them would report is not this function's to say.
+                val ownErrors = mutableListOf<String>()
+                val ownDefined = mutableSetOf<String>()
+                for (statement in expr.body) analyzeStmt(statement, ownDefined, used, ownErrors)
             }
             is Expr.NamedArg -> collectUsedVars(expr.value, used)
             is Expr.NullLiteral -> {}

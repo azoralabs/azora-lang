@@ -3794,7 +3794,7 @@ class IrGenerator(private val table: SymbolTable) {
     /** What one slot of an allocated repetition holds; see the resolver's twin. */
     private fun repeatedElementType(construct: Expr): IrType? {
         val name = when (construct) {
-            is Expr.InferredMember -> table.lookupInferredMember(construct.line, construct.column, construct.name)
+            is Expr.InferredMember -> table.lookupInferredMember(construct)
             is Expr.Call -> construct.callee
             else -> null
         } ?: return null
@@ -3989,7 +3989,7 @@ class IrGenerator(private val table: SymbolTable) {
             // The resolver already decided which type the dot meant; lowering
             // reads that answer rather than deriving it again from a context it
             // no longer has.
-            is Expr.InferredMember -> lowerInferredMember(expr, table.lookupInferredMember(expr.line, expr.column, expr.name))
+            is Expr.InferredMember -> lowerInferredMember(expr, table.lookupInferredMember(expr))
             // Only a macro arm taking `[...${key: value}]` can consume one, and the
             // expander does so before lowering. Reaching here means no arm matched.
             is Expr.MapEntryArg -> error(
@@ -5938,6 +5938,11 @@ class IrGenerator(private val table: SymbolTable) {
         expr.scopeCall?.let { written ->
             val static = owner?.let { table.inferredStatic(it, expr.name) } ?: return lowerExpr(written)
             return lowerExpr(Expr.Call(static, expr.ctorArgs.orEmpty(), expr.line, expr.column, expr.length))
+        }
+        // `::name`: the static value the resolver found, or the access as written.
+        expr.scopeRead?.let { written ->
+            val static = owner?.let { table.inferredStaticValue(it, expr.name) } ?: return lowerExpr(written)
+            return lowerExpr(Expr.Identifier(static, expr.line, expr.column, expr.length))
         }
         owner ?: error("line ${expr.line}: '.${expr.name}' was never resolved to a type")
         val ownerRef = Expr.Identifier(owner, expr.line, expr.column, owner.length)

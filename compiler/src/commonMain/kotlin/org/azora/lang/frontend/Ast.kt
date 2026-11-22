@@ -361,6 +361,21 @@ sealed class Expr {
          * the expected type has no such static: the enclosing scope's `name`.
          */
         val scopeCall: Expr.Call? = null,
+        /**
+         * `::name` - a static value of the expected type: `return ::invalid`
+         * is `return Entity::invalid` in a function returning `Entity`. Holds
+         * the access as written, which is what it means when the expected
+         * type has no such static: the enclosing scope's `name`.
+         */
+        val scopeRead: Expr.UpperScopeAccess? = null,
+        /**
+         * Which `.Name` this is, among every one the compilation parsed. Positions
+         * repeat across the modules of one program - `return .(buffer, n)` in one
+         * file and `.(x, y, z)` in another can share a line and column - so what
+         * the resolver decides for this one is recorded under this, and `copy()`
+         * keeps it.
+         */
+        val site: Int = InferredSites.next(),
     ) : Expr()
 
     data class Member(
@@ -3305,3 +3320,9 @@ data class Program(
  */
 fun lambdaReceiverName(line: Int, column: Int, index: Int): String =
     "__ctx${index}_${line}_$column"
+
+/** Hands out [Expr.InferredMember.site] ids, unique within a process. */
+object InferredSites {
+    private var last = 0
+    fun next(): Int = ++last
+}

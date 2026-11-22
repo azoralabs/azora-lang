@@ -42,7 +42,7 @@ class DecoratorResolver {
     )
 
     /** Types chosen for `.Name` arguments, by where each was written. */
-    private val inferredOwners = mutableMapOf<Triple<Int, Int, String>, String>()
+    private val inferredOwners = mutableListOf<Pair<Expr.InferredMember, String>>()
 
     fun resolve(program: Program, table: SymbolTable): List<String> {
         val graph = validateGraphs(program, table)
@@ -102,7 +102,7 @@ class DecoratorResolver {
             }
         }
         // Published once every argument has been matched to its field.
-        inferredOwners.forEach { (at, owner) -> table.defineInferredMember(at.first, at.second, at.third, owner) }
+        inferredOwners.forEach { (member, owner) -> table.defineInferredMember(member, owner) }
         return errors
     }
 
@@ -183,7 +183,7 @@ class DecoratorResolver {
             // dot meant. Recorded here because this runs before type resolution,
             // which would otherwise see a dot with nothing to hang it on.
             is Expr.InferredMember -> {
-                inferredOwners[Triple(value.line, value.column, value.name)] = name
+                inferredOwners += value to name
                 true
             }
             is Expr.BoolLiteral -> name == "Bool"

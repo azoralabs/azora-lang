@@ -32,7 +32,10 @@ object OwnershipCleanup {
         val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow), returnsBorrow, transferredByValue, variadic, returnedOnlyParameters(functions))
         return program.copy(items = program.items.map { item ->
         when (item) {
-            is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(context, returnsBorrow(item.function.name)).lower(
+            is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(
+                context, returnsBorrow(item.function.name), borrowedCopies(item.function, context),
+                item.function.params.filterIndexed { i, _ -> i in item.function.refParams }.map { it.first }.toSet(),
+            ).lower(
                 item.function.body, root = true, initialOwners = item.function.params.mapIndexedNotNull { i, (name, type) ->
                     if ((type.isClosure || context.ownsParameter(item.function, i)) && i !in item.function.refParams)
                         IrExpr.Var(name, type) else null
@@ -282,8 +285,31 @@ object OwnershipCleanup {
         return retained to returnedBy
     }
 
-    /** [borrowedReturn]: the function returns `T&`, so a returned place stays its owner's. */
-    private class Body(val context: Context, val borrowedReturn: Boolean = false) {
+    /**
+     * The by-value `Copy` parameters [function] does not own: the call site
+     * lends its own value (see [Context.ownsParameter]), so the body holds a
+     * view of the caller's storage, not a value of its own.
+     */
+    private fun borrowedCopies(function: IrFunction, context: Context): Set<String> =
+        function.params.withIndex().filter { (i, param) ->
+            // Only a concrete `Copy` type: an erased `T` (or `Slot<T>`) may be
+            // anything, and for those the call site arranges what the body gets.
+            i !in function.refParams && !param.second.isClosure &&
+                (param.second as? IrType.Named)?.args?.none(::erased) == true &&
+                !context.ownsParameter(function, i) && context.copied(param.second)
+        }.map { it.value.first }.toSet()
+
+    /**
+     * [borrowedReturn]: the function returns `T&`, so a returned place stays its owner's.
+     * [borrowedCopies]: `Copy` parameters lent by the call site; `take` of one copies it.
+     * [borrowParameters]: the `&`/`!` parameters, a tuple of which is a view, not an owner.
+     */
+    private class Body(
+        val context: Context,
+        val borrowedReturn: Boolean = false,
+        val borrowedCopies: Set<String> = emptySet(),
+        val borrowParameters: Set<String> = emptySet(),
+    ) {
         val functions get() = context.functions
         private data class Frame(val owners: MutableList<IrExpr.Var>, val root: Boolean, val loop: Boolean, val label: String?, val delayed: Boolean, val aliases: MutableMap<String, IrExpr.Var> = mutableMapOf())
         private val frames = mutableListOf<Frame>()
@@ -405,7 +431,20 @@ object OwnershipCleanup {
             else -> stmt
         }
 
-        private fun expression(expr: IrExpr, task: Boolean = false): IrExpr = when (expr) {
+        private fun expression(expr: IrExpr, task: Boolean = false): IrExpr {
+            // `Material(take color, 0.8)` where `color` is a lent `Copy` parameter:
+            // the caller still owns that storage, so what is taken is a copy of
+            // it. Moving the caller's value out would leave it owned twice.
+            if (expr is IrExpr.Call && expr.name == "__take") {
+                val place = expr.args.singleOrNull() as? IrExpr.Var
+                if (place != null && place.name in borrowedCopies && owned(place.name) == null) {
+                    return IrExpr.Call("__isolated", listOf(place), place.type)
+                }
+            }
+            return expressionOf(expr, task)
+        }
+
+        private fun expressionOf(expr: IrExpr, task: Boolean = false): IrExpr = when (expr) {
             is IrExpr.Call -> expr.copy(args = expr.args.mapIndexed { i, value ->
                 val argument = expression(value, task = expr.name == "async" || expr.name == "__launch")
                 val callee = functions[expr.name]
@@ -450,13 +489,29 @@ object OwnershipCleanup {
                     else -> argument
                 }
             }, receiver = expr.receiver?.let { expression(it) })
-            is IrExpr.StructCtor -> expr.copy(args = expr.args.map { expression(it) })
+            // What a constructed value or a literal holds, it owns: a `Copy`
+            // value some binding, field or element already owns goes in as a
+            // copy of its own, as it does when it is assigned to a field.
+            is IrExpr.StructCtor -> expr.copy(args = expr.args.mapIndexed { i, argument ->
+                // A positional argument fills the field at its position; a borrow
+                // field (`audit: Audit!`) keeps pointing at what it was given.
+                val field = expr.fieldNames.getOrNull(i)
+                    ?: (expr.type as? IrType.Named)?.let { context.fields[it.name]?.keys?.elementAtOrNull(i) }
+                val value = expression(argument)
+                if (field != null && ownsField(expr.type, field)) isolatedPlace(value) else value
+            })
             is IrExpr.MethodCall -> expr.copy(target = expression(expr.target), args = expr.args.map {
                 val argument = copyCallablePlace(expression(it))
                 if (stores(expr)) isolatedPlace(argument) else argument
             })
-            is IrExpr.ArrayLiteral -> expr.copy(elements = expr.elements.map { expression(it) })
-            is IrExpr.TupleLit -> expr.copy(elements = expr.elements.map { expression(it) })
+            is IrExpr.ArrayLiteral -> expr.copy(elements = expr.elements.map { isolatedPlace(expression(it)) })
+            // A tuple of borrow parameters is a view of them - the positional
+            // `self` of `func (A!, B&).f()` writes through `self.0` - so they
+            // stay what they are; anything else a tuple holds, it owns.
+            is IrExpr.TupleLit -> expr.copy(elements = expr.elements.map {
+                val value = expression(it)
+                if (value is IrExpr.Var && value.name in borrowParameters) value else isolatedPlace(value)
+            })
             is IrExpr.Binary -> expr.copy(left = expression(expr.left), right = expression(expr.right))
             is IrExpr.Unary -> expr.copy(operand = expression(expr.operand))
             is IrExpr.Member -> expr.copy(target = expression(expr.target))

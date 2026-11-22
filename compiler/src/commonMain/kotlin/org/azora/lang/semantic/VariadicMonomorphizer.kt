@@ -1800,6 +1800,12 @@ private class MonoContext(
         is Expr.Isolated -> e.copy(value = rewriteExpr(e.value))
         is Expr.Await -> e.copy(value = rewriteExpr(e.value))
         is Expr.Spread -> e.copy(array = rewriteExpr(e.array))
+        // `.(t, Vec3(…))` - the arguments of an inferred construction or case
+        // name types and calls as any other arguments do.
+        is Expr.InferredMember -> e.copy(
+            ctorArgs = e.ctorArgs?.map(::rewriteExpr),
+            scopeCall = e.scopeCall?.let { call -> call.copy(args = call.args.map(::rewriteExpr)) },
+        )
         else -> e
     }
 

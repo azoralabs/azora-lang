@@ -121,6 +121,10 @@ object DecoratorMetadata {
      * type it came from.
      */
     private fun qualified(value: Expr, type: TypeRef): Expr {
+        // `.Every(5.seconds)` carries its payload: it stays the inferred member
+        // it was written as, and the position it lands in - the parameter the
+        // reading code passes it to - says whose case it is.
+        if (value is Expr.InferredMember && value.ctorArgs != null) return value
         // A decorator's own arguments keep the shorthand as written, `.Center`;
         // an expression position parses it as an inferred member.
         val member = when (value) {

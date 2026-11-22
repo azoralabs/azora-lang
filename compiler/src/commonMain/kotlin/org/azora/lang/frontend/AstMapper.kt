@@ -130,7 +130,12 @@ open class AstMapper {
     open fun args(args: List<Expr>): List<Expr> = args.map { expr(it) }
 
     open fun expr(e: Expr): Expr = when (e) {
-        is Expr.InferredMember -> e
+        // The arguments of `.(…)`, `.Case(…)` and `::name(…)` are ordinary
+        // expressions, renamed and rewritten as any call's are.
+        is Expr.InferredMember -> e.copy(
+            ctorArgs = e.ctorArgs?.map { expr(it) },
+            scopeCall = e.scopeCall?.let { call -> call.copy(args = call.args.map { expr(it) }) },
+        )
         is Expr.MapEntryArg -> e.copy(key = expr(e.key), value = expr(e.value))
         is Expr.Identifier -> e
         is Expr.IntLiteral, is Expr.DoubleLiteral, is Expr.CharLiteral,

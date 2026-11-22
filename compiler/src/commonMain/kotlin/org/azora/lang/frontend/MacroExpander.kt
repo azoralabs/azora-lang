@@ -615,7 +615,10 @@ internal object MacroExpander {
         }
         // All other variants: structural copy recursing into every Expr child.
         return when (expr) {
-            is Expr.InferredMember -> expr
+            is Expr.InferredMember -> expr.copy(
+                ctorArgs = expr.ctorArgs?.map { rewriteExpr(it, macros, depth) },
+                scopeCall = expr.scopeCall?.let { call -> call.copy(args = call.args.map { rewriteExpr(it, macros, depth) }) },
+            )
             is Expr.MapEntryArg -> expr.copy(
                 key = rewriteExpr(expr.key, macros, depth),
                 value = rewriteExpr(expr.value, macros, depth),

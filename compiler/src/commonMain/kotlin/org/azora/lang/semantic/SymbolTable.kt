@@ -351,6 +351,15 @@ class SymbolTable {
      * call uses, or null. A type declared in a scope is keyed by its qualified
      * name, which [owner] may or may not carry.
      */
+    /** The global a static value `Owner::name` (`fin name` in `impl Owner`) is stored as, or null. */
+    fun inferredStaticValue(owner: String, name: String): String? {
+        val globals = scopes.firstOrNull() ?: return null
+        val direct = "${owner}__$name"
+        if (direct in globals) return direct
+        val suffix = "__${owner.substringAfterLast("__")}__$name"
+        return globals.keys.firstOrNull { it.endsWith(suffix) }
+    }
+
     fun inferredStatic(owner: String, name: String): String? {
         val direct = "${owner}__$name"
         if (direct in functions) return direct
@@ -727,14 +736,14 @@ class SymbolTable {
     // The name is part of the key: every module of a program numbers its lines
     // from 1, so a position alone names a dot in each of them - `.Digit5` in
     // one file and `.(key)` in another may both be written at 262:50.
-    private val inferredMembers = mutableMapOf<Triple<Int, Int, String>, String>()
+    private val inferredMembers = mutableMapOf<Int, String>()
 
-    fun defineInferredMember(line: Int, column: Int, name: String, typeName: String) {
-        inferredMembers[Triple(line, column, name)] = typeName
+    fun defineInferredMember(member: org.azora.lang.frontend.Expr.InferredMember, typeName: String) {
+        inferredMembers[member.site] = typeName
     }
 
-    fun lookupInferredMember(line: Int, column: Int, name: String): String? =
-        inferredMembers[Triple(line, column, name)]
+    fun lookupInferredMember(member: org.azora.lang.frontend.Expr.InferredMember): String? =
+        inferredMembers[member.site]
 
     /**
      * The whole type a `.(…)` builds, arguments included - `Array<Int>` where the
@@ -742,14 +751,14 @@ class SymbolTable {
      * construction is the `Type<…>(…)` call it stands for, as a typed binding's
      * `.(…)` already is from the parser.
      */
-    private val inferredConstructions = mutableMapOf<Pair<Int, Int>, org.azora.lang.frontend.TypeRef>()
+    private val inferredConstructions = mutableMapOf<Int, org.azora.lang.frontend.TypeRef>()
 
-    fun defineInferredConstruction(line: Int, column: Int, type: org.azora.lang.frontend.TypeRef) {
-        inferredConstructions[line to column] = type
+    fun defineInferredConstruction(member: org.azora.lang.frontend.Expr.InferredMember, type: org.azora.lang.frontend.TypeRef) {
+        inferredConstructions[member.site] = type
     }
 
-    fun lookupInferredConstruction(line: Int, column: Int): org.azora.lang.frontend.TypeRef? =
-        inferredConstructions[line to column]
+    fun lookupInferredConstruction(member: org.azora.lang.frontend.Expr.InferredMember): org.azora.lang.frontend.TypeRef? =
+        inferredConstructions[member.site]
 
     /**
      * The bounds' type of each range literal that builds a value (`a..b` is a
@@ -786,8 +795,8 @@ class SymbolTable {
     fun inferredConstructionCall(expr: org.azora.lang.frontend.Expr.InferredMember): org.azora.lang.frontend.Expr.Call? {
         if (expr.name.isNotEmpty()) return null
         val args = expr.ctorArgs ?: return null
-        val owner = lookupInferredMember(expr.line, expr.column, expr.name) ?: return null
-        val typeArgs = (lookupInferredConstruction(expr.line, expr.column) as? org.azora.lang.frontend.TypeRef.Named)
+        val owner = lookupInferredMember(expr) ?: return null
+        val typeArgs = (lookupInferredConstruction(expr) as? org.azora.lang.frontend.TypeRef.Named)
             ?.args.orEmpty()
         return org.azora.lang.frontend.Expr.Call(owner, args, expr.line, expr.column, owner.length, typeArgs)
     }

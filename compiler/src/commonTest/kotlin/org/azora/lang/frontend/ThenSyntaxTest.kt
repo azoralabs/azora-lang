@@ -133,7 +133,7 @@ class ThenSyntaxTest {
 
     @Test
     fun `for expressions use break value rather than a bare tail expression`() {
-        val result = function("return for i in 0..<3 then if i == 1 then break i else continue else { -1 }")
+        val result = function("fin found = for i in 0..<3 then if i == 1 then break i else continue else { -1 }")
         val prelude = result.decl.body.dropLast(1)
         assertTrue(prelude.any { it is Stmt.VarDecl && it.name.startsWith("__for_value_") })
         val loop = prelude.filterIsInstance<Stmt.For>().single()
@@ -141,6 +141,19 @@ class ThenSyntaxTest {
         val lowered = assertIs<Stmt.Scope>(branch.thenBranch.single())
         assertIs<Stmt.Assignment>(lowered.body[0])
         assertEquals(null, assertIs<Stmt.Break>(lowered.body[1]).value)
+    }
+
+    @Test
+    fun `return for returns each produced value and then the else value`() {
+        // Lowered as `return when` is, so every value is checked against the
+        // declared return type rather than against the `else` value's type.
+        val result = function("return for i in 0..<3 then if i == 1 then break i else continue else { -1 }")
+        val lowered = assertIs<Stmt.Scope>(result.decl.body.single())
+        val loop = assertIs<Stmt.For>(lowered.body[0])
+        val branch = assertIs<Stmt.If>(loop.body.single())
+        assertIs<Expr.Identifier>(assertIs<Stmt.Return>(branch.thenBranch.single()).value)
+        assertIs<Stmt.Continue>(branch.elseBranch!!.single())
+        assertTrue(assertIs<Stmt.Return>(lowered.body[1]).value != null)
     }
 
     @Test
@@ -155,8 +168,10 @@ class ThenSyntaxTest {
 
     @Test
     fun `for expressions accept compact else value`() {
-        val result = function("return for i in 0..<3 then break i else -1")
+        val result = function("fin first = for i in 0..<3 then break i else -1")
         assertTrue(result.decl.body.any { it is Stmt.VarDecl && it.name.startsWith("__for_value_") })
+        val returned = assertIs<Stmt.Scope>(function("return for i in 0..<3 then break i else -1").decl.body.single())
+        assertIs<Stmt.Return>(returned.body.last())
     }
 
     @Test

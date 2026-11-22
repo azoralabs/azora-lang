@@ -711,7 +711,11 @@ class Compiler(
             // templates become visible, then run monomorphization once more for
             // any variadic type produced by an expansion (for example a query
             // over a heterogeneous component list).
-            val typeExpanded = VariadicMonomorphizer.monomorphize(macroReInjected)
+            // A nested call's unwritten type arguments are filled from the
+            // outer call's first: specializing a bounded generic consumes the
+            // outer call's arguments, after which there is nothing to read them
+            // from (`storageGetOrDefault<Mark>(ensureStorage(world), …)`).
+            val typeExpanded = VariadicMonomorphizer.monomorphize(InferredTypeArgs.apply(macroReInjected))
             // What this injection pulls in has never been through macro
             // expansion: a module reached for the first time here still spells
             // `@arr[…]`, and nothing downstream expands one.
@@ -720,7 +724,7 @@ class Compiler(
                     CallbackImplNormalizer.normalize(libraries.inject(typeExpanded, exports)),
                 ),
             )
-            VariadicMonomorphizer.monomorphize(typeReInjected)
+            VariadicMonomorphizer.monomorphize(InferredTypeArgs.apply(typeReInjected))
         } catch (e: IllegalStateException) {
             return CompilationResult.Failure(listOf(e.message ?: "variadic monomorphization failed"))
         }.let { monomorphized ->

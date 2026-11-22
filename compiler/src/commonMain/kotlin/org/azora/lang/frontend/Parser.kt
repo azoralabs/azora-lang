@@ -1210,7 +1210,9 @@ class Parser(
         if (!check(TokenType.R_PAREN)) {
             do {
                 // `.Native` shorthand is retained for built-in decorator arguments.
-                if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
+                // A case with a payload, `.Every(5.seconds)`, is an ordinary
+                // value of the field's type and reads as any other expression.
+                if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER && !casePayloadAhead()) {
                     val dot = advance()
                     val member = advance().lexeme
                     positional.add(Expr.Identifier(".$member", dot.line, dot.column))
@@ -1220,7 +1222,7 @@ class Parser(
                     // A named argument takes the same shorthand its positional
                     // twin does: the field states the type, so `.Unused` names
                     // the case without repeating it.
-                    if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER) {
+                    if (check(TokenType.DOT) && peekNext()?.type == TokenType.IDENTIFIER && !casePayloadAhead()) {
                         val dot = advance()
                         val member = advance().lexeme
                         named.add(key to Expr.Identifier(".$member", dot.line, dot.column))
@@ -1235,6 +1237,9 @@ class Parser(
         consume(TokenType.R_PAREN, "Expected ')' after decorator arguments")
         return positional to named
     }
+
+    /** True at `.Name(` - a case written with its payload. */
+    private fun casePayloadAhead(): Boolean = tokens.getOrNull(current + 2)?.type == TokenType.L_PAREN
 
     private fun parseDecoTargets(): Set<DecoTarget> {
         val targets = linkedSetOf<DecoTarget>()
@@ -1370,8 +1375,7 @@ class Parser(
         val indexVar = if (matchWithKeyword()) {
             consumeIdentifierLike("Expected index variable after 'with'")
         } else null
-        consume(TokenType.L_BRACE, "Expected '{' to open 'inline for' body")
-        val bodyTokens = captureBraceBody()
+        val bodyTokens = captureInlineForBody()
         consumeNewline()
         val count = list.size
         for (i in 0 until count) {
@@ -1760,6 +1764,37 @@ class Parser(
     }
 
     /** Collects the tokens of a brace-delimited body (the opening `{` already consumed). */
+    /**
+     * The tokens of a compile-time `inline for` body: `{ … }`, or `then` and one
+     * statement - `inline for T in [Int, Long] then register<T>()` - which ends
+     * at the end of its line, as `if c then s` does.
+     */
+    private fun captureInlineForBody(): List<Token> {
+        if (!match(TokenType.THEN)) {
+            consume(TokenType.L_BRACE, "Expected '{' or 'then' to open 'inline for' body")
+            return captureBraceBody()
+        }
+        skipNewlines()
+        val body = mutableListOf<Token>()
+        var depth = 0
+        while (!isAtEnd()) {
+            val type = peek().type
+            if (depth == 0 && type == TokenType.NEWLINE) break
+            when (type) {
+                TokenType.L_BRACE, TokenType.L_PAREN, TokenType.L_BRACKET -> depth++
+                TokenType.R_BRACE, TokenType.R_PAREN, TokenType.R_BRACKET -> {
+                    // A closer with nothing open ends the enclosing construct.
+                    if (depth == 0) break
+                    depth--
+                }
+                else -> Unit
+            }
+            body.add(advance())
+        }
+        if (body.isEmpty()) error("Expected a statement after 'then' in 'inline for' at line ${peek().line}")
+        return body
+    }
+
     private fun captureBraceBody(): List<Token> {
         val body = mutableListOf<Token>()
         var depth = 1
@@ -2624,8 +2659,7 @@ class Parser(
         val indexVar = if (matchWithKeyword()) {
             consumeIdentifierLike("Expected index variable after 'with'")
         } else null
-        consume(TokenType.L_BRACE, "Expected '{' to open 'inline for' body")
-        val bodyTokens = captureBraceBody()
+        val bodyTokens = captureInlineForBody()
         consumeNewline()
         val generated = mutableListOf<FuncDecl>()
         for (i in 0 until lists.first().size) {
@@ -5965,11 +5999,26 @@ class Parser(
             }
             val group = mutableListOf<Expr>()
             group.add(parseWhenPattern(scrutinee))
-            while (match(TokenType.COMMA)) group.add(parseWhenPattern(scrutinee))
-            consume(TokenType.ARROW, "Expected '->' after when patterns")
+            // `.Start, else -> 0.0`: the named cases share the fallback. They stay
+            // a branch of their own, so they are checked against the scrutinee
+            // like any other pattern; `else` makes the group the last branch.
+            var joinsElse = false
+            while (match(TokenType.COMMA)) {
+                if (match(TokenType.ELSE)) {
+                    joinsElse = true
+                    break
+                }
+                group.add(parseWhenPattern(scrutinee))
+            }
+            consume(TokenType.ARROW, if (joinsElse) "Expected '->' after else" else "Expected '->' after when patterns")
             patterns.add(group)
-            bodies.add(parseBody())
+            val body = parseBody()
+            bodies.add(body)
             skipNewlines()
+            if (joinsElse) {
+                elseBody = body
+                break
+            }
         }
         consume(TokenType.R_BRACE, "Expected '}' after when body")
         return WhenParts(patterns, bodies, elseBody)
@@ -6182,13 +6231,7 @@ class Parser(
             body = when {
                 check(TokenType.INLINE) -> listOf(parseInlineBlock())
                 check(TokenType.DEEPINLINE) -> listOf(parseDeepInlineBlock())
-                // `func at(i: Int): Char ?! E = if bad then .OutOfRange else c`
-                currentFailSets.isNotEmpty() -> listOf(parseReturnTail(peek()))
-                else -> {
-                    val expr = parseExpr()
-                    consumeNewline()
-                    listOf(Stmt.Return(expr, expr.line, expr.column))
-                }
+                else -> parseExpressionBody()
             }
         } else {
             // Contract bodies normally use `scope { … }`. For one instruction,
@@ -6203,11 +6246,7 @@ class Parser(
                 // `scope = expr`: the expression body of a declaration with
                 // contracts, as `= expr` is of one without.
                 rejectInBraceReceiver("the function", "func $name(…) scope = …")
-                body = if (currentFailSets.isNotEmpty()) listOf(parseReturnTail(peek())) else {
-                    val expr = parseExpr()
-                    consumeNewline()
-                    listOf(Stmt.Return(expr, expr.line, expr.column))
-                }
+                body = parseExpressionBody()
             } else if (singleScopeBody) {
                 rejectInBraceReceiver("the function", "func $name(…) scope …")
                 body = listOf(parseSingleStmt("scope body"))
@@ -7780,7 +7819,7 @@ class Parser(
             check(TokenType.ERROR) -> parseFailThrow()
             check(TokenType.UNSAFE) -> parseUnsafe()
             check(TokenType.PURGE) -> parsePurge()
-            check(TokenType.TRY) && peekNext()?.type == TokenType.L_BRACE -> parseTry()
+            check(TokenType.TRY) && (peekNext()?.type == TokenType.L_BRACE || peekNext()?.type == TokenType.THEN) -> parseTry()
             check(TokenType.DEFER) -> parseDefer()
             check(TokenType.RESCUE) -> parseRescue()
             check(TokenType.REMEMBER) -> parseReactiveDecl(ReactiveKind.REMEMBER)
@@ -9674,17 +9713,49 @@ class Parser(
         return TypeFunctionCondition(left, operator, right, leftRank)
     }
 
+    /**
+     * `try { … } catch { e -> … }`. Either half that holds one statement can
+     * take `then` instead of braces, as `if` does:
+     *
+     * ```azora
+     * try then layerSet(layer, TilePos(9, 0), 1)
+     * catch then refused = true
+     * ```
+     *
+     * `catch e then report(e)` names the error, as `catch { e -> … }` does. The
+     * `catch` may open the line after its `try`.
+     */
     private fun parseTry(): Stmt.Try {
         val start = peek()
         consume(TokenType.TRY, "Expected 'try'")
-        consume(TokenType.L_BRACE, "Expected '{' after 'try'")
-        skipNewlines()
-        val body = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}' after try body")
+        val body = if (check(TokenType.THEN)) {
+            // The statement's own `catch` operator would take the try's `catch`.
+            val saved = tryThenStart
+            tryThenStart = current + 1
+            try {
+                parseThenBody("try")
+            } finally {
+                tryThenStart = saved
+            }
+        } else {
+            consume(TokenType.L_BRACE, "Expected '{' or 'then' after 'try'")
+            skipNewlines()
+            val block = parseBlock()
+            consume(TokenType.R_BRACE, "Expected '}' after try body")
+            block
+        }
         var catchName: String? = null
         var catchBody: List<Stmt>? = null
-        if (match(TokenType.CATCH)) {
-            consume(TokenType.L_BRACE, "Expected '{' after 'catch'")
+        if (matchContinued(TokenType.CATCH)) {
+            // `catch then s`, or `catch e then s` naming the error as `catch { e -> … }` does.
+            val named = check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.THEN
+            if (named || check(TokenType.THEN)) {
+                if (named) catchName = advance().lexeme
+                catchBody = parseThenBody("catch")
+                consumeNewline()
+                return Stmt.Try(body, catchName, catchBody, start.line, start.column)
+            }
+            consume(TokenType.L_BRACE, "Expected '{' or 'then' after 'catch'")
             skipNewlines()
             if (check(TokenType.IDENTIFIER) && peekNext()?.type == TokenType.ARROW) {
                 catchName = advance().lexeme
@@ -9733,8 +9804,7 @@ class Parser(
             val indexVar = if (matchWithKeyword()) {
                 consumeIdentifierLike("Expected index variable after 'with'")
             } else null
-            consume(TokenType.L_BRACE, "Expected '{' after inline for iterable")
-            val bodyTokens = captureBraceBody()
+            val bodyTokens = captureInlineForBody()
             consumeNewline()
             val stmts = mutableListOf<Stmt>()
             for (i in list.indices) {
@@ -9771,10 +9841,7 @@ class Parser(
         } else if (matchWithKeyword()) {
             consume(TokenType.IDENTIFIER, "Expected index binding after 'with'").lexeme
         } else null
-        consume(TokenType.L_BRACE, "Expected '{' after inline for iterable")
-        skipNewlines()
-        val body = parseBlock()
-        consume(TokenType.R_BRACE, "Expected '}' after inline for body")
+        val body = parseThenOrBracedBody("inline for")
         consumeNewline()
         return Stmt.InlineFor(name, iterable, body, start.line, start.column, indexName = indexName)
     }
@@ -9789,7 +9856,9 @@ class Parser(
         val prefix = Lexer("func __inline_for_body__() {\n").tokenize().dropLast(1) // drop trailing EOF
         val suffix = Lexer("\n}\n").tokenize() // includes EOF
         val tokens = prefix + rendered + suffix
-        val program = Parser(tokens, typeListEnv, declaredEnums, typeListScope = typeListScope).parse()
+        // The wrapper's name is the compiler's; the body's own names were checked
+        // with the rest of the source.
+        val program = Parser(tokens, typeListEnv, declaredEnums, internalSource = true, typeListScope = typeListScope).parse()
         val fn = program.items.filterIsInstance<TopLevel.Func>()
             .firstOrNull { it.decl.name == "__inline_for_body__" }
             ?: error("failed to expand 'inline for' body at line ${start.line}")
@@ -10318,9 +10387,103 @@ class Parser(
         if (check(TokenType.IF)) {
             return parseReturnIf(start)
         }
+        if (check(TokenType.FOR)) {
+            return parseReturnFor(start)
+        }
         val stmt = parseReturnedValue(start)
         consumeNewline()
         return stmt
+    }
+
+    /**
+     * A declaration's `= expr` body: `{ return expr }`.
+     *
+     * A failable function's reads as `return` does (`= if bad then .OutOfRange
+     * else c`), and so does `= for … else value` in any function, so its values
+     * are returned ones. A value whose reading put statements before it
+     * ([pendingPrelude]) keeps them in front of the `return`.
+     */
+    private fun parseExpressionBody(): List<Stmt> {
+        if (currentFailSets.isNotEmpty() || check(TokenType.FOR)) return listOf(parseReturnTail(peek()))
+        val expr = parseExpr()
+        consumeNewline()
+        val before = pendingPrelude.toList()
+        pendingPrelude.clear()
+        return before + Stmt.Return(expr, expr.line, expr.column)
+    }
+
+    /**
+     * `return for x in xs { … } else value`.
+     *
+     * Lowered as [parseReturnWhen] is: each value an iteration ends in becomes a
+     * `return` of it, and the `else` value the `return` after the loop. Every
+     * value is then a returned value, checked against the declared return type,
+     * so `return for … { … break self.blocks[i] } else 0` answers a `Long`
+     * without spelling the `0` as one - and `else .NotFound` fails the
+     * function, as it does after a plain `return`.
+     */
+    private fun parseReturnFor(start: Token): Stmt {
+        val loop = parseFor(allowElse = false)
+        if (loop !is Stmt.For) {
+            error("a 'for' used as a value has one loop and one 'else' at line ${start.line}")
+        }
+        skipNewlines()
+        consume(TokenType.ELSE, "Expected 'else' - 'return for' needs one for when nothing is produced")
+        val fallback = if (match(TokenType.L_BRACE)) {
+            skipNewlines()
+            val stmt = parseReturnedValue(start)
+            skipNewlines()
+            consume(TokenType.R_BRACE, "Expected '}' after the else value")
+            stmt
+        } else {
+            parseReturnedValue(start)
+        }
+        consumeNewline()
+        val (body, produces) = rewriteForReturns(loop.body)
+        if (!produces) {
+            error(
+                "a 'for' used as a value must produce one: no iteration of the loop at line " +
+                    "${start.line} ends in a value, so the answer could only ever be the 'else'",
+            )
+        }
+        return Stmt.Scope(listOf(loop.copy(body = body), fallback), start.line, start.column)
+    }
+
+    /**
+     * [rewriteForYields] for `return for`: a produced value is returned.
+     *
+     * A value is produced by the statement an iteration ends in, or by a
+     * `break value` anywhere in it - nested loops keep their own `break`s.
+     */
+    private fun rewriteForReturns(stmts: List<Stmt>): Pair<List<Stmt>, Boolean> {
+        var produces = false
+        val out = stmts.mapIndexed { index, stmt ->
+            val (rewritten, produced) = rewriteForReturn(stmt, tail = index == stmts.size - 1)
+            produces = produces || produced
+            rewritten
+        }
+        return out to produces
+    }
+
+    private fun rewriteForReturn(stmt: Stmt, tail: Boolean): Pair<Stmt, Boolean> = when (stmt) {
+        is Stmt.ExprStmt -> if (tail) Stmt.Return(stmt.expr, stmt.line, stmt.column, stmt.length) to true else stmt to false
+        is Stmt.If -> {
+            val (thenBranch, thenProduces) = rewriteForReturns(stmt.thenBranch)
+            val (elseBranch, elseProduces) = stmt.elseBranch
+                ?.let { rewriteForReturns(it) }
+                ?: (null to false)
+            stmt.copy(thenBranch = thenBranch, elseBranch = elseBranch) to (thenProduces || elseProduces)
+        }
+        is Stmt.Scope -> {
+            val (body, produces) = rewriteForReturns(stmt.body)
+            stmt.copy(body = body) to produces
+        }
+        is Stmt.Break -> if (stmt.value != null && stmt.label == null) {
+            Stmt.Return(stmt.value, stmt.line, stmt.column, stmt.length) to true
+        } else {
+            stmt to false
+        }
+        else -> stmt to false
     }
 
     /**
@@ -10922,7 +11085,14 @@ class Parser(
         // The `{` opens the loop body, not a trailing lambda on the iterable -
         // `inline for f in reflect<Self>.fields { … }`.
         val iterable = withoutTrailingLambda { parseExpr() }
-        consume(TokenType.L_BRACE, "Expected '{' to open argument 'inline for' body")
+        // `F(inline for P in reflect<F>.params then P::from(ui))` - one
+        // expression per iteration needs no braces, as `if c then x` needs none.
+        if (match(TokenType.THEN)) {
+            skipNewlines()
+            val bodyExpr = parseExpr()
+            return Expr.InlineForArgs(loopName, iterable, bodyExpr, forStart.line, forStart.column)
+        }
+        consume(TokenType.L_BRACE, "Expected '{' or 'then' to open argument 'inline for' body")
         skipNewlines()
         val bodyExpr = parseExpr()
         skipNewlines()
@@ -10975,6 +11145,28 @@ class Parser(
     // Expressions (precedence climbing)
     // -----------------------------------------------------------------------
 
+    /**
+     * Where the statement of a `try then …` being read starts, or -1. A `catch`
+     * outside any bracket of that statement belongs to the `try`, not to the
+     * statement's last expression; inside brackets it is the operator as ever.
+     */
+    private var tryThenStart = -1
+
+    /** Whether the `catch` at the current token is the `catch` operator. */
+    private fun isPostfixCatch(): Boolean {
+        if (!check(TokenType.CATCH)) return false
+        if (tryThenStart < 0) return true
+        var depth = 0
+        for (i in tryThenStart until current) {
+            when (tokens[i].type) {
+                TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.L_BRACE -> depth++
+                TokenType.R_PAREN, TokenType.R_BRACKET, TokenType.R_BRACE -> depth--
+                else -> Unit
+            }
+        }
+        return depth > 0
+    }
+
     private fun parseExpr(): Expr {
         var e = parseOr()
         // `??` - null-coalesce
@@ -10983,7 +11175,8 @@ class Parser(
             val right = parseOr()
             e = Expr.NullCoalesce(e, right, e.line)
         }
-        while (match(TokenType.CATCH)) {
+        while (isPostfixCatch()) {
+            advance() // 'catch'
             val fallback = parseOr()
             e = Expr.CatchExpr(e, fallback, e.line, e.column, e.length)
         }
@@ -11155,6 +11348,12 @@ class Parser(
                     return parseInfix()
                 }
             }
+            // A name opening the next line starts something new. Inside brackets
+            // the lexer emits no newline, so this is what keeps comma-free
+            // arguments apart: `.(\n    first(a)\n    second(b)\n)` is two
+            // values, not `first(a).second(b)`.
+            val previous = tokens.getOrNull(current - 1)
+            if (previous != null && peek().line > previous.line) break
             val atForm = check(TokenType.AT) && isAtInfixCandidate()
             if (!atForm && !(check(TokenType.IDENTIFIER) && isInfixCandidate())) break
             // `a @to b` - the `@` leads on an infix macro's call just as it leads
@@ -11465,7 +11664,13 @@ class Parser(
             }
             when (tokens.getOrNull(at)?.type) {
                 TokenType.ARROW -> return true
-                TokenType.COMMA -> at++
+                TokenType.COMMA -> {
+                    at++
+                    // `.Start, else ->` - the group joins the fallback.
+                    if (tokens.getOrNull(at)?.type == TokenType.ELSE) {
+                        return tokens.getOrNull(at + 1)?.type == TokenType.ARROW
+                    }
+                }
                 else -> return false
             }
         }
@@ -11510,6 +11715,12 @@ class Parser(
                     current = ahead
                 }
             }
+            // A `(` or `[` opening a line starts the next value - an argument or
+            // element written one per line - rather than calling or indexing the
+            // one above it. Inside brackets no newline token says so.
+            if ((check(TokenType.L_PAREN) || check(TokenType.L_BRACKET)) &&
+                peek().line > (tokens.getOrNull(current - 1)?.line ?: peek().line)
+            ) return expr
             when {
                 check(TokenType.PLUS_PLUS) || check(TokenType.MINUS_MINUS) -> {
                     val op = advance()
@@ -11717,13 +11928,15 @@ class Parser(
                         // `.Every(5.seconds())` - a variant of the expected type,
                         // with its payload. The arguments join the node so the
                         // resolver still sees one thing to give a type to.
-                        is Expr.InferredMember -> expr.copy(ctorArgs = args)
                         // `::fillMaxWidth()` - a static of the expected type, or
                         // the enclosing scope's function when that type has none.
-                        is Expr.UpperScopeAccess -> if (expr.depth == 1) Expr.InferredMember(
-                            expr.name, expr.line, expr.column, expr.length, ctorArgs = args,
-                            scopeCall = Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr),
-                        ) else Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr)
+                        is Expr.InferredMember -> expr.scopeRead?.let { written ->
+                            Expr.InferredMember(
+                                expr.name, expr.line, expr.column, expr.length, ctorArgs = args,
+                                scopeCall = Expr.Call("", args, expr.line, expr.column, expr.length, receiver = written),
+                            )
+                        } ?: expr.copy(ctorArgs = args)
+                        is Expr.UpperScopeAccess -> Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr)
                         is Expr.Member -> Expr.MethodCall(expr.target, expr.name, args, expr.line, expr.column)
                         // Calling an arbitrary expression value, e.g. `fs[0](x)` or
                         // `(getFn())(x)` - the receiver must be a function value.
@@ -12258,7 +12471,12 @@ class Parser(
                     depth++
                 }
                 val name = consume(TokenType.IDENTIFIER, "Expected identifier after '::'")
-                Expr.UpperScopeAccess(name.lexeme, depth, tok.line, tok.column)
+                val access = Expr.UpperScopeAccess(name.lexeme, depth, tok.line, tok.column)
+                // `::invalid` - the expected type's static, as `.Name` is its member;
+                // the enclosing scope's `invalid` when that type has none.
+                if (depth == 1) {
+                    Expr.InferredMember(name.lexeme, tok.line, tok.column, name.lexeme.length + 2, scopeRead = access)
+                } else access
             }
             TokenType.L_PAREN -> {
                 advance()
@@ -12303,7 +12521,7 @@ class Parser(
                         // Associative collection literal: [key: value, ...]
                         val entries = mutableListOf<Pair<Expr, Expr>>(first to withinExpressionDelimiter { parseExpr() })
                         skipNewlines()
-                        while (match(TokenType.COMMA)) {
+                        while (match(TokenType.COMMA) || startsNextElementLine()) {
                             skipNewlines()
                             if (check(TokenType.R_BRACKET)) break
                             val k = withinExpressionDelimiter { parseExpr() }
@@ -12317,7 +12535,7 @@ class Parser(
                         // Sequence collection literal: [value, ...]
                         val elements = mutableListOf(first)
                         skipNewlines()
-                        while (match(TokenType.COMMA)) {
+                        while (match(TokenType.COMMA) || startsNextElementLine()) {
                             skipNewlines()
                             if (check(TokenType.R_BRACKET)) break
                             rejectLiteralSpread()
@@ -12332,6 +12550,16 @@ class Parser(
             TokenType.L_BRACE -> parseLambda(tok.line, tok.column)
             else -> error("Unexpected token '${tok.lexeme}' at line ${tok.line}")
         }
+    }
+
+    /**
+     * True when the next element of a collection literal opens a line of its own:
+     * written one per line, elements need no commas, as arguments need none.
+     */
+    private fun startsNextElementLine(): Boolean {
+        if (check(TokenType.R_BRACKET) || isAtEnd()) return false
+        val previous = tokens.getOrNull(current - 1) ?: return false
+        return peek().line > previous.line
     }
 
     // -----------------------------------------------------------------------

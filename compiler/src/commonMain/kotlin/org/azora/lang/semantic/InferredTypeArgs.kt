@@ -44,6 +44,10 @@ object InferredTypeArgs {
 
     fun apply(program: Program): Program {
         val generic = mutableMapOf<String, FuncDecl>()
+        // Members by their own name: `target.name<T>(…)` does not say whose member
+        // it is before types are resolved, so every generic member of that name
+        // is a candidate, and they must agree on what each argument is.
+        val members = mutableMapOf<String, MutableList<FuncDecl>>()
         fun remember(decl: FuncDecl) {
             if (decl.typeParams.isEmpty()) return
             generic[decl.name] = decl
@@ -55,13 +59,16 @@ object InferredTypeArgs {
         for (item in program.items) {
             when (item) {
                 is TopLevel.Func -> remember(item.decl)
-                is TopLevel.Impl -> item.methods.forEach(::remember)
+                is TopLevel.Impl -> item.methods.forEach { method ->
+                    remember(method)
+                    if (method.typeParams.isNotEmpty()) members.getOrPut(method.name) { mutableListOf() }.add(method)
+                }
                 else -> {}
             }
         }
         if (generic.isEmpty()) return program
 
-        val rewriter = Rewriter(generic)
+        val rewriter = Rewriter(generic, members)
         return program.copy(
             items = program.items.map { item ->
                 when (item) {
@@ -78,13 +85,43 @@ object InferredTypeArgs {
      * builder's block), `when` arms and the rest - so a nested call is filled
      * wherever it is written.
      */
-    private class Rewriter(private val generic: Map<String, FuncDecl>) : org.azora.lang.frontend.AstMapper() {
+    private class Rewriter(
+        private val generic: Map<String, FuncDecl>,
+        private val members: Map<String, List<FuncDecl>>,
+    ) : org.azora.lang.frontend.AstMapper() {
 
         fun decl(d: FuncDecl): FuncDecl = d.copy(body = stmts(d.body))
 
         override fun expr(e: Expr): Expr {
             val mapped = super.expr(e)
-            return if (mapped is Expr.Call) filled(mapped) else mapped
+            return when (mapped) {
+                is Expr.Call -> filled(mapped)
+                is Expr.MethodCall -> filledMember(mapped)
+                else -> mapped
+            }
+        }
+
+        /**
+         * [call] with each argument's own type arguments inferred from the ones
+         * the member call wrote: `paint.topmost<Pressable>(store(pass), x, y)`
+         * makes the inner call `store<Pressable>(pass)`. The receiver is not a
+         * parameter here, and the members of that name that take as many type
+         * arguments must expect the same thing at a position, or it is left alone.
+         */
+        private fun filledMember(call: Expr.MethodCall): Expr.MethodCall {
+            if (call.typeArgs.isEmpty()) return call
+            val candidates = members[call.name].orEmpty().filter { it.typeParams.size == call.typeArgs.size }
+            if (candidates.isEmpty()) return call
+            return call.copy(
+                args = call.args.mapIndexed { i, argument ->
+                    val expected = candidates.map { member ->
+                        val stated = member.typeParams.zip(call.typeArgs).toMap()
+                        member.params.getOrNull(member.contextualParams + i)?.type?.let { substitute(it, stated) }
+                            ?: return@mapIndexed argument
+                    }.distinct().singleOrNull() ?: return@mapIndexed argument
+                    stateTypeArgs(argument, expected)
+                },
+            )
         }
 
         /** [call] with each argument's own type arguments inferred from this one's. */

@@ -29,7 +29,7 @@ object OwnershipCleanup {
     ): IrProgram {
         val functions = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }.associateBy { it.name }
         val fields = program.items.filterIsInstance<IrTopLevel.Struct>().associate { struct -> struct.name to struct.fields.associateBy { it.name } }
-        val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow), returnsBorrow, transferredByValue, variadic, returnedOnlyParameters(functions))
+        val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow, copied), returnsBorrow, transferredByValue, variadic, returnedOnlyParameters(functions))
         return program.copy(items = program.items.map { item ->
         when (item) {
             is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(
@@ -91,11 +91,17 @@ object OwnershipCleanup {
      * constructed value, an owned local, a moved or copied value, or another
      * such call. A result that may be a place someone else owns - a field, a
      * global, an element - is not, and neither is a borrowed (`T&`) result.
+     * A place of a `Copy` type is the exception: a `return` hands the caller
+     * a copy of it ([Body.isolatedPlace]), so `return ::invalid` from a
+     * `fin invalid: Entity` is as new as a constructed value. Counting it as
+     * someone else's place left every call site of such a function - World's
+     * `getParent` among them - holding a copy it never freed.
      */
     private fun freshResults(
         functions: Map<String, IrFunction>,
         fields: Map<String, Map<String, IrField>>,
         returnsBorrow: (String) -> Boolean,
+        copied: (IrType) -> Boolean,
     ): Set<String> {
         val candidates = functions.values.filter { allocates(it.returnType, fields) && !returnsBorrow(it.name) }
         // Optimistic: recursion is assumed fresh until a return says otherwise.
@@ -107,11 +113,15 @@ object OwnershipCleanup {
                 if (function.name !in fresh) continue
                 val owned = mutableSetOf<String>()
                 var ok = true
-                fun freshValue(value: IrExpr?): Boolean = when (value) {
+                // [returned]: the value is a `return`'s own operand, which the
+                // return lowering copies when it is a `Copy` place; an `if`
+                // expression's branches are not copied, so they must be new.
+                fun freshValue(value: IrExpr?, returned: Boolean = true): Boolean = when (value) {
                     is IrExpr.StructCtor, is IrExpr.ArrayLiteral -> true
                     is IrExpr.Call -> value.name == "__take" || value.name == "__isolated" || value.name in fresh
-                    is IrExpr.Var -> value.name in owned
-                    is IrExpr.IfExpr -> freshValue(value.thenExpr) && freshValue(value.elseExpr)
+                    is IrExpr.Var -> value.name in owned || (returned && copied(value.type))
+                    is IrExpr.Member, is IrExpr.Index -> returned && copied(value.type)
+                    is IrExpr.IfExpr -> freshValue(value.thenExpr, false) && freshValue(value.elseExpr, false)
                     else -> false
                 }
                 fun walk(stmts: List<IrStmt>) {
@@ -311,7 +321,9 @@ object OwnershipCleanup {
         val borrowParameters: Set<String> = emptySet(),
     ) {
         val functions get() = context.functions
-        private data class Frame(val owners: MutableList<IrExpr.Var>, val root: Boolean, val loop: Boolean, val label: String?, val delayed: Boolean, val aliases: MutableMap<String, IrExpr.Var> = mutableMapOf())
+        private data class Frame(val owners: MutableList<IrExpr.Var>, val root: Boolean, val loop: Boolean, val label: String?, val delayed: Boolean, val aliases: MutableMap<String, IrExpr.Var> = mutableMapOf(),
+            /** Fields (`m.items`) a local declared here reads without owning: see [aliasedPlace]. */
+            val memberAliases: MutableSet<String> = mutableSetOf())
         private val frames = mutableListOf<Frame>()
         private var temporary = 0
         private fun purge(value: IrExpr) = IrStmt.ExprStmt(IrExpr.Call("__purge", listOf(value), IrType.Unit))
@@ -334,6 +346,9 @@ object OwnershipCleanup {
                     else -> null
                 }
                 if (alias?.second is IrExpr.Var) origin(alias.second as IrExpr.Var)?.let { frame.aliases[alias.first] = it }
+                // A local read from a field (or an element of one) may share the
+                // field's value: that field must not drop it while the local lives.
+                alias?.second?.let(::memberPlace)?.let { frame.memberAliases += it }
                 val declaration = when (stmt) {
                     is IrStmt.VarDecl -> if (stmt.ownsValue && !stmt.lazy && stmt.reactiveLifetime == null) IrExpr.Var(stmt.name, stmt.type) else null
                     is IrStmt.FinDecl -> if (stmt.ownsValue && !stmt.lazy && stmt.reactiveLifetime == null) IrExpr.Var(stmt.name, stmt.type) else null
@@ -376,6 +391,25 @@ object OwnershipCleanup {
                             val name = "__owner_replace_${temporary++}"
                             result += IrStmt.FinDecl(name, stmt.value.type, isolatedPlace(stmt.value))
                             result += purge(owner)
+                            result += stmt.copy(value = IrExpr.Var(name, stmt.value.type))
+                        }
+                    }
+                    is IrStmt.MemberAssign -> {
+                        // `owner.field = new value`: the value the field held is the
+                        // owner's, and nothing else frees it. Evaluate the new value
+                        // first (it may read the old one: `m.v = m.v.add(x)`), then
+                        // drop the old, then store. Only for a value that is new - a
+                        // place of a type that is not `Copy` is an alias the old
+                        // convention keeps - and only through a target that names a
+                        // place, so the receiver is not evaluated twice.
+                        val field = (stmt.target.type as? IrType.Named)?.let { context.fields[it.name]?.get(stmt.name) }
+                        val replaces = field != null && field.ownsValue && allocates(field.type, context.fields) &&
+                            !erasedField(field.type) && allocates(stmt.value.type, context.fields) && purePlace(stmt.target) &&
+                            newValue(stmt.value) && !aliasedPlace(stmt.target, stmt.name)
+                        if (!replaces) result += stmt else {
+                            val name = "__member_replace_${temporary++}"
+                            result += IrStmt.FinDecl(name, stmt.value.type, isolatedPlace(stmt.value))
+                            result += purge(IrExpr.Member(stmt.target, stmt.name, field!!.type))
                             result += stmt.copy(value = IrExpr.Var(name, stmt.value.type))
                         }
                     }
@@ -593,6 +627,50 @@ object OwnershipCleanup {
         private fun isolatedPlace(value: IrExpr): IrExpr =
             if ((value is IrExpr.Var || value is IrExpr.Member || value is IrExpr.Index) && context.copied(value.type))
                 IrExpr.Call("__isolated", listOf(value), value.type) else value
+
+        /** An erased field (`T`, `Array<T>` of an erased `T`) owns by a type the body cannot name. */
+        private fun erasedField(type: IrType): Boolean = erased(type) ||
+            (type as? IrType.Array)?.element?.let(::erased) == true ||
+            (type as? IrType.Named)?.args?.any(::erased) == true
+
+        /** A receiver that names storage - a local, or a field of one - so reading it twice reads the same place. */
+        private fun purePlace(expr: IrExpr): Boolean = when (expr) {
+            is IrExpr.Var -> true
+            is IrExpr.Member -> purePlace(expr.target)
+            else -> false
+        }
+
+        /** A value the field will be the only owner of: built, returned new, moved, or a copy of a `Copy` place. */
+        private fun newValue(value: IrExpr): Boolean = freshArgument(value) ||
+            (value is IrExpr.Call && (value.name == "__take" || value.name == "__isolated")) ||
+            ((value is IrExpr.Var || value is IrExpr.Member || value is IrExpr.Index) && context.copied(value.type))
+
+        /**
+         * Whether a local in scope may still alias the field's current value: one
+         * declared from that very field without owning it (`fin old = m.items`).
+         * Dropping the value under it would leave the local dangling, so such a
+         * field keeps the old convention.
+         */
+        private fun aliasedPlace(target: IrExpr, name: String): Boolean {
+            val key = placeKey(target)?.let { "$it.$name" } ?: return true
+            return frames.any { frame -> frame.memberAliases.any { it == key || it.startsWith("$key.") } }
+        }
+
+        /** The field a declaration's initializer reads in place: `m.items`, `m.items[i]`, `m.items[i].x`. */
+        private fun memberPlace(expr: IrExpr): String? = when {
+            // A number, a flag or a text read from a field is its own value.
+            !allocates(expr.type, context.fields) && expr.type !is IrType.Nullable -> null
+            expr is IrExpr.Member -> placeKey(expr) ?: memberPlace(expr.target)
+            expr is IrExpr.Index -> memberPlace(expr.target) ?: placeKey(expr.target)
+            expr is IrExpr.TupleAccess -> memberPlace(expr.target)
+            else -> null
+        }
+
+        private fun placeKey(expr: IrExpr): String? = when (expr) {
+            is IrExpr.Var -> expr.name
+            is IrExpr.Member -> placeKey(expr.target)?.let { "$it.${expr.name}" }
+            else -> null
+        }
 
         /** A value nothing owns yet: constructed, or returned new by a call. */
         private fun freshArgument(value: IrExpr): Boolean = allocates(value.type, context.fields) &&

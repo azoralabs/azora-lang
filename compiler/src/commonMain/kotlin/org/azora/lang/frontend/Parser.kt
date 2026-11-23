@@ -10429,16 +10429,9 @@ class Parser(
         }
         skipNewlines()
         consume(TokenType.ELSE, "Expected 'else' - 'return for' needs one for when nothing is produced")
-        val fallback = if (match(TokenType.L_BRACE)) {
-            skipNewlines()
-            val stmt = parseReturnedValue(start)
-            skipNewlines()
-            consume(TokenType.R_BRACE, "Expected '}' after the else value")
-            stmt
-        } else {
-            parseReturnedValue(start)
-        }
-        consumeNewline()
+        // The `else` is a return branch like `return if`'s: one value, or a
+        // block of statements that ends in the value (`else { log(); false }`).
+        val fallback = parseReturnBranchBody("else")
         val (body, produces) = rewriteForReturns(loop.body)
         if (!produces) {
             error(
@@ -10446,7 +10439,7 @@ class Parser(
                     "${start.line} ends in a value, so the answer could only ever be the 'else'",
             )
         }
-        return Stmt.Scope(listOf(loop.copy(body = body), fallback), start.line, start.column)
+        return Stmt.Scope(listOf(loop.copy(body = body)) + fallback, start.line, start.column)
     }
 
     /**
@@ -11937,7 +11930,13 @@ class Parser(
                             )
                         } ?: expr.copy(ctorArgs = args)
                         is Expr.UpperScopeAccess -> Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr)
-                        is Expr.Member -> Expr.MethodCall(expr.target, expr.name, args, expr.line, expr.column)
+                        // `target.name<T>(args)` keeps the type arguments it wrote: they say
+                        // what a nested generic argument such as `store(pass)` is for.
+                        is Expr.Member -> {
+                            val call = Expr.MethodCall(expr.target, expr.name, args, expr.line, expr.column, typeArgs = pendingCallTypeArgs)
+                            pendingCallTypeArgs = emptyList()
+                            call
+                        }
                         // Calling an arbitrary expression value, e.g. `fs[0](x)` or
                         // `(getFn())(x)` - the receiver must be a function value.
                         else -> Expr.Call("", args, expr.line, expr.column, expr.length, receiver = expr)
@@ -11962,7 +11961,11 @@ class Parser(
                             pendingCallTypeArgs = emptyList()
                             call
                         }
-                        is Expr.Member -> Expr.MethodCall(expr.target, expr.name, listOf(lambda), expr.line, expr.column)
+                        is Expr.Member -> {
+                            val call = Expr.MethodCall(expr.target, expr.name, listOf(lambda), expr.line, expr.column, typeArgs = pendingCallTypeArgs)
+                            pendingCallTypeArgs = emptyList()
+                            call
+                        }
                         else -> Expr.Call("", listOf(lambda), expr.line, expr.column, expr.length, receiver = expr)
                     }
                 }
@@ -11983,14 +11986,19 @@ class Parser(
                             pendingCallTypeArgs = emptyList()
                             call
                         }
-                        is Expr.Member -> Expr.MethodCall(
-                            expr.target,
-                            expr.name,
-                            listOf(lambda),
-                            expr.line,
-                            expr.column,
-                            expr.length,
-                        )
+                        is Expr.Member -> {
+                            val call = Expr.MethodCall(
+                                expr.target,
+                                expr.name,
+                                listOf(lambda),
+                                expr.line,
+                                expr.column,
+                                expr.length,
+                                pendingCallTypeArgs,
+                            )
+                            pendingCallTypeArgs = emptyList()
+                            call
+                        }
                         else -> Expr.Call(
                             "",
                             listOf(lambda),
@@ -12027,6 +12035,7 @@ class Parser(
             target.line,
             target.column,
             target.length,
+            typeArgs,
         )
         else -> Expr.Call(
             "",

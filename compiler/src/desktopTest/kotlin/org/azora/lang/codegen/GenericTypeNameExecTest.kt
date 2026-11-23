@@ -59,6 +59,44 @@ class GenericTypeNameExecTest {
         if (WasmExec.available) assertEquals(expected, WasmExec.run(program), "WebAssembly")
     }
 
+    @Test fun aNestedGenericArgumentTakesItsTypeFromTheMemberCall() {
+        // Studio's `popupPaint.topmost<Pressable>(store(pass), x, y)`: the member
+        // call's written type argument is what the inner `store` is for. The
+        // parser dropped it, so `store` folded `T.typeName` to "T" and the
+        // popup's rows were looked up in a storage nothing is ever put in.
+        val program = """
+            import std.io
+            pack Tag {
+                var x: Int
+            }
+            pack Holder {
+                var x: Int
+            }
+            pack Named<T> {
+                var name: String = ""
+            }
+            func<T> namedAs(name: String): Named<T> {
+                var made: Named<T> = .()
+                made.name = name
+                return made
+            }
+            inline func<T> named(holder: Holder&): Named<T> {
+                return namedAs<T>(T.typeName)
+            }
+            impl Holder {
+                func<T> &.show(n: Named<T>&): String = n.name
+            }
+            func main() {
+                fin holder = Holder(0)
+                println(holder.show<Tag>(named(holder)))
+            }
+        """.trimIndent()
+        val result = Compiler().compile(program)
+        assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
+        assertEquals("Tag", IrInterpreter().interpret(result.ir).trim(), "interpreter")
+        if (LlvmExec.available) assertEquals("Tag", LlvmExec.run(program), "LLVM")
+    }
+
     @Test fun aGenericBodyForwardingItsOwnTypeToANameLookupIsRefused() {
         val result = Compiler().compile(
             """

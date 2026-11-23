@@ -393,8 +393,17 @@ sealed class Expr {
      * @property target the receiver expression
      * @property name the method name
      * @property args the argument expressions
+     * @property typeArgs the type arguments written after the name (`target.name<T>(args)`), if any
      */
-    data class MethodCall(val target: Expr, val name: String, val args: List<Expr>, override val line: Int, override val column: Int = 0, override val length: Int = 0) : Expr()
+    data class MethodCall(
+        val target: Expr,
+        val name: String,
+        val args: List<Expr>,
+        override val line: Int,
+        override val column: Int = 0,
+        override val length: Int = 0,
+        val typeArgs: List<TypeRef> = emptyList(),
+    ) : Expr()
 
     /**
      * One segment of a string-interpolation template.

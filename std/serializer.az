@@ -491,10 +491,13 @@ func decodeSerialValue(
     input: String
     options: SerializerOptions&
 ): SerialValue ?! SerializationError {
-    if stringLength(input) > options.maxInputLength {
+    // The text is decoded to characters once: reading it through `charAt`
+    // walked the UTF-8 from its start at every character, so a 34 KB scene
+    // took about a billion steps to read.
+    var reader = _SerialReader(input, 0, options, toChars(input))
+    if reader.chars.size > options.maxInputLength {
         return .InputTooLarge
     }
-    var reader = _SerialReader(input, 0, options)
     fin value = try reader.readValue(0)
     reader.skipWhitespace()
     if !reader.isAtEnd {
@@ -509,14 +512,23 @@ pack _SerialReader {
     var index: Int
     /** The caller's limits, read for the length of one decode. */
     fin options: SerializerOptions&
+    /** [input]'s characters, decoded once; [index] counts them. */
+    var chars: Array<Char> = []
 }
 
 impl _SerialReader {
-    prop &.isAtEnd: Bool = self.index >= stringLength(self.input)
+    prop &.isAtEnd: Bool = self.index >= self.chars.size
+
+    /** The characters from [start] up to [index], as text. */
+    func &.slice(start: Int): String {
+        var part: Array<Char> = []
+        for i: Int in start..<self.index then part.add(self.chars[i])
+        return fromChars(part)
+    }
 
     func !.skipWhitespace(): Unit {
         while !self.isAtEnd {
-            fin c = charAt(self.input, self.index)
+            fin c = self.chars[self.index]
             if c != ' ' && c != '\n' && c != '\r' && c != '\t' {
                 return
             }
@@ -528,7 +540,7 @@ impl _SerialReader {
         if self.isAtEnd {
             return .UnexpectedEnd
         }
-        fin c = charAt(self.input, self.index)
+        fin c = self.chars[self.index]
         self.index += 1
         return c
     }
@@ -548,7 +560,7 @@ impl _SerialReader {
         if self.isAtEnd {
             return .UnexpectedEnd
         }
-        fin c = charAt(self.input, self.index)
+        fin c = self.chars[self.index]
         if c == '"' {
             return SerialValue.Text(try self.readString())
         }
@@ -586,30 +598,32 @@ impl _SerialReader {
 
     func !.readString(): String ?! SerializationError {
         try self.expect('"')
-        var result = ""
+        // Characters are gathered and joined once: adding each to a growing
+        // text copied it every time.
+        var result: Array<Char> = []
         while !self.isAtEnd {
             fin c = try self.take()
             if c == '"' {
-                return result
+                return fromChars(result)
             }
             if charToCode(c) < 32 {
                 return .InvalidEscape
             }
             if c != '\\' {
-                result += c as String
+                result.add(c)
             } else {
                 fin escaped = try self.take()
-                if escaped == '"' { result = result + "\"" }
-                else if escaped == '\\' { result = result + "\\" }
-                else if escaped == '/' { result = result + "/" }
-                else if escaped == 'b' { result = result + "\b" }
-                else if escaped == 'f' { result = result + "\f" }
-                else if escaped == 'n' { result = result + "\n" }
-                else if escaped == 'r' { result = result + "\r" }
-                else if escaped == 't' { result = result + "\t" }
+                if escaped == '"' { result.add('"') }
+                else if escaped == '\\' { result.add('\\') }
+                else if escaped == '/' { result.add('/') }
+                else if escaped == 'b' { result.add(codeToChar(8)) }
+                else if escaped == 'f' { result.add(codeToChar(12)) }
+                else if escaped == 'n' { result.add('\n') }
+                else if escaped == 'r' { result.add('\r') }
+                else if escaped == 't' { result.add('\t') }
                 else if escaped == 'u' {
                     fin codePoint = try self.readEscapedCodePoint()
-                    result += codeToChar(codePoint) as String
+                    result.add(codeToChar(codePoint))
                 } else {
                     return .InvalidEscape
                 }
@@ -652,54 +666,54 @@ impl _SerialReader {
 
     func !.readNumber(): String ?! SerializationError {
         fin start = self.index
-        if charAt(self.input, self.index) == '-' {
+        if self.chars[self.index] == '-' {
             self.index += 1
         }
         if self.isAtEnd {
             return .InvalidNumber
         }
 
-        if charAt(self.input, self.index) == '0' {
+        if self.chars[self.index] == '0' {
             self.index += 1
         } else {
-            if !charIsDigit(charAt(self.input, self.index)) {
+            if !charIsDigit(self.chars[self.index]) {
                 return .InvalidNumber
             }
-            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) {
+            while !self.isAtEnd && charIsDigit(self.chars[self.index]) {
                 self.index += 1
             }
         }
 
-        if !self.isAtEnd && charAt(self.input, self.index) == '.' {
+        if !self.isAtEnd && self.chars[self.index] == '.' {
             self.index += 1
-            if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) {
+            if self.isAtEnd || !charIsDigit(self.chars[self.index]) {
                 return .InvalidNumber
             }
-            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) {
+            while !self.isAtEnd && charIsDigit(self.chars[self.index]) {
                 self.index += 1
             }
         }
 
-        if !self.isAtEnd && (charAt(self.input, self.index) == 'e' || charAt(self.input, self.index) == 'E') {
+        if !self.isAtEnd && (self.chars[self.index] == 'e' || self.chars[self.index] == 'E') {
             self.index += 1
-            if !self.isAtEnd && (charAt(self.input, self.index) == '+' || charAt(self.input, self.index) == '-') {
+            if !self.isAtEnd && (self.chars[self.index] == '+' || self.chars[self.index] == '-') {
                 self.index += 1
             }
-            if self.isAtEnd || !charIsDigit(charAt(self.input, self.index)) {
+            if self.isAtEnd || !charIsDigit(self.chars[self.index]) {
                 return .InvalidNumber
             }
-            while !self.isAtEnd && charIsDigit(charAt(self.input, self.index)) {
+            while !self.isAtEnd && charIsDigit(self.chars[self.index]) {
                 self.index += 1
             }
         }
-        return substring(self.input, start, self.index)
+        return self.slice(start)
     }
 
     func !.readArray(depth: Int): SerialValue ?! SerializationError {
         try self.expect('[')
         var values: ArrayList<SerialValue> = .()
         self.skipWhitespace()
-        if !self.isAtEnd && charAt(self.input, self.index) == ']' {
+        if !self.isAtEnd && self.chars[self.index] == ']' {
             self.index += 1
             return SerialValue.Array(take values)
         }
@@ -721,13 +735,13 @@ impl _SerialReader {
         try self.expect('{')
         var fields: ArrayList<SerialField> = .()
         self.skipWhitespace()
-        if !self.isAtEnd && charAt(self.input, self.index) == '}' {
+        if !self.isAtEnd && self.chars[self.index] == '}' {
             self.index += 1
             return SerialValue.Object(take fields)
         }
         loop {
             self.skipWhitespace()
-            if self.isAtEnd || charAt(self.input, self.index) != '"' {
+            if self.isAtEnd || self.chars[self.index] != '"' {
                 return .InvalidSyntax
             }
             fin name = try self.readString()

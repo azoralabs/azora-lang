@@ -185,7 +185,9 @@ class Feature003SyntaxTest {
         """.trimIndent())
         val result = Compiler(listOf(library)).compile("import std.io\nimport demo.aiming\nfunc main() { println(aim().hit.point.y) }", release = false)
         assertIs<CompilationResult.Success>(result, (result as? CompilationResult.Failure)?.errors.toString())
-        assertTrue("best.hit = __isolated(hit)" in result.ir.prettyPrint(), result.ir.prettyPrint())
+        // The copy is made first, the field's old value dropped, then the copy stored.
+        val ir = result.ir.prettyPrint()
+        assertTrue(Regex("fin (__member_replace_\\d+): Hit = __isolated\\(hit\\)\\s+__purge\\(best\\.hit\\)\\s+best\\.hit = \\1").containsMatchIn(ir), ir)
         assertEquals("6.0", IrInterpreter().interpret(result.ir).trim())
     }
 

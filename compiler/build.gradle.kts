@@ -124,6 +124,48 @@ val generateStdlib = tasks.register("generateAzStdlib") {
     }
 }
 
+val generateGpuStdlib = tasks.register("generateGpuStdlib") {
+    val sourceDir = rootProject.file("gpustdlib")
+    val outputDir = layout.buildDirectory.dir("generated/gpustdlib")
+    inputs.dir(sourceDir)
+    outputs.dir(outputDir)
+
+    doLast {
+        val files = sourceDir.walkTopDown().filter { it.isFile && it.extension == "azgpu" }
+            .sortedBy { it.relativeTo(sourceDir).invariantSeparatorsPath }.toList()
+        check(files.isNotEmpty()) { "No GPU standard library sources in $sourceDir" }
+        val output = outputDir.get().file("org/azora/lang/gpu/GpuStdlibBundle.kt").asFile
+        output.parentFile.mkdirs()
+        output.writeText(buildString {
+            appendLine("package org.azora.lang.gpu")
+            appendLine("internal object GpuStdlibBundle {")
+            appendLine("    val modules = mapOf(")
+            for (file in files) {
+                val relativePath = file.relativeTo(sourceDir).invariantSeparatorsPath.removeSuffix(".azgpu")
+                val module = "gpustdlib." + relativePath.replace('/', '.')
+                check(module.split('.').all { it.matches(Regex("[A-Za-z_][A-Za-z0-9_]*")) }) {
+                    "Invalid GPU standard library module path $relativePath"
+                }
+                val source = file.readText()
+                val quoted = buildString {
+                    for (c in source) append(when (c) {
+                        '\\' -> "\\\\"
+                        '"' -> "\\\""
+                        '$' -> "\\$"
+                        '\r' -> "\\r"
+                        '\n' -> "\\n"
+                        '\t' -> "\\t"
+                        else -> c.toString()
+                    })
+                }
+                appendLine("        \"$module\" to \"$quoted\",")
+            }
+            appendLine("    )")
+            appendLine("}")
+        })
+    }
+}
+
 val generateAzTests = tasks.register("generateAzTests") {
     val testDir = rootProject.file("Internal/Testing")
     val outputDir = layout.buildDirectory.dir("generated/aztests")
@@ -286,6 +328,7 @@ kotlin {
     sourceSets {
         commonMain {
             kotlin.srcDir(generateStdlib.map { it.outputs.files.singleFile })
+            kotlin.srcDir(generateGpuStdlib.map { it.outputs.files.singleFile })
             dependencies {
                 implementation(projects.buildConfig)
                 implementation(libs.kotlinx.coroutines.core)

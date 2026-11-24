@@ -7,6 +7,7 @@ import kotlinx.cinterop.*
 import org.azora.lang.*
 import org.azora.lang.backend.*
 import org.azora.lang.diagnostics.*
+import org.azora.lang.gpu.GpuCommand
 import platform.posix.*
 import org.azora.lang.nativeposix.posix_spawnp
 import org.azora.lang.nativeposix.azora_native_environ
@@ -210,6 +211,11 @@ fun main(arguments: Array<String>) {
         when (args.firstOrNull()) {
             "version", "--version" -> println("Azora ${BuildConfig.VERSION} native macOS arm64; protocol 1")
             "check" -> {
+                if (GpuCommand.handlesCheck(args.drop(1))) {
+                    GpuCommand.check(args.drop(1))
+                    println("No errors found.")
+                    return
+                }
                 val path = args.drop(1).firstOrNull { !it.startsWith('-') } ?: error("check requires a file")
                 // Warnings - a deprecated use, and with `--experimental` an
                 // experimental one - go to stderr, as the JVM CLI's do.
@@ -217,6 +223,10 @@ fun main(arguments: Array<String>) {
                 println("No errors found.")
             }
             "compile" -> {
+                if (GpuCommand.handlesCompile(args.drop(1))) {
+                    GpuCommand.compile(args.drop(1)) { run(it.first(), it.drop(1)) }
+                    return
+                }
                 require(args.getOrNull(1) in setOf("llvm", "ll")) { "native CLI currently accepts the llvm target" }
                 // `-o <file>` writes the module there instead of to stdout.
                 val outIndex = args.indexOf("-o")
@@ -230,7 +240,7 @@ fun main(arguments: Array<String>) {
             }
             "analyze" -> analyze(sources(args.getOrNull(1) ?: error("analyze requires a file")), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0)
             "hover", "definition", "complete" -> analyze(sources(args.getOrNull(1) ?: error("${args[0]} requires a file"), engine = true), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0, args[0], args)
-            null, "help", "--help" -> println("azora native: check <file> | compile llvm <file> [--debug] [--export=a,b] [-o <file>] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
+            null, "help", "--help" -> println("azora native: check <file> | compile <metallib|spv|dxil> <file.azgpu> | compile llvm <file> [--debug] [--export=a,b] [-o <file>] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
             else -> error("unknown native compiler command '${args[0]}'")
         }
     } catch (failure: Exception) {

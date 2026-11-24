@@ -29,6 +29,63 @@ app/build/install/azora/bin/azora compile llvm hello.az
 app/build/install/azora/bin/azora repl
 ```
 
+## Azora GPU
+
+Use `.azgpu` for vertex, fragment, and compute shaders. The JVM and native CLI
+share the GPU compiler and bundle the `gpustdlib` modules from this repository.
+
+```bash
+azora check examples/gpu/compute.azgpu
+azora compile spv examples/gpu/compute.azgpu --profile vulkan1.4 -o adjust.spv
+azora compile metallib examples/gpu/triangle.azgpu --entry triangleVertex -o triangle.metallib
+azora compile dxil examples/gpu/triangle.azgpu --entry triangleFragment --profile 6.6 -o triangle.dxil
+```
+
+Choose `--entry` when the file declares several entry points. Each invocation
+produces one shader. Without `-o`, the CLI writes beside the input and adds the
+selected entry name to the output filename when `--entry` is explicit.
+`--emit-source` prints the generated shader source to standard output.
+
+| Output | Tool on PATH | Profile |
+| --- | --- | --- |
+| `.spv` | Khronos `glslangValidator` | Vulkan environment, defaults to `vulkan1.2` |
+| `.metallib` | `xcrun` with the Xcode Metal Toolchain | Apple SDK, defaults to `macosx`. Use `--metal-standard` to select an MSL version. |
+| `.dxil` | Microsoft `dxc` | Shader Model, defaults to `6.0` |
+
+Set `AZORA_GLSLANG`, `AZORA_XCRUN`, or `AZORA_DXC` to select a specific
+executable. The GPU compiler lowers to GLSL, MSL, and HLSL and delegates final
+binary generation to the corresponding toolchain. Direct DXIL emission from
+the roadmap remains future work.
+
+The first GPU subset supports `Bool`, `Int`, `UInt`, `Float`, and two- to
+four-component numeric vectors such as `Float3` and `UInt3`. It includes
+`func`, `pack`, inherent `impl`, `enum`, payload-carrying `variant enum`,
+`var`, `fin`, `if`, `when` statements and `return when`, `while`, and
+ascending integer-range `for` loops. Match payloads with patterns such as
+`.Multiply(factor)`. Metaprogramming, generics, coroutines, and the CPU
+standard library are outside the GPU subset. Import `gpustdlib.math` or
+`gpustdlib.color` for shared math and color routines.
+
+- Use `@Vertex`, `@Fragment`, or `@Compute(x, y, z)` above an entry function.
+  An interface annotation in a parameter goes before its type, as in
+  `id: @GlobalInvocationId UInt3`.
+- Annotate numeric vertex attributes and varyings with `@Location(n)`.
+  Vertex entry points may return a `Float4` position or a pack with a
+  `@Position` field and explicit varying locations. Fragment entry points may
+  return a `Float4` at color location zero or a pack with explicit color locations.
+- For compute, use `@ReadOnlyStorage(n)` or `@Storage(n)` on a parameter
+  typed with the buffer's element type (`Float`, `Int`, or `UInt`). Index
+  the parameter to access an element. The host supplies valid bounds and
+  binds buffers at Metal index `n`, Vulkan set zero and binding `n`, or
+  DirectX register `tN`/`uN` in space zero.
+- Use the Azora entry name when loading a Metal or Vulkan shader. On Metal,
+  pass the declared workgroup dimensions to the dispatch call. Check the
+  target device's limits before dispatching.
+
+See [the compute shader](examples/gpu/compute.azgpu) and
+[the vertex and fragment shaders](examples/gpu/triangle.azgpu) for complete
+examples.
+
 ## Hello World
 
 ```azora

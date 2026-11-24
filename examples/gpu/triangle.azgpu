@@ -1,0 +1,22 @@
+import gpustdlib.color
+
+pack VertexOutput {
+    @Position
+    fin position: Float4
+    @Location(0)
+    fin color: Float3
+}
+
+@Vertex
+func triangleVertex(index: @VertexIndex UInt): VertexOutput {
+    return when index {
+        0 -> VertexOutput(Float4(-0.6, -0.6, 0.0, 1.0), Float3(1.0, 0.0, 0.0))
+        1 -> VertexOutput(Float4(0.6, -0.6, 0.0, 1.0), Float3(0.0, 1.0, 0.0))
+        else -> VertexOutput(Float4(0.0, 0.6, 0.0, 1.0), Float3(0.0, 0.0, 1.0))
+    }
+}
+
+@Fragment
+func triangleFragment(color: @Location(0) Float3): Float4 {
+    return premultiplyAlpha(Float4(color.r, color.g, color.b, 1.0))
+}

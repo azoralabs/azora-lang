@@ -1,0 +1,11 @@
+module gpustdlib.color
+
+import gpustdlib.math
+
+func luminance(rgb: Float3): Float {
+    return dot3(rgb, Float3(0.2126, 0.7152, 0.0722))
+}
+
+func premultiplyAlpha(color: Float4): Float4 {
+    return Float4(color.r * color.a, color.g * color.a, color.b * color.a, color.a)
+}

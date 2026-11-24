@@ -21,6 +21,9 @@ import org.azora.lang.CompilationResult
 import org.azora.lang.LibrarySource
 import org.azora.lang.backend.IrInterpreter
 import org.azora.lang.frontend.dumpTree
+import org.azora.lang.gpu.GpuCommand
+import org.azora.lang.gpu.GpuCompileException
+import org.azora.lang.gpu.GpuUsageException
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -69,8 +72,8 @@ fun main(args: Array<String>) {
         "remove"  -> ProjectCommands.remove(args.drop(1))
         // With no file named, `run` and `test` act on the project here.
         "run"     -> if (projectCommand(args.drop(1))) ProjectCommands.run(args.drop(1)) else handleRun(args.drop(1))
-        "check"   -> handleCheck(args.drop(1))
-        "compile" -> handleCompile(args.drop(1))
+        "check"   -> if (GpuCommand.handlesCheck(args.drop(1))) handleGpu(args.drop(1), check = true) else handleCheck(args.drop(1))
+        "compile" -> if (GpuCommand.handlesCompile(args.drop(1))) handleGpu(args.drop(1), check = false) else handleCompile(args.drop(1))
         "test"    -> if (projectCommand(args.drop(1))) ProjectCommands.test(args.drop(1)) else handleTest(args.drop(1))
         "repl"    -> repl()
         "version" -> println("Azora ${BuildConfig.VERSION}")
@@ -274,6 +277,21 @@ private fun handleCheck(args: List<String>) {
             result.errors.forEach { System.err.println(it) }
             exitProcess(ExitStatus.COMPILE_ERROR)
         }
+    }
+}
+
+private fun handleGpu(args: List<String>, check: Boolean) {
+    try {
+        if (check) {
+            GpuCommand.check(args)
+            println("No errors found.")
+        } else {
+            GpuCommand.compile(args) { command -> ProcessBuilder(command).inheritIO().start().waitFor() }
+        }
+    } catch (error: GpuUsageException) {
+        exitWith(ExitStatus.USAGE, error.message.orEmpty())
+    } catch (error: GpuCompileException) {
+        exitWith(ExitStatus.COMPILE_ERROR, error.message.orEmpty())
     }
 }
 
@@ -622,6 +640,9 @@ private fun printUsage() {
                                         a .wasm file is the binary, with <name>.host.js;
                                         --export=a,b builds a library exporting those
                                         functions under their own names)
+          check <file.azgpu>            Check a GPU shader
+          compile <metallib|spv|dxil> <file.azgpu>
+                                        Build a GPU shader (-o, --entry, --profile)
           test <file.az | dir>          Run `test` blocks (file or directory)
           repl                          Interactive REPL
           version                       Show version

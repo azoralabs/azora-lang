@@ -60,6 +60,7 @@ class Parser(
      * [comptimeList] to qualify elements for a consumer in another scope.
      */
     private val typeListScope: MutableMap<String, String> = mutableMapOf(),
+    private val allowWhenExpressions: Boolean = true,
 ) {
 
     /**
@@ -10788,6 +10789,9 @@ class Parser(
      */
     private fun parseWhenExpr(): Expr {
         val start = peek()
+        if (!allowWhenExpressions) {
+            error("line ${start.line}: use a GPU when statement or 'return when'")
+        }
         val head = parseWhenHead()
         val scrutinee = head.scrutinee
         val guardForm = head.guard || (scrutinee is Expr.BoolLiteral && scrutinee.value)

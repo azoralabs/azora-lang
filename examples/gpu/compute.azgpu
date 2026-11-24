@@ -1,0 +1,42 @@
+import gpustdlib.math
+
+enum Mode {
+    Scale
+    Clamp
+}
+
+variant enum Adjustment {
+    Multiply(Float)
+    Range(Float, Float)
+}
+
+pack Sample {
+    var weight: Float
+    fin adjustment: Adjustment
+}
+
+impl Sample {
+    func &.value(): Float {
+        return when self.adjustment {
+            .Multiply(factor) -> self.weight * factor
+            .Range(low, high) -> clamp(self.weight, low, high)
+        }
+    }
+}
+
+func adjustmentFor(mode: Mode): Adjustment {
+    return when mode {
+        .Scale -> .Multiply(2.0)
+        .Clamp -> .Range(0.0, 1.0)
+    }
+}
+
+@Compute(64, 1, 1)
+func adjust(id: @GlobalInvocationId UInt3, input: @ReadOnlyStorage(0) Float, output: @Storage(1) Float) {
+    var mode = Mode.Scale
+    if input[id.x] < 0.0 {
+        mode = Mode.Clamp
+    }
+    fin sample = Sample(input[id.x], adjustmentFor(mode))
+    output[id.x] = sample.value()
+}

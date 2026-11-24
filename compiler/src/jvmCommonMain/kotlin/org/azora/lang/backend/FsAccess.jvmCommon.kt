@@ -21,6 +21,7 @@ import java.io.IOException
 import java.nio.file.AccessDeniedException
 import java.nio.file.DirectoryNotEmptyException
 import java.nio.file.FileAlreadyExistsException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -91,20 +92,17 @@ internal actual fun fsWriteBytes(path: String, bytes: ByteArray): String? = try 
 }
 
 private fun atomicallyReplace(path: String, write: (File) -> Unit) {
-    val target = File(path)
-    val temporary = File(target.absolutePath + ".azora-tmp")
-    write(temporary)
+    val target = File(path).absoluteFile.toPath()
+    val temporary = Files.createTempFile(target.parent, ".azora-", ".tmp")
     try {
-        Files.move(
-            temporary.toPath(),
-            target.toPath(),
-            StandardCopyOption.REPLACE_EXISTING,
-            StandardCopyOption.ATOMIC_MOVE,
-        )
-    } catch (unsupported: Throwable) {
-        // Not every filesystem can move atomically; a plain replace is still
-        // better than having written into the target directly.
-        Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        write(temporary.toFile())
+        try {
+            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
+        }
+    } finally {
+        Files.deleteIfExists(temporary)
     }
 }
 

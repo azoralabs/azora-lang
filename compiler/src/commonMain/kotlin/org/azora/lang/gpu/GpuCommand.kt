@@ -2,6 +2,7 @@
 package org.azora.lang.gpu
 
 import org.azora.lang.backend.*
+import org.azora.lang.detectHostOS
 
 class GpuUsageException(message: String) : IllegalArgumentException(message)
 
@@ -120,7 +121,7 @@ object GpuCommand {
                 else -> positional += argument
             }
         }
-        val path = positional.singleOrNull() ?: throw GpuUsageException(usage)
+        val path = positional.singleOrNull()?.let(::normalizePath) ?: throw GpuUsageException(usage)
         if (!path.endsWith(".az") && !path.endsWith(".azgpu")) throw GpuUsageException("GPU compilation expects an Azora source file")
         val profile = flags["--profile"] ?: target.defaultProfile
         val valid = when (target) {
@@ -135,7 +136,7 @@ object GpuCommand {
         }
         if (emitSource && "-o" in flags) throw GpuUsageException("--emit-source writes to standard output")
         val entry = flags["--entry"]
-        val output = flags["-o"] ?: buildString {
+        val output = flags["-o"]?.let(::normalizePath) ?: buildString {
             append(stem(path))
             if (entry != null) append('.').append(entry)
             append('.').append(target.extension)
@@ -205,6 +206,9 @@ object GpuCommand {
     private fun isGpuFile(path: String): Boolean =
         path.endsWith(".azgpu") || path.endsWith(".az") &&
             fsReadText(path).value?.let(GpuModule::isGpuSource) == true
+
+    private fun normalizePath(path: String): String =
+        if (detectHostOS() == "Windows") path.replace('\\', '/') else path
 
     private fun stem(path: String): String = path.substringBeforeLast('.')
 

@@ -189,4 +189,16 @@ class ManifestTest {
         assertEquals("/x", Paths.parent("/x/y"))
         assertEquals("/", Paths.parent("/x"))
     }
+    @Test
+    fun windowsPathsPreserveDriveAndNetworkRoots() {
+        assertEquals("C:/", Paths.parent("C:/Projects"))
+        assertEquals("C:/", Paths.parent("C:/"))
+        assertEquals("C:/Space Here/src/main.az", Paths.join("C:/Space Here", "src\\main.az"))
+        assertEquals("D:/lib", Paths.join("C:/Projects", "D:\\lib"))
+        assertEquals("../lib", Paths.relative("C:/Projects/app", "c:/projects/lib"))
+        assertEquals("D:/lib", Paths.relative("C:/Projects/app", "D:/lib"))
+        assertEquals("//server/share", Paths.parent("//server/share/work"))
+        assertEquals("//server/share", Paths.parent("//server/share"))
+        assertEquals("//server/other/lib", Paths.relative("//server/share/work", "//server/other/lib"))
+    }
 }

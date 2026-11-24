@@ -2,6 +2,8 @@
 package org.azora.lang.gpu
 
 import org.azora.lang.backend.*
+import org.azora.lang.detectHostOS
+import org.azora.lang.packages.Paths
 import org.azora.lang.frontend.*
 import org.azora.lang.frontend.Annotation
 
@@ -37,7 +39,7 @@ object GpuCompiler {
     /**
      * Compiles [entry] (or the only entry point) of [source]. Imports other than `gpustdlib.*` name
      * the `@Execution("GPU")` module header of an Azora file found under [file]'s directory, [importPaths], or the
-     * folders listed in AZORA_GPU_PATH (separated by ':').
+     * folders listed in AZORA_GPU_PATH (using the host's path-list separator).
      */
     fun compile(source: String, file: String, target: GpuTarget, entry: String? = null, importPaths: List<String> = emptyList()): GpuShaderSource {
         val program = GpuProgram(source, file, importPaths)
@@ -352,20 +354,25 @@ internal class GpuProgram(source: String, private val file: String, private val 
 
     /** The GPU source files under the search folders, by the module their header declares. */
     private fun localModules(): Map<String, String> = modules ?: buildMap {
+        val windows = detectHostOS() == "Windows"
+        fun normalized(path: String) = if (windows) path.replace('\\', '/') else path
+        val sourcePath = normalized(file)
+        val canonicalSource = fsCanonical(sourcePath).value
+        val separator = if (windows) ';' else ':'
         val roots = buildList {
-            add(file.substringBeforeLast('/', "."))
-            addAll(importPaths)
-            osEnvVar("AZORA_GPU_PATH")?.split(':')?.filter { it.isNotBlank() }?.let(::addAll)
+            add(Paths.parent(sourcePath).ifEmpty { "." })
+            addAll(importPaths.map(::normalized))
+            osEnvVar("AZORA_GPU_PATH")?.split(separator)?.filter { it.isNotBlank() }?.map(::normalized)?.let(::addAll)
         }.distinct()
         val header = Regex("""^\s*module\s+([A-Za-z_][A-Za-z0-9_.]*)""", RegexOption.MULTILINE)
         fun visit(directory: String, depth: Int) {
             if (depth > 8) return
             for (entry in fsList(directory).value.orEmpty()) {
-                val name = entry.substringAfterLast('/')
+                val name = Paths.name(normalized(entry))
                 if (name.startsWith('.') || name == "build") continue
                 val kind = fsStat(entry).value?.kind
                 if (kind == "Directory") visit(entry, depth + 1)
-                else if ((name.endsWith(".az") || name.endsWith(".azgpu")) && entry != file) {
+                else if ((name.endsWith(".az") || name.endsWith(".azgpu")) && normalized(entry) != sourcePath && (canonicalSource == null || fsCanonical(entry).value != canonicalSource)) {
                     val source = fsReadText(entry).value ?: continue
                     val module = if (name.endsWith(".azgpu")) header.find(source)?.groupValues?.get(1)
                         else GpuModule.moduleName(source)

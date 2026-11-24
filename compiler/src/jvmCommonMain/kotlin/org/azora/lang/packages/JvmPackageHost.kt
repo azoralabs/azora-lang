@@ -20,12 +20,12 @@ class JvmPackageHost : PackageHost {
         return root.walkTopDown()
             .onEnter { it == root || !it.name.startsWith(".") }
             .filter { it.isFile && it.extension == "az" }
-            .map { it.canonicalPath }
+            .map { it.canonicalFile.invariantSeparatorsPath }
             .sorted()
             .toList()
     }
 
-    override fun canonical(path: String): String = File(path).canonicalPath
+    override fun canonical(path: String): String = File(path).canonicalFile.invariantSeparatorsPath
 
     override fun run(command: List<String>, directory: String?): ProcessResult {
         val process = try {
@@ -38,5 +38,5 @@ class JvmPackageHost : PackageHost {
     }
 
     override fun environment(name: String): String? = System.getenv(name)
-    override val home: String get() = System.getProperty("user.home")
+    override val home: String get() = File(System.getProperty("user.home")).invariantSeparatorsPath
 }

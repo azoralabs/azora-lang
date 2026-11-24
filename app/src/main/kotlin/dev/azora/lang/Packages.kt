@@ -51,7 +51,7 @@ internal object ProjectCommands {
     private fun projectDir(args: List<String>): String {
         val at = args.indexOf("--project")
         val dir = if (at >= 0) args.getOrNull(at + 1) ?: fail("--project needs a directory", 2) else "."
-        return File(dir).canonicalPath
+        return host.canonical(dir)
     }
 
     private fun option(args: List<String>, name: String): String? {
@@ -202,14 +202,16 @@ internal object ProjectCommands {
 
     // ── azora build / run ───────────────────────────────────────────
 
-    private fun clang(): String =
-        System.getenv("AZORA_CLANG")?.takeIf { File(it).canExecute() }
-            ?: "/usr/bin/clang".takeIf { File(it).canExecute() }
-            ?: System.getenv("PATH").orEmpty().split(File.pathSeparator).map { File(it, "clang") }.firstOrNull { it.canExecute() }?.path
-            ?: fail("building needs clang (set AZORA_CLANG, or install the platform's C toolchain)")
+    private fun clang(): String = findClang()
+        ?: fail("building needs clang (set AZORA_CLANG, or install the platform's C toolchain)")
 
-    private fun linkArguments(plan: BuildPlan): List<String> =
-        plan.cSources + plan.frameworks.flatMap { listOf("-framework", it) } + plan.libs.map { "-l$it" }
+    private fun linkArguments(plan: BuildPlan): List<String> {
+        if (plan.frameworks.isNotEmpty() && !System.getProperty("os.name").startsWith("Mac")) {
+            fail("${plan.name} requires macOS frameworks: ${plan.frameworks.joinToString()}")
+        }
+        return plan.cSources + plan.frameworks.flatMap { listOf("-framework", it) } +
+            plan.libs.map { "-l$it" } + systemLinkFlags
+    }
 
     /** Compiles [file] of [plan] as the entry; null, having said why, when it does not compile for the LLVM target. */
     private fun compile(plan: BuildPlan, file: String, debug: Boolean, base: String): CompilationResult.Success? {
@@ -237,11 +239,11 @@ internal object ProjectCommands {
 
     /** Compiles and links a project into `build/<name>`; null, having said why, when it fails. */
     private fun link(plan: BuildPlan, debug: Boolean, quiet: Boolean): File? {
-        val compiled = compile(plan, plan.entryPath!!, debug, File(".").canonicalPath) ?: return null
+        val compiled = compile(plan, plan.entryPath!!, debug, host.canonical(".")) ?: return null
         val dir = File(plan.projectDir)
         val out = File(dir, "build").apply { mkdirs() }
         val ir = File(out, "${plan.name}.ll").apply { writeText(compiled.llvm) }
-        val executable = File(out, plan.name)
+        val executable = File(out, plan.name + executableExtension)
         val link = host.run(
             listOf(clang(), ir.path, "-Wno-override-module", if (debug) "-O0" else "-O2") + linkArguments(plan) + listOf("-o", executable.path),
             dir.path,
@@ -250,7 +252,7 @@ internal object ProjectCommands {
             System.err.println("error: linking ${plan.name} failed:\n${link.output.trim()}")
             return null
         }
-        if (!quiet) println("Built ${executable.relativeTo(File(".").canonicalFile).path}")
+        if (!quiet) println("Built ${Paths.relative(host.canonical("."), host.canonical(executable.path))}")
         return executable
     }
 
@@ -286,7 +288,8 @@ internal object ProjectCommands {
         val plan = plans.singleOrNull() ?: fail("a workspace has no program to run; run one of its projects with --project <dir>")
         if (plan.isPackage) fail("'${plan.name}' is a package, which has no program to run; 'azora test' runs its tests")
         val executable = link(plan, "--debug" in own, quiet = true) ?: exitProcess(1)
-        val process = ProcessBuilder(listOf(executable.path) + programArgs).inheritIO().start()
+        val process = ProcessBuilder(listOf(executable.path) + programArgs)
+            .directory(File(plan.projectDir)).inheritIO().start()
         exitProcess(process.waitFor())
     }
 
@@ -368,7 +371,7 @@ internal object ProjectCommands {
         val work = File.createTempFile("azora-tests", "").also { it.delete(); it.mkdirs() }
         try {
             val ir = File(work, "tests.ll").apply { writeText(body + "\n" + driver) }
-            val exe = File(work, "tests")
+            val exe = File(work, "tests$executableExtension")
             val built = host.run(listOf(clang(), ir.path, "-Wno-override-module") + link + listOf("-o", exe.path))
             if (built.exitCode != 0) return names.map { Triple(it, false, "native build failed: ${built.output.trim().take(400)}") }
             return names.mapIndexed { i, name ->

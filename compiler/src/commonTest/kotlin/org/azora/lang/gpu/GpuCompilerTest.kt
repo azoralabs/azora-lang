@@ -14,7 +14,7 @@ class GpuCompilerTest {
         val shader = """
             /** Runs on the GPU. */
             @Execution("GPU")
-            module test.storage
+            module gpuTests.storage
 
             import gpustdlib.math
 
@@ -50,6 +50,7 @@ class GpuCompilerTest {
 
         assertTrue(GpuModule.isGpuSource(shader))
         assertFalse(GpuModule.isGpuSource("// @Execution(\"GPU\")\nmodule test.cpu"))
+        assertFalse(GpuModule.isGpuSource("/* Header */\nmodule cpu\n/* Example:\n@Execution(\"GPU\")\nmodule gpu\n*/"))
         val wrongSource = assertFailsWith<GpuCompileException> {
             GpuCompiler.compile("@Compute(1, 1, 1)\nfunc invalid() {}", "unannotated.az", GpuTarget.METAL)
         }

@@ -12,7 +12,7 @@ Write-Host "  Azora Language Installer" -ForegroundColor Cyan
 Write-Host "  ========================" -ForegroundColor Cyan
 Write-Host ""
 
-$InstallDir = if ($env:AZORA_HOME) { $env:AZORA_HOME } else { "$env:USERPROFILE\.azoralang" }
+$InstallDir = [IO.Path]::GetFullPath($(if ($env:AZORA_HOME) { $env:AZORA_HOME } else { "$env:USERPROFILE\.azoralang" }))
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # ---------------------------------------------------------------------------
@@ -66,7 +66,12 @@ try {
 if ($Mode -eq "source") {
     Write-Host ""
     Write-Host "  Building Azora (this may take a minute)..."
-    & "$ScriptDir\gradlew.bat" :app:installDist :build-tool:installDist -q
+    Push-Location -LiteralPath $ScriptDir
+    try {
+        & ".\gradlew.bat" :app:installDist :build-tool:installDist :azls:installAzls -q
+    } finally {
+        Pop-Location
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  Build failed." -ForegroundColor Red
         exit 1
@@ -129,6 +134,19 @@ if (Test-Path $InternalDir) {
     Remove-Item -Recurse -Force "$InstallDir\Internal\Std\docs\dist" -ErrorAction SilentlyContinue
 }
 
+$StdDir = if (Test-Path "$ScriptDir\std") { "$ScriptDir\std" } else { "$InternalDir\Std" }
+$StdManifest = if (Test-Path "$ScriptDir\package.azon") { "$ScriptDir\package.azon" } else { "$InternalDir\package.azon" }
+if (!(Test-Path $StdDir -PathType Container) -or !(Test-Path $StdManifest -PathType Leaf)) {
+    throw "Distribution is missing the standard library sources or package.azon."
+}
+Copy-Item -Recurse -LiteralPath $StdDir -Destination "$InstallDir\std"
+Copy-Item -LiteralPath $StdManifest -Destination "$InstallDir\package.azon"
+if (!(Test-Path "$InstallDir\Internal\Std")) {
+    New-Item -ItemType Directory -Force -Path "$InstallDir\Internal" | Out-Null
+    Copy-Item -Recurse -LiteralPath $StdDir -Destination "$InstallDir\Internal\Std"
+}
+Copy-Item -LiteralPath $StdManifest -Destination "$InstallDir\Internal\package.azon" -Force
+
 # ---------------------------------------------------------------------------
 # Write VERSION
 # ---------------------------------------------------------------------------
@@ -148,48 +166,30 @@ Set-Content "$InstallDir\VERSION" $Version
 # ---------------------------------------------------------------------------
 $azoraCmd = @'
 @echo off
-setlocal enabledelayedexpansion
+setlocal DisableDelayedExpansion
 
-set "AZORA_HOME=%USERPROFILE%\.azoralang"
+for %%i in ("%~dp0..") do set "AZORA_HOME=%%~fi"
 
 if not exist "%AZORA_HOME%" (
     echo Error: Azora is not installed. Expected installation at %AZORA_HOME% >&2
     exit /b 1
 )
 
-set "CLASSPATH="
-for %%j in ("%AZORA_HOME%\lib\*.jar") do (
-    if defined CLASSPATH (
-        set "CLASSPATH=!CLASSPATH!;%%j"
-    ) else (
-        set "CLASSPATH=%%j"
-    )
-)
-
-java -cp "%CLASSPATH%" -Dazora.home="%AZORA_HOME%" -Dazora.internal="%AZORA_HOME%\Internal" %AZORA_JAVA_OPTS% dev.azora.lang.MainKt %*
+java -cp "%AZORA_HOME%\lib\*" -Dazora.home="%AZORA_HOME%" -Dazora.internal="%AZORA_HOME%\Internal" %AZORA_JAVA_OPTS% dev.azora.lang.MainKt %*
 '@
 
 $azoraBuildCmd = @'
 @echo off
-setlocal enabledelayedexpansion
+setlocal DisableDelayedExpansion
 
-set "AZORA_HOME=%USERPROFILE%\.azoralang"
+for %%i in ("%~dp0..") do set "AZORA_HOME=%%~fi"
 
 if not exist "%AZORA_HOME%" (
     echo Error: Azora is not installed. Expected installation at %AZORA_HOME% >&2
     exit /b 1
 )
 
-set "CLASSPATH="
-for %%j in ("%AZORA_HOME%\lib\*.jar") do (
-    if defined CLASSPATH (
-        set "CLASSPATH=!CLASSPATH!;%%j"
-    ) else (
-        set "CLASSPATH=%%j"
-    )
-)
-
-java -cp "%CLASSPATH%" -Dazora.home="%AZORA_HOME%" -Dazora.internal="%AZORA_HOME%\Internal" %AZORA_JAVA_OPTS% dev.azora.build.MainKt %*
+java -cp "%AZORA_HOME%\lib\*" -Dazora.home="%AZORA_HOME%" -Dazora.internal="%AZORA_HOME%\Internal" %AZORA_JAVA_OPTS% dev.azora.build.MainKt %*
 '@
 
 Set-Content -Path "$InstallDir\bin\azora.bat" -Value $azoraCmd -Encoding ASCII
@@ -210,6 +210,8 @@ if ($UserPath -and $UserPath.Split(';') -contains $BinPath) {
     } else {
         [Environment]::SetEnvironmentVariable("Path", $BinPath, "User")
     }
+}
+if ($env:Path.Split(';') -notcontains $BinPath) {
     $env:Path = "$BinPath;$env:Path"
 }
 

@@ -465,8 +465,8 @@ private fun runTestsViaLlvm(
     val work = createTempDir("azora-test")
     try {
         val irFile = File(work, "tests.ll").apply { writeText(body + driver) }
-        val exe = File(work, "tests.bin")
-        val compile = ProcessBuilder(listOf(clang, irFile.absolutePath, "-o", exe.absolutePath) + linkArgs)
+        val exe = File(work, "tests$executableExtension")
+        val compile = ProcessBuilder(listOf(clang, irFile.absolutePath, "-o", exe.absolutePath) + linkArgs + systemLinkFlags)
             .redirectErrorStream(true)
             .start()
         val compileLog = compile.inputStream.bufferedReader().readText()
@@ -490,14 +490,26 @@ private fun runTestsViaLlvm(
 /** One test's verdict, from whichever backend ran it. */
 private data class TestOutcome(val name: String, val passed: Boolean, val message: String?)
 
-private fun findClang(): String? {
-    for (candidate in listOf("clang", "cc")) {
-        val found = runCatching {
-            val p = ProcessBuilder("which", candidate).redirectErrorStream(true).start()
-            val path = p.inputStream.bufferedReader().readText().trim()
-            if (p.waitFor() == 0 && path.isNotEmpty()) path else null
-        }.getOrNull()
-        if (found != null) return found
+internal val windowsHost = File.separatorChar == '\\'
+internal val executableExtension = if (windowsHost) ".exe" else ""
+internal val systemLinkFlags = if (System.getProperty("os.name").equals("Linux", ignoreCase = true))
+    listOf("-lm", "-pthread") else emptyList()
+
+internal fun findClang(): String? {
+    val override = System.getenv("AZORA_CLANG")?.takeIf { it.isNotBlank() }
+    val candidates = if (override != null) listOf(override) else listOf("clang")
+    val folders = System.getenv("PATH").orEmpty().split(File.pathSeparator)
+        .map { it.trim('"') }.filter { it.isNotEmpty() }
+    for (name in candidates) {
+        val names = if (windowsHost && !name.endsWith(".exe", ignoreCase = true)) listOf("$name.exe", name) else listOf(name)
+        for (candidate in names) {
+            val file = File(candidate)
+            if (file.isFile && file.canExecute()) return file.absolutePath
+            if (file.name == candidate) {
+                folders.asSequence().map { File(it, candidate) }
+                    .firstOrNull { it.isFile && it.canExecute() }?.let { return it.absolutePath }
+            }
+        }
     }
     return null
 }

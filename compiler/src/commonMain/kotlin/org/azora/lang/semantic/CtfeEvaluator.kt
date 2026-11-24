@@ -20,6 +20,7 @@ import org.azora.lang.ir.Intrinsics
 import org.azora.lang.frontend.AstMapper
 import org.azora.lang.frontend.CodePoints
 import org.azora.lang.frontend.Expr
+import org.azora.lang.frontend.FuncDecl
 import org.azora.lang.frontend.Program
 import org.azora.lang.frontend.Stmt
 import org.azora.lang.frontend.localNamesDeclaredIn
@@ -95,6 +96,34 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
     /** The written types of [seedConstants] that have one, by name. */
     var seedConstantTypes: Map<String, TypeRef> = emptyMap()
+
+    /**
+     * The first function, and the first inline function, of each name in the
+     * program whose items were indexed last. Every call folded looked its
+     * callee up by walking all of the program's items: on an engine-sized
+     * program that walk was a seventh of the whole compile.
+     */
+    private var indexedItems: List<TopLevel>? = null
+    private var functionsByName: Map<String, FuncDecl> = emptyMap()
+    private var inlineFunctionsByName: Map<String, FuncDecl> = emptyMap()
+
+    /** What `program.functions.find { it.name == name && (!inlineOnly || it.isInline) }` finds, from an index. */
+    private fun functionNamed(program: Program, name: String, inlineOnly: Boolean = false): FuncDecl? {
+        if (indexedItems !== program.items) {
+            val all = HashMap<String, FuncDecl>()
+            val inline = HashMap<String, FuncDecl>()
+            for (item in program.items) {
+                if (item !is TopLevel.Func) continue
+                val decl = item.decl
+                if (decl.name !in all) all[decl.name] = decl
+                if (decl.isInline && decl.name !in inline) inline[decl.name] = decl
+            }
+            functionsByName = all
+            inlineFunctionsByName = inline
+            indexedItems = program.items
+        }
+        return if (inlineOnly) inlineFunctionsByName[name] else functionsByName[name]
+    }
 
     private val reflectionTypes = mutableMapOf<String, String>()
     private var compileTimeDepth = 0
@@ -947,7 +976,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      */
     private fun tryInlineFuncCall(expr: Expr, program: Program): List<Stmt>? {
         if (expr !is Expr.Call) return null
-        val funcDecl = program.functions.find { it.name == expr.callee && it.isInline } ?: return null
+        val funcDecl = functionNamed(program, expr.callee, inlineOnly = true) ?: return null
 
         // A discarded result is still the callee's result. Splicing its
         // `return` into the caller would return from the enclosing function
@@ -1244,7 +1273,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      * [residualInlineCallError].
      */
     private fun inlineCallAsExpression(call: Expr.Call, args: List<Expr>, program: Program): Expr? {
-        val decl = program.functions.find { it.name == call.callee && it.isInline } ?: return null
+        val decl = functionNamed(program, call.callee, inlineOnly = true) ?: return null
         if (decl.params.any { it.variadic }) return null
         val returned = (decl.body.singleOrNull() as? Stmt.Return)?.value
             ?.let { foldTypeNames(it, decl.typeParams, call.typeArgs, call) } ?: return null
@@ -1686,7 +1715,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
      */
     private fun typedCallResult(name: String, value: Expr, program: Program): Expr {
         if (compileTimeDepth > 0) return value
-        val returned = program.functions.find { it.name == name }?.returnType as? TypeAnnotation.Explicit ?: return value
+        val returned = functionNamed(program, name)?.returnType as? TypeAnnotation.Explicit ?: return value
         val declared = returned.ref as? TypeRef.Named ?: return value
         if (declared.args.isNotEmpty() || declared.name !in NUMERIC_TYPES) return value
         if (value is Expr.IntLiteral && declared.name == "Int") return value
@@ -1946,7 +1975,7 @@ class CtfeEvaluator(private val table: SymbolTable) {
         line: Int,
         typeArgs: List<TypeRef> = emptyList(),
     ): Expr? {
-        val funcDecl = program.functions.find { it.name == name } ?: return null
+        val funcDecl = functionNamed(program, name) ?: return null
         // A `scope test` member may only be used from a test. Folding one into
         // the program would quietly do what the visibility rule forbids, and
         // would erase the call before the check that reports it ever sees it.

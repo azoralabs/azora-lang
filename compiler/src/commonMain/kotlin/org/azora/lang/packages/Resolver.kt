@@ -86,8 +86,9 @@ class PackageResolver(private val host: PackageHost, private val progress: (Stri
                 null
             }
             if (manifest != null && manifest.isWorkspace && manifest.members.any { host.canonical(Paths.join(at, it)) == member }) return at
-            if (at == "/") return null
-            at = Paths.parent(at)
+            val parent = Paths.parent(at)
+            if (at == parent) return null
+            at = parent
         }
     }
 
@@ -191,7 +192,7 @@ class PackageResolver(private val host: PackageHost, private val progress: (Stri
         throw PackageError("the repository $url has no package named '$name'")
     }
 
-    private val cache: String get() = host.environment("AZORA_HOME") ?: Paths.join(host.home, ".azora")
+    private val cache: String get() = host.environment("AZORA_HOME")?.let(host::canonical) ?: Paths.join(host.home, ".azora")
 
     /**
      * The first git that runs: `AZORA_GIT`, then `git` from `PATH`, then the
@@ -324,14 +325,14 @@ data class BuildPlan(
         fun of(host: PackageHost, resolution: PackageResolver.Resolution): BuildPlan {
             val manifest = resolution.project
             val unit = manifest.unit!!
-            val srcDir = Paths.join(manifest.dir, unit.src)
+            val srcDir = host.canonical(Paths.join(manifest.dir, unit.src))
             val isPackage = manifest.project == null
             val own = sources(host, srcDir, if (isPackage) unit.module else null)
             val entryPath = if (isPackage) {
                 if (own.isEmpty()) throw PackageError("${manifest.file}: the package '${unit.name}' has no sources under ${unit.src}")
                 null
             } else {
-                Paths.join(srcDir, unit.entry).also {
+                host.canonical(Paths.join(srcDir, unit.entry)).also {
                     if (it !in own) throw PackageError("${manifest.file}: the entry ${unit.src}/${unit.entry} does not exist")
                 }
             }
@@ -340,7 +341,7 @@ data class BuildPlan(
             val libs = linkedSetOf<String>()
             val cSources = linkedSetOf<String>()
             for (p in resolution.packages) {
-                dependencySources += sources(host, p.srcDir, p.module).values
+                dependencySources += sources(host, host.canonical(p.srcDir), p.module).values
                 frameworks += p.native.frameworks
                 libs += p.native.libs
                 for (source in p.native.sources) cSources += host.canonical(Paths.join(p.dir, source))

@@ -38,6 +38,15 @@ internal object IrSymbolCanonicalizer {
         private val typeNames = linkedMapOf<String, String>()
         private val symbolNames = linkedMapOf<String, String>()
 
+        /**
+         * [typeNames] ordered for [canonicalTypeDerivedName], made once: sorting
+         * them for every name looked up was a third of a large program's compile.
+         */
+        private var typesByLength: List<Pair<String, String>> = emptyList()
+
+        /** Every name [symbol] has spelled, with its spelling: the maps it reads no longer change once made. */
+        private val spelled = HashMap<String, String>()
+
         init {
             for (name in program.ownedSlots) typeNames[name] = canonicalTypeName(name, typeNamespaces[name])
             for (item in program.items) {
@@ -58,6 +67,8 @@ internal object IrSymbolCanonicalizer {
                 }
             }
 
+            // Longest first, so a type whose name starts with another's is matched before it.
+            typesByLength = typeNames.entries.map { it.key to it.value }.sortedByDescending { it.first.length }
             for (item in program.items) {
                 declarationName(item)?.let { symbolNames[it] = canonicalDeclarationName(it) }
             }
@@ -267,15 +278,17 @@ internal object IrSymbolCanonicalizer {
             if (name.isEmpty()) return name
             symbolNames[name]?.let { return it }
             typeNames[name]?.let { return it }
-            canonicalTypeDerivedName(name)?.let { return it }
-            return canonicalQualifiedName(name)
+            spelled[name]?.let { return it }
+            val canonical = canonicalTypeDerivedName(name) ?: canonicalQualifiedName(name)
+            spelled[name] = canonical
+            return canonical
         }
 
         private fun canonicalDeclarationName(name: String): String =
             typeNames[name] ?: canonicalTypeDerivedName(name) ?: canonicalQualifiedName(name)
 
         private fun canonicalTypeDerivedName(name: String): String? {
-            for ((oldType, canonicalType) in typeNames.entries.sortedByDescending { it.key.length }) {
+            for ((oldType, canonicalType) in typesByLength) {
                 val singletonPrefix = "__singleton_$oldType"
                 if (name.startsWith(singletonPrefix)) {
                     val suffix = collapseSeparators(name.removePrefix(singletonPrefix))

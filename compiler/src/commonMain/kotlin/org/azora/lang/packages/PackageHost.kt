@@ -36,19 +36,36 @@ data class ProcessResult(val exitCode: Int, val output: String)
 
 /** `/`-separated path arithmetic for [PackageHost] paths. */
 object Paths {
-    fun join(base: String, relative: String): String =
-        if (relative.startsWith("/")) relative else base.trimEnd('/') + "/" + relative
+    private val driveRoot = Regex("^[a-zA-Z]:/")
+    private val shareRoot = Regex("^//[^/]+/[^/]+")
 
-    fun parent(path: String): String = path.trimEnd('/').substringBeforeLast('/', "/").ifEmpty { "/" }
+    private fun root(path: String): String =
+        driveRoot.find(path)?.value ?: shareRoot.find(path)?.value ?: if (path.startsWith('/')) "/" else ""
+
+    private fun isWindowsRoot(root: String): Boolean = root.endsWith(":/") || root.startsWith("//")
+
+    fun join(base: String, relative: String): String {
+        val path = if (isWindowsRoot(root(base))) relative.replace('\\', '/') else relative
+        return if (root(path).isNotEmpty()) path else base.trimEnd('/') + "/" + path
+    }
+
+    fun parent(path: String): String {
+        val root = root(path)
+        return path.trimEnd('/').substringBeforeLast('/', "").let { if (it.length <= root.length) root else it }
+    }
 
     fun name(path: String): String = path.trimEnd('/').substringAfterLast('/')
 
-    /** [path] relative to [base], both canonical; `..` where it lies outside. */
+    /** [path] relative to [base], both canonical. Other drives or shares keep their absolute path. */
     fun relative(base: String, path: String): String {
-        val from = base.trimEnd('/').split('/').filter { it.isNotEmpty() }
-        val to = path.trimEnd('/').split('/').filter { it.isNotEmpty() }
+        val baseRoot = root(base)
+        val pathRoot = root(path)
+        val windows = isWindowsRoot(baseRoot)
+        if (!baseRoot.equals(pathRoot, ignoreCase = windows)) return path
+        val from = base.drop(baseRoot.length).split('/').filter { it.isNotEmpty() }
+        val to = path.drop(pathRoot.length).split('/').filter { it.isNotEmpty() }
         var common = 0
-        while (common < from.size && common < to.size && from[common] == to[common]) common++
+        while (common < from.size && common < to.size && from[common].equals(to[common], ignoreCase = windows)) common++
         val up = List(from.size - common) { ".." }
         return (up + to.drop(common)).joinToString("/").ifEmpty { "." }
     }

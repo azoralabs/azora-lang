@@ -193,6 +193,41 @@ class FoundationArgumentOwnershipExecTest {
         }
     """, "5 0 9 7 3")
 
+    /**
+     * An expression body `= when …` / `= if …` returns whichever branch it
+     * took, and a branch that names a `Copy` place is handed over as a copy,
+     * as a plain `return` of that place is. The place itself went back: the
+     * caller freed it, and its owner freed it again when it was dropped (the
+     * Engine's World crashed dropping a collider's half extents this way).
+     */
+    @Test fun aConditionalExpressionBodyHandsBackACopyOfAPlace() = sanitized("""
+        import std.io
+        enum Shape { Ball, Box }
+        pack Size { var x: Double = 0.0 }
+        pack Body {
+            var shape: Shape
+            var half: Size
+        }
+        func halfOf(body: Body&): Size = when body.shape {
+            .Ball -> .(1.0)
+            else -> body.half
+        }
+        func halfOrUnit(body: Body&, unit: Bool): Size = if unit then Size(1.0) else body.half
+        func nested(body: Body&, a: Bool, b: Bool): Size = if a then (if b then body.half else Size(2.0)) else body.half
+        func main() {
+            var body = Body(.Box, Size(4.0))
+            var total: Double = 0.0
+            for i: Int in 0..<3 {
+                var h = halfOf(body)
+                h.x = 9.0
+                fin u = halfOrUnit(body, i == 1)
+                fin n = nested(body, i != 2, i == 0)
+                total = total + h.x + u.x + n.x
+            }
+            println("${'$'}{body.half.x} ${'$'}{total}")
+        }
+    """, "4.0 46.0")
+
     @Test fun exclusiveBorrowsWriteTheCallersOwnStorage() = sanitized("""
         import std.io
         pack Holder {

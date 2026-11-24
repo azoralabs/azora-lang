@@ -92,7 +92,7 @@ object OwnershipCleanup {
      * such call. A result that may be a place someone else owns - a field, a
      * global, an element - is not, and neither is a borrowed (`T&`) result.
      * A place of a `Copy` type is the exception: a `return` hands the caller
-     * a copy of it ([Body.isolatedPlace]), so `return ::invalid` from a
+     * a copy of it ([Body.handedOver]), so `return ::invalid` from a
      * `fin invalid: Entity` is as new as a constructed value. Counting it as
      * someone else's place left every call site of such a function - World's
      * `getParent` among them - holding a copy it never freed.
@@ -113,15 +113,14 @@ object OwnershipCleanup {
                 if (function.name !in fresh) continue
                 val owned = mutableSetOf<String>()
                 var ok = true
-                // [returned]: the value is a `return`'s own operand, which the
-                // return lowering copies when it is a `Copy` place; an `if`
-                // expression's branches are not copied, so they must be new.
-                fun freshValue(value: IrExpr?, returned: Boolean = true): Boolean = when (value) {
+                // The return lowering copies a `Copy` place it hands back, in
+                // either branch of an `if` expression too ([Body.handedOver]).
+                fun freshValue(value: IrExpr?): Boolean = when (value) {
                     is IrExpr.StructCtor, is IrExpr.ArrayLiteral -> true
                     is IrExpr.Call -> value.name == "__take" || value.name == "__isolated" || value.name in fresh
-                    is IrExpr.Var -> value.name in owned || (returned && copied(value.type))
-                    is IrExpr.Member, is IrExpr.Index -> returned && copied(value.type)
-                    is IrExpr.IfExpr -> freshValue(value.thenExpr, false) && freshValue(value.elseExpr, false)
+                    is IrExpr.Var -> value.name in owned || copied(value.type)
+                    is IrExpr.Member, is IrExpr.Index -> copied(value.type)
+                    is IrExpr.IfExpr -> freshValue(value.thenExpr) && freshValue(value.elseExpr)
                     else -> false
                 }
                 fun walk(stmts: List<IrStmt>) {
@@ -366,13 +365,7 @@ object OwnershipCleanup {
                 when (stmt) {
                     is IrStmt.Return -> {
                         val value = stmt.value?.let(::moveOwnersIntoResult)
-                        val owner = (value as? IrExpr.Var)?.let(::origin)
-                        // A returned owner moves out. Any other `Copy` place - a
-                        // parameter, a global, a field - belongs to someone else,
-                        // and the caller will own and free what it receives.
-                        val transfer = if (owner != null)
-                            IrExpr.Call("__take", listOf(owner), value!!.type)
-                        else if (value != null && !borrowedReturn) isolatedPlace(value) else value
+                        val transfer = value?.let(::handedOver)
                         val nestedCleanup = cleanup(frames.filterNot { it.root })
                         if (transfer != null && (transfer !== stmt.value || nestedCleanup.isNotEmpty())) {
                             val name = "__owner_return_${temporary++}"
@@ -617,6 +610,32 @@ object OwnershipCleanup {
                 else -> expr
             }
             return rewrite(value)
+        }
+
+        /**
+         * What a `return` of [value] hands the caller, who will own and free it.
+         *
+         * A returned owner moves out. Any other `Copy` place - a parameter, a
+         * global, a field - belongs to someone else, so the caller receives a
+         * copy of it. A conditional hands back whichever branch it took, so each
+         * branch is handed over as it would be returned on its own: an
+         * expression body `= when shape { .Sphere -> .(r, r, r) else ->
+         * collider.halfExtents }` gave the caller the collider's own vector,
+         * and the caller's cleanup freed it under the collider.
+         */
+        private fun handedOver(value: IrExpr): IrExpr {
+            if (value is IrExpr.IfExpr && !borrowedReturn) {
+                val thenExpr = handedOver(value.thenExpr)
+                val elseExpr = handedOver(value.elseExpr)
+                return if (thenExpr === value.thenExpr && elseExpr === value.elseExpr) value
+                else value.copy(thenExpr = thenExpr, elseExpr = elseExpr)
+            }
+            val owner = (value as? IrExpr.Var)?.let(::origin)
+            return when {
+                owner != null -> IrExpr.Call("__take", listOf(owner), value.type)
+                borrowedReturn -> value
+                else -> isolatedPlace(value)
+            }
         }
 
         /**

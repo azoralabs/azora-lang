@@ -148,6 +148,8 @@ pack SerializerOptions {
     var allowDuplicateFields: Bool = false
     var maxDepth: Int = 64
     var maxInputLength: Int = 16777216
+    /** Reuses equal, unescaped tokens in a document, useful for repeated scene records. */
+    var reuseTokens: Bool = false
 }
 
 /** A named member in an ordered serialized object. */
@@ -514,7 +516,12 @@ pack _SerialReader {
     fin options: SerializerOptions&
     /** [input]'s characters, decoded once; [index] counts them. */
     var chars: Array<Char> = []
+    var tokenStarts: Array<Int> = []
+    var tokenLengths: Array<Int> = []
+    var tokens: Array<String> = []
 }
+
+inline fin serialTokenSlots = 512
 
 impl _SerialReader {
     prop &.isAtEnd: Bool = self.index >= self.chars.size
@@ -524,6 +531,38 @@ impl _SerialReader {
         var part: Array<Char> = []
         for i: Int in start..<self.index then part.add(self.chars[i])
         return fromChars(part)
+    }
+
+    /** A bounded cache over character ranges of this input. Token text is immutable. */
+    func !.token(start: Int, end: Int): String {
+        if self.tokens.size == 0 {
+            self.tokenStarts = .() * serialTokenSlots
+            self.tokenLengths = .() * serialTokenSlots
+            for i: Int in 0..<serialTokenSlots then self.tokens.add("")
+        }
+        fin length = end - start
+        if length == 0 then return ""
+        var hash = length
+        for i: Int in start..<end then hash = hash * 31 + charToCode(self.chars[i])
+        fin slot = hash & (serialTokenSlots - 1)
+        fin previous = self.tokenStarts[slot]
+        if self.tokenLengths[slot] == length {
+            var same = true
+            for i: Int in 0..<length {
+                if self.chars[previous + i] != self.chars[start + i] {
+                    same = false
+                    break
+                }
+            }
+            if same then return self.tokens[slot]
+        }
+        var part: Array<Char> = .() * length
+        for i: Int in 0..<length then part[i] = self.chars[start + i]
+        fin text = fromChars(part)
+        self.tokenStarts[slot] = start
+        self.tokenLengths[slot] = length
+        self.tokens[slot] = text
+        return text
     }
 
     func !.skipWhitespace(): Unit {
@@ -598,6 +637,20 @@ impl _SerialReader {
 
     func !.readString(): String ?! SerializationError {
         try self.expect('"')
+        if self.options.reuseTokens {
+            fin start = self.index
+            while !self.isAtEnd {
+                fin c = self.chars[self.index]
+                if c == '"' {
+                    self.index += 1
+                    return self.token(start, self.index - 1)
+                }
+                if c == '\\' then break
+                if charToCode(c) < 32 then return .InvalidEscape
+                self.index += 1
+            }
+            self.index = start
+        }
         // Characters are gathered and joined once: adding each to a growing
         // text copied it every time.
         var result: Array<Char> = []
@@ -706,7 +759,7 @@ impl _SerialReader {
                 self.index += 1
             }
         }
-        return self.slice(start)
+        return if self.options.reuseTokens then self.token(start, self.index) else self.slice(start)
     }
 
     func !.readArray(depth: Int): SerialValue ?! SerializationError {

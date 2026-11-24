@@ -12,7 +12,13 @@ class GpuCompilerTest {
     @Test
     fun taggedVariantsAndStorageLowerToEachBackend() {
         val shader = """
+            /** Runs on the GPU. */
+            @Execution("GPU")
+            module test.storage
+
             import gpustdlib.math
+
+            inline fin fixedValue: Float = 0.5
 
             variant enum Mode {
                 Fixed(Float)
@@ -34,14 +40,20 @@ class GpuCompilerTest {
 
             @Compute(8, 4, 2)
             func write(id: @GlobalInvocationId UInt3, output: @Storage(3) Float) {
-                fin mode: Mode = .Fixed(0.5)
+                fin mode: Mode = .Fixed(fixedValue)
                 output[id.x] = State(mode).value()
             }
         """.trimIndent()
-        val metal = GpuCompiler.compile(shader, "storage.azgpu", GpuTarget.METAL)
-        val vulkan = GpuCompiler.compile(shader, "storage.azgpu", GpuTarget.VULKAN)
-        val dxil = GpuCompiler.compile(shader, "storage.azgpu", GpuTarget.DIRECTX)
+        val metal = GpuCompiler.compile(shader, "storage.az", GpuTarget.METAL)
+        val vulkan = GpuCompiler.compile(shader, "storage.az", GpuTarget.VULKAN)
+        val dxil = GpuCompiler.compile(shader, "storage.az", GpuTarget.DIRECTX)
 
+        assertTrue(GpuModule.isGpuSource(shader))
+        assertFalse(GpuModule.isGpuSource("// @Execution(\"GPU\")\nmodule test.cpu"))
+        val wrongSource = assertFailsWith<GpuCompileException> {
+            GpuCompiler.compile("@Compute(1, 1, 1)\nfunc invalid() {}", "unannotated.az", GpuTarget.METAL)
+        }
+        assertContains(wrongSource.message.orEmpty(), "@Execution")
         assertEquals("write", vulkan.entry)
         assertEquals(GpuStage.COMPUTE, vulkan.stage)
         assertContains(metal.text, "[[buffer(3)]]")
@@ -66,6 +78,8 @@ class GpuCompilerTest {
         }
         assertContains(error.message.orEmpty(), "--entry")
         val vertex = GpuCompiler.compile(shader, "multiple.azgpu", GpuTarget.VULKAN, "draw")
+        val library = GpuCompiler.compileAll(shader, "multiple.azgpu", GpuTarget.METAL).single()
+        assertEquals(listOf("fill", "draw"), library.entries)
         assertEquals(GpuStage.VERTEX, vertex.stage)
         assertContains(vertex.text, "gl_Position")
         assertFalse(vertex.text.contains("local_size_x"))

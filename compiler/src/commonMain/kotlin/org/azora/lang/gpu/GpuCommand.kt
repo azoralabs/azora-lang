@@ -7,31 +7,60 @@ class GpuUsageException(message: String) : IllegalArgumentException(message)
 
 /** File and toolchain adapter shared by the JVM and native command lines. */
 object GpuCommand {
-    const val usage = "azora compile <metallib|spv|dxil> <file.azgpu> [--entry <name>] [--profile <profile>] [-o <file>] [--emit-source]"
+    const val usage = "azora compile <metallib|spv|dxil> <file.az> [--entry <name>] [--profile <profile>] [--metal-standard <metalX.Y>] [--import-path <folder>]... [-o <file>] [--emit-source]"
 
     fun handlesCompile(arguments: List<String>): Boolean {
         if (arguments.firstOrNull()?.let(GpuTarget::fromArgument) != null) return true
-        val source = arguments.indices.drop(1).firstOrNull { index ->
-            !arguments[index].startsWith('-') && arguments[index - 1] != "-o"
-        }
-        return source != null && arguments[source].endsWith(".azgpu")
+        return arguments.drop(1).any(::isGpuFile)
     }
 
-    fun handlesCheck(arguments: List<String>): Boolean = arguments.any { it.endsWith(".azgpu") }
+    fun handlesCheck(arguments: List<String>): Boolean = arguments.any(::isGpuFile)
 
     fun check(arguments: List<String>) {
-        val path = arguments.singleOrNull() ?: throw GpuUsageException("azora check <file.azgpu>")
-        GpuCompiler.check(read(path), path)
+        val importPaths = mutableListOf<String>()
+        val files = mutableListOf<String>()
+        var index = 0
+        while (index < arguments.size) {
+            val argument = arguments[index++]
+            if (argument == "--import-path") importPaths += arguments.getOrNull(index++) ?: throw GpuUsageException("--import-path needs a folder")
+            else files += argument
+        }
+        val path = files.singleOrNull() ?: throw GpuUsageException("azora check <file.az> [--import-path <folder>]...")
+        GpuCompiler.check(read(path), path, importPaths)
     }
 
+    /**
+     * Compiles one entry point (`--entry`), or every entry point of the file: Metal puts them all
+     * in one library, SPIR-V and DXIL write one `<file>.<entry>.<ext>` module each.
+     */
     fun compile(arguments: List<String>, run: (List<String>) -> Int) {
         val options = parse(arguments)
-        val shader = GpuCompiler.compile(read(options.path), options.path, options.target, options.entry)
+        val source = read(options.path)
+        val shaders = if (options.entry != null) listOf(GpuCompiler.compile(source, options.path, options.target, options.entry, options.importPaths))
+            else GpuCompiler.compileAll(source, options.path, options.target, options.importPaths)
         if (options.emitSource) {
-            print(shader.text)
+            shaders.forEach { print(it.text) }
             return
         }
+        val several = shaders.size > 1
+        // `-o folder/` (or an existing folder): every module is written there under its own name.
+        val folder = options.explicitOutput && (options.output.endsWith("/") || fsStat(options.output).value?.kind == "Directory")
+        if (several && options.explicitOutput && !folder) {
+            throw GpuUsageException("-o names one file: ${options.path} has ${shaders.size} entry points, choose one with --entry or give -o a folder")
+        }
+        val stem = stem(options.path.substringAfterLast('/'))
+        for (shader in shaders) {
+            val name = if (several) "$stem.${shader.entry}.${options.target.extension}" else "$stem.${options.target.extension}"
+            val output = when {
+                folder -> "${options.output.trimEnd('/')}/$name"
+                several -> "${stem(options.path)}.${shader.entry}.${options.target.extension}"
+                else -> options.output
+            }
+            build(options, shader, output, run)
+        }
+    }
 
+    private fun build(options: Options, shader: GpuShaderSource, output: String, run: (List<String>) -> Int) {
         val directory = fsCreateTemporaryDirectory("azora-gpu-").value
             ?: throw GpuCompileException("cannot create GPU compilation directory")
         try {
@@ -51,8 +80,8 @@ object GpuCommand {
             if (bytes == null || !validArtifact(options.target, bytes)) {
                 throw GpuCompileException("${options.path}: toolchain did not produce a ${options.target.extension} shader binary")
             }
-            fsWriteBytes(options.output, bytes)?.let {
-                throw GpuCompileException("cannot write '${options.output}' ($it)")
+            fsWriteBytes(output, bytes)?.let {
+                throw GpuCompileException("cannot write '$output' ($it)")
             }
         } finally {
             fsMutate("removeAll", directory, "")
@@ -61,13 +90,15 @@ object GpuCommand {
 
     private data class Options(
         val target: GpuTarget, val path: String, val entry: String?, val profile: String,
-        val output: String, val emitSource: Boolean, val metalStandard: String?,
+        val output: String, val emitSource: Boolean, val metalStandard: String?, val explicitOutput: Boolean,
+        val importPaths: List<String> = emptyList(),
     )
 
     private fun parse(arguments: List<String>): Options {
         val target = arguments.firstOrNull()?.let(GpuTarget::fromArgument)
             ?: throw GpuUsageException(usage)
         val flags = mutableMapOf<String, String>()
+        val importPaths = mutableListOf<String>()
         val positional = mutableListOf<String>()
         var emitSource = false
         var index = 1
@@ -78,6 +109,8 @@ object GpuCommand {
                 afterFlags -> positional += argument
                 argument == "--" -> afterFlags = true
                 argument == "--emit-source" -> emitSource = true
+                argument == "--import-path" -> importPaths += arguments.getOrNull(index++)?.takeIf { !it.startsWith('-') }
+                    ?: throw GpuUsageException("--import-path needs a folder")
                 argument in valueFlags -> {
                     if (argument in flags) throw GpuUsageException("duplicate option '$argument'")
                     flags[argument] = arguments.getOrNull(index++)?.takeIf { !it.startsWith('-') }
@@ -88,7 +121,7 @@ object GpuCommand {
             }
         }
         val path = positional.singleOrNull() ?: throw GpuUsageException(usage)
-        if (!path.endsWith(".azgpu")) throw GpuUsageException("GPU compilation expects a .azgpu file")
+        if (!path.endsWith(".az") && !path.endsWith(".azgpu")) throw GpuUsageException("GPU compilation expects an Azora source file")
         val profile = flags["--profile"] ?: target.defaultProfile
         val valid = when (target) {
             GpuTarget.VULKAN -> vulkanProfile.matches(profile)
@@ -103,12 +136,14 @@ object GpuCommand {
         if (emitSource && "-o" in flags) throw GpuUsageException("--emit-source writes to standard output")
         val entry = flags["--entry"]
         val output = flags["-o"] ?: buildString {
-            append(path.removeSuffix(".azgpu"))
+            append(stem(path))
             if (entry != null) append('.').append(entry)
             append('.').append(target.extension)
         }
-        if (!output.endsWith(".${target.extension}")) throw GpuUsageException("output path must end in .${target.extension}")
-        return Options(target, path, entry, profile, output, emitSource, standard)
+        if (!output.endsWith(".${target.extension}") && !output.endsWith("/") && fsStat(output).value?.kind != "Directory") {
+            throw GpuUsageException("output path must end in .${target.extension} or name a folder")
+        }
+        return Options(target, path, entry, profile, output, emitSource, standard, "-o" in flags, importPaths)
     }
 
     private fun sourceExtension(target: GpuTarget): String = when (target) {
@@ -122,7 +157,8 @@ object GpuCommand {
             GpuTarget.METAL -> buildList {
                 addAll(listOf(osEnvVar("AZORA_XCRUN") ?: "xcrun", "-sdk", options.profile, "metal"))
                 options.metalStandard?.let { add("-std=$it") }
-                addAll(listOf("-o", output, source))
+                // Shared modules declare constants and samplers an entry point may not use.
+                addAll(listOf("-Wno-unused-const-variable", "-Wno-unused-variable", "-o", output, source))
             }
             GpuTarget.VULKAN -> listOf(
                 osEnvVar("AZORA_GLSLANG") ?: "glslangValidator", "--quiet", "--target-env", options.profile,
@@ -130,11 +166,16 @@ object GpuCommand {
                 "-o", output, source,
             )
             GpuTarget.DIRECTX -> listOf(
-                osEnvVar("AZORA_DXC") ?: "dxc", "-HV", "2021", "-Ges",
+                dxc(), "-HV", "2021", "-Ges",
                 "-T", "${shader.stage.shaderModelPrefix}_${options.profile.replace('.', '_')}", "-E", shader.backendEntry,
                 "-Fo", output, source,
             )
         }
+
+    // DXC ships no macOS build: the Azora toolchain folder may hold one (run through an emulator).
+    private fun dxc(): String = osEnvVar("AZORA_DXC")
+        ?: osEnvVar("HOME")?.let { "$it/.azora/toolchains/dxc/dxc" }?.takeIf(::fsExists)
+        ?: "dxc"
 
     private fun validArtifact(target: GpuTarget, bytes: ByteArray): Boolean = when (target) {
         GpuTarget.METAL -> bytes.hasSignature("MTLB")
@@ -161,8 +202,14 @@ object GpuCommand {
     private fun ByteArray.wordAt(offset: Int): Int =
         (0..3).fold(0) { word, index -> word or ((this[offset + index].toInt() and 0xff) shl (index * 8)) }
 
+    private fun isGpuFile(path: String): Boolean =
+        path.endsWith(".azgpu") || path.endsWith(".az") &&
+            fsReadText(path).value?.let(GpuModule::isGpuSource) == true
+
+    private fun stem(path: String): String = path.substringBeforeLast('.')
+
     private fun read(path: String): String {
-        if (!path.endsWith(".azgpu")) throw GpuUsageException("GPU compilation expects a .azgpu file")
+        if (!path.endsWith(".az") && !path.endsWith(".azgpu")) throw GpuUsageException("GPU compilation expects an Azora source file")
         return fsReadText(path).value ?: throw GpuUsageException("cannot read '$path'")
     }
 

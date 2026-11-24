@@ -1,3 +1,6 @@
+@Execution("GPU")
+module examples.gpu.triangle
+
 import gpustdlib.color
 
 pack VertexOutput {

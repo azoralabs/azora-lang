@@ -640,8 +640,8 @@ private fun printUsage() {
                                         a .wasm file is the binary, with <name>.host.js;
                                         --export=a,b builds a library exporting those
                                         functions under their own names)
-          check <file.azgpu>            Check a GPU shader
-          compile <metallib|spv|dxil> <file.azgpu>
+          check <file.az>               Check CPU code or an @Execution("GPU") module
+          compile <metallib|spv|dxil> <file.az>
                                         Build a GPU shader (-o, --entry, --profile)
           test <file.az | dir>          Run `test` blocks (file or directory)
           repl                          Interactive REPL

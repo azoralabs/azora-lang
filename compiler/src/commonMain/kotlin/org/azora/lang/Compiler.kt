@@ -16,6 +16,7 @@
 
 package org.azora.lang
 
+import org.azora.lang.gpu.GpuModule
 import org.azora.lang.backend.LlvmCodegen
 import org.azora.lang.backend.WasmCodegen
 import org.azora.lang.frontend.AstValidator
@@ -183,7 +184,7 @@ data class LibrarySource(
  * from one optimized IR.
  */
 class Compiler(
-    private val librarySources: List<LibrarySource> = emptyList(),
+    librarySources: List<LibrarySource> = emptyList(),
     private val analysisSources: List<SourceUnit> = emptyList(),
     /**
      * The program's own functions a library build exports under their own
@@ -194,6 +195,8 @@ class Compiler(
      */
     private val exports: Set<String> = emptySet(),
 ) {
+    private val librarySources = librarySources.filterNot { GpuModule.isGpuSource(it.source) }
+
 
     private fun sourceSpan(
         source: SourceUnit,

@@ -1,0 +1,8 @@
+@Execution("GPU")
+module gpustdlib.color
+
+/** The light a colour gives off as the eye weighs it (Rec. 709). */
+func luminance(rgb: Float3): Float = dot(rgb, Float3(0.2126, 0.7152, 0.0722))
+
+/** [color] with its red, green and blue multiplied by its alpha. */
+func premultiplyAlpha(color: Float4): Float4 = Float4(color.rgb * color.a, color.a)

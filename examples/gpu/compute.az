@@ -1,3 +1,6 @@
+@Execution("GPU")
+module examples.gpu.compute
+
 import gpustdlib.math
 
 enum Mode {

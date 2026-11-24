@@ -8,6 +8,7 @@ import org.azora.lang.*
 import org.azora.lang.backend.*
 import org.azora.lang.diagnostics.*
 import org.azora.lang.gpu.GpuCommand
+import org.azora.lang.gpu.GpuModule
 import platform.posix.*
 import org.azora.lang.nativeposix.posix_spawnp
 import org.azora.lang.nativeposix.azora_native_environ
@@ -46,13 +47,13 @@ private fun sources(path: String, engine: Boolean = false): UnitSources {
         }
     }
     val libraryUnits = mutableListOf<SourceUnit>()
-    fun library(file: String, path: String): LibrarySource {
-        val text = read(file)
+    fun library(file: String, path: String, text: String = read(file)): LibrarySource? {
+        if (GpuModule.isGpuSource(text)) return null
         libraryUnits += SourceUnit(SourceId(file), file, path, text, kind = SourceKind.WORKSPACE_LIBRARY)
         return LibrarySource(path, text)
     }
     val libraries = if (module == "std" || module?.startsWith("std.") == true) mutableListOf() else
-        walk(root).filter { it != entry && it.substringAfterLast('/') != "main.az" }.mapTo(mutableListOf()) {
+        walk(root).filter { it != entry && it.substringAfterLast('/') != "main.az" }.mapNotNullTo(mutableListOf()) {
             library(it, it.removePrefix("${root.trimEnd('/')}/"))
         }
     if (engine && Regex("(?m)^\\s*import\\s+engine\\b").containsMatchIn(text)) {
@@ -61,7 +62,7 @@ private fun sources(path: String, engine: Boolean = false): UnitSources {
         for (file in walk("$home/packages")) {
             val source = read(file)
             val declared = moduleOf(source) ?: continue
-            libraries += library(file, "${declared.replace('.', '/')}/${file.substringAfterLast('/')}")
+            library(file, "${declared.replace('.', '/')}/${file.substringAfterLast('/')}", source)?.let(libraries::add)
         }
     }
     return UnitSources(entry, text, libraries, libraryUnits)
@@ -240,7 +241,7 @@ fun main(arguments: Array<String>) {
             }
             "analyze" -> analyze(sources(args.getOrNull(1) ?: error("analyze requires a file")), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0)
             "hover", "definition", "complete" -> analyze(sources(args.getOrNull(1) ?: error("${args[0]} requires a file"), engine = true), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0, args[0], args)
-            null, "help", "--help" -> println("azora native: check <file> | compile <metallib|spv|dxil> <file.azgpu> | compile llvm <file> [--debug] [--export=a,b] [-o <file>] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
+            null, "help", "--help" -> println("azora native: check <file> | compile <metallib|spv|dxil> <file.az> | compile llvm <file> [--debug] [--export=a,b] [-o <file>] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
             else -> error("unknown native compiler command '${args[0]}'")
         }
     } catch (failure: Exception) {

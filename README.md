@@ -31,19 +31,19 @@ app/build/install/azora/bin/azora repl
 
 ## Azora GPU
 
-Use `.azgpu` for vertex, fragment, and compute shaders. The JVM and native CLI
+Annotate an Azora module with `@Execution("GPU")` for vertex, fragment, and compute shaders. The JVM and native CLI
 share the GPU compiler and bundle the `gpustdlib` modules from this repository.
 
 ```bash
-azora check examples/gpu/compute.azgpu
-azora compile spv examples/gpu/compute.azgpu --profile vulkan1.4 -o adjust.spv
-azora compile metallib examples/gpu/triangle.azgpu --entry triangleVertex -o triangle.metallib
-azora compile dxil examples/gpu/triangle.azgpu --entry triangleFragment --profile 6.6 -o triangle.dxil
+azora check examples/gpu/compute.az
+azora compile spv examples/gpu/compute.az --profile vulkan1.4 -o adjust.spv
+azora compile metallib examples/gpu/triangle.az --entry triangleVertex -o triangle.metallib
+azora compile dxil examples/gpu/triangle.az --entry triangleFragment --profile 6.6 -o triangle.dxil
 ```
 
-Choose `--entry` when the file declares several entry points. Each invocation
-produces one shader. Without `-o`, the CLI writes beside the input and adds the
-selected entry name to the output filename when `--entry` is explicit.
+Use `--entry` to build a specific function. By default Metal produces one library
+with all entry points, while Vulkan and DirectX produce a module per entry point.
+For multiple Vulkan or DirectX modules, pass an output directory to `-o`.
 `--emit-source` prints the generated shader source to standard output.
 
 | Output | Tool on PATH | Profile |
@@ -82,8 +82,8 @@ standard library are outside the GPU subset. Import `gpustdlib.math` or
   pass the declared workgroup dimensions to the dispatch call. Check the
   target device's limits before dispatching.
 
-See [the compute shader](examples/gpu/compute.azgpu) and
-[the vertex and fragment shaders](examples/gpu/triangle.azgpu) for complete
+See [the compute shader](examples/gpu/compute.az) and
+[the vertex and fragment shaders](examples/gpu/triangle.az) for complete
 examples.
 
 ## Hello World

@@ -1,0 +1,17 @@
+@Execution("GPU")
+module gpustdlib.math
+
+/** Half a turn, in radians. */
+inline fin pi: Float = 3.14159265
+
+/** A full turn, in radians. */
+inline fin tau: Float = 6.2831853
+
+/** [value] remapped from [low]..[high] onto 0..1, clamped. */
+func linearStep(low: Float, high: Float, value: Float): Float = saturate((value - low) / (high - low))
+
+/** The larger of [v]'s three components. */
+func maxComponent(v: Float3): Float = max(max(v.x, v.y), v.z)
+
+/** The smaller of [v]'s three components. */
+func minComponent(v: Float3): Float = min(min(v.x, v.y), v.z)

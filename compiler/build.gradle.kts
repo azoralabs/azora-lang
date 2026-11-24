@@ -131,7 +131,7 @@ val generateGpuStdlib = tasks.register("generateGpuStdlib") {
     outputs.dir(outputDir)
 
     doLast {
-        val files = sourceDir.walkTopDown().filter { it.isFile && it.extension == "azgpu" }
+        val files = sourceDir.walkTopDown().filter { it.isFile && it.extension == "az" }
             .sortedBy { it.relativeTo(sourceDir).invariantSeparatorsPath }.toList()
         check(files.isNotEmpty()) { "No GPU standard library sources in $sourceDir" }
         val output = outputDir.get().file("org/azora/lang/gpu/GpuStdlibBundle.kt").asFile
@@ -141,7 +141,7 @@ val generateGpuStdlib = tasks.register("generateGpuStdlib") {
             appendLine("internal object GpuStdlibBundle {")
             appendLine("    val modules = mapOf(")
             for (file in files) {
-                val relativePath = file.relativeTo(sourceDir).invariantSeparatorsPath.removeSuffix(".azgpu")
+                val relativePath = file.relativeTo(sourceDir).invariantSeparatorsPath.removeSuffix(".az")
                 val module = "gpustdlib." + relativePath.replace('/', '.')
                 check(module.split('.').all { it.matches(Regex("[A-Za-z_][A-Za-z0-9_]*")) }) {
                     "Invalid GPU standard library module path $relativePath"

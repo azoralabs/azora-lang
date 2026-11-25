@@ -4,6 +4,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include <cstdlib>
 #include <ctime>
 #include <dirent.h>
 #include <fcntl.h>
@@ -80,6 +81,23 @@ std::vector<std::string> listDirectory(const std::string& path) {
     }
     ::closedir(dir);
     return out;
+}
+
+bool pathExists(const std::string& path) {
+    struct stat info;
+    return ::stat(path.c_str(), &info) == 0;
+}
+
+std::string currentDirectory() {
+    char buffer[4096];
+    if (::getcwd(buffer, sizeof buffer) == nullptr) return ".";
+    return buffer;
+}
+
+std::optional<std::string> envVar(const std::string& name) {
+    const char* value = ::getenv(name.c_str());
+    if (value == nullptr) return std::nullopt;
+    return std::string(value);
 }
 
 double nowSeconds() {

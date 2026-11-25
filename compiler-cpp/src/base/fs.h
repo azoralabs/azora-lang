@@ -22,6 +22,14 @@ bool isFile(const std::string& path);
 /** Names in [path] (no `.`/`..`), unsorted; empty when it is not a directory. */
 std::vector<std::string> listDirectory(const std::string& path);
 
+bool pathExists(const std::string& path);
+
+/** The working directory (getcwd). */
+std::string currentDirectory();
+
+/** An environment variable, or nullopt when unset. */
+std::optional<std::string> envVar(const std::string& name);
+
 /** Monotonic seconds, for timings. */
 double nowSeconds();
 

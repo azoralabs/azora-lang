@@ -20,3 +20,8 @@ c96df12970a1b017e9e72223a61cf4e181fb75d4b264394d5197145dbce14050  compiler/src/c
 d9627ffce4d5738ba86230ec238ba3062395f0949ca7394795007eec106c9abb  compiler/src/commonMain/kotlin/org/azora/lang/frontend/MacroExpander.kt  src/frontend/macro_expander.h src/frontend/macro_expander.cpp
 152212c65eb9435bced0ea8ce347a466a1e8f1578b3618d0af1a48d3ce281634  compiler/src/commonMain/kotlin/org/azora/lang/frontend/AstValidator.kt  src/frontend/ast_validator.h src/frontend/ast_validator.cpp
 1831d9ce8bfd2386bea50fbd8072c5caf30cd52aed061fdd8243ca028cd68b8e  compiler/src/commonMain/kotlin/org/azora/lang/diagnostics/Suggestions.kt  src/diagnostics/suggestions.h src/diagnostics/suggestions.cpp
+3c85fe0cf50442afed4891752abfc946821bf4a085cee9194eea4053e50f43cb  compiler/src/commonMain/kotlin/org/azora/lang/frontend/LocalNames.kt  src/frontend/local_names.h src/frontend/local_names.cpp
+7573cfd95769fcd4c514da88ed4794fc651d79068dbb780b9b79efcefd5e5147  compiler/src/commonMain/kotlin/org/azora/lang/stdlib/DeclarationRenamer.kt  src/stdlib/declaration_renamer.h src/stdlib/declaration_renamer.cpp
+78acfd4966cd3793f0a47d0f875260be142eadd86dfb1f607f7d09e2606dda06  compiler/src/commonMain/kotlin/org/azora/lang/stdlib/StdlibSource.kt  src/stdlib/stdlib_source.h src/stdlib/stdlib_source.cpp
+1b2ef240fec4ef802f658ca0104fed00e76b3c8b9be500bb89c5d7d8d36b09b6  compiler/src/commonMain/kotlin/org/azora/lang/stdlib/AzStdlibLoader.kt  src/stdlib/az_stdlib.h src/stdlib/az_stdlib.cpp
+a46ad325ef2c07805bd6ee8496d32bfb08e2485f49944c0d409933e3c4c010b0  compiler/src/macosMain/kotlin/org/azora/lang/stdlib/StdlibSource.macos.kt  src/stdlib/stdlib_source.cpp (macOS actuals)

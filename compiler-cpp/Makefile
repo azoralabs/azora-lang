@@ -26,9 +26,23 @@ else
 $(error BUILD must be release, debug or asan)
 endif
 
-$(BINARY): $(OBJECTS)
+# The standard library bundled into the compiler, as Kotlin's AzStdlibBundle:
+# every std/**/*.az and the package.azon beside std/ (tools/embed-std.sh).
+STD_FILES := $(shell find ../std -name '*.az' -type f) ../package.azon
+BUNDLE_CPP := $(OUT)/gen/std_bundle.cpp
+BUNDLE_OBJ := $(OUT)/obj/gen/std_bundle.o
+
+$(BINARY): $(OBJECTS) $(BUNDLE_OBJ)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJECTS) -o $@
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(OBJECTS) $(BUNDLE_OBJ) -o $@
+
+$(BUNDLE_CPP): $(STD_FILES) tools/embed-std.sh
+	@mkdir -p $(dir $@)
+	/bin/sh tools/embed-std.sh .. $@
+
+$(BUNDLE_OBJ): $(BUNDLE_CPP)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OUT)/obj/%.o: src/%.cpp
 	@mkdir -p $(dir $@)

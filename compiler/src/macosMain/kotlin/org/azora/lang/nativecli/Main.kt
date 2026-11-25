@@ -104,6 +104,48 @@ private fun llvm(unit: UnitSources, args: List<String>): String {
     return if ("--debug" in args) LlvmCodegen(library = exports(args).isNotEmpty()).generate(result.ir) else result.llvm
 }
 
+/**
+ * `compile llvm <file> --interface=<dir> --parts=N -o <out>`: the program on
+ * its packages' interface kept in `<dir>` (see PackageBuild). The program's parts
+ * go to `<out>`, and `<out>/link.txt` names the interface parts to link
+ * (`link <path>`) and those to compile now for later builds (`prepare <path>`).
+ * `--interface-sources=a,b` names the library directories that are packages;
+ * `--interface-compiler=<id>` is this compiler's identity for the key.
+ */
+private fun compileOnInterface(root: String, unit: UnitSources, args: List<String>, parts: Int, output: String) {
+    val sources = args.filter { it.startsWith("--interface-sources=") }
+        .flatMap { it.substringAfter('=').split(',') }.map { it.trim().trimEnd('/') }.filter { it.isNotEmpty() }
+    val identity = args.firstOrNull { it.startsWith("--interface-compiler=") }?.substringAfter('=') ?: "native"
+    fsMutate("createDirectories", root, "")?.let { error("cannot create '$root': $it") }
+    val store = object : PackageBuild.Store {
+        override fun read(path: String): String? = "$root/$path".let { file -> if (fsStat(file).value?.kind == "File") fsReadText(file).value else null }
+        override fun write(path: String, text: String) {
+            val file = "$root/$path"
+            fsMutate("createDirectories", file.substringBeforeLast('/'), "")?.let { error("cannot create '${file.substringBeforeLast('/')}': $it") }
+            val temporary = "${file.substringBeforeLast('/')}/.${file.substringAfterLast('/')}.${getpid()}"
+            fsWriteText(temporary, text, false)?.let { error("cannot write '$temporary': $it") }
+            fsMutate("rename", temporary, file)?.let { error("cannot write '$file': $it") }
+        }
+        override fun list(directory: String): List<String> =
+            fsList(if (directory.isEmpty()) root else "$root/$directory").value.orEmpty()
+                .map { it.substringAfterLast('/') }.filterNot { it.startsWith(".") }.sorted()
+        override fun remove(path: String) { fsMutate("removeAll", "$root/$path", "") }
+    }
+    val build = PackageBuild(store, "native $identity") { library ->
+        sources.any { library.path == it || library.path.startsWith("$it/") }
+    }
+    val (outcome, failure) = build.compile(unit.text, unit.libraries, parts, defines(args), release = true)
+    if (failure != null || outcome == null) {
+        for (message in failure?.errors.orEmpty()) fputs("$message\n", stderr)
+        exitProcess(1)
+    }
+    fsMutate("createDirectories", output, "")?.let { error("cannot create '$output': $it") }
+    for (part in outcome.parts) fsWriteText("$output/${part.name}", part.text, false)?.let { error("cannot write '$output/${part.name}': $it") }
+    val link = outcome.link.joinToString("") { "link $root/$it\n" } + outcome.prepare.joinToString("") { "prepare $root/$it\n" }
+    fsWriteText("$output/link.txt", link, false)?.let { error("cannot write '$output/link.txt': $it") }
+    for (note in outcome.notes) fputs("azora: $note\n", stderr)
+}
+
 private fun json(value: String): String = buildString {
     append('"')
     for (character in value) when (character) {
@@ -201,7 +243,23 @@ private fun buildProject(directory: String, action: String, args: List<String>) 
     if (action == "play") exit(run(output, emptyList()))
 }
 
+/**
+ * Where the collector starts. A compile is one run that builds a large heap -
+ * hundreds of megabytes for a game with the Engine - and keeps most of it to
+ * the end; starting from the runtime's small default, the collector stopped
+ * the compile to mark that growing heap again at each step up.
+ * `AZORA_COMPILER_MIN_HEAP_MB=0` keeps the runtime's own sizing.
+ */
+@OptIn(kotlin.native.runtime.NativeRuntimeApi::class)
+private fun sizeCollector() {
+    val megabytes = osEnvVar("AZORA_COMPILER_MIN_HEAP_MB")?.toLongOrNull() ?: 1024
+    if (megabytes <= 0) return
+    kotlin.native.runtime.GC.minHeapBytes = megabytes * 1024 * 1024
+    kotlin.native.runtime.GC.targetHeapBytes = maxOf(kotlin.native.runtime.GC.targetHeapBytes, megabytes * 1024 * 1024)
+}
+
 fun main(arguments: Array<String>) {
+    sizeCollector()
     val args = arguments.toList()
     try {
         if (args.size >= 2 && args[1] in setOf("build", "play", "inspect")) {
@@ -235,13 +293,32 @@ fun main(arguments: Array<String>) {
                 val path = args.withIndex().drop(2)
                     .firstOrNull { (i, arg) -> !arg.startsWith('-') && (outIndex < 0 || i != outIndex + 1) }?.value
                     ?: error("compile requires a file")
+                // `--parts=N`: the module as N parts plus the program's variables,
+                // each a file in the directory `-o` names (see LlvmUnits).
+                val parts = args.firstOrNull { it.startsWith("--parts=") }?.substringAfter('=')?.let {
+                    it.toIntOrNull()?.takeIf { n -> n >= 1 } ?: error("--parts needs a whole number of at least 1")
+                }
+                args.firstOrNull { it.startsWith("--interface=") }?.let { option ->
+                    require(parts != null && outPath != null && "--debug" !in args && exports(args).isEmpty()) {
+                        "--interface builds the llvm target as --parts=N into the directory -o names"
+                    }
+                    val root = option.substringAfter('=').trimEnd('/').let { if (it.startsWith('/')) it else "${fsCanonical(".").value}/$it" }
+                    compileOnInterface(root, sources(path), args, parts, outPath)
+                    return
+                }
                 val output = llvm(sources(path), args)
-                if (outPath == null) println(output)
+                if (parts != null) {
+                    require(outPath != null) { "--parts writes into the directory -o names" }
+                    fsMutate("createDirectories", outPath, "")?.let { error("cannot create '$outPath': $it") }
+                    for (part in LlvmUnits.split(output, parts)) {
+                        fsWriteText("$outPath/${part.name}", part.text, false)?.let { error("cannot write '$outPath/${part.name}': $it") }
+                    }
+                } else if (outPath == null) println(output)
                 else fsWriteText(outPath, output + "\n", false)?.let { error("cannot write '$outPath': $it") }
             }
             "analyze" -> analyze(sources(args.getOrNull(1) ?: error("analyze requires a file")), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0)
             "hover", "definition", "complete" -> analyze(sources(args.getOrNull(1) ?: error("${args[0]} requires a file"), engine = true), args.firstOrNull { it.startsWith("--version=") }?.substringAfter('=')?.toLong() ?: 0, args[0], args)
-            null, "help", "--help" -> println("azora native: check <file> | compile <metallib|spv|dxil> <file.az> | compile llvm <file> [--debug] [--export=a,b] [-o <file>] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
+            null, "help", "--help" -> println("azora native: check <file> | compile <metallib|spv|dxil> <file.az> | compile llvm <file> [--debug] [--export=a,b] [--parts=N -o <dir> [--interface=<dir> --interface-sources=a,b --interface-compiler=<id>]] [-o <file>] | analyze <file> [--version=N] | hover|definition|complete <file> --line=N --byte=N [--prefix=TEXT] [--version=N] | <project> build|play|inspect")
             else -> error("unknown native compiler command '${args[0]}'")
         }
     } catch (failure: Exception) {

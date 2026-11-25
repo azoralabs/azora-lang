@@ -35,7 +35,66 @@ class IrOptimizer(
      * at them as well.
      */
     private val exportRoots: Set<String> = emptySet(),
+    /**
+     * What a package interface's functions need of the program, by function:
+     * their bodies are not here (see [IrFunction.isPrecompiled]), so reaching
+     * one reaches what its code - and the precompiled code it calls - names.
+     */
+    private val precompiledDemands: Map<String, Demand> = emptyMap(),
 ) {
+
+    /**
+     * What some code needs of the program around it: the functions and
+     * variables it names, and the members it asks for by name (see [reach]):
+     * `<type>_<member>` for each of [types] and [members], operators alike.
+     */
+    data class Demand(
+        val names: Set<String> = emptySet(),
+        val members: Set<String> = emptySet(),
+        val operators: Set<String> = emptySet(),
+        val types: Set<String> = emptySet(),
+    )
+
+    /**
+     * For each function [precompiled] names, what its code and the
+     * [precompiled] code it calls need of the rest of [program]: what a
+     * program that declares these functions without their bodies must still
+     * define.
+     */
+    fun demandsOf(program: IrProgram, precompiled: Set<String>): Map<String, Demand> {
+        val functions = program.functions.filter { it.name in precompiled }.associateBy { it.name }
+        val direct = HashMap<String, Pair<Set<String>, ImplicitUses>>()
+        val savedSink = implicitSink
+        try {
+            for ((name, function) in functions) {
+                val uses = ImplicitUses()
+                implicitSink = uses
+                direct[name] = collectReferencedNames(function.body) to uses
+            }
+        } finally {
+            implicitSink = savedSink
+        }
+        val result = HashMap<String, Demand>()
+        for (name in functions.keys) {
+            val names = LinkedHashSet<String>()
+            val members = LinkedHashSet<String>()
+            val operators = LinkedHashSet<String>()
+            val types = LinkedHashSet<String>()
+            val seen = HashSet<String>()
+            val work = ArrayDeque<String>().apply { add(name) }
+            while (work.isNotEmpty()) {
+                val next = work.removeFirst()
+                if (!seen.add(next)) continue
+                val (refs, uses) = direct[next] ?: continue
+                members += uses.members
+                operators += uses.operators
+                types += uses.types
+                for (ref in refs) if (ref in functions) work.add(ref) else names.add(ref)
+            }
+            result[name] = Demand(names, members, operators, types)
+        }
+        return result
+    }
 
     /**
      * Applies all optimization passes to the given IR program.
@@ -724,18 +783,39 @@ class IrOptimizer(
         else -> type.toString()
     }
 
-    /** Every function a member asked for in [uses] can resolve to. */
-    private fun implicitTargets(uses: ImplicitUses): Set<String> = buildSet {
-        for (type in uses.types) {
-            for (member in uses.members) {
-                add("${type}_$member")
-                add("${type}_prop_$member")
-            }
-            for (symbol in uses.operators) {
-                add("${type}_${mangleMethodSymbol(symbol)}")
-                for (operand in uses.types) add("${type}_${mangleMethodSymbol("$symbol@$operand")}")
+    /**
+     * The functions among [candidates], not yet [visited], that a member asked
+     * for in [uses] can resolve to: `<type>_<member>` and `<type>_prop_<member>`
+     * for every type and member, `<type>_<operator>` and
+     * `<type>_<operator@operand>` for every operator.
+     *
+     * Each candidate is tried at every `_` against those sets. Spelling out
+     * every pairing instead made types × types × operators strings on every
+     * round of [reach], most of a large program's shaking.
+     */
+    private fun implicitTargetsAmong(uses: ImplicitUses, candidates: Collection<String>, visited: Set<String>): Set<String> {
+        if (uses.types.isEmpty()) return emptySet()
+        val operators = HashSet<String>()
+        for (symbol in uses.operators) {
+            operators += mangleMethodSymbol(symbol)
+            for (operand in uses.types) operators += mangleMethodSymbol("$symbol@$operand")
+        }
+        val found = LinkedHashSet<String>()
+        for (name in candidates) {
+            if (name in visited) continue
+            var at = name.indexOf('_')
+            while (at >= 0) {
+                if (name.substring(0, at) in uses.types) {
+                    val rest = name.substring(at + 1)
+                    if (rest in uses.members || rest in operators || (rest.startsWith("prop_") && rest.substring(5) in uses.members)) {
+                        found += name
+                        break
+                    }
+                }
+                at = name.indexOf('_', at + 1)
             }
         }
+        return found
     }
 
     private fun declaredName(stmt: IrStmt): String? = when (stmt) {
@@ -825,14 +905,22 @@ class IrOptimizer(
                     val func = funcMap[name]
                     if (func != null) {
                         reachableFuncs.add(name)
-                        enqueue(collectReferencedNames(func.body))
+                        val demand = if (func.isPrecompiled) precompiledDemands[name] else null
+                        if (demand != null) {
+                            uses.members += demand.members
+                            uses.operators += demand.operators
+                            uses.types += demand.types
+                            enqueue(demand.names)
+                        } else {
+                            enqueue(collectReferencedNames(func.body))
+                        }
                     } else {
                         enqueue(collectReferencedNamesFromExpr(globalInitializers[name]))
                     }
                 }
                 // Each function reached can ask for more members, or hold a value
                 // of another type, so pairing them runs until neither grows.
-                enqueue(implicitTargets(uses).filterTo(mutableSetOf()) { it in funcMap && it !in visited })
+                enqueue(implicitTargetsAmong(uses, funcMap.keys, visited))
             } while (worklist.isNotEmpty())
             return Reach(reachableFuncs, usedNames)
         } finally {

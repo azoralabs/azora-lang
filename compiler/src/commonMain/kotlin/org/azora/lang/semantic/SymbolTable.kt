@@ -283,6 +283,22 @@ class SymbolTable {
     var stability = StabilityRecorder(null)
 
     private val functions = mutableMapOf<String, FunctionSymbol>()
+
+    /**
+     * For each `__…` tail a function's name ends with, the first function
+     * defined with it: [lookupTypeStatic] and [inferredStatic] ask by tail, and
+     * reading every function's name for each question was most of type
+     * resolution in a large program. Functions are only ever added.
+     */
+    private val functionsByTail = HashMap<String, String>()
+
+    private fun indexTails(name: String) {
+        var at = name.indexOf("__")
+        while (at >= 0) {
+            functionsByTail.getOrPut(name.substring(at)) { name }
+            at = name.indexOf("__", at + 1)
+        }
+    }
     private val scopes = ArrayDeque<MutableMap<String, VariableSymbol>>()
     private val structs = mutableMapOf<String, StructType>()
 
@@ -314,6 +330,7 @@ class SymbolTable {
             error("Function '${symbol.name}' already defined")
         }
         functions[symbol.name] = symbol
+        indexTails(symbol.name)
     }
 
     /** Registers an additional lookup name while preserving the emitted symbol name. */
@@ -322,6 +339,7 @@ class SymbolTable {
             error("Function '$alias' already defined")
         }
         functions[alias] = symbol
+        indexTails(alias)
     }
 
     /**
@@ -340,8 +358,7 @@ class SymbolTable {
     fun lookupTypeStatic(owner: String, name: String): FunctionSymbol? {
         val local = "${owner}__$name"
         functions[local]?.let { return it }
-        val suffix = "__$local"
-        return functions.entries.firstOrNull { it.key.endsWith(suffix) }?.value
+        return functionsByTail["__$local"]?.let(functions::get)
     }
 
     fun lookupFunction(name: String): FunctionSymbol? = functions[name]
@@ -363,7 +380,7 @@ class SymbolTable {
     fun inferredStatic(owner: String, name: String): String? {
         val direct = "${owner}__$name"
         if (direct in functions) return direct
-        return functions.keys.firstOrNull { it.endsWith("__${owner.substringAfterLast("__")}__$name") }
+        return functionsByTail["__${owner.substringAfterLast("__")}__$name"]
     }
 
     fun markFunctionReactive(name: String) {

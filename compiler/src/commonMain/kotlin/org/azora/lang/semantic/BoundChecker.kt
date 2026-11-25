@@ -205,7 +205,8 @@ internal class BoundChecker private constructor(
         within(narrowed + declaredScope(decl.typeParams, decl.whereClause)) {
             decl.params.forEach { param(it) }
             (decl.returnType as? TypeAnnotation.Explicit)?.let { typeRef(it.ref) }
-            stmts(decl.body)
+            // A precompiled body was checked when its package was compiled.
+            if (!decl.precompiled) stmts(decl.body)
         }
         line = savedLine
     }

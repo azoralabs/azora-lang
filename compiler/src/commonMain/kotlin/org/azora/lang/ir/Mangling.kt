@@ -240,3 +240,16 @@ fun receiverOnlyCtorSymbol(typeName: String, table: SymbolTable): String? =
 
 /** How many `ctor` members [methods] declares, which decides whether they are overloads. */
 fun ctorCount(names: List<String>): Int = names.count { it == "ctor" }
+
+/**
+ * The function an `impl` (or `solo`) member [method] of [typeName] is lowered
+ * to. [overloadedCtors] says whether the type's ctors are overloads (see
+ * [ctorSymbol]). The IR generator names members here, and a package interface
+ * finds the members it compiled by the same name.
+ */
+fun memberSymbol(typeName: String, method: org.azora.lang.frontend.FuncDecl, overloadedCtors: Boolean): String =
+    if (method.name == "ctor") {
+        ctorSymbol(typeName, method.params.size - method.contextualParams, method.isRepeated, overloadedCtors)
+    } else {
+        mangleMethodSymbol("${typeName}_${method.name}")
+    }

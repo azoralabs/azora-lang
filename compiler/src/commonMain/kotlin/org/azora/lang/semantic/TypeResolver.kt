@@ -118,15 +118,39 @@ class TypeResolver(private val table: SymbolTable) {
     val redundantVariantQualifiers: List<SemanticRedundantVariantQualifier>
         get() = redundantQualifiers.values.toList()
     private var program: Program? = null
+
+    /** [program]'s functions by name, the first declared of each name, made once for that program. */
+    private var functionsByNameOf: Program? = null
+    private var functionsByName: Map<String, FuncDecl> = emptyMap()
+
+    /** What `program?.functions?.find { it.name == name }` finds, without listing and searching them each time. */
+    private fun declaredFunction(name: String): FuncDecl? {
+        val current = program ?: return null
+        if (functionsByNameOf !== current) {
+            functionsByName = HashMap<String, FuncDecl>().also { byName -> for (f in current.functions) byName.getOrPut(f.name) { f } }
+            functionsByNameOf = current
+        }
+        return functionsByName[name]
+    }
     // Symbol identity distinguishes shadowed bindings and shared scope exports.
     private val stableArraySizes = mutableListOf<Pair<VariableSymbol, Long>>()
     private data class ClosureBorrow(val source: String, val mode: CaptureMode?, val line: Int)
     // Symbol identity, rather than spelling or data-class equality, keeps
     // shadowed local bindings from inheriting another closure's provenance.
-    private val closureBorrows = mutableListOf<Pair<VariableSymbol, List<ClosureBorrow>>>()
+    private val closureBorrows = HashMap<Binding, List<ClosureBorrow>>()
+
+    /**
+     * A binding as a key: the one symbol, not every symbol equal to it (two
+     * `x`s of one type in two functions are different bindings). A list
+     * searched for each binding grew with the program, quadratically.
+     */
+    private class Binding(val symbol: VariableSymbol) {
+        override fun equals(other: Any?): Boolean = other is Binding && other.symbol === symbol
+        override fun hashCode(): Int = symbol.hashCode()
+    }
 
     private fun closureBorrowsOf(symbol: VariableSymbol?): List<ClosureBorrow> =
-        closureBorrows.firstOrNull { it.first === symbol }?.second.orEmpty()
+        symbol?.let { closureBorrows[Binding(it)] }.orEmpty()
 
     private fun rememberClosureBorrows(symbol: VariableSymbol?, value: Expr, merge: Boolean = false) {
         if (symbol == null) return
@@ -136,8 +160,7 @@ class TypeResolver(private val table: SymbolTable) {
                 borrow.mode != null && (table.variableScopeIndex(borrow.source) ?: targetScope) > targetScope
             }) checkEscapingValue(value, "is stored in a binding that outlives its captured scope")
         val previous = if (merge) closureBorrowsOf(symbol) else emptyList()
-        closureBorrows.removeAll { it.first === symbol }
-        closureBorrows.add(symbol to (previous + found).distinct())
+        closureBorrows[Binding(symbol)] = (previous + found).distinct()
     }
 
     /** Borrow provenance follows aliases, branches and stored aggregate values. */
@@ -426,6 +449,12 @@ class TypeResolver(private val table: SymbolTable) {
                     val stabilityOwner = table.stability.enterMethod(item, method)
                     table.pushScope()
                     checkParameterDefaults(method.params, func.params)
+                    if (method.precompiled) {
+                        table.popScope()
+                        table.semanticFacts.leaveOwner(previousFactOwner)
+                        table.stability.leave(stabilityOwner)
+                        continue
+                    }
                     for ((index, param) in func.params.withIndex()) {
                         val (name, type) = param
                         val mutable = name != "self" || method.receiverModifier != ParamModifier.SHARED
@@ -449,7 +478,7 @@ class TypeResolver(private val table: SymbolTable) {
                         )
                         table.lookupVariable(name)?.let { table.semanticFacts.declaration(it, method.line) }
                         if (type is IrType.Function && !type.isEscaping) {
-                            table.lookupVariable(name)?.let { closureBorrows.add(it to listOf(ClosureBorrow(name, null, method.line))) }
+                            table.lookupVariable(name)?.let { closureBorrows.getOrPut(Binding(it)) { listOf(ClosureBorrow(name, null, method.line)) } }
                         }
                     }
                     val unnamedReceiverTuple = method.contextualParams > 0 && method.receiverName == "__receiver0"
@@ -657,6 +686,13 @@ class TypeResolver(private val table: SymbolTable) {
             table.defineVariable(VariableSymbol(constParam, IrType.Int, mutable = false))
         }
         checkParameterDefaults(func.params, symbol.params)
+        // Its body was checked when its package was compiled; a caller still
+        // lowers the defaults it leaves out, so those were resolved above.
+        if (func.precompiled) {
+            table.popScope()
+            table.semanticFacts.leaveOwner(previousFactOwner)
+            return
+        }
 
         // Register parameters as local variables
         for (i in symbol.params.indices) {
@@ -670,7 +706,7 @@ class TypeResolver(private val table: SymbolTable) {
                 nonNullGeneric = ref?.name in func.typeParams, declaredRef = func.params.getOrNull(i)?.type))
             table.lookupVariable(name)?.let { table.semanticFacts.declaration(it, func.line) }
             if (type is IrType.Function && !type.isEscaping) {
-                table.lookupVariable(name)?.let { closureBorrows.add(it to listOf(ClosureBorrow(name, null, func.line))) }
+                table.lookupVariable(name)?.let { closureBorrows.getOrPut(Binding(it)) { listOf(ClosureBorrow(name, null, func.line)) } }
             }
         }
 
@@ -3458,7 +3494,7 @@ class TypeResolver(private val table: SymbolTable) {
                 // parameter erases to `Any` in a resolved signature, and what is
                 // needed here is the shape the author wrote.
                 val statedDecl = if (expr.typeArgs.isEmpty() || func.typeParams.isEmpty()) null
-                else program?.functions?.find { it.name == expr.callee }
+                else declaredFunction(expr.callee)
                 // A hole is an argument the caller did not write, so it states
                 // nothing: `add<Short, _, Long>(…)` pins two and leaves one to
                 // the argument at that position.
@@ -3516,7 +3552,7 @@ class TypeResolver(private val table: SymbolTable) {
                 }
                 // Generic function: infer type params from args for a precise return type.
                 if (isGeneric) {
-                    val funcDecl = program?.functions?.find { it.name == expr.callee }
+                    val funcDecl = declaredFunction(expr.callee)
                     if (funcDecl != null) {
                         val bindings = mutableMapOf<String, List<TypeRef>>()
                         for ((index, typeParam) in func.typeParams.withIndex()) {
@@ -6386,7 +6422,7 @@ class TypeResolver(private val table: SymbolTable) {
             // A signature alone is not proof: a resized array can retain N in
             // Array<T, N>. Qualify a fresh literal result without earlier
             // control flow; more complex producers remain undecided.
-            val body = program?.functions?.find { it.name == source.callee }?.body
+            val body = declaredFunction(source.callee)?.body
             val literal = (body?.lastOrNull() as? Stmt.Return)?.value as? Expr.ArrayLiteral
             literal?.elements?.size?.toLong()?.takeIf { body.dropLast(1).all { it is Stmt.ExprStmt } }
         }

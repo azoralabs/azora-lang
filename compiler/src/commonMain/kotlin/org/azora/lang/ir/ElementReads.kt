@@ -18,16 +18,28 @@ package org.azora.lang.ir
  * a call to a function this program does not define - counts as a read, and so
  * does a call that recurses back into a function still being examined.
  */
-class ElementReads(functions: Iterable<IrFunction>) {
+class ElementReads(
+    functions: Iterable<IrFunction>,
+    /**
+     * What functions compiled elsewhere read, by name: a package interface's
+     * functions are declared here without their bodies, so their answers
+     * come with the interface.
+     */
+    private val given: Map<String, Set<Int>> = emptyMap(),
+) {
     private val byName = functions.associateBy { it.name }
     private val known = mutableMapOf<String, Set<Int>>()
     private val examining = mutableSetOf<String>()
 
     /** True when [function] may read the elements of its parameter [index]. */
     fun readsElements(function: String, index: Int): Boolean {
+        given[function]?.let { return index in it }
         val fn = byName[function] ?: return true
         return index in readers(fn)
     }
+
+    /** The parameters of [function] whose elements it may read; null for a function this program does not define. */
+    fun readersOf(function: String): Set<Int>? = given[function] ?: byName[function]?.let(::readers)
 
     private fun readers(fn: IrFunction): Set<Int> {
         known[fn.name]?.let { return it }

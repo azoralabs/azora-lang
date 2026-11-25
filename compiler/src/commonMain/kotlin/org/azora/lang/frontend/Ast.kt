@@ -2318,7 +2318,16 @@ data class FuncDecl(
      * `deepinline` rather than `inline` - evaluated through, not just at, the
      * call site. Only a `deepinline` member may hand back a `Type`.
      */
-    val isDeepInline: Boolean = false
+    val isDeepInline: Boolean = false,
+    /**
+     * Already compiled into a package interface (see `PackageInterface`).
+     *
+     * The program is still given the whole declaration - its signature, its
+     * defaults and a body that compile-time evaluation may run - but analysis
+     * does not walk the body again and code generation declares the function
+     * instead of defining it: the interface's code is linked in its place.
+     */
+    val precompiled: Boolean = false,
 )
 
 enum class MemberCallStyle {

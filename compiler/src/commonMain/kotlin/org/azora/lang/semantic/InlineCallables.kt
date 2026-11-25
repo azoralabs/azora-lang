@@ -44,9 +44,10 @@ object InlineCallables {
         return program.copy(
             items = program.items.map { item ->
                 when (item) {
-                    is TopLevel.Func -> item.copy(decl = item.decl.copy(body = rewriter.body(item.decl.body)))
+                    // A precompiled body is not lowered here, so nothing is spliced into it.
+                    is TopLevel.Func -> if (item.decl.precompiled) item else item.copy(decl = item.decl.copy(body = rewriter.body(item.decl.body)))
                     is TopLevel.Impl -> item.copy(
-                        methods = item.methods.map { it.copy(body = rewriter.body(it.body)) },
+                        methods = item.methods.map { if (it.precompiled) it else it.copy(body = rewriter.body(it.body)) },
                     )
                     else -> item
                 }

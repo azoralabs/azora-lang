@@ -77,6 +77,15 @@ class LlvmCodegen(
     private val library: Boolean = false,
     /** Export name → the IR function it names, when the two differ an alias carries the export name. */
     private val exports: Map<String, String> = emptyMap(),
+    /**
+     * The spec type ids a package interface's code was compiled with: its
+     * code stores them in the values it hands to dynamic dispatch, so this
+     * program's dispatchers must mean the same types by them. Other types
+     * are numbered after them.
+     */
+    private val interfaceTypeIds: Map<String, Int> = emptyMap(),
+    /** What each of a package interface's functions reads of its array parameters (see [ElementReads]). */
+    private val interfaceElementReads: Map<String, Set<Int>> = emptyMap(),
 ) {
 
     private var out = StringBuilder()
@@ -392,7 +401,8 @@ class LlvmCodegen(
         specDispatch.clear()
         specTypeIds.clear()
         for (t in program.specTables) specDispatch[t.specName] = t
-        var nextTypeId = 1
+        specTypeIds.putAll(interfaceTypeIds)
+        var nextTypeId = (interfaceTypeIds.values.maxOrNull() ?: 0) + 1
         for (t in program.specTables) {
             for (impl in t.impls) {
                 if (impl.typeName !in specTypeIds) specTypeIds[impl.typeName] = nextTypeId++
@@ -405,7 +415,7 @@ class LlvmCodegen(
         // Spec implementations are also called through dispatch tables, which
         // forward plain values, so they keep the value convention.
         val dispatched = specDispatch.values.flatMap { table -> table.impls.flatMap { it.methodFuncs.values } }.toSet()
-        elementReads = ElementReads(program.items.filterIsInstance<IrTopLevel.Func>().map { it.function })
+        elementReads = ElementReads(program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }, interfaceElementReads)
         for (item in program.items) {
             when (item) {
                 is IrTopLevel.Func -> {
@@ -477,7 +487,7 @@ class LlvmCodegen(
             for (global in globals) {
                 out.clear()
                 emitGlobal(global.stmt)
-                body.append(out)
+                body.append(out.toString())
             }
             body.appendLine()
         }
@@ -506,13 +516,13 @@ class LlvmCodegen(
         if (normalGlobalInitializers.isNotEmpty()) {
             out.clear()
             emitGlobalInitializerFunction("__azora_init_globals", normalGlobalInitializers)
-            body.append(out)
+            body.append(out.toString())
             body.appendLine()
         }
         if (threadLocalInitializers.isNotEmpty()) {
             out.clear()
             emitGlobalInitializerFunction("__azora_init_threadlocals", threadLocalInitializers)
-            body.append(out)
+            body.append(out.toString())
             body.appendLine()
         }
         // An export declared in a sibling module keeps its qualified name inside
@@ -540,12 +550,19 @@ class LlvmCodegen(
         for (item in program.items.filterIsInstance<IrTopLevel.Func>()) {
             if (item.function.isLibrary && item.function.name in org.azora.lang.semantic.CtfeEvaluator.RUNTIME_INTRINSICS) continue
             out.clear()
+            if (item.function.isPrecompiled) {
+                // Its code is in a package interface's objects: callers here
+                // need only its signature, spelled as its definition spells it.
+                body.appendLine("declare ${precompiledSignature(item.function)}")
+                body.appendLine()
+                continue
+            }
             if (item.function.isTask && item.function.name != "main") {
                 emitTaskFunction(item.function)
             } else {
                 emitFunction(item.function)
             }
-            body.append(out)
+            body.append(out.toString())
             body.appendLine()
         }
         var deferredIndex = 0
@@ -605,7 +622,7 @@ class LlvmCodegen(
         for (item in program.items.filterIsInstance<IrTopLevel.Test>()) {
             out.clear()
             emitTestFunction(item)
-            body.append(out)
+            body.append(out.toString())
             body.appendLine()
         }
 
@@ -695,10 +712,12 @@ class LlvmCodegen(
         }
         for (typeDef in lateTypeDefinitions) line(typeDef)
         if (usesTaskRuntime || lateTypeDefinitions.isNotEmpty()) line("")
-        out.append(body)
+        // A builder appended to another is copied character by character; its
+        // text, a string, is copied whole - the module is megabytes long.
+        out.append(body.toString())
         if (helpers.isNotEmpty()) out.append(helpers)
-        out.append(errSlot)
-        out.append(strConsts)
+        out.append(errSlot.toString())
+        out.append(strConsts.toString())
 
         return out.toString().trimEnd()
     }
@@ -955,6 +974,22 @@ class LlvmCodegen(
         }
 
         line("}")
+    }
+
+    /**
+     * What [func]'s definition says of it after `define`: the return type, the
+     * name and the parameter types. A task's public symbol is its spawner.
+     */
+    private fun precompiledSignature(func: IrFunction): String {
+        if (func.isTask && func.name != "main") {
+            return "%azora.task* @${func.name}(${func.params.joinToString(", ") { mapType(it.second) }})"
+        }
+        val retType = if (func.name == "main") "i32" else abiReturnType(func.returnType)
+        val bySlot = slotParams[func.name].orEmpty()
+        val params = func.params.withIndex().joinToString(", ") { (index, param) ->
+            if (index in bySlot) "${mapType(param.second)}*" else mapType(param.second)
+        }
+        return "$retType @${func.name}($params)"
     }
 
     private fun emitTaskFunction(func: IrFunction) {
@@ -1417,8 +1452,41 @@ class LlvmCodegen(
         return result
     }
 
-    /** True when the IR text in [module] uses the global symbol `@[symbol]`. */
-    private fun referencesSymbol(module: CharSequence, symbol: String): Boolean {
+    /**
+     * True when the IR text in [module] uses the global symbol `@[symbol]`.
+     *
+     * Asked once per `bridge` of a program whose module text runs to tens of
+     * megabytes, so the names after each `@` are read once, and on each later
+     * question only the text appended since (from the start of the line it
+     * was appended to: a name never spans a line).
+     */
+    private fun referencesSymbol(module: StringBuilder, symbol: String): Boolean {
+        if (symbol.isEmpty() || !symbol.all(::continuesSymbol)) return scansForSymbol(module, symbol)
+        if (symbolUsesOf !== module) {
+            symbolUsesOf = module
+            symbolUses.clear()
+            symbolUsesRead = 0
+        }
+        var at = module.lastIndexOf('\n', symbolUsesRead - 1).coerceAtLeast(0)
+        while (at < module.length) {
+            if (module[at++] != '@') continue
+            val start = at
+            while (at < module.length && continuesSymbol(module[at])) at++
+            if (at > start) symbolUses += module.substring(start, at)
+        }
+        symbolUsesRead = module.length
+        return symbol in symbolUses
+    }
+
+    private var symbolUsesOf: StringBuilder? = null
+    private val symbolUses = HashSet<String>()
+    private var symbolUsesRead = 0
+
+    /** Whether [c] can continue a global's name after `@` (`@a.b`, `@x$y` are other symbols than `@a`, `@x`). */
+    private fun continuesSymbol(c: Char): Boolean = c.isLetterOrDigit() || c in "._$-"
+
+    /** [referencesSymbol] by search, for a symbol spelled with characters the name index does not hold. */
+    private fun scansForSymbol(module: CharSequence, symbol: String): Boolean {
         val spelled = "@$symbol"
         var at = module.indexOf(spelled)
         while (at >= 0) {
@@ -4104,7 +4172,7 @@ end:
                 out.appendLine("  $result = call ${abiReturnType(ownReturn)} @$fn($callArgs)")
                 out.appendLine("  ret $ret ${converted(result, ownReturn, m.returnType)}")
             }
-            sb.append(out)
+            sb.append(out.toString())
             out = saved
         }
         sb.appendLine("default:")
@@ -7400,6 +7468,12 @@ allocate:
 
     /** What each function does with the arrays it is given (see [checkSharedElements]). */
     private var elementReads = ElementReads(emptyList())
+
+    /** The spec type ids the last [generate] gave its implementers. */
+    fun typeIds(): Map<String, Int> = LinkedHashMap(specTypeIds)
+
+    /** What the last [generate]'s function [name] reads of its array parameters; null for one it did not define. */
+    fun elementReadsOf(name: String): Set<Int>? = elementReads.readersOf(name)
 
     /** Set while an argument is converted for a parameter whose callee reads only its length. */
     private var lengthOnlyArgument = false

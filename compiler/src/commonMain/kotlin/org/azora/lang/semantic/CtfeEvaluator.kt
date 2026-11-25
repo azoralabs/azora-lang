@@ -191,6 +191,8 @@ class CtfeEvaluator(private val table: SymbolTable) {
 
         // Phase B: Resolve inline constructs inside function bodies
         fun foldDecl(decl: org.azora.lang.frontend.FuncDecl): org.azora.lang.frontend.FuncDecl {
+            // A precompiled member with no defaults has nothing left to fold here.
+            if (decl.precompiled && decl.params.none { it.defaultValue != null }) return decl
             inlineEnv.clear()
             inlineEnv.putAll(seedConstants)
             inlineEnv.putAll(topLevelEnv)
@@ -204,6 +206,9 @@ class CtfeEvaluator(private val table: SymbolTable) {
                 if (defaultChanged) changed = true
                 param.copy(defaultValue = foldedDefault)
             }
+            // A precompiled member's body was folded when its package was
+            // compiled; its defaults are folded again because callers run them.
+            if (decl.precompiled) return decl.copy(params = newParams)
             shadowConstants(decl.params.map { it.name } + listOf(decl.receiverName), decl.body)
             val (newBody, bodyChanged) = foldBody(decl.body, program, errors)
             if (bodyChanged) changed = true
@@ -220,7 +225,10 @@ class CtfeEvaluator(private val table: SymbolTable) {
             if (item is TopLevel.Solo) {
                 return@map item.copy(methods = item.methods.map(::foldDecl))
             }
-            if (item is TopLevel.Func) {
+            if (item is TopLevel.Func && item.decl.precompiled && item.decl.params.none { it.defaultValue != null }) {
+                // Precompiled, and no defaults: nothing here to fold.
+                item
+            } else if (item is TopLevel.Func) {
                 inlineEnv.clear()
                 // Seed top-level compile-time constants (e.g. exported `std.config`
                 // flags) so they resolve inside function bodies too.
@@ -243,10 +251,14 @@ class CtfeEvaluator(private val table: SymbolTable) {
                         param.copy(defaultValue = foldedDefault)
                     }
                 }
-                shadowConstants(item.decl.params.map { it.name } + listOf(item.decl.receiverName), item.decl.body)
-                val (newBody, bodyChanged) = foldBody(item.decl.body, program, errors)
-                if (bodyChanged) changed = true
-                TopLevel.Func(item.decl.copy(params = newParams, body = newBody))
+                if (item.decl.precompiled) {
+                    TopLevel.Func(item.decl.copy(params = newParams))
+                } else {
+                    shadowConstants(item.decl.params.map { it.name } + listOf(item.decl.receiverName), item.decl.body)
+                    val (newBody, bodyChanged) = foldBody(item.decl.body, program, errors)
+                    if (bodyChanged) changed = true
+                    TopLevel.Func(item.decl.copy(params = newParams, body = newBody))
+                }
             } else if (item is TopLevel.Test) {
                 // Test bodies may contain compile-time constructs (e.g.
                 // `inline assert (reflect<T>).hasAnnot<D>`); fold them too so they

@@ -295,11 +295,58 @@ private fun handleGpu(args: List<String>, check: Boolean) {
     }
 }
 
+// ── azora compile llvm --interface=<dir> ────────────────────────
+
+/**
+ * A package build: the program's parts into [output], with `link.txt` naming
+ * the interface parts to link (`link <path>`) and those to compile now for the
+ * builds after this one (`prepare <path>`). `--interface-sources=a,b` says which
+ * library directories are packages; `--interface-compiler=<id>` is the
+ * compiler's identity for the interface's key.
+ */
+private fun compileOnInterface(root: File, unit: SourceCompilation, args: List<String>, parts: Int, output: File) {
+    val sources = args.filter { it.startsWith("--interface-sources=") }
+        .flatMap { it.substringAfter('=').split(',') }.map { it.trim().trimEnd('/') }.filter { it.isNotEmpty() }
+    val identity = args.firstOrNull { it.startsWith("--interface-compiler=") }?.substringAfter('=') ?: "jvm"
+    root.mkdirs()
+    val store = object : org.azora.lang.PackageBuild.Store {
+        override fun read(path: String): String? = File(root, path).takeIf { it.isFile }?.readText()
+        override fun write(path: String, text: String) {
+            val target = File(root, path)
+            target.parentFile.mkdirs()
+            val temporary = File(target.parentFile, ".${target.name}.${ProcessHandle.current().pid()}")
+            temporary.writeText(text)
+            if (!temporary.renameTo(target)) {
+                temporary.delete()
+                error("cannot write ${target.path}")
+            }
+        }
+        override fun list(directory: String): List<String> =
+            File(root, directory).list()?.filterNot { it.startsWith(".") }?.sorted().orEmpty()
+        override fun remove(path: String) { File(root, path).deleteRecursively() }
+    }
+    val build = org.azora.lang.PackageBuild(store, "jvm $identity") { library ->
+        sources.any { library.path == it || library.path.startsWith("$it/") }
+    }
+    val (outcome, failure) = build.compile(unit.source, unit.libraries, parts, parseDefines(args), release = true)
+    if (failure != null || outcome == null) {
+        failure?.errors?.forEach { System.err.println(it) }
+        exitProcess(ExitStatus.COMPILE_ERROR)
+    }
+    output.mkdirs()
+    for (part in outcome.parts) File(output, part.name).writeText(part.text)
+    File(output, "link.txt").writeText(
+        outcome.link.joinToString("") { "link ${File(root, it).absolutePath}\n" } +
+            outcome.prepare.joinToString("") { "prepare ${File(root, it).absolutePath}\n" },
+    )
+    outcome.notes.forEach { System.err.println("azora: $it") }
+}
+
 // ── azora compile <target> <file.az> ────────────────────────────
 
 private fun handleCompile(args: List<String>) {
     if (args.size < 2) {
-        exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [--export=a,b] [-o <file>] <file.az>")
+        exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [--export=a,b] [--parts=N [--interface=<dir> --interface-sources=a,b]] [-o <file>] <file.az>")
     }
 
     val target = args[0]
@@ -314,7 +361,7 @@ private fun handleCompile(args: List<String>) {
     val outPath = if (outIndex >= 0) args.getOrNull(outIndex + 1) ?: exitWith(ExitStatus.USAGE, "-o needs a file") else null
     val filePath = args.withIndex().drop(1)
         .firstOrNull { (i, arg) -> !arg.startsWith("-") && (outIndex < 0 || i != outIndex + 1) }?.value
-        ?: exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [--export=a,b] [-o <file>] <file.az>")
+        ?: exitWith(ExitStatus.USAGE, "Usage: azora compile <wasm|llvm|ir|ast> [--debug] [--file-only] [--export=a,b] [--parts=N [--interface=<dir> --interface-sources=a,b]] [-o <file>] <file.az>")
     val file = File(filePath)
     if (!file.exists()) exitWith(ExitStatus.USAGE, "File not found: $filePath")
 
@@ -323,6 +370,17 @@ private fun handleCompile(args: List<String>) {
     val exports = args.filter { it.startsWith("--export=") }.flatMap { it.substringAfter('=').split(',') }
         .map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     val unit = resolveCompilation(file)
+    // `--interface=<dir>`: build on the packages' interface kept there (see
+    // PackageBuild), writing the program's parts to `-o` and, beside them, which
+    // of the interface's parts to link.
+    args.firstOrNull { it.startsWith("--interface=") }?.let { option ->
+        val parts = args.firstOrNull { it.startsWith("--parts=") }?.substringAfter('=')?.toIntOrNull()?.takeIf { it >= 1 }
+        if (target !in setOf("llvm", "ll") || outPath == null || parts == null || debug || exports.isNotEmpty()) {
+            exitWith(ExitStatus.USAGE, "--interface builds the llvm target as --parts=N into the directory -o names")
+        }
+        compileOnInterface(File(option.substringAfter('=')), unit, args, parts, File(outPath))
+        return
+    }
     val result = Compiler(unit.libraries, exports = exports).compile(unit.source, release = !debug, defines = parseDefines(args))
     when (result) {
         is CompilationResult.Success -> {
@@ -344,7 +402,19 @@ private fun handleCompile(args: List<String>) {
                 "ast" -> result.ast.dumpTree()
                 else -> exitWith(ExitStatus.USAGE, "Unknown target: $target (use wasm, llvm, ir, or ast)")
             }
+            // `--parts=N`: the LLVM module as N parts and the program's variables,
+            // each a file in the directory `-o` names, for a build that keeps the
+            // object of every part an edit did not change (see LlvmUnits).
+            val parts = args.firstOrNull { it.startsWith("--parts=") }?.substringAfter('=')?.let {
+                it.toIntOrNull()?.takeIf { n -> n >= 1 } ?: exitWith(ExitStatus.USAGE, "--parts needs a whole number of at least 1")
+            }
             when {
+                parts != null -> {
+                    if (backend != "llvm" || outPath == null) exitWith(ExitStatus.USAGE, "--parts splits the llvm target into the directory -o names")
+                    val directory = File(outPath)
+                    directory.mkdirs()
+                    for (part in org.azora.lang.backend.LlvmUnits.split(output, parts)) File(directory, part.name).writeText(part.text)
+                }
                 outPath == null -> println(output)
                 backend == "wasm" && outPath.endsWith(".wasm") -> {
                     val binary = try {
@@ -651,7 +721,15 @@ private fun printUsage() {
           compile <target> <file.az>    Output generated code (-o <file>; for wasm,
                                         a .wasm file is the binary, with <name>.host.js;
                                         --export=a,b builds a library exporting those
-                                        functions under their own names)
+                                        functions under their own names;
+                                        --parts=N -o <dir> writes llvm as N parts
+                                        and globals.ll, to compile one by one;
+                                        with --interface=<dir>
+                                        --interface-sources=a,b, the packages
+                                        in those directories are compiled once
+                                        into an interface kept in <dir>, and
+                                        link.txt beside the parts names the
+                                        interface's parts to link)
           check <file.az>               Check CPU code or an @Execution("GPU") module
           compile <metallib|spv|dxil> <file.az>
                                         Build a GPU shader (-o, --entry, --profile)

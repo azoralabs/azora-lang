@@ -1348,6 +1348,11 @@ data class IrFunction(
      * temporary, and a spread hands on an array its caller still owns.
      */
     val variadicParam: Int? = null,
+    /**
+     * Compiled into a package interface already: [body] is empty, and a backend
+     * declares the function, whose code the interface's objects supply.
+     */
+    val isPrecompiled: Boolean = false,
 ) {
     /** Pretty-prints this function as Azora IR text. */
     fun prettyPrint(sb: StringBuilder, indent: Int) {

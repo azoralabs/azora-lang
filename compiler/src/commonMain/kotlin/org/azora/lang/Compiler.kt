@@ -391,6 +391,35 @@ class Compiler(
         reportExperimental = reportExperimental,
     )
 
+    /**
+     * Compiles [source] for a [PackageBuild]: the packages alone, a program on
+     * their interface, or the whole program reporting what it reached - as
+     * [context] says. Only the LLVM target is generated.
+     */
+    internal fun compileWithContext(
+        source: String,
+        defines: Map<String, String>,
+        release: Boolean,
+        context: InterfaceContext?,
+    ): CompilationResult = compileLegacy(
+        SourceUnit(
+            id = SourceId("memory-main"),
+            uri = "azora-memory:/main.az",
+            displayPath = "<memory>",
+            text = source,
+            version = null,
+            kind = SourceKind.VIRTUAL,
+        ),
+        warningsAsErrors = false,
+        release = release,
+        debug = false,
+        defines = defines,
+        generateBackends = true,
+        reportUnreachableLibraryWarnings = true,
+        reportExperimental = false,
+        interfaceContext = context ?: InterfaceContext(),
+    )
+
     /** Analyze immutable source snapshots without running either backend. */
     fun analyze(request: AnalysisRequest): AnalysisSnapshot {
         val byId = request.sources.associateBy { it.id }
@@ -524,9 +553,13 @@ class Compiler(
         generateBackends: Boolean,
         reportUnreachableLibraryWarnings: Boolean,
         reportExperimental: Boolean,
+        /** Set when a [PackageBuild] compiles; see [InterfaceContext]. */
+        interfaceContext: InterfaceContext? = null,
     ): CompilationResult {
 
         val source = sourceUnit.text
+        val packages = interfaceContext?.packages
+        val use = interfaceContext?.use
 
         // Clear per-compilation state
         org.azora.lang.frontend.Parser.resetFragmentMacros()
@@ -544,6 +577,10 @@ class Compiler(
             // version marker - is something the user can fix, so it is reported
             // like any other compilation failure rather than thrown at them.
             return CompilationResult.Failure(listOf(error.message ?: "standard library unavailable"))
+        }
+        if (packages != null) {
+            libraries.shadowedByProgram = packages.shadowed
+            libraries.rootDeclarations = packages.roots
         }
 
         // ===============================================================
@@ -567,6 +604,13 @@ class Compiler(
             return CompilationResult.Failure(listOf(error.message ?: "frontend parsing failed"))
         } catch (error: IllegalArgumentException) {
             return CompilationResult.Failure(listOf(error.message ?: "frontend parsing failed"))
+        }.let { parsedProgram ->
+            // Compiling the packages for a program keeps only the program's
+            // imports of them: the names they make nameable are what the
+            // packages' declarations are called by (see StdlibInjector).
+            if (packages == null) parsedProgram else parsedProgram.copy(
+                items = parsedProgram.items.mapNotNull { item -> packageImports(item, packages.programModules) },
+            )
         }
 
         // 2a. Debug builds: instrument statements with `__dbg(line)` markers so a
@@ -670,6 +714,7 @@ class Compiler(
         // 2b-bis. Unroll `inline for X in reflect<*>.withAnnot<D>` loops now that the
         // whole program (all modules' decorated types) is visible. Generic: the
         // compiler attaches no meaning to any decorator.
+        if (packages != null) interfaceContext.enumerating = ReflectDecoExpander.enumerating(injected)
         val reflected = ReflectDecoExpander.expand(injected)
 
         // 2c. Expand `meta` macros: rewrite every `Expr.MetaInvoke` into its
@@ -754,8 +799,16 @@ class Compiler(
         // substitutes and what `T.typeName` reads.
         // A pack whose type parameter is bounded by `Hash`/`Equal` carries that
         // parameter's descriptor; see [Witnesses].
+        // On a package interface, what it compiled is marked so analysis and
+        // code generation leave those bodies alone (FuncDecl.precompiled).
+        fun precompiledMarked(program: Program): Program {
+            if (use == null) return program
+            val (marked, names) = PackageInterface.mark(program, use.lowered.keys)
+            interfaceContext.marked = interfaceContext.marked + names
+            return marked
+        }
         var semantic = SemanticPipeline().analyze(
-            InferredTypeArgs.apply(Witnesses.addDescriptorFields(ast)),
+            InferredTypeArgs.apply(Witnesses.addDescriptorFields(precompiledMarked(ast))),
             defines = defines,
             retainSemanticFacts = !generateBackends,
             userCode = userCode,
@@ -775,7 +828,7 @@ class Compiler(
             )
             if (specialized.errors.isNotEmpty()) return CompilationResult.Failure(specialized.errors)
             semantic = SemanticPipeline().analyze(
-                InferredTypeArgs.apply(Witnesses.addDescriptorFields(specialized.program)),
+                InferredTypeArgs.apply(Witnesses.addDescriptorFields(precompiledMarked(specialized.program))),
                 defines = defines,
                 retainSemanticFacts = !generateBackends,
                 userCode = userCode,
@@ -879,19 +932,58 @@ class Compiler(
         // written, which is what the annotation promises. Done after analysis, so
         // what is spliced has already been checked where it was written.
         val inlined = InlineCallables.apply(semantic.program)
-        val generated = try {
-            IrGenerator(semantic.symbolTable).generate(inlined)
+        val generator = IrGenerator(
+            semantic.symbolTable,
+            use?.witnesses.orEmpty(),
+            use?.witnessDispatchers.orEmpty(),
+            use?.ownership ?: org.azora.lang.ir.OwnershipCleanup.Facts(),
+        )
+        val lowered = try {
+            generator.generate(inlined)
         } catch (e: WitnessError) {
             return CompilationResult.Failure(listOf(e.message.orEmpty()))
+        }
+        if (interfaceContext != null) {
+            interfaceContext.injected = libraries.injectedDeclarations.toSet()
+            interfaceContext.naming = libraries.injectedIdentities.toMap()
+            interfaceContext.functionNames = generator.functionNames.toMap()
+            interfaceContext.witnessTable = generator.witnessTable()
+            interfaceContext.witnessDispatchers = generator.witnessDispatcherNames()
+            interfaceContext.ownership = generator.ownershipFacts
+        }
+        // On a package interface, every function it compiled - marked in the
+        // tree or generated again here - is declared, not defined.
+        val generated = if (use == null) lowered else {
+            for (name in interfaceContext.marked) {
+                val canonical = generator.functionNames[name] ?: continue
+                if (canonical !in use.functions) interfaceContext.mismatch = "'$name' is lowered as '$canonical', which the interface does not hold"
+            }
+            lowered.copy(items = lowered.items.map { item ->
+                val function = (item as? IrTopLevel.Func)?.function
+                when {
+                    function == null -> item
+                    function.name in use.functions && !org.azora.lang.backend.LlvmUnits.isCopied(function.name) ->
+                        IrTopLevel.Func(function.copy(body = emptyList(), isPrecompiled = true))
+                    function.isPrecompiled -> {
+                        interfaceContext.mismatch = "'${function.name}' was marked precompiled, but the interface does not hold it"
+                        item
+                    }
+                    else -> item
+                }
+            })
         }
         // The library members the program never reaches leave in every mode; the
         // program's own code stays as written until a release build shakes it.
         val (exported, exportErrors) = resolveExports(generated)
         if (exportErrors.isNotEmpty()) return CompilationResult.Failure(exportErrors)
-        val ir = IrOptimizer(exported.values.toSet()).shakeLibrary(generated)
+        // A package interface's compile keeps what its programs reached; a
+        // program on one also keeps what the interface's code needs of it.
+        val roots = exported.values.toSet() + packages?.keep.orEmpty()
+        val demands = use?.demands.orEmpty()
+        val ir = IrOptimizer(roots, demands).shakeLibrary(generated)
 
         // 10. IR optimization passes (release mode only)
-        val optimizedIr = if (release) IrOptimizer(exported.values.toSet()).optimize(ir) else ir
+        val optimizedIr = if (release) IrOptimizer(roots, demands).optimize(ir) else ir
 
         // ===============================================================
         // Phase 4 - Backend (uses optimized IR in release, raw IR in debug)
@@ -904,12 +996,23 @@ class Compiler(
         // than failing the whole compilation, so the interpreter and other targets
         // remain usable.
         val backendErrors = linkedMapOf<String, String>()
-        val wasm = if (!generateBackends) "" else try { WasmCodegen().generate(backendIr) }
+        // A package build wants LLVM parts only.
+        val wasm = if (!generateBackends || interfaceContext != null) "" else try { WasmCodegen().generate(backendIr) }
             catch (e: IllegalStateException) { backendErrors["wasm"] = e.message ?: "unsupported operation"; "" }
 
         // 12. IR → LLVM IR
-        val llvm = if (!generateBackends) "" else try { LlvmCodegen(library = exports.isNotEmpty(), exports = exported).generate(backendIr) }
+        val llvmCodegen = LlvmCodegen(
+            library = exports.isNotEmpty(),
+            exports = exported,
+            interfaceTypeIds = use?.typeIds.orEmpty(),
+            interfaceElementReads = use?.elementReads.orEmpty(),
+        )
+        val llvm = if (!generateBackends) "" else try { llvmCodegen.generate(backendIr) }
             catch (e: IllegalStateException) { backendErrors["llvm"] = e.message ?: "unsupported operation"; "" }
+        if (interfaceContext != null) {
+            interfaceContext.typeIds = llvmCodegen.typeIds()
+            interfaceContext.elementReads = llvmCodegen::elementReadsOf
+        }
 
         return CompilationResult.Success(
             wasm,
@@ -923,5 +1026,19 @@ class Compiler(
             backendErrors = backendErrors,
             semanticFacts = facts,
         )
+    }
+
+    /**
+     * [item] as compiling the packages alone keeps it: an import of what is not
+     * one of [programModules] (the program's own), and nothing else.
+     */
+    private fun packageImports(item: org.azora.lang.frontend.TopLevel, programModules: Set<String>): org.azora.lang.frontend.TopLevel? {
+        if (item !is org.azora.lang.frontend.TopLevel.UseImport) return null
+        fun programs(path: String) = programModules.any { path == it || path.startsWith("$it.") || path.startsWith("$it::") }
+        val leaves = item.importSpecs
+        if (leaves.none { programs(it.path) }) return item
+        val kept = leaves.filterNot { programs(it.path) }
+        if (kept.isEmpty()) return null
+        return item.copy(specs = kept)
     }
 }

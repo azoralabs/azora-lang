@@ -55,6 +55,76 @@ import org.azora.lang.frontend.TypeRef
  */
 object ReflectDecoExpander {
 
+    /**
+     * The functions of [program] whose code depends on what the whole program
+     * declares: each that unrolls a `reflect<*>.withAnnot<D>` loop, and each
+     * that calls an `inline` one that does (whose body it takes in). Read
+     * before [expand], by the names they are lowered under (top-level
+     * functions by name, members as `memberSymbol` spells them).
+     *
+     * A package interface compiles its functions without the program that
+     * will use them, so it leaves these to that program: the declarations
+     * they enumerate are only all known there.
+     */
+    fun enumerating(program: Program): Set<String> {
+        class Code(val name: String, val inline: Boolean, val body: List<Stmt>, val memberName: String?)
+        val overloaded = program.items.filterIsInstance<TopLevel.Impl>()
+            .filter { org.azora.lang.ir.ctorCount(it.methods.map { m -> m.name }) > 1 }
+            .mapTo(HashSet()) { it.typeName }
+        val code = ArrayList<Code>()
+        for (item in program.items) {
+            when (item) {
+                is TopLevel.Func -> code += Code(item.decl.name, item.decl.isInline, item.decl.body, null)
+                is TopLevel.Impl -> item.methods.forEach {
+                    code += Code(org.azora.lang.ir.memberSymbol(item.typeName, it, item.typeName in overloaded), it.isInline, it.body, it.name)
+                }
+                is TopLevel.Solo -> item.methods.forEach {
+                    code += Code(org.azora.lang.ir.memberSymbol(item.name, it, false), it.isInline, it.body, it.name)
+                }
+                else -> {}
+            }
+        }
+        val enumerates = HashSet<String>()
+        val calls = HashMap<String, Set<String>>()
+        for (entry in code) {
+            var unrolls = false
+            val called = HashSet<String>()
+            object : AstMapper() {
+                override fun expandStmt(s: Stmt): List<Stmt> {
+                    if (withAnnotName(s) != null) unrolls = true
+                    return super.expandStmt(s)
+                }
+
+                override fun expr(e: Expr): Expr {
+                    when (e) {
+                        is Expr.Call -> called += e.callee
+                        is Expr.MethodCall -> called += e.name
+                        else -> {}
+                    }
+                    return super.expr(e)
+                }
+            }.stmts(entry.body)
+            if (unrolls) enumerates += entry.name
+            calls[entry.name] = called
+        }
+        // An inline function's body is taken in where it is called, by the
+        // name it is called by: its own, or the member's.
+        var grew = true
+        while (grew) {
+            grew = false
+            val inlineNames = code.filter { it.inline && it.name in enumerates }
+                .flatMapTo(HashSet()) { listOfNotNull(it.name, it.memberName) }
+            for (entry in code) {
+                if (entry.name in enumerates) continue
+                if (calls[entry.name].orEmpty().any { it in inlineNames }) {
+                    enumerates += entry.name
+                    grew = true
+                }
+            }
+        }
+        return enumerates
+    }
+
     fun expand(program: Program): Program {
         val decoratedByName = HashMap<String, MutableList<String>>()
         for (item in program.items) {

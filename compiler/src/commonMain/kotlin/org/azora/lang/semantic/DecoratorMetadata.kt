@@ -40,8 +40,28 @@ object DecoratorMetadata {
         val directApplication: Annotation?,
     )
 
+    /**
+     * What [collectSites] and the decorator index make of one program, kept for
+     * the program they were made from: a reflection loop asks about each
+     * declaration it binds, and collecting every site of a large program for
+     * each question was most of the loop's unrolling.
+     */
+    private class Index(val items: List<TopLevel>, val size: Int, program: Program) {
+        val sites: Map<String, Site> = collectSites(program).associateBy { it.identity }
+        val decorators: Map<String, TopLevel.Deco> = program.items.filterIsInstance<TopLevel.Deco>().associateBy { it.name }
+        val impls: List<TopLevel.Impl> = program.items.filterIsInstance<TopLevel.Impl>()
+    }
+
+    /** The last program's [Index]; read once per question, so a concurrent caller at worst makes its own. */
+    private var lastIndex: Index? = null
+
+    private fun index(program: Program): Index {
+        lastIndex?.let { if (it.items === program.items && it.size == program.items.size) return it }
+        return Index(program.items, program.items.size, program).also { lastIndex = it }
+    }
+
     fun findSite(receiver: Expr, typeBindings: Map<String, String>, program: Program): Site? {
-        val sites = collectSites(program).associateBy { it.identity }
+        val sites = index(program).sites
         val rawIdentity = expressionIdentity(receiver)
         val identity = if (rawIdentity != null && rawIdentity.contains("__") && rawIdentity !in sites) {
             "${rawIdentity.substringBeforeLast("__")}.${rawIdentity.substringAfterLast("__")}"
@@ -55,7 +75,8 @@ object DecoratorMetadata {
     }
 
     fun findApplied(site: Site, decoratorName: String, program: Program): Applied? {
-        val decorators = program.items.filterIsInstance<TopLevel.Deco>().associateBy { it.name }
+        val index = index(program)
+        val decorators = index.decorators
         val requested = decorators[decoratorName] ?: return null
         if (!allows(requested.targets, site.target)) return null
 
@@ -72,7 +93,7 @@ object DecoratorMetadata {
         data class RootApplication(val name: String, val annotation: Annotation?)
         val applications = buildList {
             site.annotations.forEach { add(RootApplication(it.name, it)) }
-            program.items.filterIsInstance<TopLevel.Impl>()
+            index.impls
                 .filter { implementationTargetsSite(it.typeName, site) && it.methods.isEmpty() }
                 .filter { it.traitName in decorators }
                 .forEach { impl ->

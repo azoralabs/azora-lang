@@ -26,9 +26,24 @@ package org.azora.lang.ir
  * one stable spelling to consume.
  */
 internal object IrSymbolCanonicalizer {
-    fun canonicalize(program: IrProgram, typeNamespaces: Map<String, String>): IrProgram {
+    /**
+     * [program] with canonical names. [functionNames], when given, receives each
+     * function's name before and after: a package interface records the names
+     * its functions had in the tree, where a program marks what it can skip.
+     */
+    fun canonicalize(
+        program: IrProgram,
+        typeNamespaces: Map<String, String>,
+        functionNames: MutableMap<String, String>? = null,
+    ): IrProgram {
         val canonicalizer = Canonicalizer(program, typeNamespaces)
-        return canonicalizer.program(program)
+        val result = canonicalizer.program(program)
+        if (functionNames != null) {
+            program.items.zip(result.items).forEach { (before, after) ->
+                if (before is IrTopLevel.Func && after is IrTopLevel.Func) functionNames[before.function.name] = after.function.name
+            }
+        }
+        return result
     }
 
     private class Canonicalizer(

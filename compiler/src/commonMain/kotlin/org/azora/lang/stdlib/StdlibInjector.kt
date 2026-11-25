@@ -1698,30 +1698,8 @@ class StdlibInjector private constructor(
     }
 
     /** Names declared at the top level of the user [program] (these shadow the stdlib). */
-    private fun userDeclaredNames(program: Program): Set<String> {
-        val names = mutableSetOf<String>()
-        for (item in program.items) {
-            when (item) {
-                is TopLevel.Func -> names.add(item.decl.name)
-                is TopLevel.FinDecl -> names.add(item.name)
-                is TopLevel.LetDecl -> names.add(item.name)
-                is TopLevel.VarDecl -> names.add(item.name)
-                is TopLevel.Pack -> names.add(item.name)
-                is TopLevel.Enum -> names.add(item.name)
-                is TopLevel.Fail -> names.add(item.name)
-                is TopLevel.Deco -> names.add(item.name)
-                is TopLevel.Spec -> names.add(item.name)
-                is TopLevel.Slot -> names.add(item.name)
-                is TopLevel.Bridge -> {
-                    item.funcs.forEach { names.add(it.localName ?: it.name) }
-                    item.values.forEach { names.add(it.name) }
-                }
-                is TopLevel.Meta -> names.add(item.name)
-                else -> {}
-            }
-        }
-        return names
-    }
+    private fun userDeclaredNames(program: Program): Set<String> = programDeclaredNames(program)
+
 
     /**
      * Returns [program] with every bundled-library item it references appended.
@@ -1738,6 +1716,26 @@ class StdlibInjector private constructor(
      * [roots] are names a library build exports (`compile --export`): nothing
      * in the program may call them, yet they belong in it.
      */
+    /**
+     * Names a program declares that it is not given to compile here: a package
+     * interface is compiled without the program that will use it, and a library
+     * declaration that program's own shadows takes its module's identity there
+     * (see [identifiedDeclarations]) - so it must here too.
+     */
+    var shadowedByProgram: Set<String> = emptySet()
+
+    /**
+     * Library declarations to inject whether or not anything names them, as
+     * `module` to `name`: what a package interface compiles for a program.
+     */
+    var rootDeclarations: Set<Pair<String, String>> = emptySet()
+
+    /** Every library declaration (not an `impl`) any [inject] brought in, as `module::name`. */
+    val injectedDeclarations = LinkedHashSet<String>()
+
+    /** `module::name` → the name that declaration has in the program, for each [inject] brought in. */
+    val injectedIdentities = LinkedHashMap<String, String>()
+
     fun inject(program: Program, roots: Set<String> = emptySet()): Program {
         if (
             index.items.isEmpty() &&
@@ -1748,7 +1746,7 @@ class StdlibInjector private constructor(
 
         val importedTypeFunctions = index.alwaysTypeFunctions + importedTypeFunctions(program)
 
-        val shadowed = userDeclaredNames(program) - program.injectedNames
+        val shadowed = userDeclaredNames(program) - program.injectedNames + shadowedByProgram
         val reachable = reachableModules(program)
 
         val visible = LinkedHashMap<String, TopLevel>().apply {
@@ -1757,8 +1755,14 @@ class StdlibInjector private constructor(
         }
 
         val referenced = mutableSetOf<String>()
+        // What the program's items name, in the order first named: read once,
+        // for the walk here and for the qualified type functions below.
+        val programNames = mutableSetOf<String>()
         for (item in program.items) {
-            collectNamesFromItem(item, referenced)
+            val names = mutableSetOf<String>()
+            collectNamesFromItem(item, names)
+            referenced.addAll(names)
+            programNames.addAll(names)
             // A user macro may expand directly to an imported scope macro. Its
             // template is part of the user's dependency graph even though
             // bundled macro templates remain lazy to avoid pulling every
@@ -1790,7 +1794,7 @@ class StdlibInjector private constructor(
         // in the library module whose declaration contains it, which names what
         // that module declares and imports whatever the program declares.
         val walk = Walk(reachable, program.moduleName)
-        var frontier = referenced.map { Ref(it, null) }
+        var frontier = referenced.map { Ref(it, null) } + rootDeclarations.map { (module, name) -> Ref(name, module) }
         val bodyImports = bodyImportBlocks(program)
         frontier = frontier + seedBodyImports(bodyImports, walk)
         val fileTypeMacros = importedTypeMacros(program)
@@ -1841,6 +1845,9 @@ class StdlibInjector private constructor(
             }
         }
         val injected = walk.injected
+        for ((key, item) in injected) {
+            if (item !is TopLevel.Impl && walk.moduleOf[key] != null) injectedDeclarations += key
+        }
         val injectedExterns = walk.externs
         // What blocks import at the type level, the program's and the libraries'.
         val blockTypeLevels = bodyImports.values.flatten().map { it.typeLevel }
@@ -1856,13 +1863,13 @@ class StdlibInjector private constructor(
         // Resolve those dependencies without making them visible merely because
         // user source mentioned an unimported type-function name.
         val dependencyNames = mutableSetOf<String>()
-        injected.values.forEach { collectNamesFromItem(it, dependencyNames) }
+        // What each injected declaration names was read when it was added.
+        injected.keys.forEach { key -> dependencyNames.addAll(walk.namesOf.getValue(key)) }
         alwaysInjected.forEach { collectNamesFromItem(it, dependencyNames) }
         val dependencyTypeFunctions = dependencyNames.flatMap { name ->
             index.typeFunctionsByName[name].orEmpty()
         }
-        val userTypeNames = mutableSetOf<String>()
-        program.items.forEach { collectNamesFromItem(it, userTypeNames) }
+        val userTypeNames = programNames
         val fullyQualifiedTypeFunctions = userTypeNames
             .filter(ModuleQualifiedSymbol::isQualified)
             .flatMap { encodedName ->
@@ -2017,9 +2024,19 @@ class StdlibInjector private constructor(
      * not yet brought in.
      */
     private fun enumeratedDeclarations(program: Program, walk: Walk): List<Ref> {
-        val decorators = linkedSetOf<String>()
-        enumeratedDecorators(program.items, decorators)
-        enumeratedDecorators(walk.injected.values, decorators)
+        // Each item is read once: the program's on the first call, then each
+        // declaration the walk has brought in since. The set keeps the order a
+        // full read would give - the program's loops first, then the injected
+        // ones in the order they came - so the walk does too.
+        val decorators = walk.enumerated
+        if (!walk.programEnumerated) {
+            enumeratedDecorators(program.items, decorators)
+            walk.programEnumerated = true
+        }
+        if (walk.enumeratedThrough < walk.injected.size) {
+            enumeratedDecorators(walk.injected.values.drop(walk.enumeratedThrough), decorators)
+            walk.enumeratedThrough = walk.injected.size
+        }
         val refs = mutableListOf<Ref>()
         for (decorator in decorators) {
             for ((module, name) in index.annotatedBy[decorator].orEmpty()) {
@@ -2033,6 +2050,13 @@ class StdlibInjector private constructor(
 
     private inner class Walk(val reachable: Set<String>, val ownModule: String? = null) {
         val injected = LinkedHashMap<String, TopLevel>()
+        /** The decorators `withAnnot` loops enumerate, as far as [enumeratedDeclarations] has read. */
+        val enumerated = linkedSetOf<String>()
+        var programEnumerated = false
+        /** How many of [injected] [enumeratedDeclarations] has read. */
+        var enumeratedThrough = 0
+        /** What each of [injected] names, in the order it names them. */
+        val namesOf = HashMap<String, Set<String>>()
         val moduleOf = HashMap<String, String?>()
         /** module → name → the identity that name resolved to there. */
         val bindings = HashMap<String, MutableMap<String, String>>()
@@ -2057,6 +2081,7 @@ class StdlibInjector private constructor(
             moduleOf[key] = module
             val names = mutableSetOf<String>()
             collectNamesFromItem(item, names)
+            namesOf[key] = names
             names.forEach { next.add(Ref(it, module)) }
             if (module != null) bindLibraryBlockImports(item, module, this, next)
         }
@@ -2163,7 +2188,9 @@ class StdlibInjector private constructor(
             DeclarationRenamer(renames[module].orEmpty(), bodyImports = blockRenames[module].orEmpty())
         }
         val identified = walk.injected.map { (key, item) ->
-            item to (walk.moduleOf[key]?.let { renamers[it] }?.item(item) ?: item)
+            val renamed = walk.moduleOf[key]?.let { renamers[it] }?.item(item) ?: item
+            if (item !is TopLevel.Impl && walk.moduleOf[key] != null) declaredNameOf(renamed)?.let { injectedIdentities[key] = it }
+            item to renamed
         }
         return Identified(identified, hidden, renamers)
     }
@@ -2319,26 +2346,37 @@ class StdlibInjector private constructor(
         // program-reachability rule above.
         val scopeImports = scope?.let(::importedModulesOf).orEmpty()
         for (keyName in keys) {
-            index.implsByType[keyName]?.filter { impl ->
+            val impls = index.implsByType[keyName] ?: continue
+            val implKeys = implKeysByType.getOrPut(keyName) { impls.map(::implKey) }
+            for ((at, impl) in impls.withIndex()) {
                 // An impl on a widely-used type (`Int`, `String`) must not arrive
                 // just because the program mentions that type: a unit-suffix
                 // extension in an unimported module would otherwise drag its whole
                 // module's transitive closure into every program. A module the
                 // program cannot see contributes nothing it could have called.
-                (impl.declaringModule == null || impl.declaringModule in walk.reachable || impl.declaringModule == home ||
+                val attached = (impl.declaringModule == null || impl.declaringModule in walk.reachable || impl.declaringModule == home ||
                     (scope != null && impl.isExtension && (impl.declaringModule in scopeImports || impl.declaringModule == scope) &&
                         impl.methods.any { it.name in memberNamesUsedBy(scope) })) &&
                     (type == null || implTarget(impl)?.let { it === type } ?: true)
-            }?.forEach { impl ->
-                // Include the member names: a multi-operator impl (`oper[.. , >..]`)
-                // expands to several impls sharing one source position, so position
-                // alone would collapse them into one.
-                val members = impl.methods.joinToString(",") { it.name }
-                val key = "impl::${impl.declaringModule}::${normalizedTypeName(impl.typeName)}::" +
-                    "${impl.traitName.orEmpty()}::${impl.line}:${impl.column}::$members"
+                if (!attached) continue
+                val key = implKeys[at]
                 if (key !in walk.injected) walk.add(key, impl, impl.declaringModule, next)
             }
         }
+    }
+
+    /** [implKey] of each impl [Index.implsByType] holds under a type name, made once. */
+    private val implKeysByType = HashMap<String, List<String>>()
+
+    /**
+     * An impl's identity in a walk. It includes the member names: a
+     * multi-operator impl (`oper[.. , >..]`) expands to several impls sharing
+     * one source position, so position alone would collapse them into one.
+     */
+    private fun implKey(impl: TopLevel.Impl): String {
+        val members = impl.methods.joinToString(",") { it.name }
+        return "impl::${impl.declaringModule}::${normalizedTypeName(impl.typeName)}::" +
+            "${impl.traitName.orEmpty()}::${impl.line}:${impl.column}::$members"
     }
 
     /** The declaration an impl's module means by the impl's type name. */
@@ -2971,4 +3009,30 @@ class StdlibInjector private constructor(
             is TypeRef.Const -> {}
         }
     }
+}
+
+/** The names [program]'s own top-level declarations take (what shadows a library's). */
+internal fun programDeclaredNames(program: Program): Set<String> {
+    val names = mutableSetOf<String>()
+    for (item in program.items) {
+        when (item) {
+            is TopLevel.Func -> names.add(item.decl.name)
+            is TopLevel.FinDecl -> names.add(item.name)
+            is TopLevel.LetDecl -> names.add(item.name)
+            is TopLevel.VarDecl -> names.add(item.name)
+            is TopLevel.Pack -> names.add(item.name)
+            is TopLevel.Enum -> names.add(item.name)
+            is TopLevel.Fail -> names.add(item.name)
+            is TopLevel.Deco -> names.add(item.name)
+            is TopLevel.Spec -> names.add(item.name)
+            is TopLevel.Slot -> names.add(item.name)
+            is TopLevel.Bridge -> {
+                item.funcs.forEach { names.add(it.localName ?: it.name) }
+                item.values.forEach { names.add(it.name) }
+            }
+            is TopLevel.Meta -> names.add(item.name)
+            else -> {}
+        }
+    }
+    return names
 }

@@ -20,16 +20,35 @@ object OwnershipCleanup {
      * parameters - keep the convention below, where the call site frees a
      * temporary the callee does not keep.
      */
+    /**
+     * What a function's code tells its callers about ownership, by function:
+     * the parameters it keeps, those it hands back, and whether its results
+     * are new allocations ([fresh]). Read from bodies; a package interface's
+     * functions are lowered here without theirs, so their facts are given.
+     */
+    data class Facts(
+        val kept: Map<String, Set<Int>> = emptyMap(),
+        val returned: Map<String, Set<Int>> = emptyMap(),
+        val fresh: Set<String> = emptySet(),
+    )
+
     fun lower(
         program: IrProgram,
         returnsBorrow: (String) -> Boolean = { false },
         transferredByValue: (IrType) -> Boolean = { false },
         copied: (IrType) -> Boolean = { false },
         variadic: (String) -> Boolean = { false },
+        /** Facts for functions whose bodies are elsewhere: those named in [Facts.kept]. */
+        given: Facts = Facts(),
+        /** Receives the facts of every function lowered. */
+        report: ((Facts) -> Unit)? = null,
     ): IrProgram {
         val functions = program.items.filterIsInstance<IrTopLevel.Func>().map { it.function }.associateBy { it.name }
         val fields = program.items.filterIsInstance<IrTopLevel.Struct>().associate { struct -> struct.name to struct.fields.associateBy { it.name } }
-        val context = Context(functions, retainedParameters(functions), fields, copied, freshResults(functions, fields, returnsBorrow, copied), returnsBorrow, transferredByValue, variadic, returnedOnlyParameters(functions))
+        val (kept, returned) = keptAndReturned(functions, given)
+        val fresh = freshResults(functions, fields, returnsBorrow, copied, given)
+        report?.invoke(Facts(kept, returned, fresh))
+        val context = Context(functions, retainedParameters(functions, kept, returned), fields, copied, fresh, returnsBorrow, transferredByValue, variadic, returnedOnlyParameters(functions, kept, returned))
         return program.copy(items = program.items.map { item ->
         when (item) {
             is IrTopLevel.Func -> item.copy(function = item.function.copy(body = Body(
@@ -102,10 +121,12 @@ object OwnershipCleanup {
         fields: Map<String, Map<String, IrField>>,
         returnsBorrow: (String) -> Boolean,
         copied: (IrType) -> Boolean,
+        given: Facts,
     ): Set<String> {
-        val candidates = functions.values.filter { allocates(it.returnType, fields) && !returnsBorrow(it.name) }
+        val candidates = functions.values.filter { allocates(it.returnType, fields) && !returnsBorrow(it.name) && it.name !in given.kept }
         // Optimistic: recursion is assumed fresh until a return says otherwise.
         val fresh = candidates.mapTo(mutableSetOf()) { it.name }
+        fresh += given.fresh.filter { it in functions }
         var changed = true
         while (changed) {
             changed = false
@@ -175,10 +196,11 @@ object OwnershipCleanup {
      * so a kept one must arrive as a value nobody else will free; an erased
      * generic body cannot copy it, so its concrete caller does.
      */
-    private fun retainedParameters(functions: Map<String, IrFunction>): Map<String, Set<Int>> =
-        keptAndReturned(functions).let { (kept, returned) ->
-            functions.keys.associateWith { kept.getValue(it) + returned.getValue(it) }
-        }
+    private fun retainedParameters(
+        functions: Map<String, IrFunction>,
+        kept: Map<String, Set<Int>>,
+        returned: Map<String, Set<Int>>,
+    ): Map<String, Set<Int>> = functions.keys.associateWith { kept.getValue(it) + returned.getValue(it) }
 
     /**
      * The by-value parameters each function only hands back: they reach a
@@ -186,18 +208,23 @@ object OwnershipCleanup {
      * among several - and are stored nowhere else. The call site keeps such a
      * temporary when it is the value returned and frees it otherwise.
      */
-    private fun returnedOnlyParameters(functions: Map<String, IrFunction>): Map<String, Set<Int>> =
-        keptAndReturned(functions).let { (kept, returned) ->
-            functions.keys.associateWith { returned.getValue(it) - kept.getValue(it) }
-        }
+    private fun returnedOnlyParameters(
+        functions: Map<String, IrFunction>,
+        kept: Map<String, Set<Int>>,
+        returned: Map<String, Set<Int>>,
+    ): Map<String, Set<Int>> = functions.keys.associateWith { returned.getValue(it) - kept.getValue(it) }
 
-    private fun keptAndReturned(functions: Map<String, IrFunction>): Pair<Map<String, Set<Int>>, Map<String, Set<Int>>> {
-        val retained = functions.mapValues { mutableSetOf<Int>() }
-        val returnedBy = functions.mapValues { mutableSetOf<Int>() }
+    private fun keptAndReturned(
+        functions: Map<String, IrFunction>,
+        given: Facts,
+    ): Pair<Map<String, Set<Int>>, Map<String, Set<Int>>> {
+        val retained = functions.mapValues { (name, _) -> given.kept[name].orEmpty().toMutableSet() }
+        val returnedBy = functions.mapValues { (name, _) -> given.returned[name].orEmpty().toMutableSet() }
         var changed = true
         while (changed) {
             changed = false
             for (function in functions.values) {
+                if (function.name in given.kept) continue
                 val found = retained.getValue(function.name)
                 val returnedHere = returnedBy.getValue(function.name)
                 val parameters = function.params.withIndex()

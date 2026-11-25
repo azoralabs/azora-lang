@@ -120,7 +120,23 @@ private const val WITNESS_STEP_STUCK = "__witness_step_stuck"
 /** Marks the call a lowered walk makes for that message; never a function of its own. */
 private const val STEP_STUCK_TEXT = "__step_stuck_text"
 
-class IrGenerator(private val table: SymbolTable) {
+class IrGenerator(
+    private val table: SymbolTable,
+    /**
+     * The witness descriptors a package interface's code was compiled with, in
+     * descriptor order, with what each is used for. Its code passes these
+     * numbers to the dispatch functions this program writes, so they keep
+     * their meaning here; the program's other types are numbered after them.
+     */
+    private val interfaceWitnesses: List<Pair<IrType, Set<String>>> = emptyList(),
+    /** The dispatch functions (as lowered, before canonical naming) a package interface's code calls. */
+    private val interfaceWitnessDispatchers: Set<String> = emptySet(),
+    /** What a package interface's functions do with what they are given and return (see [OwnershipCleanup.Facts]). */
+    private val interfaceOwnership: OwnershipCleanup.Facts = OwnershipCleanup.Facts(),
+) {
+    /** The ownership facts of the last [generate]'s functions. */
+    var ownershipFacts = OwnershipCleanup.Facts()
+        private set
     private var typeFunctions = emptyList<TypeFunctionDecl>()
     private var functionDecls = emptyMap<String, FuncDecl>()
     private val generatedTraceFunctions = mutableListOf<IrFunction>()
@@ -610,6 +626,16 @@ class IrGenerator(private val table: SymbolTable) {
      */
     private val constantLiterals = mutableMapOf<String, IrExpr>()
 
+    /** Each function's name as lowered → its canonical IR name, from the last [generate]. */
+    val functionNames = LinkedHashMap<String, String>()
+
+    /** The last [generate]'s witness descriptors, in descriptor order, with what each is used for. */
+    fun witnessTable(): List<Pair<IrType, Set<String>>> =
+        witnessTypes.values.withIndex().map { (id, type) -> type to witnessNeeds[id].orEmpty().toSet() }
+
+    /** The dispatch functions (as lowered) the last [generate]'s code calls. */
+    fun witnessDispatcherNames(): Set<String> = LinkedHashSet(witnessDispatchers)
+
     fun generate(program: Program): IrProgram {
         ctorOverloadedTypes.clear()
         program.items.filterIsInstance<TopLevel.Impl>()
@@ -976,12 +1002,15 @@ class IrGenerator(private val table: SymbolTable) {
                 else -> false
             }
         }
+        functionNames.clear()
         return OwnershipCleanup.lower(
-            IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces),
+            IrSymbolCanonicalizer.canonicalize(lowered, program.scopeTypeNamespaces, functionNames),
             returnsBorrow = { name -> borrowedRef(table.lookupFunction(name)?.returnTypeRef) },
             transferredByValue = transferred,
             copied = copied,
             variadic = { name -> table.lookupFunction(name)?.isVariadic == true },
+            given = interfaceOwnership,
+            report = { ownershipFacts = it },
         )
     }
 
@@ -1113,7 +1142,9 @@ class IrGenerator(private val table: SymbolTable) {
         }
 
         val body = try {
-            inWitnessScope(
+            // A precompiled function keeps its signature and leaves its code
+            // to the package interface it was compiled into.
+            if (func.precompiled) emptyList() else inWitnessScope(
                 scopeBounds,
                 sources,
                 func.typeParams.toSet(),
@@ -1144,6 +1175,7 @@ class IrGenerator(private val table: SymbolTable) {
             isReactive = func.isReactive,
             exclusiveParams = func.params.indices.filter { func.params[it].modifier == ParamModifier.EXCLUSIVE }.toSet(),
             variadicParam = variadicIndex(func.params, symbol.params),
+            isPrecompiled = func.precompiled,
         )
     }
 
@@ -1189,16 +1221,7 @@ class IrGenerator(private val table: SymbolTable) {
     }
 
     private fun lowerMethodInternal(typeName: String, method: FuncDecl): IrFunction {
-        val mangled = if (method.name == "ctor") {
-            ctorSymbol(
-                typeName,
-                method.params.size - method.contextualParams,
-                method.isRepeated,
-                overloaded = ctorOverloadedTypes.contains(typeName),
-            )
-        } else {
-            mangleMethodSymbol("${typeName}_${method.name}")
-        }
+        val mangled = memberSymbol(typeName, method, overloadedCtors = ctorOverloadedTypes.contains(typeName))
         val symbol = table.lookupFunction(mangled)!!
         val previousOwner = currentTraceOwner
         currentTraceOwner = mangled
@@ -1272,7 +1295,9 @@ class IrGenerator(private val table: SymbolTable) {
         val refs = method.params.associate { it.name to it.type } +
             (method.receiverName to TypeRef.Named(typeName, packParams.map { TypeRef.Named(it) }))
         val body = try {
-            inWitnessScope(
+            // A precompiled member keeps its signature - everything above - and
+            // leaves its code to the package interface it was compiled into.
+            if (method.precompiled) emptyList() else inWitnessScope(
                 bounds,
                 sources,
                 packParams.toSet() + method.typeParams,
@@ -1299,6 +1324,7 @@ class IrGenerator(private val table: SymbolTable) {
             isFailable = declaredFailable(method),
             exclusiveParams = symbol.exclusiveParams,
             variadicParam = variadicIndex(method.params, symbol.params),
+            isPrecompiled = method.precompiled,
         )
     }
 
@@ -3021,6 +3047,11 @@ class IrGenerator(private val table: SymbolTable) {
         functionWitnessBounds.clear(); witnessTypes.clear(); witnessNeeds.clear(); witnessDispatchers.clear()
         memberWitnesses.clear(); specMemberWitnesses.clear()
         structuralHelpers.clear()
+        for ((id, entry) in interfaceWitnesses.withIndex()) {
+            witnessTypes[entry.first.toString()] = entry.first
+            if (entry.second.isNotEmpty()) witnessNeeds[id] = entry.second.toMutableSet()
+        }
+        witnessDispatchers.addAll(interfaceWitnessDispatchers)
         witnessBounds = emptyMap(); witnessSources = emptyMap(); scopeTypeParams = emptySet()
         declaredRefs = mutableMapOf(); expectedRef = null; currentReturnRef = null
         for (item in program.items) {

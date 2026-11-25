@@ -27,6 +27,18 @@ TypeRefFailable* makeFailable(Arena& arena, const TypeRef& ok, const std::vector
 inline const char* const TYPE_HOLE = "_";
 bool isHole(const TypeRef& type);
 
+/** Kotlin's LongProgression: first and last as Kotlin computes them, empty or not. */
+struct LongProgression {
+    int64_t first = 1;
+    int64_t last = 0;
+    int64_t step = 1;
+    bool isEmpty() const { return step > 0 ? first > last : first < last; }
+    std::vector<int64_t> values() const;
+};
+
+/** Kotlin `Expr.Range.constantProgression(from, to)`. */
+LongProgression progressionOf(const ExprRange& range, int64_t from, int64_t to);
+
 /** Kotlin `Expr.Range.constantProgression(from, to)`, as its values. */
 std::vector<int64_t> constantProgression(const ExprRange& range, int64_t from, int64_t to);
 

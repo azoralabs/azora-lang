@@ -92,27 +92,29 @@ bool isHole(const TypeRef& type) {
     return n != nullptr && n->name == TYPE_HOLE;
 }
 
-std::vector<int64_t> constantProgression(const ExprRange& range, int64_t from, int64_t to) {
+std::vector<int64_t> LongProgression::values() const {
     std::vector<int64_t> out;
-    if (range.descending && from <= to) return out;
-    if (range.descending) {
-        // (from - 1) downTo to
-        for (int64_t v = from - 1;; v--) {
-            out.push_back(v);
-            if (v == to) break;
-        }
-        return out;
+    if (isEmpty()) return out;
+    for (int64_t v = first;; v += step) {
+        out.push_back(v);
+        if (v == last) break;
     }
-    if (range.inclusive) {
-        if (from > to) return out;
-        for (int64_t v = from;; v++) {
-            out.push_back(v);
-            if (v == to) break;
-        }
-        return out;
-    }
-    for (int64_t v = from; v < to; v++) out.push_back(v);
     return out;
+}
+
+LongProgression progressionOf(const ExprRange& range, int64_t from, int64_t to) {
+    // LongRange.EMPTY is 1..0.
+    if (range.descending && from <= to) return LongProgression{1, 0, 1};
+    // (from - 1) downTo to: last is `to` when the span is not empty.
+    if (range.descending) return LongProgression{from - 1, to, -1};
+    if (range.inclusive) return LongProgression{from, to, 1};
+    // from until to
+    if (to == INT64_MIN) return LongProgression{1, 0, 1};
+    return LongProgression{from, to - 1, 1};
+}
+
+std::vector<int64_t> constantProgression(const ExprRange& range, int64_t from, int64_t to) {
+    return progressionOf(range, from, to).values();
 }
 
 std::string numericValueText(const NumericLiteral& literal) {

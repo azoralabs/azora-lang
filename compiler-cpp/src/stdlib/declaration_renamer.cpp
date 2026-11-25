@@ -26,18 +26,380 @@ DeclarationRenamer::Scope withTypes(const DeclarationRenamer::Scope& scope, cons
 
 }  // namespace
 
-std::vector<TopLevelUseImport*> writtenImports(Arena& arena, const Program& program) {
+std::vector<TopLevelUseImport*> writtenImports(Arena&, const Program& program) {
     std::vector<TopLevelUseImport*> imports;
     for (const TopLevel& item : program.items) {
         if (TopLevelUseImport* use = as<TopLevelUseImport>(item)) imports.push_back(use);
     }
-    DeclarationRenamer collector(arena, {}, {}, [&](const std::vector<StmtImport*>& found, const std::vector<Stmt>&) {
+    auto collect = [&](const std::vector<StmtImport*>& found, const std::vector<Stmt>&) {
         for (StmtImport* import : found) imports.push_back(import->use);
-    });
+    };
     for (const TopLevel& item : program.items) {
-        if (!is<TopLevelUseImport>(item)) collector.item(item);
+        if (!is<TopLevelUseImport>(item)) forEachImportingBlock(item, collect);
     }
     return imports;
+}
+
+// ---------------------------------------------------------------------------
+// The read-only walk: DeclarationRenamer's visiting order, nothing built
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct ImportingBlockWalker {
+    const std::function<void(const std::vector<StmtImport*>&, const std::vector<Stmt>&)>& onImportingBlock;
+
+    void exprs(const std::vector<Expr>& items) {
+        for (const Expr& e : items) expr(e);
+    }
+    void typeRefs(const std::vector<TypeRef>& refs) {
+        for (const TypeRef& r : refs) typeRef(r);
+    }
+    void annotations(const std::vector<Annotation>& list) {
+        for (const Annotation& a : list) {
+            exprs(a.args);
+            for (const auto& [name, value] : a.namedArgs) expr(value);
+        }
+    }
+    void annotation(const TypeAnnotation& a) {
+        if (a.isExplicit()) typeRef(a.ref);
+    }
+    void param(const Param& p) {
+        typeRef(p.type);
+        if (p.defaultValue) expr(p.defaultValue);
+        annotations(p.annotations);
+    }
+    void field(const PackField& f) {
+        typeRef(f.type);
+        if (f.default_) expr(f.default_);
+        annotations(f.annotations);
+        if (f.condition) expr(f.condition);
+    }
+    void func(const FuncDecl& decl) {
+        for (const Param& p : decl.params) param(p);
+        annotation(decl.returnType);
+        block(decl.body);
+        annotations(decl.annotations);
+        if (decl.whereClause) expr(decl.whereClause);
+    }
+
+    void item(const TopLevel& item) {
+        switch (item.kind()) {
+            case TopLevelKind::Func: func(cast<TopLevelFunc>(item).decl); return;
+            case TopLevelKind::VarDecl:
+                if (cast<TopLevelVarDecl>(item).type) typeRef(cast<TopLevelVarDecl>(item).type);
+                expr(cast<TopLevelVarDecl>(item).initializer);
+                return;
+            case TopLevelKind::FinDecl:
+                if (cast<TopLevelFinDecl>(item).type) typeRef(cast<TopLevelFinDecl>(item).type);
+                expr(cast<TopLevelFinDecl>(item).initializer);
+                return;
+            case TopLevelKind::LetDecl:
+                if (cast<TopLevelLetDecl>(item).type) typeRef(cast<TopLevelLetDecl>(item).type);
+                expr(cast<TopLevelLetDecl>(item).initializer);
+                return;
+            case TopLevelKind::InlineFin: expr(cast<TopLevelInlineFin>(item).initializer); return;
+            case TopLevelKind::InlineLet: expr(cast<TopLevelInlineLet>(item).initializer); return;
+            case TopLevelKind::InlineVar: expr(cast<TopLevelInlineVar>(item).initializer); return;
+            case TopLevelKind::Test: block(cast<TopLevelTest>(item).body); return;
+            case TopLevelKind::Pack: {
+                const TopLevelPack& p = cast<TopLevelPack>(item);
+                for (const PackField& f : p.fields) field(f);
+                annotations(p.annotations);
+                if (p.whereClause) expr(p.whereClause);
+                return;
+            }
+            case TopLevelKind::Deco: {
+                const TopLevelDeco& d = cast<TopLevelDeco>(item);
+                for (const PackField& f : d.fields) field(f);
+                annotations(d.annotations);
+                for (const DecoratorBinding& b : d.bindings) typeRefs(b.trailingTypeArgs);
+                return;
+            }
+            case TopLevelKind::Enum:
+                annotations(cast<TopLevelEnum>(item).annotations);
+                if (cast<TopLevelEnum>(item).whereClause) expr(cast<TopLevelEnum>(item).whereClause);
+                return;
+            case TopLevelKind::Fail:
+                for (const std::vector<TypeRef>& payload : cast<TopLevelFail>(item).variantPayloads) typeRefs(payload);
+                if (cast<TopLevelFail>(item).whereClause) expr(cast<TopLevelFail>(item).whereClause);
+                return;
+            case TopLevelKind::Slot:
+                for (const SlotVariant& v : cast<TopLevelSlot>(item).variants) typeRefs(v.payloadTypes);
+                if (cast<TopLevelSlot>(item).whereClause) expr(cast<TopLevelSlot>(item).whereClause);
+                return;
+            case TopLevelKind::Impl: {
+                const TopLevelImpl& impl = cast<TopLevelImpl>(item);
+                typeRefs(impl.traitArgs);
+                for (const FuncDecl& m : impl.methods) func(m);
+                exprs(impl.decoratorArgs);
+                for (const auto& [name, value] : impl.decoratorNamedArgs) expr(value);
+                annotations(impl.annotations);
+                for (const auto& [name, bound] : impl.assocBindings.entries) typeRef(bound);
+                return;
+            }
+            case TopLevelKind::Spec: {
+                const TopLevelSpec& spec = cast<TopLevelSpec>(item);
+                for (const FuncDecl& m : spec.methods) func(m);
+                typeRefs(spec.parents);
+                typeRefs(spec.requires_);
+                for (const auto& [name, def] : spec.typeDefaults.entries) typeRef(def);
+                if (spec.whereClause) expr(spec.whereClause);
+                return;
+            }
+            case TopLevelKind::TypeAlias:
+                typeRef(cast<TopLevelTypeAlias>(item).type);
+                if (cast<TopLevelTypeAlias>(item).whereClause) expr(cast<TopLevelTypeAlias>(item).whereClause);
+                return;
+            case TopLevelKind::InlineAssert:
+                expr(cast<TopLevelInlineAssert>(item).condition);
+                expr(cast<TopLevelInlineAssert>(item).message);
+                return;
+            case TopLevelKind::InlineTrace:
+                expr(cast<TopLevelInlineTrace>(item).message);
+                if (cast<TopLevelInlineTrace>(item).level) expr(cast<TopLevelInlineTrace>(item).level);
+                return;
+            default:
+                return;
+        }
+    }
+
+    void typeRef(const TypeRef& ref) {
+        switch (ref.kind()) {
+            case TypeRefKind::Named: {
+                const TypeRefNamed& named = cast<TypeRefNamed>(ref);
+                typeRefs(named.args);
+                if (!NamedTypeMacroCall::isCall(named)) exprs(named.valueArgs);
+                return;
+            }
+            case TypeRefKind::Array: typeRef(cast<TypeRefArray>(ref).element); return;
+            case TypeRefKind::Map: typeRef(cast<TypeRefMap>(ref).key); typeRef(cast<TypeRefMap>(ref).value); return;
+            case TypeRefKind::Set: typeRef(cast<TypeRefSet>(ref).element); return;
+            case TypeRefKind::Function:
+                typeRefs(cast<TypeRefFunction>(ref).params);
+                typeRef(cast<TypeRefFunction>(ref).ret);
+                typeRefs(cast<TypeRefFunction>(ref).receivers);
+                return;
+            case TypeRefKind::Tuple: typeRefs(cast<TypeRefTuple>(ref).elements); return;
+            case TypeRefKind::Nullable: typeRef(cast<TypeRefNullable>(ref).inner); return;
+            case TypeRefKind::Failable: typeRef(cast<TypeRefFailable>(ref).ok); return;
+            case TypeRefKind::Pointer: typeRef(cast<TypeRefPointer>(ref).inner); return;
+            case TypeRefKind::Reference: typeRef(cast<TypeRefReference>(ref).inner); return;
+            default: return;
+        }
+    }
+
+    void block(const std::vector<Stmt>& body) {
+        std::vector<StmtImport*> imports;
+        for (const Stmt& s : body) {
+            if (StmtImport* import = as<StmtImport>(s)) imports.push_back(import);
+        }
+        if (imports.empty()) {
+            for (const Stmt& s : body) stmt(s);
+            return;
+        }
+        onImportingBlock(imports, body);
+        for (const Stmt& s : body) {
+            if (!is<StmtImport>(s)) stmt(s);
+        }
+    }
+
+    void stmt(const Stmt& s) {
+        switch (s.kind()) {
+            case StmtKind::VarDecl: annotation(cast<StmtVarDecl>(s).type); expr(cast<StmtVarDecl>(s).initializer); return;
+            case StmtKind::FinDecl: annotation(cast<StmtFinDecl>(s).type); expr(cast<StmtFinDecl>(s).initializer); return;
+            case StmtKind::LetDecl: annotation(cast<StmtLetDecl>(s).type); expr(cast<StmtLetDecl>(s).initializer); return;
+            case StmtKind::InlineFin: annotation(cast<StmtInlineFin>(s).type); expr(cast<StmtInlineFin>(s).initializer); return;
+            case StmtKind::InlineLet: annotation(cast<StmtInlineLet>(s).type); expr(cast<StmtInlineLet>(s).initializer); return;
+            case StmtKind::InlineVar: annotation(cast<StmtInlineVar>(s).type); expr(cast<StmtInlineVar>(s).initializer); return;
+            case StmtKind::RemDecl: annotation(cast<StmtRemDecl>(s).type); expr(cast<StmtRemDecl>(s).initializer); return;
+            case StmtKind::InlineAssignment: expr(cast<StmtInlineAssignment>(s).value); return;
+            case StmtKind::Assignment: expr(cast<StmtAssignment>(s).value); return;
+            case StmtKind::Exchange: expr(cast<StmtExchange>(s).left); expr(cast<StmtExchange>(s).right); return;
+            case StmtKind::IndexAssign:
+                expr(cast<StmtIndexAssign>(s).target);
+                expr(cast<StmtIndexAssign>(s).index);
+                expr(cast<StmtIndexAssign>(s).value);
+                return;
+            case StmtKind::MemberAssign:
+                expr(cast<StmtMemberAssign>(s).target);
+                expr(cast<StmtMemberAssign>(s).value);
+                if (cast<StmtMemberAssign>(s).nameExpr) expr(cast<StmtMemberAssign>(s).nameExpr);
+                return;
+            case StmtKind::DerefAssign: expr(cast<StmtDerefAssign>(s).target); expr(cast<StmtDerefAssign>(s).value); return;
+            case StmtKind::Return:
+                if (cast<StmtReturn>(s).value) expr(cast<StmtReturn>(s).value);
+                return;
+            case StmtKind::ExprStmt: expr(cast<StmtExprStmt>(s).expr); return;
+            case StmtKind::Throw: expr(cast<StmtThrow>(s).value); return;
+            case StmtKind::Panic: expr(cast<StmtPanic>(s).message); return;
+            case StmtKind::Yield: expr(cast<StmtYield>(s).value); return;
+            case StmtKind::Assert: expr(cast<StmtAssert>(s).condition); expr(cast<StmtAssert>(s).message); return;
+            case StmtKind::InlineAssert: expr(cast<StmtInlineAssert>(s).condition); expr(cast<StmtInlineAssert>(s).message); return;
+            case StmtKind::Trace:
+                expr(cast<StmtTrace>(s).message);
+                if (cast<StmtTrace>(s).level) expr(cast<StmtTrace>(s).level);
+                return;
+            case StmtKind::InlineTrace:
+                expr(cast<StmtInlineTrace>(s).message);
+                if (cast<StmtInlineTrace>(s).level) expr(cast<StmtInlineTrace>(s).level);
+                return;
+            case StmtKind::Scope: block(cast<StmtScope>(s).body); return;
+            case StmtKind::InlineBlock: block(cast<StmtInlineBlock>(s).body); return;
+            case StmtKind::DeepInlineBlock: block(cast<StmtDeepInlineBlock>(s).body); return;
+            case StmtKind::NoInline: stmt(cast<StmtNoInline>(s).stmt); return;
+            case StmtKind::If:
+                expr(cast<StmtIf>(s).condition);
+                block(cast<StmtIf>(s).thenBranch);
+                if (cast<StmtIf>(s).elseBranch) block(*cast<StmtIf>(s).elseBranch);
+                return;
+            case StmtKind::InlineIf:
+                expr(cast<StmtInlineIf>(s).condition);
+                block(cast<StmtInlineIf>(s).thenBranch);
+                if (cast<StmtInlineIf>(s).elseBranch) block(*cast<StmtInlineIf>(s).elseBranch);
+                return;
+            case StmtKind::DeepInlineIf:
+                expr(cast<StmtDeepInlineIf>(s).condition);
+                block(cast<StmtDeepInlineIf>(s).thenBranch);
+                if (cast<StmtDeepInlineIf>(s).elseBranch) block(*cast<StmtDeepInlineIf>(s).elseBranch);
+                return;
+            case StmtKind::While: expr(cast<StmtWhile>(s).condition); block(cast<StmtWhile>(s).body); return;
+            case StmtKind::For: {
+                const StmtFor& f = cast<StmtFor>(s);
+                expr(f.iterable);
+                block(f.body);
+                if (f.step) expr(f.step);
+                if (f.declaredType) typeRef(f.declaredType);
+                return;
+            }
+            case StmtKind::Loop: {
+                const StmtLoop& l = cast<StmtLoop>(s);
+                block(l.body);
+                if (l.iterable) expr(l.iterable);
+                if (l.everySeconds) expr(l.everySeconds);
+                return;
+            }
+            case StmtKind::InlineFor: expr(cast<StmtInlineFor>(s).iterable); block(cast<StmtInlineFor>(s).body); return;
+            case StmtKind::Break:
+                if (cast<StmtBreak>(s).value) expr(cast<StmtBreak>(s).value);
+                return;
+            case StmtKind::When: {
+                const StmtWhen& w = cast<StmtWhen>(s);
+                expr(w.scrutinee);
+                for (const WhenBranch& branch : w.branches) {
+                    for (const Expr& p : branch.patterns) {
+                        if (!is<ExprInferredMember>(p)) expr(p);
+                    }
+                    block(branch.body);
+                }
+                if (w.elseBranch) block(*w.elseBranch);
+                return;
+            }
+            case StmtKind::Try:
+                block(cast<StmtTry>(s).body);
+                if (cast<StmtTry>(s).catchBody) block(*cast<StmtTry>(s).catchBody);
+                return;
+            case StmtKind::Defer: block(cast<StmtDefer>(s).body); return;
+            case StmtKind::Effect: {
+                const StmtEffect& e = cast<StmtEffect>(s);
+                block(e.body);
+                if (e.dependencies) exprs(*e.dependencies);
+                if (e.condition) expr(e.condition);
+                return;
+            }
+            case StmtKind::UsingContext: exprs(cast<StmtUsingContext>(s).values); block(cast<StmtUsingContext>(s).body); return;
+            default: return;
+        }
+    }
+
+    void expr(const Expr& e) {
+        switch (e.kind()) {
+            case ExprKind::Call: {
+                const ExprCall& c = cast<ExprCall>(e);
+                exprs(c.args);
+                typeRefs(c.typeArgs);
+                if (c.receiver) expr(c.receiver);
+                return;
+            }
+            case ExprKind::Binary: expr(cast<ExprBinary>(e).left); expr(cast<ExprBinary>(e).right); return;
+            case ExprKind::Unary: expr(cast<ExprUnary>(e).operand); return;
+            case ExprKind::IncDec: expr(cast<ExprIncDec>(e).target); return;
+            case ExprKind::Grouping: expr(cast<ExprGrouping>(e).expr); return;
+            case ExprKind::MapEntryArg: expr(cast<ExprMapEntryArg>(e).key); expr(cast<ExprMapEntryArg>(e).value); return;
+            case ExprKind::Range: expr(cast<ExprRange>(e).from); expr(cast<ExprRange>(e).to); return;
+            case ExprKind::ArrayLiteral: exprs(cast<ExprArrayLiteral>(e).elements); return;
+            case ExprKind::SetLiteral: exprs(cast<ExprSetLiteral>(e).elements); return;
+            case ExprKind::MapLit:
+                for (const auto& [key, value] : cast<ExprMapLit>(e).entries) {
+                    expr(key);
+                    expr(value);
+                }
+                return;
+            case ExprKind::Index: expr(cast<ExprIndex>(e).target); expr(cast<ExprIndex>(e).index); return;
+            case ExprKind::InferredMember:
+                if (cast<ExprInferredMember>(e).ctorArgs) exprs(*cast<ExprInferredMember>(e).ctorArgs);
+                return;
+            case ExprKind::Member:
+                expr(cast<ExprMember>(e).target);
+                if (cast<ExprMember>(e).nameExpr) expr(cast<ExprMember>(e).nameExpr);
+                return;
+            case ExprKind::MethodCall: expr(cast<ExprMethodCall>(e).target); exprs(cast<ExprMethodCall>(e).args); return;
+            case ExprKind::StringTemplate:
+                for (const StringTemplatePart& part : cast<ExprStringTemplate>(e).parts) {
+                    if (!part.isLiteral) expr(part.expr);
+                }
+                return;
+            case ExprKind::TupleLit: exprs(cast<ExprTupleLit>(e).elements); return;
+            case ExprKind::VariantLit: exprs(cast<ExprVariantLit>(e).elements); return;
+            case ExprKind::TupleAccess: expr(cast<ExprTupleAccess>(e).target); return;
+            case ExprKind::CatchExpr: expr(cast<ExprCatchExpr>(e).expr); expr(cast<ExprCatchExpr>(e).fallback); return;
+            case ExprKind::TryPropagate: expr(cast<ExprTryPropagate>(e).expr); return;
+            case ExprKind::IfExpr:
+                expr(cast<ExprIfExpr>(e).condition);
+                expr(cast<ExprIfExpr>(e).thenExpr);
+                expr(cast<ExprIfExpr>(e).elseExpr);
+                return;
+            case ExprKind::Seal: expr(cast<ExprSeal>(e).value); return;
+            case ExprKind::Lambda: {
+                const ExprLambda& l = cast<ExprLambda>(e);
+                for (const Param& p : l.params) param(p);
+                for (const Param& p : l.receivers) param(p);
+                block(l.body);
+                return;
+            }
+            case ExprKind::InlineForArgs: expr(cast<ExprInlineForArgs>(e).iterable); expr(cast<ExprInlineForArgs>(e).body); return;
+            case ExprKind::NamedArg: expr(cast<ExprNamedArg>(e).value); return;
+            case ExprKind::NullCoalesce: expr(cast<ExprNullCoalesce>(e).left); expr(cast<ExprNullCoalesce>(e).right); return;
+            case ExprKind::SafeMember: expr(cast<ExprSafeMember>(e).target); return;
+            case ExprKind::Cast: expr(cast<ExprCast>(e).expr); typeRef(cast<ExprCast>(e).targetType); return;
+            case ExprKind::IsCheck: expr(cast<ExprIsCheck>(e).expr); typeRefs(cast<ExprIsCheck>(e).typeArgs); return;
+            case ExprKind::InCheck: expr(cast<ExprInCheck>(e).value); expr(cast<ExprInCheck>(e).collection); return;
+            case ExprKind::Alloc: expr(cast<ExprAlloc>(e).value); return;
+            case ExprKind::Deref: expr(cast<ExprDeref>(e).target); return;
+            case ExprKind::Isolated: expr(cast<ExprIsolated>(e).value); return;
+            case ExprKind::Await: expr(cast<ExprAwait>(e).value); return;
+            case ExprKind::Spread: expr(cast<ExprSpread>(e).array); return;
+            case ExprKind::MetaInvoke: exprs(cast<ExprMetaInvoke>(e).args); return;
+            case ExprKind::Slice: {
+                const ExprSlice& sl = cast<ExprSlice>(e);
+                expr(sl.target);
+                if (sl.start) expr(sl.start);
+                if (sl.stop) expr(sl.stop);
+                if (sl.step) expr(sl.step);
+                return;
+            }
+            default:
+                return;
+        }
+    }
+};
+
+}  // namespace
+
+void forEachImportingBlock(const TopLevel& item,
+                           const std::function<void(const std::vector<StmtImport*>&, const std::vector<Stmt>&)>& onImportingBlock) {
+    ImportingBlockWalker walker{onImportingBlock};
+    walker.item(item);
 }
 
 std::optional<std::string> DeclarationRenamer::renamed(const std::string& name) const {

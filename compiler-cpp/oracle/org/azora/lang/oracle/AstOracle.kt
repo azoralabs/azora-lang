@@ -1,12 +1,16 @@
 /* Copyright 2026 AzoraLabs. Licensed under the Apache License, Version 2.0. */
 package org.azora.lang.oracle
 
+import org.azora.lang.LibrarySource
 import org.azora.lang.frontend.InferredSites
 import org.azora.lang.frontend.AstValidator
 import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.MacroExpander
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.Program
+import org.azora.lang.stdlib.StdlibInjector
+import org.azora.lang.stdlib.TypeAccessValidation
+import org.azora.lang.stdlib.UnresolvedContractAccess
 import java.io.File
 import java.lang.reflect.Modifier
 import kotlin.test.Test
@@ -33,6 +37,10 @@ import kotlin.test.Test
  *                                parsed program (default), that program after
  *                                MacroExpander.expand, or the expanded program's
  *                                AstValidator errors (no library decorators known)
+ *     stage inject               ... or the library checks and the injected program
+ *                                ([InjectStage]) with the current injector
+ *     injector std               the standard injector (StdlibInjector.create())
+ *     injector libraries <list>  an injector with the list's inputs as library sources
  *
  * A list file holds `<input>\t<output>` per line. Each output is the generic
  * reflective dump of the result ([Dump]), or `(Failure <Exception> "message")`.
@@ -59,12 +67,26 @@ private class JobRunner(private val writeOutputs: Boolean) {
     private var stdEnums: MutableMap<String, List<String>> = mutableMapOf()
     private var stdListScopes: MutableMap<String, String> = mutableMapOf()
     private var stage = "parse"
+    private var injectorSources: List<LibrarySource>? = null
+    private val injector: StdlibInjector by lazy { StdlibInjector.create(injectorSources.orEmpty()) }
 
     /** What a std/libraries/entries command dumps for [program], for the current [stage]. */
     private fun staged(program: Program): Any = when (stage) {
         "parse" -> program
         "macros" -> MacroExpander.expand(program)
         "validate" -> AstValidator(emptyMap()).validate(MacroExpander.expand(program))
+        "inject" -> injector.let { libraries ->
+            InjectStage(
+                unusable = libraries.unusableLibraries(program),
+                imports = libraries.validateImports(program),
+                cycles = libraries.validateModuleCycles(program),
+                contracts = libraries.unresolvedContracts(program),
+                typeAccess = libraries.validateTypeAccess(program),
+                implPacks = libraries.validateImplPackDeclarations(program),
+                privateAccess = libraries.validatePrivateAccess(program),
+                injected = libraries.inject(program),
+            )
+        }
         else -> error("unknown stage '$stage'")
     }
 
@@ -81,6 +103,14 @@ private class JobRunner(private val writeOutputs: Boolean) {
             "entries" -> entries(readList(words[1]))
             "lex" -> lex(readList(words[1]))
             "stage" -> stage = words[1]
+            "injector" -> {
+                check(injectorSources == null) { "one injector per job" }
+                injectorSources = when (words[1]) {
+                    "std" -> emptyList()
+                    "libraries" -> readList(words[2]).map { (input, _) -> LibrarySource(input.path, input.readText()) }
+                    else -> error("unknown injector '${words[1]}'")
+                }
+            }
             else -> error("unknown oracle command '${words[0]}'")
         }
     }
@@ -177,6 +207,18 @@ private class JobRunner(private val writeOutputs: Boolean) {
 }
 
 private class Failure(val kind: String, val message: String)
+
+/** What `stage inject` dumps: the library checks a compilation runs, then the injected program. */
+private data class InjectStage(
+    val unusable: List<String>,
+    val imports: List<String>,
+    val cycles: List<String>,
+    val contracts: List<UnresolvedContractAccess>,
+    val typeAccess: TypeAccessValidation,
+    val implPacks: List<String>,
+    val privateAccess: List<String>,
+    val injected: Program,
+)
 
 /** The parser's process-wide fragment-macro tables, saved and restored around an entry. */
 private object FragmentMacros {

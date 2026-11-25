@@ -13,6 +13,7 @@
 #include "frontend/lexer.h"
 #include "frontend/macro_expander.h"
 #include "frontend/parser.h"
+#include "stdlib/stdlib_injector.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -72,19 +73,67 @@ struct JobRunner {
     TypeListScopes stdListScopes;
     std::string stage = "parse";
 
-    /** What a std/libraries/entries command dumps: a program, or (stage validate) an error list. */
+    /** What `stage inject` dumps: the library checks a compilation runs, then the injected program. */
+    struct InjectStage {
+        std::vector<std::string> unusable;
+        std::vector<std::string> imports;
+        std::vector<std::string> cycles;
+        std::vector<UnresolvedContractAccess> contracts;
+        TypeAccessValidation typeAccess;
+        std::vector<std::string> implPacks;
+        std::vector<std::string> privateAccess;
+        Program injected;
+    };
+
+    /** What a std/libraries/entries command dumps: a program, an error list (validate) or an InjectStage. */
     struct StageResult {
         std::optional<Program> program;
         std::vector<std::string> errors;
+        std::optional<InjectStage> inject;
     };
+
+    /** The injector `stage inject` uses, made on first use as the oracle's lazy one is. */
+    std::optional<std::vector<LibrarySource>> injectorSources;
+    std::shared_ptr<StdlibInjector> injectorStorage;
+
+    StdlibInjector& injector() {
+        if (!injectorStorage) injectorStorage = StdlibInjector::create(injectorSources ? *injectorSources : std::vector<LibrarySource>{});
+        return *injectorStorage;
+    }
+
+    static void dumpInjectStage(Dumper& d, const InjectStage& v) {
+        d.open("InjectStage");
+        d.field("unusable", 0), dumpValue(d, v.unusable, 2);
+        d.field("imports", 0), dumpValue(d, v.imports, 2);
+        d.field("cycles", 0), dumpValue(d, v.cycles, 2);
+        d.field("contracts", 0), dumpValue(d, v.contracts, 2);
+        d.field("typeAccess", 0), dumpValue(d, v.typeAccess, 2);
+        d.field("implPacks", 0), dumpValue(d, v.implPacks, 2);
+        d.field("privateAccess", 0), dumpValue(d, v.privateAccess, 2);
+        d.field("injected", 0), dumpValue(d, v.injected, 2);
+        d.close(0);
+    }
 
     /** The result for [program] at the current [stage]. */
     StageResult staged(Arena& arena, const Program& program) {
-        if (stage == "parse") return {program, {}};
-        if (stage == "macros") return {MacroExpander::expand(arena, program), {}};
+        if (stage == "parse") return {program, {}, std::nullopt};
+        if (stage == "macros") return {MacroExpander::expand(arena, program), {}, std::nullopt};
         if (stage == "validate") {
             OrderedMap<std::string, LibraryDecorator> noLibraries;
-            return {std::nullopt, AstValidator(&noLibraries).validate(MacroExpander::expand(arena, program))};
+            return {std::nullopt, AstValidator(&noLibraries).validate(MacroExpander::expand(arena, program)), std::nullopt};
+        }
+        if (stage == "inject") {
+            StdlibInjector& libraries = injector();
+            InjectStage result;
+            result.unusable = libraries.unusableLibraries(program);
+            result.imports = libraries.validateImports(program);
+            result.cycles = libraries.validateModuleCycles(program);
+            result.contracts = libraries.unresolvedContracts(program);
+            result.typeAccess = libraries.validateTypeAccess(program);
+            result.implPacks = libraries.validateImplPackDeclarations(program);
+            result.privateAccess = libraries.validatePrivateAccess(program);
+            result.injected = libraries.inject(program);
+            return {std::nullopt, {}, std::move(result)};
         }
         fail("unknown stage '" + stage + "'");
     }
@@ -129,6 +178,8 @@ struct JobRunner {
             Dumper d;
             if (result->program) {
                 dumpValue(d, *result->program, 0);
+            } else if (result->inject) {
+                dumpInjectStage(d, *result->inject);
             } else {
                 dumpValue(d, result->errors, 0);
             }
@@ -216,6 +267,17 @@ struct JobRunner {
             lex(words.at(1));
         } else if (command == "stage") {
             stage = words.at(1);
+        } else if (command == "injector") {
+            if (injectorSources) fail("one injector per job");
+            if (words.at(1) == "std") {
+                injectorSources = std::vector<LibrarySource>{};
+            } else if (words.at(1) == "libraries") {
+                std::vector<LibrarySource> sources;
+                for (const auto& [input, output] : readList(words.at(2))) sources.push_back({input, source(input), true});
+                injectorSources = std::move(sources);
+            } else {
+                fail("unknown injector '" + words.at(1) + "'");
+            }
         } else {
             fail("unknown job command '" + command + "'");
         }

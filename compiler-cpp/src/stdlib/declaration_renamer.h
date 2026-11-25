@@ -27,6 +27,17 @@ namespace azora {
  */
 std::vector<TopLevelUseImport*> writtenImports(Arena& arena, const Program& program);
 
+struct DeclarationRenamer;
+
+/**
+ * Calls [onImportingBlock] with each block of [item] that imports, in exactly
+ * the order DeclarationRenamer::item() would, without building the renamed
+ * copy: what Kotlin gets from a renamer whose result it discards. Keep the two
+ * traversals in step.
+ */
+void forEachImportingBlock(const TopLevel& item,
+                           const std::function<void(const std::vector<StmtImport*>&, const std::vector<Stmt>&)>& onImportingBlock);
+
 struct DeclarationRenamer {
     using Names = OrderedMap<std::string, std::string>;
     /** What each body `import` binds: spelling → identity, within its block (by node identity). */

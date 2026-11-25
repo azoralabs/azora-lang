@@ -25,3 +25,4 @@ d9627ffce4d5738ba86230ec238ba3062395f0949ca7394795007eec106c9abb  compiler/src/c
 78acfd4966cd3793f0a47d0f875260be142eadd86dfb1f607f7d09e2606dda06  compiler/src/commonMain/kotlin/org/azora/lang/stdlib/StdlibSource.kt  src/stdlib/stdlib_source.h src/stdlib/stdlib_source.cpp
 1b2ef240fec4ef802f658ca0104fed00e76b3c8b9be500bb89c5d7d8d36b09b6  compiler/src/commonMain/kotlin/org/azora/lang/stdlib/AzStdlibLoader.kt  src/stdlib/az_stdlib.h src/stdlib/az_stdlib.cpp
 a46ad325ef2c07805bd6ee8496d32bfb08e2485f49944c0d409933e3c4c010b0  compiler/src/macosMain/kotlin/org/azora/lang/stdlib/StdlibSource.macos.kt  src/stdlib/stdlib_source.cpp (macOS actuals)
+51c411d8fed0b042ba01b1fc45d60954036ce15cd9f8df65b1b47878f5968598  compiler/src/commonMain/kotlin/org/azora/lang/stdlib/StdlibInjector.kt  src/stdlib/stdlib_injector.h src/stdlib/stdlib_injector*.cpp

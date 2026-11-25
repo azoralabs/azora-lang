@@ -10,6 +10,9 @@
 #   REPEAT=5 tools/parse-diff.sh    five rounds each, for the speed report
 #   SKIP_ORACLE=1 tools/parse-diff.sh   reuse the last Kotlin dumps
 #   STAGE=macros tools/parse-diff.sh    dump each program after MacroExpander.expand
+#   STAGE=validate                      ... the expanded program's AstValidator errors
+#   STAGE=inject                        ... the library checks and the injected program,
+#                                       with the standard library as the only library
 set -e
 here=$(cd "$(dirname "$0")/.." && pwd)
 lang=$(cd "$here/.." && pwd)
@@ -55,6 +58,7 @@ write_lists() {
 for side in kotlin cpp; do
     echo reset >> "$work/$side.job"
     echo "stage $stage" >> "$work/$side.job"
+    [ "$stage" != inject ] || echo "injector std" >> "$work/$side.job"
 done
 n=0
 cd "$lang"

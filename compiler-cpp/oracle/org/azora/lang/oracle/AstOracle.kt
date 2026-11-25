@@ -41,6 +41,7 @@ import kotlin.test.Test
  *                                ([InjectStage]) with the current injector
  *     injector std               the standard injector (StdlibInjector.create())
  *     injector libraries <list>  an injector with the list's inputs as library sources
+ *                                (module-path check off: the paths are absolute)
  *
  * A list file holds `<input>\t<output>` per line. Each output is the generic
  * reflective dump of the result ([Dump]), or `(Failure <Exception> "message")`.
@@ -107,7 +108,12 @@ private class JobRunner(private val writeOutputs: Boolean) {
                 check(injectorSources == null) { "one injector per job" }
                 injectorSources = when (words[1]) {
                     "std" -> emptyList()
-                    "libraries" -> readList(words[2]).map { (input, _) -> LibrarySource(input.path, input.readText()) }
+                    // Absolute paths cannot spell a package's module, so the path check is off,
+                    // as for an editor's snapshot (checkFileMatchesModule is covered by stage parse
+                    // runs with it on).
+                    "libraries" -> readList(words[2]).map { (input, _) ->
+                        LibrarySource(input.path, input.readText(), validateModulePath = false)
+                    }
                     else -> error("unknown injector '${words[1]}'")
                 }
             }

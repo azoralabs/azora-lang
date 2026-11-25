@@ -1,0 +1,6 @@
+# The Engine's templates compiled against the Engine packages (see corpus.txt
+# for the commands): the packages are the injector's library sources.
+injector-libraries ../azora-engine/packages/*/src
+std std
+libraries ../azora-engine/packages/*/src
+entries ../azora-engine/templates

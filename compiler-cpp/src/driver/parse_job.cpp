@@ -273,7 +273,8 @@ struct JobRunner {
                 injectorSources = std::vector<LibrarySource>{};
             } else if (words.at(1) == "libraries") {
                 std::vector<LibrarySource> sources;
-                for (const auto& [input, output] : readList(words.at(2))) sources.push_back({input, source(input), true});
+                // Absolute paths cannot spell a package's module: the path check is off, as for an editor's snapshot.
+                for (const auto& [input, output] : readList(words.at(2))) sources.push_back({input, source(input), false});
                 injectorSources = std::move(sources);
             } else {
                 fail("unknown injector '" + words.at(1) + "'");

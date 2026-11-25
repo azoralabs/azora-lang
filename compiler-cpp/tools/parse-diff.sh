@@ -13,6 +13,8 @@
 #   STAGE=validate                      ... the expanded program's AstValidator errors
 #   STAGE=inject                        ... the library checks and the injected program,
 #                                       with the standard library as the only library
+#   CORPUS=tests/corpus-engine.txt      another corpus (its `injector-libraries` line
+#                                       picks the injector's library sources)
 set -e
 here=$(cd "$(dirname "$0")/.." && pwd)
 lang=$(cd "$here/.." && pwd)
@@ -20,6 +22,8 @@ top=$(cd "$lang/.." && pwd)
 stage=${STAGE:-parse}
 work="$here/build/diff/$stage"
 repeat=${REPEAT:-1}
+corpus=${CORPUS:-tests/corpus.txt}
+case "$corpus" in /*) ;; *) corpus="$here/$corpus" ;; esac
 
 "$here/build.sh" release >/dev/null
 
@@ -58,11 +62,13 @@ write_lists() {
 for side in kotlin cpp; do
     echo reset >> "$work/$side.job"
     echo "stage $stage" >> "$work/$side.job"
-    [ "$stage" != inject ] || echo "injector std" >> "$work/$side.job"
+    if [ "$stage" = inject ] && ! grep -q '^injector-libraries' "$corpus"; then
+        echo "injector std" >> "$work/$side.job"
+    fi
 done
 n=0
 cd "$lang"
-grep -v '^#' "$here/tests/corpus.txt" | while read -r command dirs; do
+grep -v '^#' "$corpus" | while read -r command dirs; do
     [ -n "$command" ] || continue
     n=$((n + 1))
     case "$command" in
@@ -76,6 +82,12 @@ grep -v '^#' "$here/tests/corpus.txt" | while read -r command dirs; do
             write_lists "$n-$command" $dirs
             echo "$command $work/lists/$n-$command.kotlin" >> "$work/kotlin.job"
             echo "$command $work/lists/$n-$command.cpp" >> "$work/cpp.job"
+            ;;
+        injector-libraries)
+            # shellcheck disable=SC2086
+            write_lists "$n-injector" $dirs
+            echo "injector libraries $work/lists/$n-injector.kotlin" >> "$work/kotlin.job"
+            echo "injector libraries $work/lists/$n-injector.cpp" >> "$work/cpp.job"
             ;;
         recorded)
             if [ ! -d "$dirs" ]; then

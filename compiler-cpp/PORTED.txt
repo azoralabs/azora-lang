@@ -33,3 +33,4 @@ c15ee334891dbbba25e7e1211d520cbfb07b3168474cf89643cb445fcb10969a  compiler/src/c
 31a85cbe7278f41143b227bfdcabc081ccd749960a2006afd83b5680afeb289e  compiler/src/commonMain/kotlin/org/azora/lang/semantic/ReturnedVariants.kt  src/semantic/program_passes.*
 2755f4acc60c1279fe945bfac285c5dfae72c1c6e812a42c7872b1987d3596e0  compiler/src/commonMain/kotlin/org/azora/lang/semantic/Witnesses.kt  src/semantic/program_passes.*
 fecb0bcacef30f8b7e6ad41962e2e958a575208b713fd89f439d25bc053c7580  compiler/src/commonMain/kotlin/org/azora/lang/semantic/InferredTypeArgs.kt  src/semantic/program_passes.*
+0fbc0ee87840de54e898bfe0fa49021f8d9df9e4be7f0a555e38ea8832a5bfa9  compiler/src/commonMain/kotlin/org/azora/lang/semantic/ComparisonDeriver.kt  src/semantic/comparison_deriver.*

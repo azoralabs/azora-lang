@@ -14,3 +14,7 @@ d93fc3af5c3b72a47c33beb25f68e91de49d648380bc3d4f22950de7267b7e39  compiler/src/c
 a4367b913401f107964c6f1296413856bdcf44f97c23530922ed03d326e76770  compiler/src/commonMain/kotlin/org/azora/lang/frontend/Literals.kt  src/frontend/ast_util.h src/frontend/ast_util.cpp
 9c55b137fe54ff869754f14de92389972443bd50655b1897cf758745e8c0c3a5  compiler/src/commonMain/kotlin/org/azora/lang/frontend/AzoraSyntaxVocabulary.kt  src/frontend/lexer.cpp (reservedKeywords only)
 edfae50ebf70cb2680692fd178f94f4bf34228cf96106197ddd86c9aaddd1aab  compiler/src/commonMain/kotlin/org/azora/lang/frontend/CodePoints.kt  src/frontend/lexer.h (isScalar only)
+047093f6a4fc456969eb59e77c03c895a187ba31d709794fc1e1e6caaf05b80b  compiler/src/commonMain/kotlin/org/azora/lang/frontend/AstMapper.kt  src/frontend/ast_rewriter.h src/frontend/ast_rewriter.cpp
+6294c8f96df4234aa01b1476235b57815b556e9f814326b7de8fe6a4b2169978  compiler/src/commonMain/kotlin/org/azora/lang/frontend/DebugInstrumenter.kt  src/frontend/debug_instrumenter.h src/frontend/debug_instrumenter.cpp
+c96df12970a1b017e9e72223a61cf4e181fb75d4b264394d5197145dbce14050  compiler/src/commonMain/kotlin/org/azora/lang/frontend/Suppressions.kt  src/frontend/suppressions.h src/frontend/suppressions.cpp
+d9627ffce4d5738ba86230ec238ba3062395f0949ca7394795007eec106c9abb  compiler/src/commonMain/kotlin/org/azora/lang/frontend/MacroExpander.kt  src/frontend/macro_expander.h src/frontend/macro_expander.cpp

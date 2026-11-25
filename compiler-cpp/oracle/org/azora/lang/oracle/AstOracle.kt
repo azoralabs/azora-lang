@@ -3,7 +3,9 @@ package org.azora.lang.oracle
 
 import org.azora.lang.frontend.InferredSites
 import org.azora.lang.frontend.Lexer
+import org.azora.lang.frontend.MacroExpander
 import org.azora.lang.frontend.Parser
+import org.azora.lang.frontend.Program
 import java.io.File
 import java.lang.reflect.Modifier
 import kotlin.test.Test
@@ -25,6 +27,9 @@ import kotlin.test.Test
  *                                environment, as a compilation's entry is; the
  *                                fragment macros are restored after each file
  *     lex <list>                 write each file's token list
+ *     stage parse|macros         what std/libraries/entries dump from here on: the
+ *                                parsed program (default), or that program after
+ *                                MacroExpander.expand
  *
  * A list file holds `<input>\t<output>` per line. Each output is the generic
  * reflective dump of the result ([Dump]), or `(Failure <Exception> "message")`.
@@ -50,6 +55,14 @@ private class JobRunner(private val writeOutputs: Boolean) {
     private var stdLists: MutableMap<String, List<String>> = mutableMapOf()
     private var stdEnums: MutableMap<String, List<String>> = mutableMapOf()
     private var stdListScopes: MutableMap<String, String> = mutableMapOf()
+    private var stage = "parse"
+
+    /** The program a std/libraries/entries command dumps, for the current [stage]. */
+    private fun staged(program: Program): Program = when (stage) {
+        "parse" -> program
+        "macros" -> MacroExpander.expand(program)
+        else -> error("unknown stage '$stage'")
+    }
 
     fun run(line: String) {
         val words = line.split(Regex("\\s+"))
@@ -63,6 +76,7 @@ private class JobRunner(private val writeOutputs: Boolean) {
             "libraries" -> libraries(readList(words[1]))
             "entries" -> entries(readList(words[1]))
             "lex" -> lex(readList(words[1]))
+            "stage" -> stage = words[1]
             else -> error("unknown oracle command '${words[0]}'")
         }
     }
@@ -83,7 +97,7 @@ private class JobRunner(private val writeOutputs: Boolean) {
         stdListScopes = mutableMapOf()
         for ((relative, file) in files) {
             val source = file.readText()
-            val result = timed { Parser(Lexer(source).tokenize(), stdLists, stdEnums, typeListScope = stdListScopes).parse() }
+            val result = timed { staged(Parser(Lexer(source).tokenize(), stdLists, stdEnums, typeListScope = stdListScopes).parse()) }
             write(File(out, "$relative.ast"), result)
         }
     }
@@ -95,7 +109,7 @@ private class JobRunner(private val writeOutputs: Boolean) {
         val scopes = stdListScopes.toMutableMap()
         for ((input, output) in files) {
             val source = input.readText()
-            val result = timed { Parser(Lexer(source).tokenize(), lists, enums, typeListScope = scopes).parse() }
+            val result = timed { staged(Parser(Lexer(source).tokenize(), lists, enums, typeListScope = scopes).parse()) }
             write(output, result)
         }
     }
@@ -106,12 +120,14 @@ private class JobRunner(private val writeOutputs: Boolean) {
             val source = input.readText()
             val saved = FragmentMacros.snapshot()
             val result = timed {
-                Parser(
-                    Lexer(source).tokenize(),
-                    stdLists.toMutableMap(),
-                    stdEnums.toMutableMap(),
-                    typeListScope = stdListScopes.toMutableMap(),
-                ).parse()
+                staged(
+                    Parser(
+                        Lexer(source).tokenize(),
+                        stdLists.toMutableMap(),
+                        stdEnums.toMutableMap(),
+                        typeListScope = stdListScopes.toMutableMap(),
+                    ).parse(),
+                )
             }
             FragmentMacros.restore(saved)
             write(output, result)

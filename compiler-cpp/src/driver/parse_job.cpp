@@ -10,6 +10,7 @@
 #include "base/text.h"
 #include "frontend/ast.h"
 #include "frontend/lexer.h"
+#include "frontend/macro_expander.h"
 #include "frontend/parser.h"
 
 #include <algorithm>
@@ -68,6 +69,14 @@ struct JobRunner {
     TypeListEnv stdLists;
     EnumEnv stdEnums;
     TypeListScopes stdListScopes;
+    std::string stage = "parse";
+
+    /** The program a std/libraries/entries command dumps, for the current [stage]. */
+    Program staged(Arena& arena, Program program) {
+        if (stage == "parse") return program;
+        if (stage == "macros") return MacroExpander::expand(arena, program);
+        fail("unknown stage '" + stage + "'");
+    }
 
     std::vector<std::pair<std::string, std::string>> readList(const std::string& path) {
         std::vector<std::pair<std::string, std::string>> out;
@@ -99,7 +108,7 @@ struct JobRunner {
         double start = nowSeconds();
         try {
             Parser parser(arena, Lexer(source).tokenize(), lists, enums, false, scopes);
-            program = parser.parse();
+            program = staged(arena, parser.parse());
         } catch (const CompileFailure& failure) {
             failed = failureText(failure);
         }
@@ -190,6 +199,8 @@ struct JobRunner {
             entries(words.at(1));
         } else if (command == "lex") {
             lex(words.at(1));
+        } else if (command == "stage") {
+            stage = words.at(1);
         } else {
             fail("unknown job command '" + command + "'");
         }

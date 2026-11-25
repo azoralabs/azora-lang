@@ -9,11 +9,13 @@
 #   tools/parse-diff.sh             one Kotlin round, one C++ round
 #   REPEAT=5 tools/parse-diff.sh    five rounds each, for the speed report
 #   SKIP_ORACLE=1 tools/parse-diff.sh   reuse the last Kotlin dumps
+#   STAGE=macros tools/parse-diff.sh    dump each program after MacroExpander.expand
 set -e
 here=$(cd "$(dirname "$0")/.." && pwd)
 lang=$(cd "$here/.." && pwd)
 top=$(cd "$lang/.." && pwd)
-work="$here/build/diff/parse"
+stage=${STAGE:-parse}
+work="$here/build/diff/$stage"
 repeat=${REPEAT:-1}
 
 "$here/build.sh" release >/dev/null
@@ -50,8 +52,10 @@ write_lists() {
 
 : > "$work/kotlin.job"
 : > "$work/cpp.job"
-echo reset >> "$work/kotlin.job"
-echo reset >> "$work/cpp.job"
+for side in kotlin cpp; do
+    echo reset >> "$work/$side.job"
+    echo "stage $stage" >> "$work/$side.job"
+done
 n=0
 cd "$lang"
 grep -v '^#' "$here/tests/corpus.txt" | while read -r command dirs; do

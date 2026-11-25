@@ -26,3 +26,10 @@ d9627ffce4d5738ba86230ec238ba3062395f0949ca7394795007eec106c9abb  compiler/src/c
 1b2ef240fec4ef802f658ca0104fed00e76b3c8b9be500bb89c5d7d8d36b09b6  compiler/src/commonMain/kotlin/org/azora/lang/stdlib/AzStdlibLoader.kt  src/stdlib/az_stdlib.h src/stdlib/az_stdlib.cpp
 a46ad325ef2c07805bd6ee8496d32bfb08e2485f49944c0d409933e3c4c010b0  compiler/src/macosMain/kotlin/org/azora/lang/stdlib/StdlibSource.macos.kt  src/stdlib/stdlib_source.cpp (macOS actuals)
 51c411d8fed0b042ba01b1fc45d60954036ce15cd9f8df65b1b47878f5968598  compiler/src/commonMain/kotlin/org/azora/lang/stdlib/StdlibInjector.kt  src/stdlib/stdlib_injector.h src/stdlib/stdlib_injector*.cpp
+51b250fd7c27ea325a81bf42390dfb52222bbbc68f44fd738f23a68591de7e67  compiler/src/commonMain/kotlin/org/azora/lang/semantic/ScopeQualifiedImplTargets.kt  src/semantic/front_rewrites.*
+6a4d69dcf0e3c9751e90e14c6757898340703a9a67f632b3ebeb128b3f3b6a05  compiler/src/commonMain/kotlin/org/azora/lang/semantic/SpecDefaults.kt  src/semantic/front_rewrites.*
+c15ee334891dbbba25e7e1211d520cbfb07b3168474cf89643cb445fcb10969a  compiler/src/commonMain/kotlin/org/azora/lang/semantic/CastDeriver.kt  src/semantic/front_rewrites.*
+22ff28870946a06064cc235c311213bbe7afe65bd0e9b4dbd9c95140e1c0aeaf  compiler/src/commonMain/kotlin/org/azora/lang/semantic/DisplayDeriver.kt  src/semantic/front_rewrites.*
+31a85cbe7278f41143b227bfdcabc081ccd749960a2006afd83b5680afeb289e  compiler/src/commonMain/kotlin/org/azora/lang/semantic/ReturnedVariants.kt  src/semantic/program_passes.*
+2755f4acc60c1279fe945bfac285c5dfae72c1c6e812a42c7872b1987d3596e0  compiler/src/commonMain/kotlin/org/azora/lang/semantic/Witnesses.kt  src/semantic/program_passes.*
+fecb0bcacef30f8b7e6ad41962e2e958a575208b713fd89f439d25bc053c7580  compiler/src/commonMain/kotlin/org/azora/lang/semantic/InferredTypeArgs.kt  src/semantic/program_passes.*

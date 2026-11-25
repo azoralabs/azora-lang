@@ -1658,6 +1658,11 @@ static void dumpTypeRefNamed(Dumper& d, const TypeRefNamed& v, int ind) {
     dumpValue(d, v.args, ind + 2);
     d.field("variadic", ind);
     dumpValue(d, v.variadic, ind + 2);
+    // Kotlin's TypeRef.Named.equals: a qualifier is access metadata, not identity.
+    if (d.equalityKey) {
+        d.close(ind);
+        return;
+    }
     d.field("qualifier", ind);
     dumpValue(d, v.qualifier, ind + 2);
     d.field("synthesized", ind);
@@ -1740,6 +1745,14 @@ static void dumpTypeRefPointer(Dumper& d, const TypeRefPointer& v, int ind) {
 }
 static void dumpTypeRefConst(Dumper& d, const TypeRefConst& v, int ind) {
     d.open("TypeRef.Const");
+    // Kotlin's TypeRef.Const.equals: by label when there is one, else by value.
+    if (d.equalityKey) {
+        d.field(v.label ? "label" : "value", ind);
+        if (v.label) dumpValue(d, *v.label, ind + 2);
+        else dumpValue(d, v.value, ind + 2);
+        d.close(ind);
+        return;
+    }
     d.field("value", ind);
     dumpValue(d, v.value, ind + 2);
     d.field("label", ind);

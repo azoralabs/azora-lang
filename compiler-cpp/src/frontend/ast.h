@@ -1886,6 +1886,23 @@ void dumpValue(Dumper& d, const StringTemplatePart& v, int ind);
 void dumpValue(Dumper& d, const MacroPattern& v, int ind);
 void dumpValue(Dumper& d, const ImportSpecSelector& v, int ind);
 void dumpValue(Dumper& d, const Program& v, int ind);
+
+/**
+ * A value's equality key: equal text exactly when Kotlin's equals() is - data
+ * classes compare every constructor field, TypeRef.Named and TypeRef.Const
+ * keep their own rules (Dumper::equalityKey). Where Kotlin puts AST values in
+ * sets, compares them or calls distinct(), the port compares these keys.
+ */
+template <class T>
+std::string structuralKey(const T& value) {
+    Dumper d;
+    d.equalityKey = true;
+    dumpValue(d, value, 0);
+    return std::move(d.out);
+}
+
+/** Kotlin `a == b` for type references. */
+inline bool kotlinEquals(const TypeRef& a, const TypeRef& b) { return structuralKey(a) == structuralKey(b); }
 void dumpValue(Dumper& d, const Visibility& v, int ind);
 void dumpValue(Dumper& d, const ScopeMeta& v, int ind);
 void dumpValue(Dumper& d, const Capture& v, int ind);

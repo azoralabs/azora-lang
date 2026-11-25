@@ -23,6 +23,13 @@ namespace azora {
 
 struct Dumper {
     std::string out;
+    /**
+     * Writing an equality key rather than a dump: equal text exactly when
+     * Kotlin's equals() says equal, so fields a type's own equals() ignores
+     * (TypeRef.Named's qualifier and position, TypeRef.Const's value beside a
+     * label) are left out.
+     */
+    bool equalityKey = false;
 
     void indent(int n) { out.append((size_t)n, ' '); }
     void raw(std::string_view text) { out.append(text); }

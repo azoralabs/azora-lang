@@ -73,14 +73,6 @@ void dumpValue(Dumper& d, const TypeAccessValidation& v, int ind);
 /** The names [program]'s own top-level declarations take (what shadows a library's). */
 OrderedSet<std::string> programDeclaredNames(const Program& program);
 
-/** Canonical text of a value: equal exactly when Kotlin's data-class equality is. */
-template <class T>
-std::string structuralKey(const T& value) {
-    Dumper d;
-    dumpValue(d, value, 0);
-    return std::move(d.out);
-}
-
 struct StdlibInjector {
     /** A library source that did not parse, or whose path disagrees with the module it declares. */
     struct SkippedSource {

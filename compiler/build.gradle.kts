@@ -347,6 +347,8 @@ kotlin {
             // NOTE: generateAzCodegenTests emits runners calling a non-existent
             // AzCodegenTestHelper. Re-enable once the codegen test helper is restored.
             // kotlin.srcDir(generateAzCodegenTests.map { it.outputs.files.singleFile })
+            // The C++ port's oracle (CPP_PORT_PLAN.md §8); inert unless AZORA_ORACLE_JOB is set.
+            kotlin.srcDir("../compiler-cpp/oracle")
         }
         val jvmCommonMain by getting {
             dependencies {

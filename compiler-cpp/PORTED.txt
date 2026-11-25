@@ -43,3 +43,4 @@ fecb0bcacef30f8b7e6ad41962e2e958a575208b713fd89f439d25bc053c7580  compiler/src/c
 50a33f0b6b29888adbab5a7f7b44a7cd0ef4ce2bc5fda9d793bd94f5a00eecc6  compiler/src/commonMain/kotlin/org/azora/lang/semantic/SymbolTable.kt  src/semantic/symbol_table.* (partial: types, specs, conformances, aliases)
 f755384e32b79e64385d71cef28fb4d18b5241e1ed23f534c57ddde43d0a9e42  compiler/src/commonMain/kotlin/org/azora/lang/semantic/MemberTypeInstantiation.kt  src/semantic/constraints.cpp (substituteMemberType only)
 24315ec1201850828040c5a7182988b60fd8a304634f786b8a23668653066d3c  compiler/src/commonMain/kotlin/org/azora/lang/ir/IrNode.kt  src/ir/ir_type.* (IrType part only)
+1cade5ae0219d5f9fce97acdccd46dab1fc9da2057083a0e20299c73da9ff310  compiler/src/commonMain/kotlin/org/azora/lang/semantic/VariadicMonomorphizer.kt  src/semantic/variadic_monomorphizer.*, src/semantic/mono_context*

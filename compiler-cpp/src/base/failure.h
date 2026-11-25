@@ -13,6 +13,8 @@ enum class FailureKind {
     NumberFormat,       // java.lang.NumberFormatException
     IndexOutOfBounds,   // java.lang.IndexOutOfBoundsException
     NoSuchElement,      // java.util.NoSuchElementException (first(), single(), ...)
+    ClassCast,          // java.lang.ClassCastException (Kotlin `as`)
+    NullPointer,        // java.lang.NullPointerException (Kotlin `!!`)
 };
 
 struct CompileFailure {

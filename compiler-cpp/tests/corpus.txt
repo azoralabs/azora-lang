@@ -1,0 +1,13 @@
+# The differential corpus (CPP_PORT_PLAN.md §8). Paths are relative to azora-lang/;
+# a `*` is expanded by the shell. Generated or staged copies (`build/`,
+# `.azora-build/`) are left out.
+#
+#   std <dir>              the standard library, parsed as AzStdlib.parse does
+#   libraries <dir>...     every .az under the dirs, in path order, sharing one copy
+#                          of the std environment (StdlibInjector.create)
+#   entries <dir>...       every .az under the dirs, in path order, each parsed as a
+#                          compilation's entry with a fresh copy of the std environment
+std std
+libraries ../azora-engine/packages/*/src
+entries ../azora-engine/templates
+entries examples

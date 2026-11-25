@@ -16,6 +16,10 @@
 
 package org.azora.lang.frontend
 
+import org.azora.lang.Sha256
+import org.azora.lang.backend.fsWriteText
+import org.azora.lang.backend.osEnvVar
+
 /**
  * Lexer (tokenizer) for the Azora language.
  *
@@ -31,6 +35,12 @@ package org.azora.lang.frontend
  */
 class Lexer(private val source: String) {
 
+    init {
+        // The C++ port's corpus recorder (CPP_PORT_PLAN.md §13): inert unless
+        // AZORA_RECORD_SOURCES names a directory, where every lexed source is saved by hash.
+        recordDirectory?.let { fsWriteText("$it/${Sha256.hex(source)}.az", source, append = false) }
+    }
+
     private val tokens = mutableListOf<Token>()
     private var start = 0
     private var current = 0
@@ -43,6 +53,8 @@ class Lexer(private val source: String) {
     private val enclosingBracketDepths = ArrayDeque<Int>()
 
     companion object {
+        private val recordDirectory: String? = osEnvVar("AZORA_RECORD_SOURCES")?.takeIf { it.isNotEmpty() }
+
         /** Longest first, so `uL` is never read as `u` followed by a name. */
         private val WIDTH_SUFFIXES = listOf(
             WidthSuffix("ub", "UByte", hexDigit = true),

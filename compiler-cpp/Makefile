@@ -13,7 +13,7 @@ OUT := build/$(BUILD)
 OBJECTS := $(patsubst src/%.cpp,$(OUT)/obj/%.o,$(SOURCES))
 BINARY := $(OUT)/azora
 
-CXXFLAGS := -std=c++20 -Wall -Wextra -Werror -fno-rtti -fwrapv -Isrc -MMD -MP
+CXXFLAGS := -std=c++20 -Wall -Wextra -Wno-missing-field-initializers -Werror -fno-rtti -fwrapv -Isrc -MMD -MP
 
 ifeq ($(BUILD),release)
 CXXFLAGS += -O2

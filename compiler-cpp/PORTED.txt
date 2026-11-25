@@ -1,0 +1,16 @@
+# Kotlin files the C++ port was made from (CPP_PORT_PLAN.md §12).
+# <sha256 of the Kotlin text ported>  <Kotlin file, from azora-lang/>  <C++ files that hold it>
+# tools/port-drift.sh lists every file whose hash no longer matches; port the change,
+# then refresh its line with tools/port-drift.sh --update <Kotlin file>.
+ce5e613960d638531fbe93ff579c12d2596f1ed3d2cf44c83ad2af5578cc46d3  compiler/src/commonMain/kotlin/org/azora/lang/frontend/Token.kt  src/frontend/token.h src/frontend/token.cpp
+e26222e1ad3851feb6968b1c432d58fda31ecc5864782c47791fa9e4103cfdf4  compiler/src/commonMain/kotlin/org/azora/lang/frontend/Lexer.kt  src/frontend/lexer.h src/frontend/lexer.cpp
+d6d181f88ad56a4f34d612fc7d59ec627db90e141e1cea7a69e77b9aabdb01f4  compiler/src/commonMain/kotlin/org/azora/lang/frontend/Ast.kt  src/frontend/ast.h src/frontend/ast_dump.cpp src/frontend/ast_util.h src/frontend/ast_util.cpp
+f274695ea357c4dfd6f92907841edb6728ade2fc4671c6fbdf74b6d415331f66  compiler/src/commonMain/kotlin/org/azora/lang/frontend/Parser.kt  src/frontend/parser.h src/frontend/parser_*.cpp
+8adc69476a1f27fef8ea66fb9c044d8441aeaba1172babe1a4cda249a90db083  compiler/src/commonMain/kotlin/org/azora/lang/frontend/SourceSymbolValidator.kt  src/frontend/source_symbol_validator.h src/frontend/source_symbol_validator.cpp
+505b5a1270066d53bd8b073565919327284c736993ad1ee530e28900b6fe4f58  compiler/src/commonMain/kotlin/org/azora/lang/frontend/ScopeAccessRewriter.kt  src/frontend/scope_access_rewriter.h src/frontend/scope_access_rewriter.cpp
+588c603ade9486472daadb1eedd783b3cc0917a75f89d3f649648393828ea341  compiler/src/commonMain/kotlin/org/azora/lang/frontend/CallbackImplNormalizer.kt  src/frontend/callback_impl_normalizer.h src/frontend/callback_impl_normalizer.cpp
+fb16876df27f92125c15ce81a236258f93624c79d15eba5f12cb6faa6b3f28fb  compiler/src/commonMain/kotlin/org/azora/lang/frontend/UseAsTemplate.kt  src/frontend/use_as_template.h src/frontend/use_as_template.cpp
+d93fc3af5c3b72a47c33beb25f68e91de49d648380bc3d4f22950de7267b7e39  compiler/src/commonMain/kotlin/org/azora/lang/frontend/TraceSemantics.kt  src/frontend/trace_semantics.h src/frontend/trace_semantics.cpp
+a4367b913401f107964c6f1296413856bdcf44f97c23530922ed03d326e76770  compiler/src/commonMain/kotlin/org/azora/lang/frontend/Literals.kt  src/frontend/ast_util.h src/frontend/ast_util.cpp
+9c55b137fe54ff869754f14de92389972443bd50655b1897cf758745e8c0c3a5  compiler/src/commonMain/kotlin/org/azora/lang/frontend/AzoraSyntaxVocabulary.kt  src/frontend/lexer.cpp (reservedKeywords only)
+edfae50ebf70cb2680692fd178f94f4bf34228cf96106197ddd86c9aaddd1aab  compiler/src/commonMain/kotlin/org/azora/lang/frontend/CodePoints.kt  src/frontend/lexer.h (isScalar only)

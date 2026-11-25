@@ -34,3 +34,6 @@ c15ee334891dbbba25e7e1211d520cbfb07b3168474cf89643cb445fcb10969a  compiler/src/c
 2755f4acc60c1279fe945bfac285c5dfae72c1c6e812a42c7872b1987d3596e0  compiler/src/commonMain/kotlin/org/azora/lang/semantic/Witnesses.kt  src/semantic/program_passes.*
 fecb0bcacef30f8b7e6ad41962e2e958a575208b713fd89f439d25bc053c7580  compiler/src/commonMain/kotlin/org/azora/lang/semantic/InferredTypeArgs.kt  src/semantic/program_passes.*
 0fbc0ee87840de54e898bfe0fa49021f8d9df9e4be7f0a555e38ea8832a5bfa9  compiler/src/commonMain/kotlin/org/azora/lang/semantic/ComparisonDeriver.kt  src/semantic/comparison_deriver.*
+914096f1e8ef218f8652d4c6ca2efb97bd75c1b69df902ce950d22434b32df74  compiler/src/commonMain/kotlin/org/azora/lang/semantic/DecoratorMetadata.kt  src/semantic/decorator_metadata.*
+181d0dc32cb8e019e0173cea33d3d5ff0bc31d97a8c8585fba71d1a3d3086dec  compiler/src/commonMain/kotlin/org/azora/lang/semantic/SerializationDeriver.kt  src/semantic/serialization_deriver.*
+420b78aa9e1228a628cbda8e020f433e40a16dd65864df96ddbcdd0aab980e32  compiler/src/commonMain/kotlin/org/azora/lang/semantic/ReflectDecoExpander.kt  src/semantic/reflect_deco_expander.* (expand only; enumerating() in stage 9)

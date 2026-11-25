@@ -359,7 +359,7 @@ TopLevelDeco* Parser::parseDeco(const std::vector<Annotation>& annotations, bool
 
 TopLevel Parser::parseTopLevelInline(const std::vector<Annotation>& annotations /*= {}*/) {
     std::optional<TokenType> next;
-    if (std::optional<Token> n = peekNext()) next = n->type;
+    if (std::optional<Token> n = tokenCopy(peekNext())) next = n->type;
     if (next == TokenType::FUNC) {
         // The decorators written above `inline func` belong to the function.
         advance();

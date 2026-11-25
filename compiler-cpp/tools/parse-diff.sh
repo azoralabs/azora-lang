@@ -34,9 +34,13 @@ sources() {
 }
 
 # Writes one list per side: `<input>\t<side dir>/<path below azora/>.ast`.
+# The inputs come from `sources`, or from stdin when the name ends in -recorded.
 write_lists() {
     name=$1; shift
-    sources "$@" > "$work/lists/$name.inputs"
+    case "$name" in
+        *-recorded) find "$(cd "$1" && pwd)" -name '*.az' -type f | LC_ALL=C sort > "$work/lists/$name.inputs" ;;
+        *) sources "$@" > "$work/lists/$name.inputs" ;;
+    esac
     for side in kotlin cpp; do
         while IFS= read -r input; do
             printf '%s\t%s/%s/%s.ast\n' "$input" "$work" "$side" "${input#"$top"/}"
@@ -64,6 +68,15 @@ grep -v '^#' "$here/tests/corpus.txt" | while read -r command dirs; do
             write_lists "$n-$command" $dirs
             echo "$command $work/lists/$n-$command.kotlin" >> "$work/kotlin.job"
             echo "$command $work/lists/$n-$command.cpp" >> "$work/cpp.job"
+            ;;
+        recorded)
+            if [ ! -d "$dirs" ]; then
+                echo "no recorded sources in $dirs (tools/record-sources.sh); skipped" >&2
+                continue
+            fi
+            write_lists "$n-recorded" "$dirs"
+            echo "entries $work/lists/$n-recorded.kotlin" >> "$work/kotlin.job"
+            echo "entries $work/lists/$n-recorded.cpp" >> "$work/cpp.job"
             ;;
         *) echo "corpus.txt: unknown command '$command'" >&2; exit 2 ;;
     esac

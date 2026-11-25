@@ -7,7 +7,14 @@
 #                          of the std environment (StdlibInjector.create)
 #   entries <dir>...       every .az under the dirs, in path order, each parsed as a
 #                          compilation's entry with a fresh copy of the std environment
+#   recorded <dir>         entries, for the sources the Kotlin test suite lexed
+#                          (tools/record-sources.sh); skipped when not recorded yet
+#
+# Order matters: fragment macros accumulate over `libraries`, so the recorded
+# sources run before them (the table as std leaves it) and the templates and
+# examples after them (they compile against the Engine).
 std std
+recorded compiler-cpp/build/recorded
 libraries ../azora-engine/packages/*/src
 entries ../azora-engine/templates
 entries examples

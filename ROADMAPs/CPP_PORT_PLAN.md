@@ -1,7 +1,9 @@
 # Porting the Azora compiler from Kotlin to C++ (plan, 2026-11-25)
 
-**Status:** draft, waiting for the owner's approval of the plan, the layout and the name
-(§15). No C++ code exists yet.
+**Status:** approved 2026-11-25, §15 decisions taken as recommended; in progress on
+branch `cpp_port`. Stages 0 and 1 are done: the first slice reports zero differences
+(§13, results there). Stage 2 has started (`AstRewriter`, `DebugInstrumenter`,
+`Suppressions` ported, not yet compared).
 
 **Goal.** A C++ compiler that produces exactly what the Kotlin compiler produces, byte
 for byte, for every input, then replaces it. The port is written in a small subset of C++
@@ -615,6 +617,38 @@ Plus `base/` and the dump.
 
 **Done** when `parse-diff.sh` reports zero differences on the whole corpus and the numbers
 are written into this section.
+
+**Result (2026-11-25): done.** `tools/parse-diff.sh` over the whole corpus: **3,912 files,
+0 different** - std (50), Engine packages (129), templates (29), examples (11) and 3,693
+distinct sources recorded from the Kotlin suite (`tools/record-sources.sh`, 3,187 tests).
+659 of the files are parse failures (intentionally malformed test snippets, expression
+fragments, stale examples); their messages match too. The C++ side is also clean under
+AddressSanitizer and UBSan on the whole corpus.
+
+Speed, lex + parse of the whole corpus (130k lines, 4.4 MB), excluding reading and dump
+writing, Apple M1 Max:
+
+| | time |
+|---|---|
+| Kotlin on the JVM, first pass (cold) | 1.18 s |
+| Kotlin on the JVM, best of five (warm, JIT-compiled) | 0.22 s |
+| C++ release (`-O2`), any pass | 0.27 s |
+
+So a command-line run, which is always a cold run, parses about 4x faster in C++; a
+long-lived warm JVM is about as fast as the C++ parser today. The C++ parser has had no
+tuning beyond the obvious (no zero-filled arena blocks, tokens handed out in place); a
+profile puts 21% in the lexer (0.065 s alone) and 29% in top-level `inline for`
+expansion, which re-lexes and re-parses each iteration as Kotlin does. Further tuning is
+deferred until more of the pipeline is ported, where it can be measured end to end. Thin
+LTO made no difference and is off.
+
+Build: the 31k lines of C++ so far build from scratch in 11.5 s (10 cores) and rebuild
+after a one-file change in 1.3 s.
+
+Deviations from the deliverables above: the hidden command is `azora __parse-job <job>`
+(the oracle's job protocol: `reset`, `std`, `libraries`, `entries`, `lex`) rather than
+`__parse-dump <list> <out>`, so one job file drives both sides; the recorder is
+`AZORA_RECORD_SOURCES` in `Lexer`'s initializer.
 
 ---
 

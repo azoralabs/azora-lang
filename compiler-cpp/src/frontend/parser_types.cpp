@@ -301,7 +301,7 @@ TypeRef Parser::parseTypeAtom() {
         Token firstNameToken = advance();
         std::string name = firstNameToken.lexeme;
         // `P.ActualType` - the type a reflected parameter has.
-        std::optional<Token> next = peekNext();
+        std::optional<Token> next = tokenCopy(peekNext());
         if (check(TokenType::DOT) && next && next->lexeme == "ActualType") {
             advance();
             advance();

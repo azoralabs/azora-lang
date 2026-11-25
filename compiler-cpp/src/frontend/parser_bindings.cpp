@@ -229,7 +229,7 @@ Stmt Parser::parseReturnTail(const Token& start) {
  * statements before it keeps them in front of the `return`.
  */
 std::vector<Stmt> Parser::parseExpressionBody() {
-    if (!currentFailSets.empty() || check(TokenType::FOR)) return {parseReturnTail(peek())};
+    if (!currentFailSets.empty() || check(TokenType::FOR)) return {parseReturnTail(Token(peek()))};
     Expr expr = parseExpr();
     consumeNewline();
     std::vector<Stmt> before = pendingPrelude;
@@ -379,12 +379,12 @@ std::vector<Stmt> Parser::parseReturnBranchBody(const std::string& what) {
     skipNewlines();
     if (match(TokenType::THEN)) {
         skipNewlines();
-        Stmt value = parseReturnedValue(peek());
+        Stmt value = parseReturnedValue(Token(peek()));
         consumeNewline();
         return {value};
     }
     if (what == "else" && !check(TokenType::L_BRACE)) {
-        Stmt value = parseReturnedValue(peek());
+        Stmt value = parseReturnedValue(Token(peek()));
         consumeNewline();
         return {value};
     }
@@ -508,7 +508,7 @@ Expr Parser::parseWhenBranchValue() {
 
 /** A branch value, optionally sealed: `seal "!! "`. */
 Expr Parser::parseSealableValue() {
-    std::optional<Token> next = peekNext();
+    std::optional<Token> next = tokenCopy(peekNext());
     if (check(TokenType::SEAL) && startsExpression(next ? &*next : nullptr)) {
         Token start = advance();
         Expr value = parseExpr();
@@ -760,7 +760,7 @@ std::vector<Expr> Parser::parseCallArgumentList() {
 /** With comma-free arguments, a new line starting with `:name` starts a new argument. */
 bool Parser::isNextLineNamedArgument(const ExprIdentifier& previous) {
     Token colon = peek();
-    std::optional<Token> name = peekNext();
+    std::optional<Token> name = tokenCopy(peekNext());
     if (!name) return false;
     return colon.line > previous.line && name->type == TokenType::IDENTIFIER && name->line == colon.line &&
            name->column == colon.column + 1;

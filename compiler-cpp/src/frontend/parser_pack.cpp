@@ -135,7 +135,7 @@ TopLevelPack* Parser::parsePack(const std::vector<Annotation>& annotations /*= {
         // A union reinterprets its storage, so reading one cannot be checked -
         // which is exactly what `unsafe` marks.
         if (!match(TokenType::UNSAFE)) {
-            std::optional<Token> next = peekNext();
+            std::optional<Token> next = tokenCopy(peekNext());
             fail("a union reinterprets its storage and cannot be checked; declare it 'unsafe union " +
                  (next ? next->lexeme : std::string()) + "' at line " + str(peek().line));
         }
@@ -242,7 +242,7 @@ TopLevelPack* Parser::parsePack(const std::vector<Annotation>& annotations /*= {
         } else {
             TokenType t = peek().type;
             if (isUnion && (t == TokenType::VAR || t == TokenType::VAL || t == TokenType::LET || t == TokenType::FIN)) {
-                std::optional<Token> next = peekNext();
+                std::optional<Token> next = tokenCopy(peekNext());
                 fail("a union member is written '" + (next ? next->lexeme : std::string("name")) +
                      ": Type' with no binding keyword - its members share one slot, so '" + peek().lexeme +
                      "' says nothing, at line " + str(peek().line));
@@ -429,7 +429,7 @@ VariadicFieldTemplate Parser::parseVariadicFieldTemplate() {
 /** True when an `inline` in a pack body opens a compile-time field form. */
 bool Parser::isInlineFieldFormAhead() {
     if (!check(TokenType::INLINE)) return false;
-    std::optional<Token> next = peekNext();
+    std::optional<Token> next = tokenCopy(peekNext());
     if (!next) return false;
     switch (next->type) {
         case TokenType::IF:
@@ -468,7 +468,7 @@ Expr Parser::parseArmPattern(const Expr& subject) {
         if (const std::string* found = constParamEnums.get(id->name)) owner = *found;
     }
     if (!owner) {
-        std::optional<Token> next = peekNext();
+        std::optional<Token> next = tokenCopy(peekNext());
         fail("'." + (next ? next->lexeme : std::string("null")) + "' needs an enum-typed subject at line " + str(at.line));
     }
     advance();  // '.'

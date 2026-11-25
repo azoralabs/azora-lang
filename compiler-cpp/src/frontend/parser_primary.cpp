@@ -680,7 +680,7 @@ ExprLambda* Parser::parseLambda(int32_t line, int32_t column, bool implicitIt /*
             consume(TokenType::COLON, "Expected ':' after lambda parameter name");
             bool typeSpread = check(TokenType::ELLIPSIS);
             if (typeSpread) {
-                std::optional<Token> after = peekNext();
+                std::optional<Token> after = tokenCopy(peekNext());
                 std::optional<std::string> spreadName;
                 if (after && after->type == TokenType::IDENTIFIER) spreadName = after->lexeme;
                 if (!variadicTypeParam || spreadName != variadicTypeParam) {

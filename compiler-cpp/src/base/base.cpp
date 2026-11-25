@@ -20,7 +20,7 @@ void* Arena::allocate(size_t size, size_t align) {
     uintptr_t at = (reinterpret_cast<uintptr_t>(cursor) + (align - 1)) & ~(uintptr_t)(align - 1);
     if (cursor == nullptr || at + size > reinterpret_cast<uintptr_t>(limit)) {
         size_t blockSize = size + align > BLOCK_SIZE ? size + align : BLOCK_SIZE;
-        blocks.push_back(std::make_unique<std::byte[]>(blockSize));
+        blocks.push_back(std::make_unique_for_overwrite<std::byte[]>(blockSize));
         cursor = blocks.back().get();
         limit = cursor + blockSize;
         at = (reinterpret_cast<uintptr_t>(cursor) + (align - 1)) & ~(uintptr_t)(align - 1);

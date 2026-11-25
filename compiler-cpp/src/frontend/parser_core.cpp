@@ -902,11 +902,14 @@ Expr Parser::parseSubExpr(const std::string& source) {
     return sub.parseExpr();
 }
 
-Token Parser::peek() { return at(tokens, current); }
+// peek()/advance()/peekNext() hand out the token in place, not a copy. A splice
+// (spliceFragmentMacro) replaces `tokens`, so a caller that parses after taking
+// one keeps its own copy (`Token start = peek();`).
+const Token& Parser::peek() { return at(tokens, current); }
 
-std::optional<Token> Parser::peekNext() {
-    if (current + 1 < (int32_t)tokens.size()) return tokens[(size_t)current + 1];
-    return std::nullopt;
+const Token* Parser::peekNext() {
+    if (current + 1 < (int32_t)tokens.size()) return &tokens[(size_t)current + 1];
+    return nullptr;
 }
 
 bool Parser::peekNextIs(TokenType type) {
@@ -939,23 +942,26 @@ bool Parser::isAtEnd() { return at(tokens, current).type == TokenType::EOF_; }
 
 bool Parser::check(TokenType type) { return !isAtEnd() && tokens[(size_t)current].type == type; }
 
-Token Parser::advance() {
-    Token token = at(tokens, current);
+const Token& Parser::advance() {
+    const Token& token = at(tokens, current);
     current++;
     return token;
 }
 
+// skipNewlines/consumeNewline/match step past a token check() has already seen,
+// which is Kotlin's advance() with its result unused, without copying the token.
+
 void Parser::skipNewlines() {
-    while (check(TokenType::NEWLINE)) advance();
+    while (check(TokenType::NEWLINE)) current++;
 }
 
 void Parser::consumeNewline() {
-    if (check(TokenType::NEWLINE)) advance();
+    if (check(TokenType::NEWLINE)) current++;
 }
 
 bool Parser::match(TokenType type) {
     if (!check(type)) return false;
-    advance();
+    current++;
     return true;
 }
 

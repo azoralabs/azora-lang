@@ -57,7 +57,7 @@ StmtTry* Parser::parseTry() {
 }
 
 Stmt Parser::parseInline() {
-    std::optional<Token> next = peekNext();
+    std::optional<Token> next = tokenCopy(peekNext());
     TokenType t = next ? next->type : TokenType::EOF_;
     if (next) {
         switch (t) {

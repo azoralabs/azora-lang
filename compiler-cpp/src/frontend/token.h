@@ -92,6 +92,11 @@ struct Token {
 /** The canonical dump of a token, as the oracle writes Kotlin's `Token` data class. */
 void dumpValue(Dumper& d, const Token& token, int ind);
 
+/** A kept copy of a token handed out in place, or none. */
+inline std::optional<Token> tokenCopy(const Token* token) {
+    return token ? std::optional<Token>(*token) : std::nullopt;
+}
+
 /** Kotlin `token.literal as String`. */
 inline const std::string& literalString(const Token& token) { return std::get<std::string>(token.literal); }
 

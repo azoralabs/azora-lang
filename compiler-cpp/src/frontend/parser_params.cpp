@@ -28,12 +28,12 @@ std::vector<Param> Parser::parseParams(const std::optional<std::string>& variadi
         // A parameter may carry a macro (`@vec`), which is lowercase, as well as a
         // decorator, which is not. Only the decorators are read here.
         std::vector<Annotation> annotations;
-        std::optional<Token> next = peekNext();
+        std::optional<Token> next = tokenCopy(peekNext());
         if (!(check(TokenType::AT) && next && firstIsLowerCase(next->lexeme))) annotations = parseAnnotations();
         // Type-side `...T` expands a declared variadic generic type pack.
         bool typeSpread = check(TokenType::ELLIPSIS);
         if (typeSpread) {
-            std::optional<Token> after = peekNext();
+            std::optional<Token> after = tokenCopy(peekNext());
             std::optional<std::string> spreadName;
             if (after && after->type == TokenType::IDENTIFIER) spreadName = after->lexeme;
             if (!variadicTypeParam || spreadName != variadicTypeParam) {

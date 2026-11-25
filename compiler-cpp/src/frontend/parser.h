@@ -338,8 +338,8 @@ struct Parser {
     Visibility parseVisibility();
     bool exposeStartsAnotherForm();
     Expr parseSubExpr(const std::string& source);
-    Token peek();
-    std::optional<Token> peekNext();
+    const Token& peek();
+    const Token* peekNext();
     bool peekNextIs(TokenType type);
     bool typeIs(int32_t index, TokenType type);
     bool lexemeIs(int32_t index, const std::string& lexeme);
@@ -348,7 +348,7 @@ struct Parser {
     int32_t nextMeaningfulIndex();
     bool isAtEnd();
     bool check(TokenType type);
-    Token advance();
+    const Token& advance();
     void skipNewlines();
     void consumeNewline();
     bool match(TokenType type);

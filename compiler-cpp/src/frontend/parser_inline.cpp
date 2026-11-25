@@ -560,7 +560,7 @@ TopLevelInlineBlock* Parser::parseTopLevelInlineBlock() {
 
 TopLevel Parser::parseTopLevelDeepInline() {
     std::optional<TokenType> next;
-    if (std::optional<Token> n = peekNext()) next = n->type;
+    if (std::optional<Token> n = tokenCopy(peekNext())) next = n->type;
     if (next == TokenType::FUNC) {
         advance();
         return make(arena, TopLevelFunc{parseFuncDecl({.isInline = true})});

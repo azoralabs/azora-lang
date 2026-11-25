@@ -205,7 +205,7 @@ Expr Parser::parseInfix() {
     Expr left = parseShift();
     while (true) {
         if (check(TokenType::AT)) {
-            std::optional<Token> fragmentName = peekNext();
+            std::optional<Token> fragmentName = tokenCopy(peekNext());
             if (fragmentName && fragmentName->type == TokenType::IDENTIFIER &&
                 fragmentTables().infixFragmentMacros.contains(fragmentName->lexeme) &&
                 spliceInfixFragmentMacro(leftStart, *fragmentName)) {
@@ -238,7 +238,7 @@ Expr Parser::parseInfix() {
  * A decorator name is capitalised, so a lowercase name after `@` is never one.
  */
 bool Parser::isAtInfixCandidate() {
-    std::optional<Token> name = peekNext();
+    std::optional<Token> name = tokenCopy(peekNext());
     if (!name || name->type != TokenType::IDENTIFIER) return false;
     std::u16string units16 = decodeWtf8(name->lexeme);
     if (units16.empty()) return false;
@@ -250,7 +250,7 @@ bool Parser::isAtInfixCandidate() {
 }
 
 bool Parser::isInfixCandidate() {
-    std::optional<Token> next = peekNext();
+    std::optional<Token> next = tokenCopy(peekNext());
     if (!next) return false;
     return isInfixOperandStart(next->type);
 }

@@ -50,7 +50,7 @@ std::vector<Token> lexFragment(const std::string& text, const Token& at) {
  */
 bool Parser::spliceFragmentMacro() {
     if (!check(TokenType::AT)) return false;
-    std::optional<Token> nameToken = peekNext();
+    std::optional<Token> nameToken = tokenCopy(peekNext());
     if (!nameToken) return false;
     if (nameToken->type != TokenType::IDENTIFIER) return false;
     FragmentMacroTables& tables = fragmentTables();

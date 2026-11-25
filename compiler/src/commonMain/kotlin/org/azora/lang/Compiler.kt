@@ -176,6 +176,15 @@ data class LibrarySource(
 )
 
 /**
+ * Differential-testing probe for the C++ port (compiler-cpp/oracle): sees the
+ * program the first semantic analysis is handed. Null - and so inert -
+ * everywhere but the oracle.
+ */
+internal object FrontendProbe {
+    var beforeSemantic: ((Program) -> Unit)? = null
+}
+
+/**
  * Full compiler pipeline orchestrator.
  *
  * Drives all four phases: frontend (lexer, parser, AST validation),
@@ -807,8 +816,10 @@ class Compiler(
             interfaceContext.marked = interfaceContext.marked + names
             return marked
         }
+        val analyzed = InferredTypeArgs.apply(Witnesses.addDescriptorFields(precompiledMarked(ast)))
+        FrontendProbe.beforeSemantic?.invoke(analyzed)
         var semantic = SemanticPipeline().analyze(
-            InferredTypeArgs.apply(Witnesses.addDescriptorFields(precompiledMarked(ast))),
+            analyzed,
             defines = defines,
             retainSemanticFacts = !generateBackends,
             userCode = userCode,

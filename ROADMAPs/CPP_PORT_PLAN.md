@@ -1,9 +1,10 @@
 # Porting the Azora compiler from Kotlin to C++ (plan, 2026-11-25)
 
 **Status:** approved 2026-11-25, §15 decisions taken as recommended; in progress on
-branch `cpp_port`. Stages 0 and 1 are done: the first slice reports zero differences
-(§13, results there). Stage 2 has started (`AstRewriter`, `DebugInstrumenter`,
-`Suppressions` ported, not yet compared).
+branch `cpp_port`. Stages 0-4 are done: the first slice reports zero differences
+(§13, results there), and so does the program handed to the first
+`SemanticPipeline.analyze` for every corpus entry and recorded case (§9, stage 4).
+Stage 5 (semantic passes) is next.
 
 **Goal.** A C++ compiler that produces exactly what the Kotlin compiler produces, byte
 for byte, for every input, then replaces it. The port is written in a small subset of C++
@@ -446,6 +447,16 @@ halves.
 4. **Rewrites before analysis**: derivers, `VariadicMonomorphizer`, `ReflectDecoExpander`,
    `InferredTypeArgs`, `ReturnedVariants`, `Witnesses`. Done when the program given to
    `SemanticPipeline` matches, for every corpus entry and recorded case.
+   **Result (2026-11-25): done.** `STAGE=frontend tools/parse-diff.sh` compiles each
+   entry up to the first `SemanticPipeline.analyze` (C++ `Compiler::frontend`, Kotlin
+   `Compiler.compile` stopped by the inert `FrontendProbe`): **3,862 files, 0 different**
+   on `tests/corpus.txt` (2,852 programs, 1,010 Failure error lists, no crashes; 3,693
+   recorded test sources) and **158 files, 0 different** on `tests/corpus-engine.txt`
+   with the Engine packages as libraries (112 programs, the largest dump 51 MB). Stages
+   2 and 3 were compared per file first (`STAGE=macros|validate|inject`, 0 different).
+   Speed is on par with a cold JVM (61 s vs 59 s; Engine 18.5 s vs 18.1 s): the time is
+   the library sources re-parsed on every compile, which both compilers do, and the C++
+   parser is untuned (bounds-checked token access, UTF-8 decoding, string-keyed lookups).
 5. **Semantic passes**: `SymbolTable`, `SymbolCollector`, `CtfeEvaluator`,
    `TypeResolver`, the checkers, `SemanticPipeline`. The largest stage; it is split into
    sub-steps in pipeline order with the errors list compared at each.

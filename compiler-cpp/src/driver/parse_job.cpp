@@ -8,6 +8,7 @@
 #include "base/failure.h"
 #include "base/fs.h"
 #include "base/text.h"
+#include "driver/compiler.h"
 #include "frontend/ast.h"
 #include "frontend/ast_validator.h"
 #include "frontend/lexer.h"
@@ -227,6 +228,36 @@ struct JobRunner {
         }
     }
 
+    /** Compiler(<injector sources>).compile(source) up to the first semantic analysis. */
+    void compile(const std::string& listPath) {
+        Compiler compiler(injectorSources ? *injectorSources : std::vector<LibrarySource>{});
+        for (const auto& [input, output] : readList(listPath)) {
+            std::string text = source(input);
+            Arena arena;
+            std::optional<FrontendResult> result;
+            std::string failed;
+            double start = nowSeconds();
+            try {
+                result = compiler.frontend(arena, text);
+            } catch (const CompileFailure& failure) {
+                failed = failureText(failure);
+            }
+            parseSeconds += nowSeconds() - start;
+            if (!writeOutputs) continue;
+            if (!result) {
+                writeFile(output, failed + "\n");
+                continue;
+            }
+            Dumper d;
+            if (result->program) {
+                dumpValue(d, *result->program, 0);
+            } else {
+                dumpValue(d, result->errors, 0);
+            }
+            writeFile(output, d.out + "\n");
+        }
+    }
+
     void lex(const std::string& listPath) {
         for (const auto& [input, output] : readList(listPath)) {
             std::string text = source(input);
@@ -263,6 +294,8 @@ struct JobRunner {
             libraries(words.at(1));
         } else if (command == "entries") {
             entries(words.at(1));
+        } else if (command == "compile") {
+            compile(words.at(1));
         } else if (command == "lex") {
             lex(words.at(1));
         } else if (command == "stage") {

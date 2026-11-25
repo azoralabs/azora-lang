@@ -1,6 +1,9 @@
 /* Copyright 2026 AzoraLabs. Licensed under the Apache License, Version 2.0. */
 package org.azora.lang.oracle
 
+import org.azora.lang.CompilationResult
+import org.azora.lang.Compiler
+import org.azora.lang.FrontendProbe
 import org.azora.lang.LibrarySource
 import org.azora.lang.frontend.InferredSites
 import org.azora.lang.frontend.AstValidator
@@ -42,6 +45,9 @@ import kotlin.test.Test
  *     injector std               the standard injector (StdlibInjector.create())
  *     injector libraries <list>  an injector with the list's inputs as library sources
  *                                (module-path check off: the paths are absolute)
+ *     compile <list>             Compiler(<injector sources>).compile(source) up to
+ *                                the first SemanticPipeline.analyze: the program it
+ *                                is handed, or the Failure's errors
  *
  * A list file holds `<input>\t<output>` per line. Each output is the generic
  * reflective dump of the result ([Dump]), or `(Failure <Exception> "message")`.
@@ -103,6 +109,7 @@ private class JobRunner(private val writeOutputs: Boolean) {
             "libraries" -> libraries(readList(words[1]))
             "entries" -> entries(readList(words[1]))
             "lex" -> lex(readList(words[1]))
+            "compile" -> compile(readList(words[1]))
             "stage" -> stage = words[1]
             "injector" -> {
                 check(injectorSources == null) { "one injector per job" }
@@ -174,6 +181,32 @@ private class JobRunner(private val writeOutputs: Boolean) {
         }
     }
 
+    /**
+     * Compiler.compile up to the first semantic analysis: the program it is
+     * handed (FrontendProbe), or the Failure's errors when the front half stops.
+     * The libraries are the job's injector sources.
+     */
+    private fun compile(files: List<Pair<File, File>>) {
+        val compiler = Compiler(injectorSources.orEmpty())
+        for ((input, output) in files) {
+            val source = input.readText()
+            val result = timed {
+                FrontendProbe.beforeSemantic = { throw ProbeStop(it) }
+                try {
+                    when (val compiled = compiler.compile(source)) {
+                        is CompilationResult.Failure -> compiled.errors
+                        is CompilationResult.Success -> error("the front-half probe did not run")
+                    }
+                } catch (stop: ProbeStop) {
+                    stop.program
+                } finally {
+                    FrontendProbe.beforeSemantic = null
+                }
+            }
+            write(output, result)
+        }
+    }
+
     private fun lex(files: List<Pair<File, File>>) {
         for ((input, output) in files) {
             val source = input.readText()
@@ -213,6 +246,9 @@ private class JobRunner(private val writeOutputs: Boolean) {
 }
 
 private class Failure(val kind: String, val message: String)
+
+/** Thrown by the probe to stop a compilation at the semantic boundary, carrying what it saw. */
+private class ProbeStop(val program: Program) : RuntimeException(null, null, false, false)
 
 /** What `stage inject` dumps: the library checks a compilation runs, then the injected program. */
 private data class InjectStage(

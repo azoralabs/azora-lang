@@ -13,6 +13,10 @@
 #   STAGE=validate                      ... the expanded program's AstValidator errors
 #   STAGE=inject                        ... the library checks and the injected program,
 #                                       with the standard library as the only library
+#   STAGE=frontend                      ... each entry compiled up to the first semantic
+#                                       analysis (`compile`): the program it is handed, or
+#                                       the Failure's errors; std lines are skipped (the
+#                                       compiler reads its own standard library)
 #   CORPUS=tests/corpus-engine.txt      another corpus (its `injector-libraries` line
 #                                       picks the injector's library sources)
 set -e
@@ -73,6 +77,7 @@ grep -v '^#' "$corpus" | while read -r command dirs; do
     n=$((n + 1))
     case "$command" in
         std)
+            [ "$stage" != frontend ] || continue
             root=$(cd "$dirs" && pwd)
             echo "std $root $work/kotlin/${root#"$top"/}" >> "$work/kotlin.job"
             echo "std $root $work/cpp/${root#"$top"/}" >> "$work/cpp.job"
@@ -80,8 +85,10 @@ grep -v '^#' "$corpus" | while read -r command dirs; do
         libraries|entries)
             # shellcheck disable=SC2086
             write_lists "$n-$command" $dirs
-            echo "$command $work/lists/$n-$command.kotlin" >> "$work/kotlin.job"
-            echo "$command $work/lists/$n-$command.cpp" >> "$work/cpp.job"
+            run=$command
+            [ "$stage" != frontend ] || run=compile
+            echo "$run $work/lists/$n-$command.kotlin" >> "$work/kotlin.job"
+            echo "$run $work/lists/$n-$command.cpp" >> "$work/cpp.job"
             ;;
         injector-libraries)
             # shellcheck disable=SC2086
@@ -95,8 +102,10 @@ grep -v '^#' "$corpus" | while read -r command dirs; do
                 continue
             fi
             write_lists "$n-recorded" "$dirs"
-            echo "entries $work/lists/$n-recorded.kotlin" >> "$work/kotlin.job"
-            echo "entries $work/lists/$n-recorded.cpp" >> "$work/cpp.job"
+            run=entries
+            [ "$stage" != frontend ] || run=compile
+            echo "$run $work/lists/$n-recorded.kotlin" >> "$work/kotlin.job"
+            echo "$run $work/lists/$n-recorded.cpp" >> "$work/cpp.job"
             ;;
         *) echo "corpus.txt: unknown command '$command'" >&2; exit 2 ;;
     esac

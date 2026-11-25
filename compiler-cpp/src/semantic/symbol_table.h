@@ -66,7 +66,23 @@ struct TraitConformance {
     std::vector<std::string> implTypeParams;
 };
 
+/**
+ * Port of SemanticFacts.kt - in part: the compile-time folds it records. The
+ * tooling facts (owners, variables, occurrences) arrive with stage 5's
+ * TypeResolver; a plain compile never enables them.
+ */
+struct SemanticFacts {
+    bool enabled = false;
+    /** Each folded replacement and the call it replaced. */
+    std::vector<std::pair<Expr, const ExprCall*>> folds;
+    void folded(const Expr& replacement, const ExprCall& original) {
+        if (enabled && original.column > 0) folds.emplace_back(replacement, &original);
+    }
+};
+
 struct SymbolTable {
+    SemanticFacts semanticFacts;
+
     // -- Structs, enums, error sets, slots ----------------------------------
     void defineStruct(StructType structType);
     /** Accepts a scope-qualified name, falling back to the final segment. */

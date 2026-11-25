@@ -14,6 +14,13 @@ namespace azora {
 /** Kotlin `TypeRef.toString()` (every TypeRef kind overrides it). */
 std::string toString(const TypeRef& type);
 
+/** Kotlin `Expr.line` / `Stmt.line`: every node kind carries its own (none: 0). */
+int32_t lineOf(const Expr& expr);
+int32_t lineOf(const Stmt& stmt);
+
+/** Kotlin `node::class.simpleName`: the kind's name without its category (`Identifier`). */
+std::string simpleKindName(const Expr& expr);
+
 /** TypeRef.displayName(): the simple name for Named, toString() otherwise. */
 std::string displayName(const TypeRef& type);
 

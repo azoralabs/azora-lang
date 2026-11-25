@@ -17,6 +17,9 @@
 #                                       analysis (`compile`): the program it is handed, or
 #                                       the Failure's errors; std lines are skipped (the
 #                                       compiler reads its own standard library)
+#   STAGE=semantic-top                  ... compiled on into SemanticPipeline, up to a stage-5
+#                                       compare point (semantic-top: after the top-level
+#                                       CtfeEvaluator pass): the errors so far, then the program
 #   CORPUS=tests/corpus-engine.txt      another corpus (its `injector-libraries` line
 #                                       picks the injector's library sources)
 set -e
@@ -24,6 +27,8 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 lang=$(cd "$here/.." && pwd)
 top=$(cd "$lang/.." && pwd)
 stage=${STAGE:-parse}
+# Stages that compile each entry (`compile`) rather than parse it.
+case "$stage" in frontend|semantic-*) compiles=1 ;; *) compiles= ;; esac
 work="$here/build/diff/$stage"
 repeat=${REPEAT:-1}
 corpus=${CORPUS:-tests/corpus.txt}
@@ -77,7 +82,7 @@ grep -v '^#' "$corpus" | while read -r command dirs; do
     n=$((n + 1))
     case "$command" in
         std)
-            [ "$stage" != frontend ] || continue
+            [ -z "$compiles" ] || continue
             root=$(cd "$dirs" && pwd)
             echo "std $root $work/kotlin/${root#"$top"/}" >> "$work/kotlin.job"
             echo "std $root $work/cpp/${root#"$top"/}" >> "$work/cpp.job"
@@ -86,7 +91,7 @@ grep -v '^#' "$corpus" | while read -r command dirs; do
             # shellcheck disable=SC2086
             write_lists "$n-$command" $dirs
             run=$command
-            [ "$stage" != frontend ] || run=compile
+            [ -z "$compiles" ] || run=compile
             echo "$run $work/lists/$n-$command.kotlin" >> "$work/kotlin.job"
             echo "$run $work/lists/$n-$command.cpp" >> "$work/cpp.job"
             ;;
@@ -103,7 +108,7 @@ grep -v '^#' "$corpus" | while read -r command dirs; do
             fi
             write_lists "$n-recorded" "$dirs"
             run=entries
-            [ "$stage" != frontend ] || run=compile
+            [ -z "$compiles" ] || run=compile
             echo "$run $work/lists/$n-recorded.kotlin" >> "$work/kotlin.job"
             echo "$run $work/lists/$n-recorded.cpp" >> "$work/cpp.job"
             ;;

@@ -47,3 +47,7 @@ f755384e32b79e64385d71cef28fb4d18b5241e1ed23f534c57ddde43d0a9e42  compiler/src/c
 0d7004281fae8e7133b394747316595ff204f8666fe6bb8fb01d095f53876f6f  compiler/src/commonMain/kotlin/org/azora/lang/Compiler.kt  src/driver/compiler.* (partial: compileLegacy up to the first SemanticPipeline.analyze)
 cd28b00f0a709f7ec71b57fce5fd470b7d44fe89c2a186f62fd49e5a6e6c94d5  compiler/src/commonMain/kotlin/org/azora/lang/gpu/GpuModule.kt  src/gpu/gpu_module.*
 8d6646085d272e8e0d82910ff16975a4ef944708de0a663b7857b9f304d34367  compiler/src/commonMain/kotlin/org/azora/lang/diagnostics/Diagnostics.kt  src/diagnostics/diagnostics.* (partial: UndefinedSymbol summary)
+522615c6c4cf55493fdba395788176b351ff01e8ee5626d8bc4f1ce219b6bd23  compiler/src/commonMain/kotlin/org/azora/lang/semantic/CtfeEvaluator.kt  src/semantic/ctfe_evaluator*
+b8d4280eb656d0024d95ab6ff582a0077339c87b1bbb2b5f42299185b0ad8ffe  compiler/src/commonMain/kotlin/org/azora/lang/semantic/ImplParameterAligner.kt  src/semantic/impl_parameter_aligner.*
+ff2dfcb7e4e23c8d060253fe996a7a63720475535c261e54a28e0886d28820da  compiler/src/commonMain/kotlin/org/azora/lang/semantic/SemanticPipeline.kt  src/semantic/semantic_pipeline.* (partial: through the top-level CtfeEvaluator pass)
+d1fc237f4d43a487eabb79c019b71f14c90d503a6350c1124475de6b975ac676  compiler/src/commonMain/kotlin/org/azora/lang/semantic/SemanticFacts.kt  src/semantic/symbol_table.h (partial: SemanticFacts.folded)

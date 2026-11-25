@@ -9,6 +9,7 @@
 #include "base/fs.h"
 #include "base/text.h"
 #include "driver/compiler.h"
+#include "semantic/semantic_pipeline.h"
 #include "frontend/ast.h"
 #include "frontend/ast_validator.h"
 #include "frontend/lexer.h"
@@ -235,10 +236,14 @@ struct JobRunner {
             std::string text = source(input);
             Arena arena;
             std::optional<FrontendResult> result;
+            std::optional<SemanticResult> semantic;
             std::string failed;
             double start = nowSeconds();
             try {
                 result = compiler.frontend(arena, text);
+                if (result->program && semanticStop()) {
+                    semantic = SemanticPipeline::analyze(arena, *result->program, {}, *semanticStop());
+                }
             } catch (const CompileFailure& failure) {
                 failed = failureText(failure);
             }
@@ -249,13 +254,29 @@ struct JobRunner {
                 continue;
             }
             Dumper d;
-            if (result->program) {
+            if (semantic) {
+                dumpSemanticStage(d, *semantic);
+            } else if (result->program) {
                 dumpValue(d, *result->program, 0);
             } else {
                 dumpValue(d, result->errors, 0);
             }
             writeFile(output, d.out + "\n");
         }
+    }
+
+    /** What `compile` dumps at a stage-5 compare point: the errors so far, then the program. */
+    static void dumpSemanticStage(Dumper& d, const SemanticResult& v) {
+        d.open("SemanticStage");
+        d.field("errors", 0), dumpValue(d, v.errors, 2);
+        d.field("program", 0), dumpValue(d, v.program, 2);
+        d.close(0);
+    }
+
+    /** The stage-5 compare point [stage] names, or none for the front half alone. */
+    std::optional<SemanticPipeline::Stop> semanticStop() const {
+        if (stage == "semantic-top") return SemanticPipeline::Stop::TopLevel;
+        return std::nullopt;
     }
 
     void lex(const std::string& listPath) {

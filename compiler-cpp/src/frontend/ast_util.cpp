@@ -242,4 +242,30 @@ ExprTupleLit* tupleCallLiteral(Arena& arena, const ExprCall& call) {
     return make(arena, literal);
 }
 
+int32_t lineOf(const Expr& expr) {
+    return std::visit(
+        [](auto node) -> int32_t {
+            if constexpr (std::is_same_v<decltype(node), std::monostate>) {
+                return 0;
+            } else {
+                return node->line;
+            }
+        },
+        expr.v);
+}
+
+int32_t lineOf(const Stmt& stmt) {
+    return std::visit(
+        [](auto node) -> int32_t {
+            if constexpr (std::is_same_v<decltype(node), std::monostate>) {
+                return 0;
+            } else {
+                return node->line;
+            }
+        },
+        stmt.v);
+}
+
+std::string simpleKindName(const Expr& expr) { return substringAfter(kindName(expr.kind()), "."); }
+
 }  // namespace azora

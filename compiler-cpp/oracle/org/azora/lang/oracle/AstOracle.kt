@@ -11,6 +11,9 @@ import org.azora.lang.frontend.Lexer
 import org.azora.lang.frontend.MacroExpander
 import org.azora.lang.frontend.Parser
 import org.azora.lang.frontend.Program
+import org.azora.lang.semantic.CtfeEvaluator
+import org.azora.lang.semantic.ImplParameterAligner
+import org.azora.lang.semantic.SymbolTable
 import org.azora.lang.stdlib.StdlibInjector
 import org.azora.lang.stdlib.TypeAccessValidation
 import org.azora.lang.stdlib.UnresolvedContractAccess
@@ -198,7 +201,8 @@ private class JobRunner(private val writeOutputs: Boolean) {
                         is CompilationResult.Success -> error("the front-half probe did not run")
                     }
                 } catch (stop: ProbeStop) {
-                    stop.program
+                    FrontendProbe.beforeSemantic = null
+                    if (stage.startsWith("semantic-")) SemanticStages.run(stop.program, stage) else stop.program
                 } finally {
                     FrontendProbe.beforeSemantic = null
                 }
@@ -246,6 +250,33 @@ private class JobRunner(private val writeOutputs: Boolean) {
 }
 
 private class Failure(val kind: String, val message: String)
+
+/** What `compile` dumps at a stage-5 compare point: the errors so far, then the program. */
+private data class SemanticStage(val errors: List<String>, val program: Program)
+
+/**
+ * SemanticPipeline.analyze run up to one of stage 5's compare points (CPP_PORT_PLAN.md §9),
+ * pass for pass as the pipeline runs them, returning where the pipeline returns. Kept in
+ * step with SemanticPipeline.kt (PORTED.txt tracks its hash).
+ */
+private object SemanticStages {
+    fun run(program: Program, stage: String): SemanticStage {
+        val table = SymbolTable()
+        val allErrors = mutableListOf<String>()
+        val targetErrors = ImplParameterAligner.typesWrittenAsParameters(program)
+        if (targetErrors.isNotEmpty()) {
+            allErrors.addAll(targetErrors)
+            return SemanticStage(allErrors, program)
+        }
+        var currentProgram = ImplParameterAligner.align(program)
+        val topResult = CtfeEvaluator(table).evaluateTopLevel(currentProgram)
+        allErrors.addAll(topResult.errors)
+        if (topResult.errors.any { !it.startsWith("warning:") }) return SemanticStage(allErrors, currentProgram)
+        currentProgram = topResult.program
+        if (stage == "semantic-top") return SemanticStage(allErrors, currentProgram)
+        error("unknown stage '$stage'")
+    }
+}
 
 /** Thrown by the probe to stop a compilation at the semantic boundary, carrying what it saw. */
 private class ProbeStop(val program: Program) : RuntimeException(null, null, false, false)

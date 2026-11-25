@@ -18,3 +18,5 @@ edfae50ebf70cb2680692fd178f94f4bf34228cf96106197ddd86c9aaddd1aab  compiler/src/c
 6294c8f96df4234aa01b1476235b57815b556e9f814326b7de8fe6a4b2169978  compiler/src/commonMain/kotlin/org/azora/lang/frontend/DebugInstrumenter.kt  src/frontend/debug_instrumenter.h src/frontend/debug_instrumenter.cpp
 c96df12970a1b017e9e72223a61cf4e181fb75d4b264394d5197145dbce14050  compiler/src/commonMain/kotlin/org/azora/lang/frontend/Suppressions.kt  src/frontend/suppressions.h src/frontend/suppressions.cpp
 d9627ffce4d5738ba86230ec238ba3062395f0949ca7394795007eec106c9abb  compiler/src/commonMain/kotlin/org/azora/lang/frontend/MacroExpander.kt  src/frontend/macro_expander.h src/frontend/macro_expander.cpp
+152212c65eb9435bced0ea8ce347a466a1e8f1578b3618d0af1a48d3ce281634  compiler/src/commonMain/kotlin/org/azora/lang/frontend/AstValidator.kt  src/frontend/ast_validator.h src/frontend/ast_validator.cpp
+1831d9ce8bfd2386bea50fbd8072c5caf30cd52aed061fdd8243ca028cd68b8e  compiler/src/commonMain/kotlin/org/azora/lang/diagnostics/Suggestions.kt  src/diagnostics/suggestions.h src/diagnostics/suggestions.cpp

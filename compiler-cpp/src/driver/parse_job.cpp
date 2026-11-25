@@ -9,6 +9,7 @@
 #include "base/fs.h"
 #include "base/text.h"
 #include "frontend/ast.h"
+#include "frontend/ast_validator.h"
 #include "frontend/lexer.h"
 #include "frontend/macro_expander.h"
 #include "frontend/parser.h"
@@ -71,10 +72,20 @@ struct JobRunner {
     TypeListScopes stdListScopes;
     std::string stage = "parse";
 
-    /** The program a std/libraries/entries command dumps, for the current [stage]. */
-    Program staged(Arena& arena, Program program) {
-        if (stage == "parse") return program;
-        if (stage == "macros") return MacroExpander::expand(arena, program);
+    /** What a std/libraries/entries command dumps: a program, or (stage validate) an error list. */
+    struct StageResult {
+        std::optional<Program> program;
+        std::vector<std::string> errors;
+    };
+
+    /** The result for [program] at the current [stage]. */
+    StageResult staged(Arena& arena, const Program& program) {
+        if (stage == "parse") return {program, {}};
+        if (stage == "macros") return {MacroExpander::expand(arena, program), {}};
+        if (stage == "validate") {
+            OrderedMap<std::string, LibraryDecorator> noLibraries;
+            return {std::nullopt, AstValidator(&noLibraries).validate(MacroExpander::expand(arena, program))};
+        }
         fail("unknown stage '" + stage + "'");
     }
 
@@ -103,20 +114,24 @@ struct JobRunner {
     void parseOne(const std::string& source, const std::string& output, TypeListEnv* lists, EnumEnv* enums,
                   TypeListScopes* scopes) {
         Arena arena;
-        std::optional<Program> program;
+        std::optional<StageResult> result;
         std::string failed;
         double start = nowSeconds();
         try {
             Parser parser(arena, Lexer(source).tokenize(), lists, enums, false, scopes);
-            program = staged(arena, parser.parse());
+            result = staged(arena, parser.parse());
         } catch (const CompileFailure& failure) {
             failed = failureText(failure);
         }
         parseSeconds += nowSeconds() - start;
         if (!writeOutputs) return;
-        if (program) {
+        if (result) {
             Dumper d;
-            dumpValue(d, *program, 0);
+            if (result->program) {
+                dumpValue(d, *result->program, 0);
+            } else {
+                dumpValue(d, result->errors, 0);
+            }
             writeFile(output, d.out + "\n");
         } else {
             writeFile(output, failed + "\n");
